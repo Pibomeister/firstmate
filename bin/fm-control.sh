@@ -164,6 +164,12 @@
 #              An explicit --harness or --model is a quota or operator replace
 #              and rebinds through --relaunch.
 #
+# Every verb exits 5 when another lifecycle action already holds the task's
+# lock, state/.control-<id>.lock, 6 when the supervision lease guard refuses
+# (bin/fm-lease-lib.sh), and 7 when FM_CONTROL_REQUIRE_RECORD's token check
+# fails; all three refusals come before anything reaches the agent, so a
+# caller may treat them as proof that nothing was sent.
+#
 # Teardown and discard are NOT verbs here and never will be. `exit` stops an
 # agent and preserves everything else; removing a worktree, killing an
 # endpoint, or discarding work stays with bin/fm-teardown.sh, which owns the
@@ -215,6 +221,24 @@
 #                               evidence under the lifecycle lock when set.
 #   FM_CONTROL_LAUNCH_WAIT       dead->alive wait after a relaunch (90)
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
+#   FM_CONTROL_EXPECTED_SPAWN_GEN  internal callers may require the task's
+#                                recorded spawn_gen to still match this value;
+#                                checked under the per-task lifecycle lock
+#                                after the record is read, so a worker
+#                                relaunched since the caller selected it is
+#                                refused rather than acted on. Unset or empty
+#                                does not change ordinary control calls.
+#                                It applies to every verb (load relief binds
+#                                interrupts with it); the relaunch-only
+#                                FM_CONTROL_EXPECT_SPAWN_GEN above is separate.
+#   FM_CONTROL_REQUIRE_RECORD, FM_CONTROL_REQUIRE_TOKEN  internal callers may
+#                                require that file to still hold the line
+#                                token=<FM_CONTROL_REQUIRE_TOKEN>, checked under
+#                                the lifecycle lock; otherwise exit 7 before
+#                                anything is sent. Load relief binds each
+#                                interrupt to its own pause record this way, so
+#                                an interrupt that outlived its pass cannot
+#                                land after that record was resumed or replaced.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -439,7 +463,7 @@ fm_lease_guard "$ID" "lifecycle control (fm-control)"
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 trap control_cleanup EXIT
 fm_lock_try_acquire "$CONTROL_LOCK" \
-  || die "another lifecycle action is already running for task $ID"
+  || { echo "error: another lifecycle action is already running for task $ID" >&2; exit 5; }
 CONTROL_LOCK_HELD=1
 # do_exit runs in a command substitution. That subshell does not run this
 # EXIT trap, so the parent has to hold the path the trap removes. Set it
@@ -469,6 +493,16 @@ if [ "$VERB" = relaunch ] && [ "${FM_CONTROL_EXPECT_SPAWN_GEN+x}" = x ]; then
     && [ "$(cat "$STATE/$ID.agent-exit" 2>/dev/null || true)" = "$FM_CONTROL_EXPECT_SPAWN_GEN"$'\t'0 ]; then
     die "automatic relaunch cancelled: task $ID exited cleanly with status 0"
   fi
+fi
+
+if [ -n "${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" ] \
+  && [ "$(fm_meta_get "$META" spawn_gen)" != "$FM_CONTROL_EXPECTED_SPAWN_GEN" ]; then
+  die "task $ID's spawn_gen no longer matches the caller's expected generation; refusing to act on a relaunched worker"
+fi
+if [ -n "${FM_CONTROL_REQUIRE_RECORD:-}" ] \
+  && ! grep -qxF -- "token=${FM_CONTROL_REQUIRE_TOKEN:-}" "$FM_CONTROL_REQUIRE_RECORD" 2>/dev/null; then
+  echo "error: task $ID's caller record $FM_CONTROL_REQUIRE_RECORD no longer holds the caller's token; refusing to act for a record that was resumed or replaced" >&2
+  exit 7
 fi
 
 # A remotely placed secondmate records its endpoint on ANOTHER host, so every

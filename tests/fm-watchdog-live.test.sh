@@ -7,7 +7,8 @@
 # `merge #12` draft the watchdog must refuse to submit and a clean draft the guard
 # clears itself, with no watchdog pass over it. It proves the rendered
 # signals the watchdog reads from a real Claude pane: the folder-trust picker
-# is a permission dialog that gets no key, the composer verdict sees a draft,
+# is a permission dialog that gets no key and that bin/fm-permission-prompt.sh
+# names a trust dialog, the composer verdict sees a draft,
 # Enter is never pressed on merge text, and a clean draft passes the boundary
 # proof. Runs by default where claude, tmux,
 # and jq are installed; FM_WATCHDOG_LIVE=0 or FM_LIVE=0 turns it off, and
@@ -68,7 +69,7 @@ printf '%s\n' "$SID" > "$H/state/.lock-session"
 jq -n --arg t "$T" --arg s "$SID" --argjson e "$(date +%s)" \
   '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s}}}' \
   > "$H/state/heartbeat.json"
-printf 'mode=act\nmodels=\ncouncil-seats=\nkey-settle-secs=1\n' > "$H/config/watchdog"
+printf 'mode=act\nmodels=\ncouncil-seats=\nkey-settle-secs=1\nquota-guard=off\n' > "$H/config/watchdog"
 
 screen() { "$REAL_TMUX" -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null; }
 wd() { PATH="$FAKEBIN:$PATH" FM_HOME="$H" bash "$WD" "$@"; }
@@ -93,6 +94,8 @@ if screen | grep -Eiq 'trust this folder'; then
   sleep 2
   assert_equals permission "$(lib fm_wd_pane_dialog "$(screen)")" \
     "claude $CLAUDE_VERSION: the folder-trust picker reads as a permission dialog"
+  assert_equals $'trust\tworkspace' "$(screen | bash "$ROOT/bin/fm-permission-prompt.sh" classify --harness claude)" \
+    "claude $CLAUDE_VERSION: the permission-prompt classifier names the folder-trust picker a trust dialog"
   wd once > /dev/null 2>&1 || fail "claude $CLAUDE_VERSION: watchdog pass failed on the trust picker"
   sleep 2
   assert_equals 0 "$(key_rows)" "claude $CLAUDE_VERSION: no key is sent to a permission dialog"

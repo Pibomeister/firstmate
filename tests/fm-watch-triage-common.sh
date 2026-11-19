@@ -3272,7 +3272,7 @@ test_live_paused_until_controls_recheck_time() {
 # Run one watcher round against a lane whose pane is already stably stale at the
 # recorded hash - the population wedge_timer_check owns. FM_STALE_ESCALATE_SECS=1
 # puts every round at the threshold, so a round either escalates or is deferred;
-# the real 240s default only changes how long that takes.
+# the real 300s default only changes how long that takes.
 # <mode> `exit` requires a queued wake; `absorb` requires three complete cycles
 # without one at the threshold. Returns 1 when it does the other.
 # The endpoint this lane's window resolves to is a live grok agent unless a case
@@ -7066,6 +7066,22 @@ test_afk_declared_pause_on_a_worker_gate_rings_only_the_worker() {
   grep -F 'no-mistakes axi status' "$state/afk-parked.inbox/001.msg" >/dev/null \
     || fail "the steering record does not point at the run's status"
   pass "away mode points a paused worker at a gate it can answer without waking anyone else"
+}
+
+test_load_relief_pause_on_a_parked_run_is_not_rung() {
+  local dir state out pid
+  dir=$(afk_parked_fixture afk-parked-load-relief); state="$dir/state"; out="$dir/watch.out"
+  printf 'paused [key=load-relief] [at=1]: load relief: load 40 at or over ceiling 20 for 300s; interrupted in place, work preserved, resumes when load falls\n' >> "$state/afk-parked.status"
+  printf '%s' "$(seen_sig "$state/afk-parked.status")" > "$state/.seen-afk-parked_status"
+  afk_parked_watch "$dir" "$PARKED_GATE_WORKER"
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid" || ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "the watcher did not keep polling a load-relief pause on a parked run: $(cat "$out")"
+  fi
+  [ "$(afk_parked_records "$dir")" = 0 ] \
+    || { reap "$pid"; fail "a worker paused by load relief was rung to answer its parked gate while load stayed high"; }
+  reap "$pid"
+  pass "a load-relief pause on a parked run is left to load relief, and its worker is not rung to answer the gate"
 }
 
 test_afk_declared_pause_on_an_executing_run_stays_handed_off_once() {

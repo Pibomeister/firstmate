@@ -224,7 +224,9 @@
 #
 # Read-only against the worktree, backend, and no-mistakes state database; the
 # only filesystem write is the short-lived snapshot cache under
-# $STATE/.nm-status-snapshot.json (and its lock file). Always exits 0 on a
+# $STATE/.nm-status-snapshot.json (and its lock file). FM_CREW_STATE_NO_SNAPSHOT=1
+# reads the state database directly with that cache off, so the read neither
+# writes nor waits on the cache lock. Always exits 0 on a
 # successful read regardless of state; exit 2 only on a usage error (no id).
 set -u
 
@@ -356,6 +358,14 @@ map_log_state() {  # <line>
 }
 
 LOG_LINE=$(status_current_line "$LOG" "$KIND")
+# Load relief (bin/fm-load-relief.sh) appends its own paused and resolved
+# [key=load-relief] lines without the worker's lock, so one can land just
+# after the worker's done or failed. Such a trailing bookkeeping line never
+# replaces the terminal outcome before it.
+if [ "$(_fm_decision_key "$LOG_LINE" '' 2>/dev/null)" = load-relief ]; then
+  _own_line=$(last_status_line_without_key "$LOG" load-relief)
+  case "$(status_line_verb "$_own_line")" in done|failed) LOG_LINE=$_own_line ;; esac
+fi
 LOG_VERB=$(status_line_verb "$LOG_LINE")
 
 # --- remote secondmate: the true source is the remote endpoint ---------------
@@ -1100,6 +1110,7 @@ COARSE_STATUS=""
 SELECTED_RUN_ID=""
 NM_SNAPSHOT_ACTIVE=0
 NM_SNAPSHOT_FILE=$(fm_nm_status_snapshot_path "$STATE")
+[ "${FM_CREW_STATE_NO_SNAPSHOT:-}" != 1 ] || NM_SNAPSHOT_FILE=
 # Scouts and secondmates never drive a no-mistakes validation of their own
 # worktree, so skip the lookup for them and read state from pane/log directly.
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then

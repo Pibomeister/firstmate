@@ -197,6 +197,10 @@ That handling can legitimately outrun a fixed 300-second window under load (a sl
 
 With `state/.afk` absent the daemon lock proves nothing and the strict watcher predicate is unchanged.
 
+A home that runs the supervision host is the exception that never writes `state/.afk` for away mode.
+There the host is the away session ([`supervision-host.md`](supervision-host.md)), so away entry writes only the away-posture record `state/.afk-contract` and the daemon launch refuses.
+The Stop-parked primaries therefore keep parking the host beside that record, while `state/.afk` still stands them down wherever the daemon owns supervision.
+
 ### State directory, grace, and missing input
 
 - `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
@@ -287,7 +291,7 @@ The registrations in detail:
   Cursor also loads `<project>/.claude/settings.json`, so every tracked Claude-shaped entrypoint whose event Cursor covers stands down on a Cursor-delivered payload through `bin/fm-hook-host-lib.sh`.
   That predicate reads the delivered payload's own `cursor_version`, never the environment.
   Cursor exports `CURSOR_INVOKED_AS`, `CURSOR_PROJECT_DIR`, and `CURSOR_VERSION` into every child process, so an environment guard would also disable the hooks of a Claude session started by hand from a Cursor pane, which is the hazard the `GROK_SESSION_ID` exclusion below records.
-  The guarded set is the `SessionStart` entry, the two `PreToolUse` Bash entries, both `Stop` entries, and the `bin/fm-handoff-trigger.sh` entries.
+  The guarded set is the `SessionStart` entry, the `PreToolUse` Bash entries, both `Stop` entries, the `bin/fm-handoff-trigger.sh` entries, and the `bin/fm-pstack-verify-hook.sh` entries.
   Cursor 2026.08.11-e8db854 does not fire the Claude-shaped `Stop` entry at all, but it is guarded anyway because Cursor has no `asyncRewake`.
   If a later build did fire it, `bin/fm-claude-stop-autoarm.sh` would run synchronously inside Cursor's stop step and hold that turn open for its declared multi-hour timeout, exactly the wedge grok 1.0.0 produced.
 - Grok registers a `Stop` hook in `.grok/hooks/fm-primary-turnend-guard.json` and delegates capability selection to `bin/fm-turnend-guard-grok.sh`.
@@ -299,6 +303,7 @@ The registrations in detail:
   Do NOT widen this guard to `GROK_SESSION_ID`: Grok injects that into every child process, so it can survive into a Claude session that Grok launched and would silently disable Claude's own continuity.
   The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, and the two `PreToolUse` Bash entries.
   The `bin/fm-handoff-trigger.sh` entries carry the same guard because that trigger is Claude-only.
+  The `bin/fm-pstack-verify-hook.sh` entries carry it too, because Cursor has its own registration in `.cursor/hooks.json`.
   `bin/fm-subagent-pretool-check.sh` is the one deliberate unguarded exception because no Grok registration covers the subagent-spawn event, recorded in [`subagent-guard.md`](subagent-guard.md) "Known residual gap".
   `tests/fm-turnend-guard.test.sh` pins that inventory so neither the guarded set nor the exception can change silently.
 - pi-code, Pi's Claude-hook compatibility extension, also loads `<project>/.claude/settings.json` and has no `asyncRewake`, so it awaits every Stop hook it delivers.
@@ -524,6 +529,7 @@ While supervision is needed it PARKS:
 3. It returns an actionable close as one `watcher`-kind follow-up.
 
 It spends no model tokens while parked.
+On a home that runs the supervision host the park runs `bin/fm-supervision-host.sh park` in the arm's place, including while the away-posture record is live, and a handback beside an away record says it is not the captain's return.
 This is the same between-turns shape as Claude's Stop auto-arm, so `fm_supervision_model` classifies Cursor as `autoarm` and the mid-turn pull guard accepts a fresh beacon without a live watcher.
 
 #### Cursor park under a Pi host
@@ -585,6 +591,7 @@ Like Cursor, Antigravity does not expose an asynchronous background rewake chann
 It polls the child every `FM_AGY_PARK_POLL` seconds (default 2) and waits on it under the 28800s hook timeout, so an idle watcher cycle forces no model turn and consumes no `executionNum`; the optional `FM_AGY_PARK_TIMEOUT` bounds the total wait across every attempt:
 
 - An actionable close (a watcher reason line, or a `supervision-host:` line in host mode) resets `state/.turnend-blocks` and returns `{"decision":"continue","reason":"<wake>"}` on stdout, immediately starting a follow-up supervision turn.
+  A host handback beside an away record (not quiet mode's) says it is not the captain's return, as on Claude and Cursor.
 - When an `FM_AGY_PARK_TIMEOUT` bound is set and passes with the child still running, the hook stops the child and returns `{"decision":"continue","reason":"[supervision-park] ..."}` so the next turn boundary parks again.
 - A non-actionable close beside a verified healthy watcher, a host that stood down, or a fleet that no longer needs supervision resets `state/.turnend-blocks`, emits `{}`, and lets the turn end cleanly.
 - A park that cannot establish a cycle after two bounded attempts delegates to `bin/fm-turnend-guard.sh --agy` for a bounded 3-block repair nag before failing open.
@@ -667,9 +674,12 @@ It also covers true-reason banner wording and reason-keyed episode dedup survivi
 - The nested loop bounds.
 - Supersession.
 - Away-mode and lock-ownership inertness.
+- Supervision-host parking beside a manual or automatic away entry, which writes no `state/.afk`, and stand-down beside the away daemon's flag in away and quiet mode.
 - Pi-host stand-down without Cursor identity and continued parking when `PI_CODING_AGENT` leaks alongside `CURSOR_AGENT` or `CURSOR_INVOKED_AS`.
 - Child-worktree exclusion.
 - That the adapter never exits 2.
+
+`tests/fm-agy-primary.test.sh` covers the Antigravity park over real processes with no harness installed, including supervision-host parking beside a manual or automatic away entry with its away-posture note and stand-down beside the away daemon's flag in away and quiet mode.
 
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.

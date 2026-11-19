@@ -11,6 +11,7 @@ metadata:
 The digest itself makes no external-network call and never waits for one.
 Every network check a session start owes - GitHub auth, home code drift, secondmate recovery, secondmate convergence, pending handoff delivery, and project clone refresh - runs off the digest's blocking path in a bounded worker owned by `bin/fm-startup-network.sh` and is reported in the digest's own `NETWORK CHECKS` section.
 The locked startup inactive-outcome scan joins that worker so a slow local current-state read cannot block the digest; its findings use the ordinary durable wake queue.
+The same report includes [`bin/fm-unpushed-reconcile.sh`](../../../bin/fm-unpushed-reconcile.sh) findings; reconcile each unpublished branch with its task, ledger and PR evidence, and resume or escalate it even when an earlier blocker wake was consumed.
 
 1. **Lock** - acquires the per-home session lock first, before anything mutates shared state, then starts the deferred startup stage above.
 2. **Bootstrap** - detect-only checks (tool/version problems, the worktree-tangle check, harness override, dispatch-profile validation, backlog-backend status) always run, but routine confirmations stay silent by default.
@@ -43,3 +44,5 @@ Do not dispatch until the essential launch tools are present and GitHub authenti
 A silent bootstrap section needs no action; for any printed actionable diagnostic line, load `bootstrap-diagnostics` and follow its owner procedure.
 `BOOTSTRAP_INFO:` lines are completed no-action facts and do not require loading a skill.
 `secondmate-provisioning` owns startup secondmate sync, liveness, and inherited local-material convergence.
+
+When `config/goal-integrity` is present, reload each live task's `state/goals/<task-id>.md` before steering or spawning (`docs/configuration.md`, Goal line enforcement).

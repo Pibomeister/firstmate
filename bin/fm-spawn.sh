@@ -30,6 +30,9 @@
 #   ship or scout spawn also refuses leftover `{TASK}` / `{FIRSTMATE_SPEC}`
 #   placeholders, an empty Task, an incomplete pair of Task subsections, or a
 #   `## Captain's intent` line opening with a Captain label or address.
+#   When config/goal-integrity exists, a ship or scout brief must open with a
+#   GOAL (<owner>, verbatim): line matching the single-line ask in
+#   state/goals/<task-id>.md, unless this spawn is --relaunch.
 #   When config/herdr-lifecycle-spawn-guard exists, a brief naming
 #   bin/fm-herdr-lab.sh or a listed Herdr session/server lifecycle command must
 #   carry the Herdr isolation contract emitted by bin/fm-brief.sh --herdr-lab;
@@ -321,8 +324,8 @@
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
 #   exactly as queued as it was, unless this fresh spawn carries an explicit
 #   priority; an unreadable declaration refuses with exit 1.
-#   Lane capacity admission is deferred with bin/fm-capacity.sh's
-#   --spawn-gate support (see the note at the project-capacity gate below).
+#   Lane capacity admission runs bin/fm-capacity.sh's --spawn-gate verdict at
+#   the lane-capacity gate below, with the same exit-75 deferral.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -489,16 +492,26 @@
 #   task teardown removes only the current home's launch namespace.
 # Agent-kit lifecycle policy:
 #   Every launch (ship, scout, secondmate, raw command, and relaunch, on every
-#   backend) exports AK_LIFECYCLE_POLICY=unattended and
-#   AK_LIFECYCLE_SUPERVISOR=firstmate, so agent-kit lifecycle skills run under
-#   agent-kit's unattended policy with Firstmate named as the supervisor.
+#   backend) exports AK_LIFECYCLE_POLICY=unattended,
+#   AK_LIFECYCLE_SUPERVISOR=firstmate and AK_LIFECYCLE_SUPERVISOR_DECLARATION,
+#   so agent-kit lifecycle skills run under agent-kit's unattended policy with
+#   Firstmate named and declared as the run supervisor.
+#   The declaration is the absolute real path of the byte-stable JSON file
+#   bin/fm-ak-supervisor-lib.sh provisions outside every git repository on this
+#   host before each launch (that library owns its shape, location and
+#   stability). When it cannot be provisioned, the spawn warns, still launches,
+#   and sets the declaration empty in the worker environment, a T3 Code
+#   launch, a Codex tool shell and Claude's per-launch --settings env, so
+#   agent-kit refuses the worker's unattended runs instead of reading a stale
+#   file.
 #   Agent-kit records the supervisor only from the release that includes its
 #   companion unattended opt-in change; an older agent-kit, for example 0.1.96,
-#   ignores AK_LIFECYCLE_SUPERVISOR, so only AK_LIFECYCLE_POLICY takes effect.
+#   ignores AK_LIFECYCLE_SUPERVISOR and its declaration, so only
+#   AK_LIFECYCLE_POLICY takes effect.
 #   The values are fixed: an inherited value in this spawn's environment or in
 #   the destination pane, empty or different, never replaces them. T3 Code
 #   carries the same values in its per-directory harness config, and
-#   bin/fm-codex-launch.sh forces both into Codex tool shells. A raw command
+#   bin/fm-codex-launch.sh forces all three into Codex tool shells. A raw command
 #   is routed through that launcher, arguments kept, only when the whole
 #   string is one safe form: plain NAME=value words with no quote, backslash,
 #   $ or shell operator, then codex or a literal /path/to/codex, then
@@ -510,10 +523,11 @@
 #   launch whose later words mention codex (CODEX_HOME=/srv/codex codex ...,
 #   or codex exec with codex in its prompt). Use --harness codex or a simpler
 #   command instead. A shared server, daemon, app or session that a backend
-#   starts for a launch never receives the pair (bin/fm-env-scrub.sh).
+#   starts for a launch never receives the lifecycle variables
+#   (bin/fm-env-scrub.sh).
 # Launch environment (config/launch-env-allowlist):
 #   Absent keeps ambient inheritance but unsets inherited home- and task-scoped
-#   FM_* values and the agent-kit lifecycle pair (bin/fm-env-scrub.sh) in the
+#   FM_* values and the agent-kit lifecycle variables (bin/fm-env-scrub.sh) in the
 #   pane shell before re-establishing this launch's own values. A present
 #   readable regular file opts every
 #   supported command-line launch (ship, scout, secondmate, raw command, and
@@ -663,7 +677,8 @@
 #     __CODEXLAUNCH__ quoted path to bin/fm-codex-launch.sh, the codex
 #                  launcher that adds the shell-environment overrides for
 #                  the endpoint, inbox and agent-kit lifecycle variables
-#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR) its own
+#                  (AK_LIFECYCLE_POLICY, AK_LIFECYCLE_SUPERVISOR,
+#                  AK_LIFECYCLE_SUPERVISOR_DECLARATION) its own
 #                  environment carries before exec'ing codex with the
 #                  remaining args; the FM_CODEX_BIN= assignment before it
 #                  pins the executable, empty on every Codex template and
@@ -1101,6 +1116,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
+# shellcheck source=bin/fm-ak-supervisor-lib.sh
+. "$SCRIPT_DIR/fm-ak-supervisor-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -2447,7 +2464,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project is at capacity, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - a capacity gate (its project, or this home's lanes or host load) did not admit it; its deferred: line above names the cause, and it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -4947,10 +4964,31 @@ if [ -n "$SPAWN_PROJECT_CAPACITY" ] && [ "$PRIORITY_SET" -eq 0 ]; then
     exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
-# Lane capacity admission is deferred to the part of the upstream sync that
-# brings bin/fm-capacity.sh's --spawn-gate support; at this revision that
-# script has no such flag, so a caller here could never admit or refuse and
-# would only pretend to enforce. Spawn behaviour is unchanged until then.
+# Lane capacity and host-load admission (bin/fm-capacity.sh --spawn-gate owns
+# the verdict: the config/lane-capacity lane cap, counting only lanes that hold
+# a place, plus one 1-minute load level from bin/fm-load-relief.sh levels -
+# its ceiling, or its resume level while a worker is paused for load; the other
+# capacity holds stay advisory). The lane cap is best-effort across concurrent
+# spawns for different projects: each reads the lanes before either records
+# its own, so two at once can pass one place over the cap.
+# A fresh ship or scout that verdict does not admit is deferred here, before
+# any brief render, endpoint, worktree, record, or backlog move exists, so the
+# task stays queued; exit 75 is that deferral and exit 1 its unreadable-config
+# refusal. With config/lane-capacity absent the verdict admits and nothing
+# changes. A relaunch and a secondmate spawn are never gated here.
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+  lane_admit_rc=0
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" || lane_admit_rc=$?
+  case "$lane_admit_rc" in
+    0) ;;
+    75) exit 75 ;;
+    *)
+      echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known" >&2
+      exit 1
+      ;;
+  esac
+fi
 # A secondmate home's lane total is the mate plus every child, nested
 # secondmates included. Refuse a new child before any endpoint exists when that
 # total is already at a stop.
@@ -5048,6 +5086,41 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
     ' -- "$BRIEF")
     if [ -n "$HERDR_LIFECYCLE_COMMAND" ] && ! grep -Fq '# Herdr isolation - HARD SAFETY CONTRACT' "$BRIEF"; then
       echo "error: $BRIEF names the Herdr lifecycle command \`$HERDR_LIFECYCLE_COMMAND\` but lacks the Herdr isolation contract; regenerate it with bin/fm-brief.sh --herdr-lab" >&2
+      exit 1
+    fi
+  fi
+  # shellcheck source=bin/fm-goal-integrity-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-goal-integrity-lib.sh"
+  if fm_goal_integrity_enabled "$CONFIG"; then
+    _gi=0
+  else
+    _gi=$?
+    [ "$_gi" -eq 2 ] && { echo "error: cannot inspect $CONFIG/goal-integrity" >&2; exit 1; }
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$_gi" -eq 0 ]; then
+    GOAL_PREFIX=$(fm_goal_integrity_prefix "$CONFIG") || exit 1
+    GOAL_FIRST_LINE=$(sed -n '1p' "$BRIEF")
+    case "$GOAL_FIRST_LINE" in
+      "$GOAL_PREFIX"*) GOAL_TEXT=${GOAL_FIRST_LINE#"$GOAL_PREFIX"} ;;
+      *)
+        echo "error: $BRIEF must open with a '${GOAL_PREFIX}...' line from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+        exit 1
+        ;;
+    esac
+    if [ -z "$(printf '%s' "$GOAL_TEXT" | tr -d '[:space:]')" ] || [ "$GOAL_TEXT" = '{GOAL}' ]; then
+      echo "error: $BRIEF must open with a non-empty verbatim goal from $STATE/goals/$ID.md (config/goal-integrity); refusing to send" >&2
+      exit 1
+    fi
+    if [ ! -f "$STATE/goals/$ID.md" ]; then
+      echo "error: $STATE/goals/$ID.md is missing; refusing to send" >&2
+      exit 1
+    fi
+    if [ -n "$(awk 'NR > 1 && NF { found=1 } END { if (found) print 1 }' "$STATE/goals/$ID.md")" ]; then
+      echo "error: $STATE/goals/$ID.md must be a single-line verbatim ask under goal-line enforcement; refusing to send" >&2
+      exit 1
+    fi
+    if [ "$(awk 'NF { print; exit }' "$STATE/goals/$ID.md")" != "$GOAL_TEXT" ]; then
+      echo "error: $BRIEF GOAL line does not match $STATE/goals/$ID.md verbatim; refusing to send" >&2
       exit 1
     fi
   fi
@@ -7602,6 +7675,17 @@ case "$OPENCODE_VERSION" in
 *) OPENCODE_MAJOR=${OPENCODE_VERSION%%.*} ;;
 esac
 
+# Provision the agent-kit supervisor declaration once, before any launch wiring
+# names it, so the Claude --settings env, the launch exports and the T3 Code env
+# block all carry the same value (docs/configuration.md "Agent-kit lifecycle
+# policy"). Claude applies a settings env value over the process environment,
+# so its per-launch settings pin the declaration too, empty when it could not
+# be provisioned, and no saved Claude env value can restore a stale path.
+if ! AK_SUPERVISOR_DECLARATION=$(fm_ak_supervisor_declaration_ensure); then
+  AK_SUPERVISOR_DECLARATION=
+  echo "warning: launching $ID without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs" >&2
+fi
+CLAUDE_AK_ENV_JSON="\"env\":{\"AK_LIFECYCLE_SUPERVISOR_DECLARATION\":\"$(json_escape "$AK_SUPERVISOR_DECLARATION")\"}"
 # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
 # adapter with a verified semantic source, including a --secondmate launch.
 # The parent watcher reads this home's record; skipping the arm left a
@@ -7734,6 +7818,7 @@ BUSY_GEN=
       if [ "$KEEP_AI_TRAILERS" != 1 ]; then
         session_keys='"feedbackDrafts":"off","attribution":{"commit":"","pr":"","sessionUrl":false},'
       fi
+      session_keys="$session_keys$CLAUDE_AK_ENV_JSON,"
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
       mkdir -p "$WT/.claude"
@@ -8871,8 +8956,8 @@ case "$LAUNCH" in
   if [ "$KIND" = secondmate ]; then
     LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$(shell_quote "$STATE_REAL/$ID.claude-settings.json")}
   else
-    claude_settings="'{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__}'"
-    LAUNCH=${LAUNCH//__CLAUDESETTINGS__/$claude_settings}
+    claude_settings=$(shell_quote "{\"feedbackDrafts\":\"off\"__CLAUDEATTRIBUTION__,$CLAUDE_AK_ENV_JSON}")
+    LAUNCH=${LAUNCH//__CLAUDESETTINGS__/"$claude_settings"}
   fi
   ;;
 esac
@@ -9184,12 +9269,17 @@ $LAUNCH
 if [ "$LAVISH_AXI_HOST_CONFIG_PRESENT" = 1 ]; then
   LAUNCH="export LAVISH_AXI_HOST=$(shell_quote "$LAVISH_AXI_HOST"); $LAUNCH"
 fi
-# Every launch carries the agent-kit unattended lifecycle opt-in, naming
-# Firstmate as the supervisor in place of a human (docs/configuration.md
-# "Agent-kit lifecycle policy"). The values are fixed literals: an inherited
-# value in this spawn's environment or the destination pane never replaces
-# them, so a secondmate's own spawns carry the same pair. Export statements
-# survive a compound raw launch and the launch-env-allowlist `env -i` wrapper.
+# Every launch carries the agent-kit unattended lifecycle opt-in, naming and
+# declaring Firstmate as the supervisor in place of a human
+# (docs/configuration.md "Agent-kit lifecycle policy"). The values are fixed:
+# an inherited value in this spawn's environment or the destination pane never
+# replaces them, so a secondmate's own spawns carry the same values. Export
+# statements survive a compound raw launch and the launch-env-allowlist
+# `env -i` wrapper. A declaration that cannot be provisioned is exported empty
+# rather than inherited or unset, so agent-kit refuses unattended runs instead
+# of reading a stale file, and a harness dotenv loader that fills only missing
+# names sees it as present and leaves it empty.
+LAUNCH="export AK_LIFECYCLE_SUPERVISOR_DECLARATION=$(shell_quote "$AK_SUPERVISOR_DECLARATION"); $LAUNCH"
 LAUNCH="export AK_LIFECYCLE_POLICY=unattended; export AK_LIFECYCLE_SUPERVISOR=firstmate; $LAUNCH"
 # Every launch also exports the absolute path of this task's steering inbox, so
 # the constant doorbell line (bin/fm-task-inbox-lib.sh) can name
@@ -9246,6 +9336,10 @@ if [ "$BACKEND" = t3code ]; then
   # keeps by unsetting it when the record fails.
   T3CODE_ENV=("GOTMPDIR=$TASK_TMP/gotmp" COMPACT_ADVISER_DISABLE=1 "FM_TASK_INBOX=$STATE_REAL/$ID.inbox"
     AK_LIFECYCLE_POLICY=unattended AK_LIFECYCLE_SUPERVISOR=firstmate)
+  # Always set, empty when provisioning failed: T3 never runs the LAUNCH
+  # prefix that unsets it, so an omitted key would let a stale value from the
+  # provider environment or preserved settings reach the worker.
+  T3CODE_ENV+=("AK_LIFECYCLE_SUPERVISOR_DECLARATION=$AK_SUPERVISOR_DECLARATION")
   if [ "$GIT_HOOKS_INSTALLED" = 1 ]; then
     T3CODE_ENV+=(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath "GIT_CONFIG_VALUE_0=$GIT_HOOKS_DIR")
   fi
@@ -9459,6 +9553,12 @@ else
     # under errexit on sourcing a file spawn already reclaimed even inside ||, so
     # keep an errexit pane shell open in both cases.
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
+  fi
+  if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
+    fm_backend_tmux_prepare_relaunch "$T" || {
+      echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+      exit 1
+    }
   fi
   if ! spawn_send_literal "$T" "$LAUNCH_SOURCE_TEXT"; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail

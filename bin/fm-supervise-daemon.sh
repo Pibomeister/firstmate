@@ -116,7 +116,7 @@
 #                                   captain-relevant escalation for matching
 #                                   kinds.
 #          FM_STALE_ESCALATE_SECS   idle seconds before a stale pane escalates
-#                                   as a possible wedge (default 240)
+#                                   as a possible wedge (default 300)
 #          FM_PAUSE_RESURFACE_SECS  seconds a declared wait stays declared,
 #                                   idle or busy, before it re-surfaces as a
 #                                   recheck (default 14400, four hours); an
@@ -174,6 +174,9 @@
 #                                   (default 20); a pane server that does not
 #                                   answer fails startup, and in the loop the
 #                                   tick goes on to its watcher check
+#          Names each wake acknowledgement it makes, as its generation and
+#          through value, in state/.supervise-daemon.acks, so the watchdog does
+#          not read the daemon's ack rows as the session's activity.
 #          Logs each wake to state/.supervise-daemon.log (size-capped). Single
 #          instance via portable lock on state/.supervise-daemon.lock. Trapped
 #          SIGTERM/SIGINT shut down once the step in progress returns (bounded
@@ -251,7 +254,7 @@ fi
 # thread status table as the busy verdict.
 FM_SUPERVISOR_SUPPORTED_BACKENDS="tmux herdr rex t3code orca"
 INJECT_SKIP_DEFAULT="heartbeat"
-STALE_ESCALATE_SECS_DEFAULT=240
+STALE_ESCALATE_SECS_DEFAULT=300
 ESCALATE_BATCH_SECS_DEFAULT=90
 HEARTBEAT_SCAN_SECS_DEFAULT=300
 HOUSEKEEPING_TICK_DEFAULT=15
@@ -472,7 +475,7 @@ classify_signal() {  # <reason-after-colon> <state>
 # first sight of a non-terminal stale it returns "self" and the caller records a
 # timestamp marker; persistence is escalated by housekeeping's recheck, not here.
 classify_stale() {  # <window> <state> [<span-record> <span-status>]
-  local win=$1 state=$2 record=${3-} rc=${4-} task last declared event rest
+  local win=$1 state=$2 record=${3-} rc=${4-} task last declared event rest gone
   task=$(window_to_task "$win" "$state")
   if [ -z "$rc" ]; then
     reconcile_overdue_pause "$state" "$task" || true
@@ -499,7 +502,17 @@ classify_stale() {  # <window> <state> [<span-record> <span-status>]
     # EXPECTED, so this is not a wedge. The caller records a pause marker (long
     # re-surface cadence in housekeeping) rather than a wedge stale marker. Cheap:
     # a status-file read, no fm-crew-state.sh call, mirroring the
-    # daemon's existing status-log classification.
+    # daemon's existing status-log classification. The one exception is a
+    # plain `paused:` line whose agent the backend proves gone
+    # (paused_wait_agent_gone): that worker is dead, not waiting.
+    if gone=$(paused_wait_agent_gone "$win" "$state" "$declared"); then
+      if ! paused_gone_reported "$win" "$state" "$declared"; then
+        printf 'escalate|%s' "$(paused_gone_reason "$win" "$gone" "$declared")"
+        return
+      fi
+      printf 'pause|paused worker gone (agent %s), already reported; rechecked on a long cadence: %s' "$gone" "$declared"
+      return
+    fi
     printf 'pause|paused (awaiting external), rechecked on a long cadence: %s' "$declared"
     return
   fi
@@ -667,7 +680,7 @@ clear_pause_tracking() {  # <window> <state>
   # the whole horizon.
   rm -f "$state/.subsuper-paused-$key" "$state/.subsuper-pause-until-due-$key" "$state/.subsuper-stale-$key" \
     "$state/.subsuper-dialog-$key" \
-    "$state/.subsuper-reported-stale-$key" \
+    "$state/.subsuper-reported-stale-$key" "$state/.subsuper-gone-paused-$key" \
     "$state/.paused-$watcher_key" "$state/.paused-rechecked-$watcher_key" "$state/.paused-resurfaced-$watcher_key" \
     "$state/.stale-$watcher_key" "$state/.stale-since-$watcher_key" "$state/.wedge-escalations-$watcher_key" \
     "$state/.wedge-permanent-$watcher_key" \
@@ -875,6 +888,75 @@ stale_window_is_busy() {  # <window> <state>
     fi
   fi
   return 1
+}
+
+# --- a dead worker behind a declared `paused:` wait (Refs #149) -------------
+# A `paused:` line says the worker waits on something external; it never proves
+# a worker is still there to resume when the wait clears. The watcher already
+# reads endpoint liveness before it trusts such a line (fm-watch.sh
+# wedge_wait_evidence and pause_state_class); these helpers give the daemon's
+# own pause routes the same check, so a worker that died or lost its endpoint
+# behind a `paused:` line is surfaced as a dead worker instead of being
+# rechecked as a healthy wait forever.
+# Cost: one recovery-grade backend probe (fm_backend_agent_state), taken only
+# where a plain `paused:` candidate is being classified - a stale wake or the
+# once-per-window pause recheck - never on every housekeeping tick. The
+# backlog read runs only after the probe proves the agent gone.
+# Only `dead` and `missing` count, the verdicts that license recovery; alive,
+# ambiguous, unreadable, and unverified keep the declared wait. Exempt, because
+# the check cannot or need not judge them: a task with no recorded endpoint, a
+# secondmate (its liveness is secondmate-liveness's job), a remote task (a local
+# probe cannot see its endpoint), a verified captain-held transfer, and a task
+# whose backlog item is an open captain hold (bin/fm-captain-hold.sh `open`
+# exit 0) - no live agent is needed while the captain decides, so that gone
+# agent returns 2 and its pause recheck stays quiet as well. A hold the backlog
+# cannot confirm surfaces the worker, the fail-safe direction.
+# Dedupe: state/.subsuper-gone-paused-<key> records the declared line already
+# reported, so repeat stale wakes for one dead pane do not each escalate; the
+# pause recheck re-surfaces it once per PAUSE_RESURFACE_SECS window as before.
+PAUSED_GONE_PREFIX='paused worker gone: '
+
+paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing; 1 not gone, 2 gone but held
+  local win=$1 state=$2 declared=$3 task meta verdict
+  status_is_paused "$declared" || return 1
+  task=$(window_to_task "$win" "$state")
+  [ -n "$task" ] || return 1
+  meta="$state/$task.meta"
+  [ -f "$meta" ] || return 1
+  [ -n "$(fm_backend_target_of_meta "$meta" 2>/dev/null)" ] || return 1
+  [ "$(fm_meta_get "$meta" kind 2>/dev/null || true)" != secondmate ] || return 1
+  [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null || true)" ] || return 1
+  verdict=$(fm_backend_agent_state "$(fm_backend_of_meta "$meta")" "$win" 2>/dev/null) || return 1
+  case "$verdict" in
+    dead|missing) ;;
+    *) rm -f "$state/.subsuper-gone-paused-$(_stale_key "$task")"; return 1 ;;
+  esac
+  FM_HOME="$FM_HOME" "$FM_DAEMON_DIR/fm-captain-hold.sh" open "$task" >/dev/null 2>&1 && return 2
+  printf '%s' "$verdict"
+}
+
+paused_gone_reason() {  # <window> <dead|missing> <declared-line>
+  local detail
+  case "$2" in
+    dead) detail='the endpoint is still there with no agent running in it' ;;
+    *) detail='the recorded endpoint is gone' ;;
+  esac
+  printf '%s%s (agent %s - %s, so the declared wait cannot clear on its own; recover the worker, and check for unlanded work before any cleanup): %s' \
+    "$PAUSED_GONE_PREFIX" "$1" "$2" "$detail" "$3"
+}
+
+paused_gone_reported() {  # <window> <state> <declared-line>
+  [ "$(cat "$2/.subsuper-gone-paused-$(_stale_key "$(window_to_task "$1" "$2")")" 2>/dev/null || true)" = "$3" ]
+}
+
+paused_gone_mark() {  # <window> <state> <declared-line>
+  printf '%s' "$3" > "$2/.subsuper-gone-paused-$(_stale_key "$(window_to_task "$1" "$2")")"
+}
+
+# Escalate a dead worker found behind <declared-line> and record it reported.
+paused_gone_escalate() {  # <window> <state> <dead|missing> <declared-line>
+  escalate_add "$2" "$(paused_gone_reason "$1" "$3" "$4")" || return 1
+  paused_gone_mark "$1" "$2" "$4"
 }
 
 escalate_add() {  # <state> <distilled-item>
@@ -1208,7 +1290,7 @@ overdue_delivered_key() {  # <state> <task>
 }
 
 housekeeping() {  # <state>
-  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record
+  local state=$1 now due f key task win marker age last max_defer oldest pause_secs marker_epoch until bounded_until pause_reason dialog_name persisted append_rc size seen_identity overdue_marker overdue_task pause_identity pause_size record gone gone_rc
   now=$(_now)
   for overdue_marker in "$state"/.paused-overdue-*; do
     [ -f "$overdue_marker" ] || continue
@@ -1396,6 +1478,24 @@ housekeeping() {  # <state>
     # on busy: migrate_watcher_pause_markers recreates it with a fresh timestamp on
     # the very next tick while the declaration still stands, so the window would
     # restart forever and the wait would never mature into its one recheck.
+    # A plain `paused:` wait whose agent is proven gone surfaces as a dead worker
+    # instead: without this, a gone endpoint took the silent drop below and the
+    # next tick re-seeded the marker, masking the death indefinitely. It repeats
+    # once per window, like any recheck, while the worker stays gone. A gone agent
+    # under an open backlog captain hold (2) needs no recheck: the hold already
+    # names the wait, so its window restarts quietly. Both record a passed
+    # `until` as due exactly as the live recheck below does, or that passed time
+    # would re-open this branch on every tick.
+    gone=$(paused_wait_agent_gone "$win" "$state" "$last"); gone_rc=$?
+    if [ "$gone_rc" -ne 1 ]; then
+      if [ "$gone_rc" -eq 2 ] || paused_gone_escalate "$win" "$state" "$gone" "$last"; then
+        _now > "$marker"
+        if [ -n "$until" ] && [ "$now" -ge "$until" ]; then
+          printf '%s\n' "$until" > "$due"
+        fi
+      fi
+      continue
+    fi
     stale_window_is_busy "$win" "$state"
     case "$?" in
       2) rm -f "$marker" ;;
@@ -1787,6 +1887,13 @@ handle_wake() {  # <reason> <state>
         # A terminal-stale escalate must not leave a persistence marker behind, or
         # housekeeping re-escalates the same pane as a false wedge later.
         [ "$kind" = "stale" ] && stale_marker_remove "$arg" "$state"
+        if [ "$kind" = stale ]; then
+          case "$distilled" in
+            "$PAUSED_GONE_PREFIX"*)
+              paused_gone_mark "$arg" "$state" \
+                "$(status_declared_wait_line "$state/$(window_to_task "$arg" "$state").status")" ;;
+          esac
+        fi
         mark_escalated_seen "$state" "$capture" || classification_failed=1
         if [ "${FM_ESCALATE_BATCH_SECS:-$ESCALATE_BATCH_SECS_DEFAULT}" -le 0 ] \
            || is_captain_inbox_check "$reason"; then
@@ -1884,8 +1991,53 @@ handle_durable_wakes() {  # <watcher-reason> <state>
     log "wake drain omitted its generation-bound acknowledgement; retaining durable wakes"
     return 1
   fi
-  "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
-    --recovery-generation "$ack_generation"
+  # The watchdog reads wake-ledger ack rows as the session's own activity, so
+  # the daemon names its own acknowledgement first and takes the name back if
+  # the acknowledgement fails. An acknowledgement it cannot name would read as
+  # the session's own activity, so it is not made.
+  if ! note_daemon_ack "$state" "$ack_generation" "$ack_through"; then
+    log "could not record the daemon's acknowledgement; retaining durable wakes"
+    return 1
+  fi
+  if ! "$FM_DAEMON_DIR/fm-wake-drain.sh" --ack-through "$ack_through" \
+    --recovery-generation "$ack_generation"; then
+    # The drain can commit its ack row and fail afterwards, in claim cleanup;
+    # that row is still the daemon's, so its name stays.
+    daemon_ack_committed "$state" "$ack_generation" "$ack_through" ||
+      unnote_daemon_ack "$state" "$ack_generation" "$ack_through"
+    return 1
+  fi
+}
+
+# daemon_ack_committed <state> <generation> <through>: the wake ledger holds
+# an ack row for exactly that generation and through value.
+daemon_ack_committed() {
+  [ -f "$1/wake-ledger.tsv" ] || return 1
+  tail -n 2000 "$1/wake-ledger.tsv" 2>/dev/null |
+    LC_ALL=C awk -F'\t' -v g="$2" -v t="$3" '$2 == "ack" && $3 == g && $4 == t { f = 1 } END { exit !f }'
+}
+
+# note_daemon_ack <state> <generation> <through>: records one acknowledgement
+# this daemon makes in state/.supervise-daemon.acks, keeping the newest 2000,
+# as many as the wake-ledger rows the watchdog reads, so every daemon ack row
+# it can see is still named; fails when the record cannot be appended.
+note_daemon_ack() {
+  local f=$1/.supervise-daemon.acks tmp
+  printf '%s\t%s\n' "$2" "$3" >> "$f" 2>/dev/null || return 1
+  [ "$(wc -l < "$f" 2>/dev/null | tr -d ' ')" -gt 4000 ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if tail -n 2000 "$f" > "$tmp" 2>/dev/null; then mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"; else rm -f "$tmp"; fi
+}
+
+unnote_daemon_ack() {  # <state> <generation> <through>
+  local f=$1/.supervise-daemon.acks tmp
+  [ -f "$f" ] || return 0
+  tmp=$(mktemp "$1/.supervise-daemon.acks.XXXXXX" 2>/dev/null) || return 0
+  if awk -F'\t' -v g="$2" -v t="$3" '!($1 == g && $2 == t)' "$f" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
 }
 
 # --- log --------------------------------------------------------------------

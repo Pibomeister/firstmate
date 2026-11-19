@@ -70,14 +70,62 @@ SH
   chmod +x "$FAKEBIN/tmux"
 }
 
+# Every long-lived fixture process ends its argv with this marked duration, so
+# this suite can find all of its own fixtures, including ones whose pid no case
+# recorded, while another suite's fixtures carry a different marker.
+WD_FIXTURE_SLEEP="100000.$$"
+export WD_FIXTURE_SLEEP
+
+# reap_marked_fixtures: TERM every process whose last argument is this suite's
+# marker, compared as a string so 100000.12 never matches 100000.120. The
+# marker reaches awk through the environment, so the probe itself never
+# matches.
+reap_marked_fixtures() {
+  local pids
+  pids=$(ps -axo pid=,args= 2>/dev/null | awk '"" $NF == "" ENVIRON["WD_FIXTURE_SLEEP"] { print $1 }')
+  # shellcheck disable=SC2086 # One pid per word.
+  [ -z "$pids" ] || kill $pids 2>/dev/null || true
+}
+
 LOCK_PIDS=''
 cleanup_watchdog_tests() {
   local p
   for p in $LOCK_PIDS; do kill "$p" 2>/dev/null || true; done
   "$REAL_TMUX" -L "$SOCKET" kill-server >/dev/null 2>&1 || true
+  reap_marked_fixtures
   fm_test_cleanup
 }
 trap cleanup_watchdog_tests EXIT
+
+# A suite killed too hard to run its traps (SIGKILL, or a kill aimed at the
+# suite process alone) would strand every fixture, reparented to init and
+# still holding whatever it inherited. A detached guardian outlives the suite,
+# holds none of its output, and sweeps the same fixtures once the suite's pid
+# (checked with its start time) is gone. Job control puts it in its own
+# process group, so a kill aimed at the suite's group, such as the test queue
+# ending a dead run's stragglers, cannot end it before it sweeps.
+start_fixture_guardian() {
+  local suite=$$ start
+  start=$(ps -p "$suite" -o lstart= 2>/dev/null)
+  (
+    set -m
+    (
+      exec </dev/null >/dev/null 2>&1
+      trap '' HUP INT
+      # A zombie suite is gone: its parent may wait only after reading output
+      # a fixture still holds.
+      while kill -0 "$suite" 2>/dev/null && { [ -z "$start" ] || [ "$(ps -p "$suite" -o lstart= 2>/dev/null)" = "$start" ]; }; do
+        case $(ps -p "$suite" -o stat= 2>/dev/null) in
+          *Z*) break ;;
+        esac
+        sleep 2
+      done
+      "$REAL_TMUX" -L "$SOCKET" kill-server || true
+      reap_marked_fixtures
+    ) &
+  ) 2>/dev/null
+}
+start_fixture_guardian
 
 BASE=$(date +%s)
 CASE_N=0
@@ -140,7 +188,7 @@ SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "$sess" -x 160 -y 40 "$H/agent.sh"
   T=$("$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "$sess" -F '#{pane_id}' | head -n 1)
   # Detached, so the lock holder is reparented and reaped like a real session.
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCKPID=$(cat "$H/lockpid")
   LOCK_PIDS="$LOCK_PIDS $LOCKPID"
   printf '%s\n' "$LOCKPID" > "$H/state/.lock"
@@ -150,7 +198,7 @@ SH
   jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\nheartbeat-frozen-secs=0\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
   sleep 0.5
 }
 
@@ -282,7 +330,7 @@ test_mtime_uses_the_platform_stat_dialect() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   out=$(run_wd 0 scan 2>&1) || fail "native stat scan failed: $out"
-  assert_contains "$out" 'transcript_age=3000s' "native stat returns the transcript's age"
+  assert_contains "$out" 'activity_age=3000s (transcript)' "native stat returns the transcript's age"
   if [ "$(uname -s)" = Linux ]; then
     gnu=$(command -v stat)
   elif command -v gstat >/dev/null 2>&1; then
@@ -302,7 +350,7 @@ case "\${1:-}" in ''|-s) printf 'Linux\n' ;; *) exec "$real_uname" "\$@" ;; esac
 SH
     chmod +x "$statbin/stat" "$statbin/uname"
     out=$(PATH="$statbin:$PATH" run_wd 0 scan 2>&1) || fail "GNU stat scan failed: $out"
-    assert_contains "$out" 'transcript_age=3000s' "GNU stat returns a numeric transcript age"
+    assert_contains "$out" 'activity_age=3000s (transcript)' "GNU stat returns a numeric transcript age"
   else
     printf 'note: GNU stat unavailable; native stat checked\n'
   fi
@@ -1760,6 +1808,7 @@ test_primary_ignores_another_sessions_endpoint() {
   assert_equals 0 "$(ledger | awk -F'\t' '$6 == "nudge" && $7 != "refused"' | wc -l | tr -d ' ')" "no nudge goes out to another session's pane: $(ledger | cut -f5-8)"
   assert_grep "no recorded terminal endpoint" "$H/data/watchdog/status.md" "the unproven endpoint is reported"
   printf '%s\n' "$SID" > "$H/state/.lock-session"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
   run_wd 1100 once >/dev/null 2>&1 || fail "matching pass failed"
   run_wd 2200 once >/dev/null 2>&1 || fail "second matching pass failed"
   assert_equals 1 "$(ledger_rows frozen nudge pending)" "the matching endpoint is used again"
@@ -1789,8 +1838,9 @@ test_primary_without_lock_identity_never_trusts_heartbeat_endpoint() {
     assert_contains "$out" 'endpoint=none:none session=none' "$state: heartbeat cannot supply its own identity proof"
 
     printf '%s\n' "$SID" > "$H/state/.lock-session"
-    jq --arg sid "$SID" '.primary.session.trusted_id = $sid' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
+    jq --arg sid "$SID" '.primary.session.trusted_id = $sid | .primary.writer.session_id = $sid' "$H/state/heartbeat.json" > "$H/heartbeat.tmp"
     mv "$H/heartbeat.tmp" "$H/state/heartbeat.json"
+    fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
     # A refused nudge also occupies the 900s rate window.
     run_wd 1000 once >/dev/null 2>&1 || fail "$state: matching pass failed"
     assert_equals 1 "$(ledger_rows unread-input nudge pending)" "$state: a proven matching identity restores delivery"
@@ -1813,6 +1863,7 @@ restart-command=/bin/false'
 }
 
 test_restart_verified_pickup_and_loop_stop() {
+  local pane home
   make_home $'Captain session\n> ' "restart=on
 max-nudges=0
 pickup-secs=600
@@ -1821,9 +1872,11 @@ restart-command=$TMP_ROOT/fake-captain.sh"
 #!/usr/bin/env bash
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
-( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
+( sleep "${WD_FIXTURE_SLEEP:-100000}" > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+# Leave an idle composer on the successor pane so later passes can read it.
+printf 'Captain session\n> \n'
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
   printf 'unlanded\n' > "$H/data/unlanded-work.txt"
@@ -1845,10 +1898,18 @@ SH
   run_wd 1100 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows frozen restart "done")" "the pickup was verified with a live away daemon: $(ledger | grep restart)"
   assert_present "$H/data/unlanded-work.txt" "a restart never tears down work"
+  pane=$(captain_field target)
+  [ -n "$pane" ] || fail "pickup left no captain terminal"
+  fresh_heartbeat "$pane"
   # Two restarts inside a day is a loop: the next proven stall escalates instead.
-  printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\told\n' "$((BASE - 20000))" "$(cd -P "$H" && pwd -P)" >> "$H/state/watchdog/actions.tsv"
-  run_wd 20000 once >/dev/null 2>&1
-  run_wd 21000 once >/dev/null 2>&1
+  # A pending row needs a token and a matching done row so reconcile does not
+  # treat the injected earlier restart as an in-flight relaunch with no outcome.
+  home=$(cd -P "$H" && pwd -P)
+  printf '%s\tx1\t%s\thome\tfrozen\trestart\tpending\ttoken=ab old_pid=1\n%s\tx1\t%s\thome\tfrozen\trestart\tdone\tverified\n' \
+    "$((BASE - 20000))" "$home" "$((BASE - 19900))" "$home" >> "$H/state/watchdog/actions.tsv"
+  # The successor pane must stay still for a freeze proof; a typed nudge would reset it.
+  FM_WD_TEST_COMPOSER=unknown run_wd 20000 once >/dev/null 2>&1
+  FM_WD_TEST_COMPOSER=unknown run_wd 21000 once >/dev/null 2>&1
   assert_present "$H/state/watchdog/escalated/$(home_key)" "a restart loop escalates"
   [ "$(ledger_rows frozen restart pending)" -le 2 ] || fail "restart kept looping"
   pass "restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates"
@@ -1861,7 +1922,7 @@ write_fake_captain() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain.sh"
 }
@@ -1879,7 +1940,7 @@ write_restart_bin() {
 p="$*"
 printf '%s\n' "$$" > "$PWD/state/.lock"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/bin/$name"
 }
@@ -1892,7 +1953,7 @@ wait_pickup() {
 
 # End the lock holder, then stamp the anchor a real bin/fm-lock.sh writes for it.
 kill_holder_with_anchor() {
-  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\n' "$SID" "$LOCKPID" > "$H/state/.lock-session"
+  printf '%s\nanchor_pid=%s\nanchor_start=Sat Nov  1 02:00:00 2026\nbackend=tmux\nterminal=%s\nworktree=%s\n' "$SID" "$LOCKPID" "$T" "$H" > "$H/state/.lock-session"
   kill "$LOCKPID" 2>/dev/null
   while kill -0 "$LOCKPID" 2>/dev/null; do sleep 0.1; done
 }
@@ -1904,6 +1965,15 @@ captain_field() { sed -n "s/^$1=//p" "$H/state/watchdog/captain" 2>/dev/null | t
 fresh_heartbeat() {
   jq -n --arg t "$1" --arg s "${2:-$SID}" --argjson e "$(date +%s)" --argjson p "$(head -n 1 "$H/state/.lock")" \
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
+    > "$H/state/heartbeat.json"
+}
+
+# owner_heartbeat [backend] [target]: rewrite the home's heartbeat as this lock
+# owner at BASE, the same proof make_home writes. A heartbeat without writer
+# identity is not an address.
+owner_heartbeat() {
+  jq -n --arg b "${1:-tmux}" --arg t "${2:-$T}" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:$b,target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
 }
 
@@ -1935,7 +2005,7 @@ SH
 
 # relock_same_session: a new process takes the lock under the same session id.
 relock_same_session() {
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
 }
@@ -1952,7 +2022,7 @@ printf '%s\n' "$$" > "$PWD/state/.lock"
 printf '00000000-0000-4000-8000-0000000000aa\n' > "$PWD/state/.lock-session"
 printf '%s\n' "${TMUX_PANE:-}" > "$PWD/new-pane"
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
-exec sleep 100000
+exec sleep "${WD_FIXTURE_SLEEP:-100000}"
 SH
   chmod +x "$TMP_ROOT/fake-captain-move.sh"
   transcript 3000 "Working." "Testing." "Green."
@@ -2000,7 +2070,7 @@ SH
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
   moved=$(captain_field moved_at)
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000bb\n' > "$H/state/.lock-session"
@@ -2058,7 +2128,7 @@ SH
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   # macOS hides a platform binary's environment, so the bound process is python.
-  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
+  ( env CODEX_THREAD_ID="$SID" CODEX_SESSION_ID="$SID" python3 -c 'import time; time.sleep(100000)' "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/bound" )
   bound=$(cat "$H/bound")
   LOCK_PIDS="$LOCK_PIDS $bound"
   for _ in $(seq 1 20); do python3 "$ROOT/bin/fm-session-process.py" bound "$bound" "$SID" && break; sleep 0.1; done
@@ -2109,7 +2179,7 @@ test_captain_record_ignores_a_heartbeat_written_outside_the_owner() {
   transcript 3000 "Working." "Testing." "Green."
   run_wd 0 once >/dev/null 2>&1
   retired_pane=$T
-  ( sleep 100000 > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
+  ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$H/lockpid" )
   LOCK_PIDS="$LOCK_PIDS $(cat "$H/lockpid")"
   cat "$H/lockpid" > "$H/state/.lock"
   printf '00000000-0000-4000-8000-0000000000cc\n' > "$H/state/.lock-session"
@@ -2146,6 +2216,81 @@ restart-command=/bin/true"
   pass "boundary: a home whose restart awaits pickup gets no action until the restart closes"
 }
 
+test_no_quota_check_while_restart_awaits_pickup() {
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$H/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" \
+    "the pass that starts the restart runs no quota check: $(ledger | cut -f1,5-7)"
+  local before
+  before=$(ledger | wc -l | tr -d ' ')
+  rm -f "$H/state/.wake-queue"
+  # A worker on the auto-wait footer is a limit warning, which is only recorded.
+  mkdir -p "$H/wt"
+  worker_pane waiter ship $'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/waiter.meta"
+  sleep 0.5
+  # A quota check is due on every pass here, so only the hold keeps it away.
+  run_wd 1120 once >/dev/null 2>&1
+  assert_equals "$before" "$(ledger | awk -F'\t' '!($5 == "quota-guard" && $6 == "warning")' | wc -l | tr -d ' ')" \
+    "no quota check runs while the restart awaits pickup: $(ledger | cut -f1,5-7)"
+  assert_grep "	waiter	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the worker's limit dialog is still recorded"
+  assert_no_grep "trigger=warning" "$H/state/quota-guard/last" "the worker's limit warning runs no check while the restart awaits pickup"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a home whose restart awaits pickup gets no quota check either"
+}
+
+test_mate_warning_holds_while_its_parent_restart_awaits_pickup() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> ' "restart=on
+max-nudges=0
+pickup-secs=600
+restart-command=/bin/true
+quota-guard-every-secs=100"
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  wd_quota_snapshot "$parent/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$parent/quota.json"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 3000 "Working." "Testing." "Green."
+  owe_input 3000
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen restart pending)" "the proven stall restarts"
+  rm -f "$parent/state/.wake-queue"
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=claude\nkind=secondmate\nhome=%s\nworktree=%s\nmodel=default\n' "$mate" "$mate" > "$parent/state/ghost-mate.meta"
+  sleep 0.5
+  run_wd 1120 once >/dev/null 2>&1
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "the second mate's limit dialog is still recorded in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_no_grep "trigger=warning" "$parent/state/quota-guard/last" \
+    "a second mate's warning runs no check in a parent whose restart awaits pickup"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "boundary: a second mate's limit warning runs no check while its parent's restart awaits pickup"
+}
 test_dead_captain_restarts_despite_its_anchor() {
   make_home $'Captain session\n> ' "restart=on
 restart-command=$TMP_ROOT/fake-captain.sh"
@@ -2371,6 +2516,60 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "low context: the bounded wait ends in a lean restart and a recorded gap"
 }
 
+# A fresh-start launch that fails between the pass's observation and its
+# restart leaves the session supervising with auto-compaction as its reset.
+# The watchdog takes the launcher's own launch lock before it re-reads the
+# reset, so a launch under way, or one that just failed, stops nobody.
+test_low_context_restart_rechecks_a_failed_launch() {
+  local seam="$TMP_ROOT/ln-seam" launcher i
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+handoff-wait-secs=600
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  printf 'session=%s compact_at=100000 at=%s reset=handoff\n' "$SID" "$BASE" > "$H/state/compact-point"
+  FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a handoff cycle at low context asks for a handoff"
+
+  # A launcher holds its launch lock: the restart waits for it.
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2/state/.handoff-launch.lock" || exit 1; : > "$2/launcher-ready"; sleep 60' \
+    _ "$ROOT" "$H" &
+  launcher=$!
+  i=0
+  while [ ! -e "$H/launcher-ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$H/launcher-ready" ] || fail "the launcher fixture never took its lock"
+  FM_WD_TEST_COMPOSER=empty run_wd 700 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart while a fresh-start launch is under way: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart refused)" "a held restart is a gap, not a rate-counted restart row"
+  assert_grep "a fresh-start launch is under way" "$H/data/watchdog/status.md" "the held restart is a reported gap"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the session was stopped during a launch"
+  kill "$launcher" 2>/dev/null; wait "$launcher" 2>/dev/null || true
+  rm -rf "$H/state/.handoff-launch.lock"
+
+  # The launch fails just before the watchdog takes the lock, after the pass
+  # observed the handoff reset: the re-read under the lock sees it.
+  mkdir -p "$seam"
+  cat > "$seam/ln" <<EOF
+#!/usr/bin/env bash
+case "\${*: -1}" in
+  */.handoff-launch.lock) printf 'at=%s pid=%s nonce=none attempt=2 reason=deadline\\n' "$BASE" "$LOCKPID" > "$H/state/.handoff-launch-failed" ;;
+esac
+exec "$(command -v ln)" "\$@"
+EOF
+  chmod +x "$seam/ln"
+  [ ! -e "$H/state/.handoff-launch-failed" ] || fail "the failure record must land during the pass"
+  PATH="$seam:$PATH" FM_WD_TEST_COMPOSER=empty run_wd 750 once >/dev/null 2>&1
+  [ -e "$H/state/.handoff-launch-failed" ] || fail "the seam never recorded the failed launch"
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "no restart starts after a failed launch: $(ledger | cut -f5-8)"
+  assert_grep "left this cycle to auto-compaction" "$H/data/watchdog/status.md" "the refused restart is a reported gap"
+  [ ! -e "$H/state/.handoff-launch.lock" ] && [ ! -L "$H/state/.handoff-launch.lock" ] || fail "the watchdog left the launch lock held"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "the surviving session was stopped"
+  FM_WD_TEST_COMPOSER=empty run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart pending)" "a later pass reads auto-compaction and restarts nobody"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a later pass stopped the surviving session"
+  pass "low context: a fresh-start launch under way or just failed leaves the session running"
+}
+
 test_low_context_second_episode_asks_again() {
   make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
 restart-command=/bin/true"
@@ -2499,9 +2698,7 @@ restart-command=/bin/true'
   transcript 100 "Working."
   : > "$H/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$H/state/.watchdog-restart-request"
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"herdr",target:"pane-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat herdr pane-1
   run_wd 0 once >/dev/null 2>&1
   assert_grep "has no restart launcher" "$H/data/watchdog/status.md" "an unsupported backend is a gap"
   assert_equals 1 "$(ledger | awk -F'\t' '$5 == "unread-input" && $6 == "nudge"' | wc -l | tr -d ' ')" "an unsupported backend leaves unread input handled: $(ledger | cut -f5-8)"
@@ -2560,9 +2757,7 @@ restart-command=/bin/true'
 restart-command=/bin/true'
   transcript 5000 "Working." "Testing." "Green."
   owe_input 5000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -2723,14 +2918,15 @@ restart-command=/bin/true'
     transcript 3000 "Working." "Testing." "Green."
     age=0
     [ "$case_sid" = old ] && age=2000
-    jq -n --arg t "$T" --arg s "$([ "$case_sid" = other ] && printf 'another-session' || printf '%s' "$SID")" --argjson e "$((BASE - age))" \
-      '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+    jq -n --arg t "$T" --arg s "$([ "$case_sid" = other ] && printf 'another-session' || printf '%s' "$SID")" --argjson e "$((BASE - age))" --argjson p "$LOCKPID" \
+      '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s},context_left:{remaining:{percent:7}}}}' \
       > "$H/state/heartbeat.json"
+    fm_touch_epoch "$((BASE - age - 1))" "$H/state/.lock" "$H/state/.lock-session"
     FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
     assert_equals 0 "$(ledger_rows handoff-request nudge pending)" "$case_sid heartbeat percent starts nothing: $(ledger | cut -f5-8)"
   done
-  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},context_left:{remaining:{percent:7}}}}' \
+  jq -n --arg t "$T" --arg s "$SID" --argjson e "$BASE" --argjson p "$LOCKPID" \
+    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s},context_left:{remaining:{percent:7}}}}' \
     > "$H/state/heartbeat.json"
   FM_WD_TEST_COMPOSER=empty run_wd 0 once >/dev/null 2>&1
   assert_equals 1 "$(ledger_rows handoff-request nudge pending)" "a fresh percent for this session counts: $(ledger | cut -f5-8)"
@@ -2741,9 +2937,7 @@ test_orca_draft_probe_failure_holds_the_nudge() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -2772,9 +2966,7 @@ test_orca_draft_is_never_typed_onto() {
   make_home $'Captain session\n> '
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<SH
 #!/usr/bin/env bash
 case "\$1 \$2" in
@@ -2823,6 +3015,8 @@ test_second_mate_restart_ends_the_pass() {
   make_home $'Mate session\n> '
   mate=$H
   transcript 3000 "Working." "Testing." "Green."
+  # The mate's session took its lock before it wrote that transcript.
+  fm_touch_epoch "$((BASE - 5000))" "$mate/state/.lock" "$mate/state/.lock-session"
   : > "$mate/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$mate/state/.watchdog-restart-request"
   printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
@@ -2834,6 +3028,126 @@ test_second_mate_restart_ends_the_pass() {
   assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the second mate relaunch ran: $(ledger | cut -f5-8)"
   assert_equals 0 "$(ledger_rows decisions nudge pending)" "the same pass types nothing more: $(ledger | cut -f5-8)"
   pass "second mate: a relaunch ends the pass for its old endpoint"
+}
+
+# mate_code_root: a copy of bin/ whose fm-control.sh logs its argv and exits 0
+# without starting anything, the zero exit a second mate relaunch can give
+# while its session never takes over. Sets MATE_WD.
+MATE_WD=''
+mate_code_root() {
+  [ -z "$MATE_WD" ] || return 0
+  mkdir -p "$TMP_ROOT/code"
+  cp -R "$ROOT/bin" "$TMP_ROOT/code/bin"
+  cat > "$TMP_ROOT/code/bin/fm-control.sh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$TMP_ROOT/code/control.log"
+exit 0
+SH
+  chmod +x "$TMP_ROOT/code/bin/fm-control.sh"
+  MATE_WD=$TMP_ROOT/code/bin/fm-watchdog.sh
+}
+
+# mate_restarted: a parent home whose second mate asked for a restart, run
+# until that relaunch exits 0. Sets H (parent), MATE, and MATE_OLD (the old lock pid).
+mate_restarted() {
+  local parent
+  mate_code_root
+  : > "$TMP_ROOT/code/control.log"
+  make_home $'Captain session\n> '
+  parent=$H
+  make_home $'Mate session\n> '
+  MATE=$H
+  MATE_OLD=$LOCKPID
+  transcript 3000 "Working." "Testing." "Green."
+  printf '%s\n' "$MATE_OLD" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE - 5000))" "$MATE/state/.lock" "$MATE/state/.lock-session" "$MATE/state/.session-start-complete"
+  : > "$MATE/state/.watchdog-restart-request"
+  fm_touch_epoch "$((BASE - 10))" "$MATE/state/.watchdog-restart-request"
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$MATE" > "$parent/data/secondmates.md"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\npickup-secs=600\nrelaunch-timeout-secs=20\n' "$MATE/claude" > "$parent/config/watchdog"
+  H=$parent
+  WD=$MATE_WD run_wd 0 once >/dev/null 2>&1
+  WD=$MATE_WD run_wd 10 once >/dev/null 2>&1
+  assert_grep "ghost-mate relaunch --note-file" "$TMP_ROOT/code/control.log" "the relaunch went through the parent"
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "the relaunch is pending: $(ledger | cut -f5-8)"
+}
+
+# mate_lock <pid>: the second mate's lock names <pid>, taken at offset 20.
+mate_lock() {
+  printf '%s\n' "$1" > "$MATE/state/.lock"
+  fm_touch_epoch "$((BASE + 20))" "$MATE/state/.lock"
+}
+
+# mate_started <pid> <offset>: session start completed under <pid> at <offset>.
+mate_started() {
+  printf '%s\n' "$1" > "$MATE/state/.session-start-complete"
+  fm_touch_epoch "$((BASE + $2))" "$MATE/state/.session-start-complete"
+}
+
+live_pid() { ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
+
+test_second_mate_zero_exit_relaunch_is_not_done() {
+  local dead new
+  mate_restarted
+  WD=$MATE_WD run_wd 20 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a zero exit with the old lock is not done: $(ledger | cut -f5-8)"
+  assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the second mate waits for its pickup"
+  # The old session runs session start again under its own lock.
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the old pid is no pickup: $(ledger | cut -f5-8)"
+  ( sleep 0 & printf '%s\n' "$!" > "$TMP_ROOT/dead.pid" )
+  dead=$(cat "$TMP_ROOT/dead.pid")
+  while kill -0 "$dead" 2>/dev/null; do sleep 0.1; done
+  mate_lock "$dead"
+  mate_started "$dead" 50
+  WD=$MATE_WD run_wd 60 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a dead new lock holder is no pickup: $(ledger | cut -f5-8)"
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 70 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a new lock before session start completes is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$new" -100
+  WD=$MATE_WD run_wd 80 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start from before the restart is no pickup: $(ledger | cut -f5-8)"
+  mate_started "$MATE_OLD" 30
+  WD=$MATE_WD run_wd 610 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "no proof within pickup-secs fails the restart: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "the failed restart is never done: $(ledger | cut -f5-8)"
+  assert_grep "self-heal issue not filed for watchdog-restart-requested" "$H/data/watchdog/status.md" "the unproven pickup reaches self-heal"
+  WD=$MATE_WD run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart pending)" "restart-secs still holds the next relaunch: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(grep -c relaunch "$TMP_ROOT/code/control.log")" "one relaunch inside the restart interval"
+  pass "second mate: a zero-exit relaunch is done only after a verified pickup, and caps hold"
+}
+
+test_second_mate_restart_done_after_session_start_under_new_lock() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  mate_started "$new" 30
+  WD=$MATE_WD run_wd 40 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows restart-requested restart "done")" "a new live lock with its session start is done: $(ledger | cut -f5-8)"
+  assert_contains "$(ledger | awk -F'\t' '$6 == "restart" && $7 == "done"' | cut -f8)" "session start verified; new lock pid $new" "the done row names the new lock pid"
+  pass "second mate: a relaunch is done once its session start runs under a new live lock"
+}
+
+test_second_mate_session_start_after_the_window_is_not_done() {
+  local new
+  mate_restarted
+  new=$(live_pid)
+  LOCK_PIDS="$LOCK_PIDS $new"
+  mate_lock "$new"
+  # The restart began at offset 10, so pickup-secs=600 closes its window at 610.
+  mate_started "$new" 611
+  WD=$MATE_WD run_wd 620 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows restart-requested restart "done")" "a session start after the window is no pickup: $(ledger | cut -f5-8)"
+  assert_equals 1 "$(ledger_rows restart-requested restart failed)" "the late pickup fails the restart: $(ledger | cut -f5-8)"
+  pass "second mate: a session start after pickup-secs is not a pickup"
 }
 
 test_dialog_reserved_check_reads_only_dialog_rows() {
@@ -2971,9 +3285,7 @@ test_unknown_composer_guards_the_nudge() {
 
 test_orca_turn_probe_keeps_errors_unknown() {
   make_home $'Captain session\n> '
-  jq -n --arg s "$SID" --argjson e "$BASE" \
-    '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"orca",target:"term-1",present:true},session:{trusted_id:$s}}}' \
-    > "$H/state/heartbeat.json"
+  owner_heartbeat orca term-1
   cat > "$FAKEBIN/orca" <<'SH'
 #!/usr/bin/env bash
 case "$1 $2" in
@@ -3005,6 +3317,107 @@ test_no_activity_source_is_not_reported_ok() {
   run_wd 10 once >/dev/null 2>&1
   assert_grep ": ok" "$H/data/watchdog/status.md" "a subject with a transcript reads ok"
   pass "a subject with no activity source reads as a gap, not ok"
+}
+
+# act_rows <owner-home>: the supervisor-activity record.
+act_rows() { cat "$1/state/night-score/supervisor-activity.tsv" 2>/dev/null; }
+
+test_second_mate_activity_sources() {
+  local parent mate m tag out led
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  MATE_LOCKPID=$LOCKPID MATE_SID=$SID
+  m=$(canon "$mate")
+  tag=$(basename "$m")
+  printf -- '- act-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/act-mate.meta"
+  rm -f "$mate/state/.lock" "$mate/state/.lock-session"
+  H=$parent
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=unknowns' "a mate with no record has no activity source: $out"
+  run_wd 0 once >/dev/null 2>&1
+  assert_grep "$tag: no activity source" "$parent/data/watchdog/status.md" "the sourceless mate is reported"
+  assert_equals "$BASE"$'\t'"$m"$'\tnone\t-' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h')" "the record names a mate with no source"
+
+  # A mate whose session took its lock and has not acknowledged a wake yet: the
+  # lock is the source, so a harness with no other record is still measured.
+  printf '%s\n' "$MATE_LOCKPID" > "$mate/state/.lock"
+  printf '%s\n' "$MATE_SID" > "$mate/state/.lock-session"
+  fm_touch_epoch "$((BASE - 900))" "$mate/state/.lock" "$mate/state/.lock-session"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=900s (session-lock)' "a freshly started mate reads its session lock: $out"
+
+  # A Codex mate: its own drain acknowledgement is the source. Other removal
+  # rows, a malformed stamp, and a stamp later than the clock do not count.
+  led=$mate/state/wake-ledger.tsv
+  {
+    printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 400))"
+    printf '%s\tack\tg1\t5\t5\t["b"]\n' "$((BASE - 120))"
+    printf '%s\tconsumed\tg1\t5\t5\t["b"]\n' "$((BASE - 10))"
+    printf '%s\tretired\t-\t-\t6\t["c"]\n' "$((BASE - 5))"
+    printf '0%s\tack\tg1\t7\t7\t["d"]\n' "$((BASE - 2))"
+    printf '%s\tack\tg1\t8\t8\t["e"]\n' "$((BASE + 500))"
+  } > "$led"
+  assert_equals "$((BASE - 120))" "$(lib fm_wd_last_wake_ack "$led" "$BASE")" "the newest ack row not later than the clock"
+  lib fm_wd_last_wake_ack "$mate/state/absent.tsv" "$BASE" >/dev/null && fail "an absent ledger has no ack"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a Codex mate reads its last acknowledgement: $out"
+  # An acknowledgement the away daemon made is not the session's own activity.
+  printf 'g1\t5\n' > "$mate/state/.supervise-daemon.acks"
+  assert_equals "$((BASE - 400))" "$(lib fm_wd_last_wake_ack "$led" "$BASE" "$mate/state/.supervise-daemon.acks")" "the daemon's ack row is skipped"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=400s (wake-ack)' "the daemon's acknowledgement does not count for the mate: $out"
+  rm -f "$mate/state/.supervise-daemon.acks"
+
+  # A Claude mate: its parent-side busy record, only from a trusted source of
+  # the current incarnation.
+  printf 'harness=claude\n' > "$parent/state/act-mate.meta"
+  printf 'g7\n' > "$parent/state/act-mate.busy-gen"
+  printf 'v1 gen=g7 seq=3 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 60))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=60s (busy-state)' "a Claude mate reads its busy record: $out"
+  printf 'v1 gen=g7 seq=4 state=idle source=pi-ext event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a source the harness does not trust is no activity: $out"
+  printf 'v1 gen=g6 seq=5 state=idle source=claude-hook event=stop ts=%s\n' "$((BASE - 30))" > "$parent/state/act-mate.busy-state"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=120s (wake-ack)' "a stale incarnation is no activity: $out"
+
+  : > "$parent/state/act-mate.turn-ended"
+  fm_touch_epoch "$((BASE - 20))" "$parent/state/act-mate.turn-ended"
+  out=$(run_wd 0 scan --home "$m" 2>&1)
+  assert_contains "$out" 'activity_age=20s (turn-ended)' "the newest source wins: $out"
+  run_wd 10 once >/dev/null 2>&1
+  assert_grep "$tag: ok, last turn 0m ago via turn-ended" "$parent/data/watchdog/status.md" "a mate with a source reads ok"
+  assert_no_grep "$tag: NO-ACTIVITY-SOURCE" "$parent/data/watchdog/status.md" "the mate is no longer sourceless"
+  assert_equals "$((BASE + 10))"$'\t'"$m"$'\tturn-ended\t30' "$(act_rows "$parent" | awk -F'\t' -v h="$m" '$2 == h' | tail -n 1)" "the record names the source and its age"
+  assert_equals "$((BASE + 10))"$'\t'"$(canon "$parent")"$'\ttranscript\t110' "$(act_rows "$parent" | awk -F'\t' -v h="$(canon "$parent")" '$2 == h' | tail -n 1)" "the owner home has its own row"
+  assert_absent "$mate/state/night-score/supervisor-activity.tsv" "the second mate's own home holds no record"
+  out=$(run_wd 20 scan >/dev/null 2>&1; act_rows "$parent" | wc -l | tr -d ' ')
+  assert_equals 4 "$out" "scan appends nothing"
+  pass "second mate: its session lock, a drain acknowledgement, a trusted busy record, or a turn-ended marker is an activity source"
+}
+
+test_second_mate_freeze_is_seen_without_a_transcript() {
+  local parent mate
+  make_home $'Captain session\n> '
+  parent=$H
+  transcript 100 "Working."
+  make_home $'Mate session\n> '
+  mate=$H
+  printf -- '- frozen-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  printf 'harness=codex\n' > "$parent/state/frozen-mate.meta"
+  printf '%s\tack\tg1\t4\t4\t["a"]\n' "$((BASE - 3000))" > "$mate/state/wake-ledger.tsv"
+  owe_input 3000
+  H=$parent
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows frozen nudge pending)" "a first sight is no stall"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows frozen nudge pending)" "a frozen Codex mate with owed input gets one nudge: $(ledger | cut -f5-8)"
+  pass "second mate: a mate with no transcript is seen to freeze through its activity source"
 }
 
 test_claude_judge_keeps_the_default_login() {
@@ -3072,6 +3485,9 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   write_fake_captain
   local sess="wd$CASE_N"
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" list-panes -t "=$sess" -F '#{pane_pid}' | head -n 1 > "$H/state/.lock"
+  LOCKPID=$(cat "$H/state/.lock")
+  owner_heartbeat
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock" "$H/state/.lock-session"
   transcript 3000 "Working." "Testing." "Green."
   owe_input 3000
   run_wd 0 once >/dev/null 2>&1
@@ -3103,7 +3519,7 @@ printf 'work output\n● How is Claude doing this session? (optional)\n  1: Bad 
 sleep 0.3
 printf '\n%.0s' {1..45}
 printf 'work output\n> \n'
-exec sleep 100000
+exec sleep $WD_FIXTURE_SLEEP
 SH
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
   sleep 1
@@ -3609,6 +4025,47 @@ test_status_file_short_and_staleness_visible() {
   pass "status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line"
 }
 
+# fake_memory_tools <swap-used>|fail: a sysctl fake for the memory guard's
+# macOS reader; fail exits 1. The guard reads the real process table.
+fake_memory_tools() {
+  if [ "$1" = fail ]; then
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$FAKEBIN/sysctl"
+  else
+    printf '#!/usr/bin/env bash\nprintf "total = 9.00M  used = %s  free = 1.00M  (encrypted)\\n"\n' "$1" > "$FAKEBIN/sysctl"
+  fi
+  chmod +x "$FAKEBIN/sysctl"
+}
+
+test_memory_guard_samples_once_per_pass() {
+  make_home $'Captain session\n> ' 'memory-guard=on'
+  printf 'swap_warn_mb=5\nproc_rss_mb=999999999\nmode=reap-scratch\n' > "$H/config/memory-guard"
+  fake_memory_tools 7.00M
+  FM_MEMORY_GUARD_OS=Darwin run_wd 0 once >/dev/null 2>&1 || fail "a pass with a memory alarm failed"
+  assert_equals 1 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "one memory sample per pass"
+  assert_equals "$BASE	7" "$(cut -f 1-2 "$H/state/memory-guard.tsv")" "the sample uses the watchdog clock"
+  assert_grep "- host: memory alarm swap_used_mb=7 " "$H/data/watchdog/status.md" "an alarm in force is an open gap"
+  assert_grep "- host: swap used 7 MB is at or over 5 MB" "$H/data/watchdog/status.md" "the new alarm line is an open gap"
+  assert_grep "mode=reap-scratch" "$H/data/watchdog/status.md" "an acting watchdog keeps the configured reap-scratch mode"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 120 once --dry-run >/dev/null 2>&1 || fail "a second pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "the next pass adds one more sample"
+  assert_grep "- host: memory alarm" "$H/data/watchdog/status.md" "a deduplicated alarm stays an open gap"
+  assert_no_grep "- host: swap used" "$H/data/watchdog/status.md" "a deduplicated alarm line is not repeated"
+  assert_grep "mode=observe" "$H/data/watchdog/status.md" "a dry-run watchdog forces observe mode"
+  rm -f "$H/state/memory-guard.tsv"
+  mkdir "$H/state/memory-guard.tsv"
+  # With no alarm in force, a sample that cannot be recorded is a failure.
+  printf 'swap_warn_mb=999999\nproc_rss_mb=999999999\n' > "$H/config/memory-guard"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 240 once >/dev/null 2>&1 || fail "a failed memory sample stopped the pass"
+  assert_grep "- host: memory guard sample failed (exit 1)" "$H/data/watchdog/status.md" "a failed sample is a gap"
+  assert_grep "## Homes" "$H/data/watchdog/status.md" "the pass still writes the status file"
+  rmdir "$H/state/memory-guard.tsv"
+  printf 'memory-guard=off\n' >> "$H/config/watchdog"
+  FM_MEMORY_GUARD_OS=Darwin run_wd 360 once >/dev/null 2>&1
+  assert_absent "$H/state/memory-guard.tsv" "memory-guard=off takes no sample"
+  rm -f "$FAKEBIN/sysctl"
+  pass "the watchdog samples host memory once per pass and never stops on a failed sample"
+}
+
 test_away_permission_dialog_pages_the_owner() {
   local dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   local secret=$'Do you want to run curl -H "Authorization: Bearer abc123def456"?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel'
@@ -3697,6 +4154,43 @@ SH
 
 page_subjects() {  # <phase>
   awk -F'\t' -v p="$1" '$5 == "dialog" && $6 == "page" && $7 == p { print $4 }' "$H/state/watchdog/actions.tsv" 2>/dev/null | sort
+}
+
+# A credential stop on an approval picker can show a value that the secret
+# detector does not recognize, so its away page records no pane text at all.
+test_worker_credential_page_withholds_typed_values() {
+  local cookie=$'Bash command\n\n  curl -H "Cookie: session=rvw7731cookie" https://api.example.com/me\n  Fetch the profile\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  local mode key
+  for mode in act dry-run locked; do
+    if [ "$mode" = dry-run ]; then make_home $'Captain session\n> ' 'mode=dry-run'; else make_home $'Captain session\n> '; fi
+    transcript 100 "Working."
+    worker_pane cookie ship "$cookie"
+    if [ "$mode" = locked ]; then
+      # Another pass holds the worker's lock, so this pass writes no marker.
+      key="$(basename "$H")-$(printf '%s' "$H" | cksum | cut -d ' ' -f 1)"
+      mkdir -p "$H/state/watchdog/permission/$key-cookie.lock"
+      printf '%s\n' "$$" > "$H/state/watchdog/permission/$key-cookie.lock/pid"
+    fi
+    sleep 0.5
+    printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+    printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+    : > "$H/state/.afk"
+    run_wd 0 once >/dev/null 2>&1 || fail "the $mode away pass failed"
+    if [ "$mode" = locked ]; then
+      assert_equals 1 "$(grep -c 'another watchdog pass is acting on worker cookie' "$H/state/watchdog/actions.tsv")" "the busy lock is recorded: $(ledger | cut -f4-8)"
+    fi
+    if [ "$mode" != dry-run ]; then
+      assert_equals 1 "$(ledger_rows dialog page pending)" "the credential stop pages the owner: $(ledger | cut -f4-8)"
+    else
+      assert_equals 1 "$(ledger_rows dialog page dry-run)" "dry-run records the page it would send: $(ledger | cut -f4-8)"
+    fi
+    assert_no_grep "rvw7731cookie" "$H/state/watchdog/actions.tsv" "a session cookie in a credential picker stays out of the $mode ledger"
+    assert_equals 1 "$(grep -c 'withheld: a credential or sign-in prompt' "$H/state/watchdog/actions.tsv")" "the $mode ledger names the withheld prompt"
+    if [ -e "$H/paged.log" ]; then
+      assert_no_grep "rvw7731cookie" "$H/paged.log" "the page carries no session cookie"
+    fi
+  done
+  pass "a credential stop on an approval picker pages the owner without recording its pane text, even while another pass holds the worker lock"
 }
 
 test_worker_permission_dialog_pages_the_owner() {
@@ -4131,6 +4625,280 @@ SH
   pass "usage-limit: an unreadable claude-account pin gets no pick"
 }
 
+test_quota_guard_checks_at_kickoff_and_periodically() {
+  local snap
+  make_home $'Captain session\n> '
+  # The guard runs by default, so this home carries no quota-guard key at all.
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  : > "$H/quota-axi.calls"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$H/quota-axi.calls"
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the first pass is a kickoff check: $(ledger | cut -f4-8)"
+  assert_grep "trigger=kickoff" "$H/state/quota-guard/last" "the kickoff check is on record"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "a check that is not ok stays a gap"
+  run_wd 60 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "no check is due inside the period"
+  assert_grep "quota-guard: unknown trigger=kickoff" "$H/data/watchdog/status.md" \
+    "the last check's verdict stays a gap while it is not ok"
+  run_wd 7300 once >/dev/null 2>&1 || fail "quota guard periodic pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard check "done")" "a check runs again after two hours"
+  assert_grep "trigger=periodic" "$H/state/quota-guard/last" "the periodic check is on record"
+  assert_no_grep "allow-keychain-prompt" "$H/quota-axi.calls" "the guard never opens a sign-in prompt"
+  [ ! -s "$H/typed.log" ] || fail "an unknown verdict typed into the pane: $(cat "$H/typed.log")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: by default the watchdog checks at kickoff and every two hours"
+}
+
+test_quota_guard_nudge_names_each_move_with_a_quoted_home() {
+  local home="$TMP_ROOT/owner home" out cmd
+  mkdir -p "$home"
+  out=$(FM_HOME="$home" bash -c '. "$1"; O_HOME=$2; wd_quota_guard_nudge_text "$3"' _ "$WD" "$home" \
+    "quota-guard: act trigger=kickoff window=3600s pools=2 ok=0 unknown=0 short=1 exhausted=1 steer=1 failover=2") ||
+    fail "the nudge text could not be built: $out"
+  assert_contains "$out" "Move each steered worker with bin/fm-control.sh relaunch on its named pick." \
+    "a check with a steered worker names the worker relaunch"
+  assert_contains "$out" "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" \
+    "a check with a supervisor failover names the primary's command"
+  cmd=${out#*for a second mate, run }
+  cmd=${cmd%% --reason quota_guard.*}
+  assert_equals "FM_HOME=$(printf '%q' "$home") bin/fm-supervisor-failover.sh secondmate <id>" "$cmd" \
+    "the second mate command quotes the owning home"
+  assert_contains "$out" "Never change an account pin, sign in, or spend." "the nudge keeps its limits"
+  pass "quota guard: the nudge names each move, and the second mate command quotes its home"
+}
+test_quota_guard_act_nudges_after_any_check() {
+  local snap root
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  # The lock holder here is not a harness process, so each pass names it. The
+  # primary's transcript lives under $H/claude, so its account is that root, not
+  # the ordinary ~/.claude; only that lane is exhausted.
+  root="$H/claude"
+  snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "pool: claude:$root status=exhausted runway=0 supervisors=primary" "$H/state/quota-guard/report.txt" \
+    "the primary is judged on the account that holds its transcript: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "an act check nudges the primary: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the act nudge does not name the kickoff check"
+  grep -rqsF "run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background" "$H/state/operational-inbox" ||
+    fail "a supervisor failover nudge does not name the failover command: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  ! grep -rqsF "fm-control.sh relaunch" "$H/state/operational-inbox" ||
+    fail "a nudge with no worker move names the worker relaunch: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "quota guard quiet pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge pending)" "a check already nudged is not nudged again: $(ledger | cut -f4-8)"
+  # A limit warning runs its own check between passes; the next pass nudges it
+  # even though no periodic check is due.
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$root" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "quota guard pass after a warning failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the pass runs no check of its own after the warning check: $(ledger | cut -f4-8)"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a warning's act check nudges on the next pass: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=warning" "$H/state/operational-inbox" || fail "the second nudge does not name the warning check"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: every act check nudges the primary once, whichever path ran it"
+}
+
+# quota_guard_exhausted_root <root>: a fake quota-axi on which only the Claude
+# account at <root> is exhausted.
+quota_guard_exhausted_root() {
+  local root=$1 snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+}
+
+test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # A file where the inbox directory goes makes the nudge's record fail.
+  printf 'x\n' > "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "failing-nudge pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard nudge failed)" "the nudge whose record failed is a failed row: $(ledger | cut -f4-8)"
+  rm -f "$H/state/operational-inbox"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 1000 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a nudge that never reached the primary is sent again: $(ledger | cut -f4-8)"
+  grep -rqs "quota-guard: act trigger=kickoff" "$H/state/operational-inbox" || fail "the retried nudge does not name the kickoff check"
+  FM_HOME="$H" FM_TEST_SEAM=1 FM_NOW=$((BASE + 1100)) FM_QUOTA_GUARD_CONF="$H/config/watchdog" "$ROOT/bin/fm-quota-guard.sh" \
+    warning --subject primary --harness claude --primary-harness claude --primary-account "$H/claude" >/dev/null 2>&1
+  assert_grep "trigger=warning" "$H/state/quota-guard/last" "the warning check is on record"
+  kill "$LOCKPID" 2>/dev/null
+  sleep 0.5
+  ! kill -0 "$LOCKPID" 2>/dev/null || fail "the lock holder is still alive"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 2000 once >/dev/null 2>&1 || fail "dead-primary pass failed"
+  assert_equals 2 "$(ledger_rows quota-guard nudge pending)" "a primary whose lock holder is dead is not nudged: $(ledger | cut -f4-8)"
+  # Only the earlier nudge's progress check may land now; no new nudge starts.
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge" && $7 != "failed" && $1 >= '"$((BASE + 2000))" | wc -l | tr -d ' ')" \
+    "no nudge of any phase starts for a dead primary: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a nudge that failed is sent again, and a dead primary is never nudged"
+}
+
+test_quota_guard_nudge_skips_a_holder_that_died_during_the_check() {
+  make_home $'Captain session\n> '
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  quota_guard_exhausted_root "$H/claude"
+  # The Claude read comes after the guard judged the primary live, so the
+  # holder dies while the check is still running.
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*)
+    kill "$LOCKPID" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do kill -0 "$LOCKPID" 2>/dev/null || break; sleep 0.1; done
+    cat "$H/claude-quota.json" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard kickoff pass failed"
+  assert_grep "quota-guard: act trigger=kickoff" "$H/state/quota-guard/report.txt" \
+    "the check judged the primary while it was live: $(cat "$H/state/quota-guard/report.txt" 2>&1)"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a holder that died during the check is not nudged: $(ledger | cut -f4-8)"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a primary whose holder died during the check gets no nudge"
+}
+
+test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings() {
+  local parent mate autowait
+  autowait=$'work output\nUsage limit reached. Continuing automatically at 4:00 AM\n❯ \n  ? for shortcuts'
+  make_home $'Captain session\n> '
+  parent=$H
+  grep -v '^quota-guard=' "$parent/config/watchdog" > "$parent/watchdog.conf" && mv "$parent/watchdog.conf" "$parent/config/watchdog"
+  transcript 100 "Working."
+  make_home "$autowait"
+  mate=$H
+  transcript 100 "Working."
+  # Input that has waited long enough would draw an unread-input nudge, and an
+  # away record with a dead daemon would draw a daemon-dead side check.
+  owe_input 1000
+  : > "$mate/state/.afk"
+  printf '999999\n' > "$mate/state/.supervise-daemon.pid"
+  H=$parent
+  printf -- '- ghost-mate - test mate (home: %s)\n' "$mate" > "$parent/data/secondmates.md"
+  {
+    echo "harness=claude"
+    echo "kind=secondmate"
+    echo "home=$mate"
+    echo "worktree=$mate"
+    echo "model=default"
+  } > "$parent/state/ghost-mate.meta"
+  mkdir -p "$parent/wt"
+  worker_pane waiter ship "$autowait"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$parent/wt" >> "$parent/state/waiter.meta"
+  # Only the account that holds the primary's transcript is exhausted.
+  quota_guard_exhausted_root "$parent/claude"
+  sleep 0.5
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "auto-wait footer pass failed"
+  assert_grep "	ghost-mate	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a second mate's auto-wait footer is recorded as a limit dialog in its parent: $(cat "$parent/state/quota-limit-dialogs.tsv" 2>&1)"
+  assert_grep "	waiter	ordinary	default	claude" "$parent/state/quota-limit-dialogs.tsv" \
+    "a worker's auto-wait footer is recorded as a limit dialog"
+  assert_grep "trigger=warning" "$parent/state/quota-guard/last" "the second mate's warning checks quota"
+  assert_grep "pool: claude:$parent/claude status=exhausted runway=0 supervisors=primary" "$parent/state/quota-guard/report.txt" \
+    "the second mate's check judges the primary on its own account: $(cat "$parent/state/quota-guard/report.txt" 2>&1)"
+  [ ! -s "$mate/typed.log" ] || fail "the watchdog typed into the second mate's auto-wait pane: $(cat "$mate/typed.log")"
+  assert_equals 0 "$(ledger | awk -F'\t' -v m="$(basename "$mate")" '$4 == m && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "a second mate on the auto-wait gets no nudge: $(ledger | cut -f4-8)"
+  [ ! -s "$parent/worker-waiter.typed" ] || fail "the watchdog typed into the worker's auto-wait pane: $(cat "$parent/worker-waiter.typed")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: an auto-wait footer on a second mate or a worker is a limit warning judged on the primary's account"
+}
+test_failed_limit_dialog_record_is_retried() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A directory where the record file goes makes the append fail.
+  mkdir -p "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-record pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning failed)" "a dialog that cannot be recorded is a failed row: $(ledger | cut -f4-8)"
+  assert_grep "limit dialog on limit not recorded" "$H/data/watchdog/status.md" "a failed record is a gap"
+  rmdir "$H/state/quota-limit-dialogs.tsv"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "retry pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a failed record is tried again on the next pass: $(ledger | cut -f4-8)"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" "the retried dialog is recorded"
+  HOME="$H/user" run_wd 2 once >/dev/null 2>&1 || fail "rate-limited pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a recorded dialog waits nudge-secs"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: a limit dialog that failed to record is tried again on the next pass"
+}
+test_failed_warning_check_records_the_dialog_once() {
+  local snap dialog
+  dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
+  make_home $'Captain session\n> ' 'reroute-candidates=codex:gpt-5.4'
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  mkdir -p "$H/wt" "$H/user/.claude"
+  worker_pane limit ship "$dialog"
+  printf 'harness=claude\nworktree=%s\nmodel=default\n' "$H/wt" >> "$H/state/limit.meta"
+  snap="$H/quota.json"
+  wd_quota_snapshot "$snap"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+cat "$snap"
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  transcript 100 "Working."
+  sleep 0.5
+  # A file where the guard's state directory goes makes every check fail.
+  printf 'x\n' > "$H/state/quota-guard"
+  HOME="$H/user" run_wd 0 once >/dev/null 2>&1 || fail "failing-check pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard warning "done")" "a recorded dialog is done even when its check fails: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger_rows quota-guard warning failed)" "a failed check after the record is no failed record: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check after the limit dialog on limit failed" "$H/data/watchdog/status.md" "the failed check is a gap"
+  assert_equals 0 "$(ledger_rows quota-guard check "done")" "a check that could not save its result is no done check: $(ledger | cut -f4-8)"
+  assert_grep "quota guard check failed (exit 1)" "$H/data/watchdog/status.md" "the pass's failed check is a gap"
+  HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "second failing-check pass failed"
+  assert_equals 1 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a failing check never records the dialog again"
+  rm -f "$FAKEBIN/quota-axi" "$H/state/quota-guard"
+  pass "quota guard: a limit warning whose check fails records its dialog once"
+}
 test_worker_usage_limit_names_a_pick() {
   local snap dialog calls
   dialog=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
@@ -4182,7 +4950,12 @@ SH
     "a worker pane-text usage-limit must queue until reset"
   assert_not_contains "$(cat "$H/data/watchdog/status.md")" "Supervisor relaunches" \
     "a worker pane-text usage-limit must not send the supervisor to relaunch"
+  assert_grep "	limit	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "a worker's limit dialog is recorded with its account and model"
+  assert_grep "	limit2	ordinary	default	claude" "$H/state/quota-limit-dialogs.tsv" \
+    "each worker's limit dialog is recorded"
   HOME="$H/user" run_wd 1 once >/dev/null 2>&1 || fail "rate-limited worker usage-limit pass failed"
+  assert_equals 2 "$(wc -l < "$H/state/quota-limit-dialogs.tsv" | tr -d ' ')" "a dialog is recorded once per nudge-secs"
   assert_equals 2 "$(ledger_rows quota suggest held)" "nudge-secs must not add another worker pick: $(ledger | cut -f4-8)"
   calls=$(wc -l < "$H/quota-axi.calls" | tr -d ' ')
   assert_equals 1 "$calls" "a rate-limited pass must not call quota-axi again"
@@ -5131,7 +5904,7 @@ dd bs=1 count=1 of="$H/worker-agy.key" 2>/dev/null
 stty sane -echo
 clear
 printf '> \n'
-exec sleep 100000
+exec sleep $WD_FIXTURE_SLEEP
 SH
   chmod +x "$H/worker-agy.sh"
   "$REAL_TMUX" -f /dev/null -L "$SOCKET" new-session -d -s "wkagy${CASE_N}" -x 160 -y 40 "$H/worker-agy.sh"
@@ -5405,6 +6178,201 @@ SH
   pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
 }
 
+test_pending_handoff_suppresses_heartbeat_recovery() {
+  local claim=$TMP_ROOT/pending-heartbeat.json now=1793000000
+  jq -n --argjson d "$((now + 300))" '{version:1,predecessor_pid:4242,deadline:$d}' > "$claim"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$now" 600 || fail "bounded matching handoff was not recognized"
+  lib fm_wd_handoff_in_progress "$claim" 4243 "$now" 600 && fail "another owner claim counted"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now + 301))" 600 && fail "expired handoff counted"
+  lib fm_wd_handoff_in_progress "$claim" 4242 "$((now - 400))" 600 && fail "unbounded handoff counted"
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  transcript 3000 "Working."
+  jq -n --argjson p "$LOCKPID" --argjson d "$((BASE + 1000))" '{version:1,predecessor_pid:$p,deadline:$d}' > "$H/state/.handoff-pending"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 950 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the pending-handoff test did not observe a stale heartbeat"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a pending handoff was nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a pending handoff was restarted"
+  pass "heartbeat recovery leaves a pending handoff alone"
+}
+
+test_heartbeat_recovery_preserves_account_pins() {
+  local pin
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  pin=$H/config/claude-account
+  printf '%s\n' "$H/claude" > "$pin"
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "stale heartbeat was not nudged"
+  run_wd 800 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "restart preceded its grace period"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "unanswered heartbeat nudge did not restart"
+  wait_pickup || fail "configured restart did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  assert_equals "$H/claude" "$(cat "$pin")" "heartbeat recovery changed an account pin"
+  pass "heartbeat recovery uses the configured restart without changing account pins"
+}
+
+test_heartbeat_response_cannot_suppress_recovery_forever() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  fm_touch_epoch "$((BASE + 750))" "$H/claude/projects/p/$SID.jsonl"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a response was ignored"
+  run_wd 1700 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows heartbeat-frozen nudge pending)" "a historical response prevented another nudge"
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "one old response suppressed recovery indefinitely"
+  wait_pickup || fail "the retried heartbeat recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "one transcript response cannot suppress later heartbeat recovery forever"
+}
+
+test_heartbeat_recovery_preserves_the_running_turn_veto() {
+  make_home $'Captain session\n✻ Running tool… (esc to interrupt)' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the busy-turn test did not observe a stale heartbeat"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a running turn was nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a running turn was restarted"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "busy lock owner was stopped"
+  pass "heartbeat recovery keeps the main running-turn veto"
+}
+
+test_heartbeat_dryrun_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+mode=dry-run
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge dry-run)" "the preview nudge was not recorded"
+  printf 'mode=act\n' >> "$H/config/watchdog"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "preview history authorized a real restart"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "active mode did not deliver its own nudge"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "active delivery lost its full grace period"
+  run_wd 1300 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "a proven active delivery never recovered"
+  wait_pickup || fail "active recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "dry-run history cannot satisfy the active heartbeat delivery prerequisite"
+}
+
+test_heartbeat_ignores_orphan_and_previous_owner_receipts() {
+  local history
+  for history in orphan previous-owner; do
+    make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+nudge-secs=1
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+    write_fake_captain
+    transcript 3000 "Working."
+    run_wd 0 once >/dev/null 2>&1
+    printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tpending\tinterrupted delivery\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    if [ "$history" = previous-owner ]; then
+      printf '%s\told\t%s\tprimary\theartbeat-frozen\tnudge\tdone\theartbeat-owner=999999:old-session:old-start\n' "$((BASE + 700))" "$H" >> "$H/state/watchdog/actions.tsv"
+    fi
+    run_wd 1000 once >/dev/null 2>&1
+    assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "$history history authorized a restart"
+    assert_equals 2 "$(ledger_rows heartbeat-frozen nudge pending)" "$history history prevented a fresh delivery"
+    awk -F '\t' -v owner="heartbeat-owner=$LOCKPID:$SID:" '
+      $5 == "heartbeat-frozen" && $6 == "nudge" && $7 == "done" && index($8, owner) == 1 { found = 1 }
+      END { exit !found }
+    ' "$H/state/watchdog/actions.tsv" || fail "$history case has no current-owner delivery receipt"
+    run_wd 1300 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "$history case never recovered after its own delivery"
+    wait_pickup || fail "$history recovery did not prove pickup"
+    LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  done
+  pass "orphan pending rows and another owner's delivery cannot authorize heartbeat restart"
+}
+
+test_heartbeat_recovery_serializes_with_handoff_launch() {
+  local ready release holder n
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  ready=$H/launch-ready
+  release=$H/launch-release
+  FM_HOME="$H" STATE="$H/state" bash -c '
+    . "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$2" || exit 1
+    : > "$3"
+    n=0
+    while [ ! -e "$4" ] && [ "$n" -lt 600 ]; do sleep 0.1; n=$((n + 1)); done
+    fm_lock_release "$2"
+  ' _ "$ROOT" "$H/state/.handoff-launch.lock" "$ready" "$release" &
+  holder=$!
+  n=0
+  while [ ! -e "$ready" ] && [ "$n" -lt 300 ]; do sleep 0.1; n=$((n + 1)); done
+  [ -e "$ready" ] || fail "the isolated launch owner did not acquire its lock"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "heartbeat recovery raced a launch before its claim existed"
+  : > "$release"
+  wait "$holder" || fail "the isolated launch owner did not release its lock"
+  run_wd 1100 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen restart pending)" "recovery did not resume after launch serialization cleared"
+  wait_pickup || fail "serialized recovery did not prove pickup"
+  LOCK_PIDS="$LOCK_PIDS $(cat "$H/state/.lock")"
+  pass "heartbeat recovery shares the existing launch lock before restarting"
+}
+
+test_heartbeat_recovery_respects_recent_wake_activity() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  printf '%s\tack\tg1\t1\t1\t["handled"]\n' "$((BASE + 950))" > "$H/state/wake-ledger.tsv"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a recent own wake acknowledgement was ignored"
+  assert_contains "$(act_rows "$H")" $'\twake-ack\t50' "the recent activity source was not observed"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a responsive session was stopped"
+  pass "heartbeat recovery respects the newest verified session activity source"
+}
+
+test_heartbeat_recovery_requires_a_known_activity_source() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'heartbeat-frozen-secs=600
+restart=on
+restart-command=/bin/false'
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the source-less heartbeat case was not observed"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "unknown activity was treated as idle"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "unknown activity authorized restart"
+  kill -0 "$LOCKPID" 2>/dev/null || fail "a session with unknown activity was stopped"
+  pass "heartbeat recovery preserves main's verified activity-source requirement"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -5478,6 +6446,8 @@ fm_test_run \
   test_captain_record_follows_the_lock_owner \
   test_captain_record_ignores_a_heartbeat_written_outside_the_owner \
   test_no_action_while_restart_awaits_pickup \
+  test_no_quota_check_while_restart_awaits_pickup \
+  test_mate_warning_holds_while_its_parent_restart_awaits_pickup \
   test_dead_captain_restarts_despite_its_anchor \
   test_watchdog_allows_muse_restart_with_approval_flag \
   test_watchdog_adds_yolo_to_bare_muse_restart \
@@ -5485,6 +6455,7 @@ fm_test_run \
   test_dead_holder_is_not_hidden_by_earlier_symptoms \
   test_low_context_waits_for_full_handoff_then_restarts \
   test_low_context_timeout_restarts_with_lean_handoff \
+  test_low_context_restart_rechecks_a_failed_launch \
   test_low_context_second_episode_asks_again \
   test_low_context_undelivered_nudge_starts_no_wait \
   test_restart_interval_holds_without_escalating \
@@ -5497,6 +6468,7 @@ fm_test_run \
   test_dialog_kind_ignores_conversation_rows \
   test_away_permission_dialog_pages_the_owner \
   test_worker_permission_dialog_pages_the_owner \
+  test_worker_credential_page_withholds_typed_values \
   test_low_context_undeliverable_nudge_leaves_frozen_recovery \
   test_homes_with_one_basename_keep_their_own_state \
   test_dialog_reserved_check_reads_only_dialog_rows \
@@ -5509,6 +6481,9 @@ fm_test_run \
   test_orca_draft_is_never_typed_onto \
   test_reserved_task_or_key_is_held_and_refused_nudges_are_gaps \
   test_second_mate_restart_ends_the_pass \
+  test_second_mate_zero_exit_relaunch_is_not_done \
+  test_second_mate_restart_done_after_session_start_under_new_lock \
+  test_second_mate_session_start_after_the_window_is_not_done \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
   test_secret_looking_model_switch_dialog_is_held \
@@ -5521,6 +6496,14 @@ fm_test_run \
   test_usage_limit_claude_without_tooling_names_a_pick \
   test_unreadable_claude_account_pin_gets_no_pick \
   test_worker_usage_limit_names_a_pick \
+  test_quota_guard_checks_at_kickoff_and_periodically \
+  test_quota_guard_act_nudges_after_any_check \
+  test_quota_guard_nudge_names_each_move_with_a_quoted_home \
+  test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
+  test_quota_guard_nudge_skips_a_holder_that_died_during_the_check \
+  test_autowait_footers_on_a_mate_and_a_worker_are_limit_warnings \
+  test_failed_limit_dialog_record_is_retried \
+  test_failed_warning_check_records_the_dialog_once \
   test_grok_weekly_limit_on_a_secondmate_names_a_pick \
   test_home_usage_limit_ignores_grok_in_scrollback \
   test_orca_usage_limit_does_not_relaunch_from_scrollback \
@@ -5539,6 +6522,8 @@ fm_test_run \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
+  test_second_mate_activity_sources \
+  test_second_mate_freeze_is_seen_without_a_transcript \
   test_claude_judge_keeps_the_default_login \
   test_unknown_heartbeat_endpoint_is_not_reported_ok \
   test_tmux_restart_survives_a_closed_session \
@@ -5549,5 +6534,15 @@ fm_test_run \
   test_supervisor_gap_rows_name_each_watched_home \
   test_supervisor_gap_torn_line_and_failed_append \
   test_status_file_short_and_staleness_visible \
+  test_memory_guard_samples_once_per_pass \
   test_manager_units \
-  test_never_merges_deploys_or_messages_owner
+  test_never_merges_deploys_or_messages_owner \
+  test_pending_handoff_suppresses_heartbeat_recovery \
+  test_heartbeat_recovery_preserves_account_pins \
+  test_heartbeat_response_cannot_suppress_recovery_forever \
+  test_heartbeat_recovery_preserves_the_running_turn_veto \
+  test_heartbeat_dryrun_never_counts_as_delivery \
+  test_heartbeat_ignores_orphan_and_previous_owner_receipts \
+  test_heartbeat_recovery_serializes_with_handoff_launch \
+  test_heartbeat_recovery_respects_recent_wake_activity \
+  test_heartbeat_recovery_requires_a_known_activity_source

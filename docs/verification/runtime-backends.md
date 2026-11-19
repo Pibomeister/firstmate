@@ -125,6 +125,8 @@ FM_HANDOFF_TRIGGER_LIVE_E2E=1 bash tests/fm-handoff-trigger-live-e2e.test.sh
 ```
 
 It runs one headless Haiku session with the hook on PostToolUse and UserPromptSubmit, `autoCompactWindow` 120000, and `percent-left=99`, and makes two tool calls.
+The lab drops an inherited `CLAUDE_CONFIG_DIR` and uses the default config unless `FM_HANDOFF_TRIGGER_LIVE_CLAUDE_CONFIG_DIR` selects another already signed-in directory.
+If the command fails, the guard includes the API status and message from its JSON result in the diagnostic.
 Selected output from the successful guard:
 
 ```text
@@ -136,7 +138,8 @@ ok - claude 2.1.314 (Claude Code): derived compact point, delivered the instruct
 
 Claude records a delivered instruction as one `hook_additional_context` attachment, and the model can report its content.
 Primed by the guard's prompt to follow no other instruction, the model called the context tool-result content and did not act on it, so the instruction names its source.
-The guard does not prove that an unprimed session writes its handoff.
+The guard does not prove that an unprimed session acts on the instruction.
+The output above predates the compaction-first capture step: the guard now expects `CONTEXT-SEEN` and a `mode=capture` firing record, and it has not been rerun since that change.
 
 ### Verified successor lock transfer
 
@@ -169,6 +172,33 @@ The resume fixtures keep the previous process alive while a new process with the
 The interruption hits during the redirected backend call; the error drill fails the poll operation after launch.
 Both require exactly one failure on the original stdout and in the durable event log.
 The shared session-lock ancestry suite passed on the same host; it covers other supported primary harness identities, re-keys, task leases, and rewake ownership through their existing integration surfaces.
+
+### Successor runtime choice and supervisor failover
+
+Verified on 2026-11-15 UTC on macOS arm64 with Bash 3.2.57.
+The successor regression runs the production launcher, acknowledgement, and session lock against Codex-, agy-, and Claude-named processes, with fake Orca and tmux transports, a fake `claude auth status`, and quota-axi fixtures.
+The failover regression runs the production choice against fake delegates, so the handoff and relaunch it requests are proven by their own suites.
+The installed Orca 1.4.258 `agent launch --help` exposes the `--agent codex` and `--model` arguments the launcher passes; live Codex and agy model startup is outside this fixture's evidence.
+
+Refresh both with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-handoff-launch-runtime.test.sh tests/fm-supervisor-failover.test.sh
+```
+
+Selected output:
+
+```text
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - claude to agy: trusted home transfers on tmux; untrusted home and orca refuse before launch
+ok - claude account switch: the successor runs on the chosen declared account
+ok - exhausted_now veto: no successor launches onto an exhausted pool and the predecessor keeps the lock
+ok - pin preservation: no account pin or account list changed
+ok - account switch: another signed-in Claude account with headroom takes over first
+ok - claude to codex: no Claude account has headroom, so a comparable Codex model takes over
+ok - exhausted veto: with every pool exhausted nothing launches
+ok - secondmate: relaunched onto codex through fm-control in its own home
+```
 
 ## Codex model catalog max validation
 
@@ -4101,3 +4131,54 @@ The M4 captain was also validated live on Orca on 2026-11-01, 14:58-15:00Z, on c
 The watchdog ran a real Orca restart, the new session's pickup was verified, that session re-armed the away daemon, and act mode was then restored to off.
 Act mode stays off on every other machine until rollout.
 A repeat live test is owed, because later fixes change the restart paths.
+
+### 2026-11-14 worker permission prompts
+
+Verified on 2026-11-14 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.325 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md#worker-permission-prompts).
+A real Claude Code session on a private tmux socket, started with `--permission-mode default`, raised a Bash tool-approval prompt for a `touch` command.
+Its rows are a `Do you want to proceed?` question under a rule, `❯ 1. Yes` as the only cursor row, a `No` option, and the footer `Esc to cancel · Tab to amend`.
+Pressing Escape cancelled the tool call without running it: the file was not created, and the pane showed `Interrupted · What should Claude do instead?` above an empty composer.
+The folder-trust picker in a new folder rendered with the cursor on `❯ No, exit`.
+The heredoc-with-backtick command that raised a prompt in the original incident raised none in bypass mode on this version.
+Sanitized copies of those three screens are the fixtures in `tests/fixtures/permission-prompt/`, and `tests/fm-permission-prompt.test.sh` classifies them and drives the watchdog route against tmux panes that react to Escape the same way.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-permission-prompt.test.sh
+ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
+ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum
+ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
+```
+
+The output above is an excerpt of the 2026-11-17 rerun after the scope was narrowed to exact known dialogs; the generic terminal and external-CLI prompt detectors moved to an observe-only follow-up under [issue #264](https://github.com/Pibomeister/firstmate/issues/264).
+
+`tests/fm-watchdog-live.test.sh` now also asserts that `bin/fm-permission-prompt.sh` names the real folder-trust picker a trust dialog, and that assertion passed against Claude Code 2.1.325.
+That same run failed its later check that the home's waiting permission dialog is reported as a gap, and an unmodified copy of the prior commit fails the same check: the guard's heartbeat no longer gives the watchdog a home terminal endpoint, so the home pane is not read.
+No Codex or Antigravity tool-approval prompt was captured, so those prompts are held rather than declined.
+
+## Merge review reviewer tools
+
+Verified on 2026-11-13 (UTC) on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.323, Antigravity `agy` 1.5.8, and Grok 1.0.77.
+The behavior contract is owned by the header of [`bin/fm-merge-review.sh`](../../bin/fm-merge-review.sh).
+The guard submits one small review prompt per seat through the real `run` path and asks each reviewer, in the stated intent, to try to create a file in a probe directory.
+
+```sh
+FM_MERGE_REVIEW_LIVE=1 \
+FM_MERGE_REVIEW_LIVE_SEATS='anthropic:claude:claude-fable-5-2 google:agy:gemini-4-carbon-high xai:grok:grok-4.7' \
+  bash tests/fm-merge-review-live.test.sh
+# merge-review: approved head=f63164ca0cc437754d96d4aec3add4a60525f2c5 approvals=anthropic.claude.claude-fable-5-2:APPROVE,google.agy.gemini-4-carbon-high:APPROVE,xai.grok.grok-4.7:APPROVE blocks=none url=https://github.com/example/repo/pull/1
+1..3
+# claude 2.1.323 (Claude Code): model=claude-fable-5-2 reported=claude-fable-5-2 identity=reported verdict=APPROVE
+ok - claude returns a counted review for claude-fable-5-2, states its model on the documented basis, and writes nothing
+# agy 1.5.8: model=gemini-4-carbon-high reported=none identity=requested-accepted verdict=APPROVE
+ok - agy returns a counted review for gemini-4-carbon-high, states its model on the documented basis, and writes nothing
+# grok grok 1.0.77 (50ca579fa996) [stable]: model=grok-4.7 reported=grok-4.7-build identity=reported verdict=APPROVE
+ok - grok returns a counted review for grok-4.7, states its model on the documented basis, and writes nothing
+```
+
+Claude Code reports the model it ran as the keys of `modelUsage` in its JSON output, and Grok does the same with a build suffix on the requested name.
+`agy` reports no model in its JSON output, so its receipt rests on `agy` accepting the requested name; on 1.5.7 an unknown `--model` exited 1.
+`agy` 1.5.7 also refused `--effort` beside a model whose name carries its effort, and with `--sandbox` alone it wrote a file in a headless run, while `--mode plan --sandbox` denied the write; the script uses the second form.
+No reviewer created a file in the probe directory.
+Other reviewer tools have no adapter and are refused as a seat.
+Rerun the guard after any upgrade of these tools.

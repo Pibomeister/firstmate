@@ -581,7 +581,7 @@ jobs:
           tmp=$(mktemp)
           trap 'rm -f "$tmp"' EXIT
           printf '%s\n' \
-            '<!-- Points Claude at AGENTS.md via import; edit AGENTS.md, not this file. -->' \
+            '<!-- Imports AGENTS.md, including its worktree cleanup rule; maintain shared rules there. -->' \
             '@AGENTS.md' >"$tmp"
           cmp -s CLAUDE.md "$tmp" || { echo "::error::CLAUDE.md must be the canonical @AGENTS.md pointer"; exit 1; }
           [ "$(readlink .claude/skills)" = "../.agents/skills" ] || { echo "::error::.claude/skills must be a symlink to ../.agents/skills"; exit 1; }

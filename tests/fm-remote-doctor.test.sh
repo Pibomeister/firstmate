@@ -49,14 +49,23 @@ if [ "$(uname -s)" = Darwin ] && [ "$JQ" = /usr/bin/jq ]; then
   JQ="$TMP_ROOT/jq-holder"
   codesign --force --sign - "$JQ" >/dev/null 2>&1 || fail "could not sign the private jq holder fixture"
 fi
+HOLDER_JQ=$JQ
+# This tree's tests/lib.sh has no assert_no_regex; keep the regex checks local.
+assert_no_regex() {
+  local status=0
+  grep -E -- "$1" "$2" >/dev/null || status=$?
+  [ "$status" -eq 1 ] || fail "$3 (grep status: $status)"
+}
 HOLDER_FD=5
 hold() { # <marker-env...> -> HOLDER_PID
   local fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo"
   mkfifo "$fifo"
+  # Open read-write so this never blocks on the reader; the holder sees EOF
+  # only when the descriptor closes at exit.
+  eval "exec ${HOLDER_FD}<>\"\$fifo\""
   env -i "$@" "$HOLDER_JQ" . "$fifo" &
   HOLDER_PID=$!
   HOLDER_PIDS+=("$HOLDER_PID")
-  eval "exec ${HOLDER_FD}>\"\$fifo\""
   HOLDER_FD=$((HOLDER_FD + 1))
 }
 hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote

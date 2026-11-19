@@ -284,6 +284,9 @@ run_control() {
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
     FM_FAKE_SECOND_CTRL_C_STOPS_AGENT="${FM_FAKE_SECOND_CTRL_C_STOPS_AGENT:-}" \
     FM_FAKE_DEVIN_PICKER_STUCK="${FM_FAKE_DEVIN_PICKER_STUCK:-}" \
+    FM_CONTROL_EXPECTED_SPAWN_GEN="${FM_CONTROL_EXPECTED_SPAWN_GEN:-}" \
+    FM_CONTROL_REQUIRE_RECORD="${FM_CONTROL_REQUIRE_RECORD:-}" \
+    FM_CONTROL_REQUIRE_TOKEN="${FM_CONTROL_REQUIRE_TOKEN:-}" \
     FM_TEST_ORCA_BOOT_EPOCH="${FM_TEST_ORCA_BOOT_EPOCH:-2000}" \
     "$CONTROL" "$@" 2>&1
 }
@@ -1007,6 +1010,60 @@ test_unknown_task_is_refused() {
   pass "fm-control: an unrecorded task id is refused"
 }
 
+test_expected_spawn_gen_binds_interrupt() {
+  local dir out rc
+  dir=$(new_case genbind)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  printf 'spawn_gen=s100.1\n' >> "$dir/home/state/t1.meta"
+  out=$(FM_CONTROL_EXPECTED_SPAWN_GEN=s999.1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "an interrupt bound to a stale spawn_gen should refuse"
+  assert_contains "$out" "spawn_gen no longer matches" "the stale-generation refusal should name the binding"
+  [ -z "$(keys_sent "$dir")" ] || fail "a stale-generation interrupt must send no keys"
+  out=$(FM_CONTROL_EXPECTED_SPAWN_GEN=s100.1 run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "an interrupt bound to the current spawn_gen should proceed: $out"
+  assert_contains "$(keys_sent "$dir")" "Escape" "the bound interrupt did not deliver its key"
+  pass "fm-control: FM_CONTROL_EXPECTED_SPAWN_GEN refuses a relaunched worker and admits the recorded generation"
+}
+
+test_unremovable_stale_lease_refuses_with_exit_6() {
+  local dir out rc
+  dir=$(new_case stalelease)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  # A stale lease the guard cannot remove (a directory where the lease file
+  # belongs) is a lease refusal before anything is sent, so it exits 6.
+  mkdir -p "$dir/home/state/.lease-t1/held"
+  out=$(run_control "$dir" t1 interrupt); rc=$?
+  expect_code 6 "$rc" "an unremovable stale lease should refuse with the lease exit: $out"
+  assert_contains "$out" "could not be removed" "the refusal should name the stale lease"
+  [ -z "$(keys_sent "$dir")" ] || fail "a refused interrupt must send no keys"
+  pass "fm-control: a stale lease the guard cannot remove refuses with exit 6 before sending anything"
+}
+
+test_required_record_token_binds_interrupt() {
+  local dir out rc rec
+  dir=$(new_case recbind)
+  add_task "$dir" t1 claude
+  alive_as "$dir" claude
+  rec="$dir/home/pause-record"
+  # A record that is gone (resumed) or carries another token (replaced) is
+  # refused under the lock before any key, as an interrupt that outlived its
+  # pass would find it.
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 7 "$rc" "an interrupt bound to a removed record should refuse with exit 7"
+  assert_contains "$out" "no longer holds the caller's token" "the refusal should name the record binding"
+  printf 'id=t1\ntoken=tok-b\nstate=paused\n' > "$rec"
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 7 "$rc" "an interrupt bound to a replaced record should refuse with exit 7"
+  [ -z "$(keys_sent "$dir")" ] || fail "a refused record-bound interrupt must send no keys"
+  printf 'id=t1\ntoken=tok-a\nstate=paused\n' > "$rec"
+  out=$(FM_CONTROL_REQUIRE_RECORD="$rec" FM_CONTROL_REQUIRE_TOKEN=tok-a run_control "$dir" t1 interrupt); rc=$?
+  expect_code 0 "$rc" "an interrupt bound to its still-current record should proceed: $out"
+  assert_contains "$(keys_sent "$dir")" "Escape" "the record-bound interrupt did not deliver its key"
+  pass "fm-control: FM_CONTROL_REQUIRE_RECORD refuses a removed or replaced record and admits the current one"
+}
+
 test_record_bound_to_another_task_is_refused() {
   local dir out rc
   dir=$(new_case foreign)
@@ -1088,7 +1145,7 @@ test_interrupt_and_exit_lock_before_task_state_resolution() {
     out=$(run_control "$case_dir" t1 "$verb"); rc=$?
     kill "$holder" 2>/dev/null || true
     wait "$holder" 2>/dev/null || true
-    expect_code 1 "$rc" "$verb should refuse a held lifecycle lock"
+    expect_code 5 "$rc" "$verb should refuse a held lifecycle lock with its distinct exit"
     assert_contains "$out" "another lifecycle action is already running" \
       "$verb should serialize before reading mutable task state"
     [ -z "$(literals "$case_dir")" ] || fail "contended $verb must type no command"
@@ -1987,6 +2044,9 @@ test_state_verified_backends_are_exactly_tmux_herdr_orca_and_rex
 test_window_label_is_refused_with_the_exact_id
 test_explicit_endpoint_is_refused
 test_unknown_task_is_refused
+test_expected_spawn_gen_binds_interrupt
+test_required_record_token_binds_interrupt
+test_unremovable_stale_lease_refuses_with_exit_6
 test_record_bound_to_another_task_is_refused
 test_remote_secondmate_is_refused_by_placement
 test_interrupt_and_exit_lock_before_task_state_resolution

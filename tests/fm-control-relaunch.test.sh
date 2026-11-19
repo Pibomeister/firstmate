@@ -130,6 +130,8 @@ case "${1:-}" in
           [ -n "${FM_FAKE_TMUX_SERVER_PID:-}" ] || { printf 'fakepane\n'; exit 0; }
           printf '%s\t%s\n' "$FM_FAKE_TMUX_SOCKET" "$FM_FAKE_TMUX_SERVER_PID"; exit 0 ;;
         '#{window_id}') printf '@9\n'; exit 0 ;;
+        # The pane's login shell, which the relaunch waits on (fakebin ps).
+        '#{pane_pid}') printf '4242426\n'; exit 0 ;;
         '#{pid}')
           if [ -f "$D/server-dead" ]; then echo "no server running on ${FM_FAKE_TMUX_SOCKET:-/tmp/tmux-1000/default}" >&2; exit 1; fi
           printf '%s\n' "${FM_FAKE_TMUX_SERVER_PID:-1}"; exit 0 ;;
@@ -216,6 +218,7 @@ case "${1:-}" in
     done
     printf '%s\n' "$name" >> "$D/windows"
     printf '%s\n' "$name" >> "$D/created-windows"
+    printf 'zsh' > "$D/command"
     printf '%s\n' "$SOCK" >> "$D/created-sockets"
     printf '@9\n'
     exit 0 ;;
@@ -223,6 +226,14 @@ esac
 exit 0
 SH
   chmod +x "$fb/tmux"
+  cat > "$fb/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  '-p 4242426 -o comm=') printf -- '-zsh\n' ;;
+  *) exec /bin/ps "$@" ;;
+esac
+SH
+  chmod +x "$fb/ps"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_LOCK_WAITING:-}" ] || : > "$FM_FAKE_LOCK_WAITING"
@@ -2698,6 +2709,83 @@ SH
   pass "fm-spawn --relaunch: a clean strictly-ahead run_pipeline verdict launches and keeps the local commit"
 }
 
+# A clean copy left behind its own pipeline-pushed head by a failed pr step
+# carries the native behind / safe_fast_forward / sync verdict; a relaunch
+# fast-forwards it through the owner and launches without manual sync.
+behind_pipeline_push_task() {  # <case-dir> <id>: clean ship copy one pipeline commit behind origin
+  local dir=$1 id=$2
+  add_ship_task "$dir" "$id" claude
+  printf 'branch=task-%s\n' "$id" >> "$dir/home/state/$id.meta"
+  printf 'a\n' > "$dir/wt/a.txt"
+  git -C "$dir/wt" add a.txt
+  git -C "$dir/wt" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm a
+  git -C "$dir/wt" push -q origin "task-$id"
+  git clone -q "$dir/proj.origin.git" "$dir/pipe"
+  git -C "$dir/pipe" switch -q "task-$id"
+  printf 'fix\n' > "$dir/pipe/fix.txt"
+  git -C "$dir/pipe" add fix.txt
+  git -C "$dir/pipe" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm fix
+  git -C "$dir/pipe" push -q origin "task-$id"
+  PUBLISHED_SHA=$(git -C "$dir/pipe" rev-parse HEAD)
+  git -C "$dir/proj" remote add no-mistakes "$dir/proj.origin.git"
+  printf '%s\n' "$PUBLISHED_SHA" > "$dir/fake/published"
+  cat > "$dir/fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+[ "\${1:-} \${2:-}" = "axi sync" ] || exit 0
+printf '%s\n' "\$*" >> '$dir/fake/nm-calls'
+head=\$(git rev-parse HEAD) pub=\$(cat '$dir/fake/published')
+if [ "\$head" = "\$pub" ]; then
+  printf '%s\n' 'branch_sync:' '  state: synchronized' '  changed: false' '  relation: equal' \
+    '  safety: already_synchronized'
+  exit 0
+fi
+printf '%s\n' 'branch_sync:' '  state: behind' '  changed: false' '  local:' '    branch: task-$id' \
+  "    head: \$head" '    clean: true' '  pipeline:' '    run: "01RUN"' '    status: failed' '    phase: pr' \
+  "    current_head: \$pub" "    pushed_head: \$pub" '  remote:' "    observed_head: \$pub" '    freshness: live' \
+  '  relation: behind' '  safety: safe_fast_forward' '  next_action:' '    code: sync' '    command: no-mistakes axi sync'
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+}
+
+assert_fast_forwarded_relaunch() {  # <case-dir> <output> <label>
+  local dir=$1 out=$2 label=$3
+  assert_contains "$out" "result=advanced archive=- custody=settled head=$PUBLISHED_SHA" "$label did not settle"$'\n'"$out"
+  assert_not_contains "$out" "not a verdict this owner settles" "$label was refused"
+  assert_not_contains "$out" "Monitoring-only relaunch" "$label was treated as monitoring-only"
+  [ "$(git -C "$dir/wt" rev-parse HEAD)" = "$PUBLISHED_SHA" ] \
+    || fail "$label did not reach the pipeline-pushed head"
+  [ -z "$(git -C "$dir/wt" status --porcelain)" ] || fail "$label left the copy dirty"
+  [ -z "$(git -C "$dir/wt" for-each-ref --format='%(refname)' refs/heads/archive/)" ] \
+    || fail "$label created an archive"
+  [ -s "$dir/fake/nm-calls" ] || fail "$label never read branch custody"
+  ! grep -qv '^axi sync --check$' "$dir/fake/nm-calls" || fail "$label ran a mutating no-mistakes command"
+}
+
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out
+  dir=$(new_case prresync-ff rl99)
+  behind_pipeline_push_task "$dir" rl99
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl99 --relaunch)
+  assert_contains "$out" "spawned rl99" "a clean safe fast-forward relaunch did not launch"$'\n'"$out"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward spawn relaunch"
+  pass "fm-spawn --relaunch: a clean branch behind its own pipeline push fast-forwards and launches without manual sync"
+}
+
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push() {
+  local dir out rc
+  dir=$(new_case ctl-ff rl99c)
+  behind_pipeline_push_task "$dir" rl99c
+  out=$(run_control "$dir" rl99c relaunch --note "pr step failed after the push"); rc=$?
+  expect_code 0 "$rc" "a safe fast-forward fm-control relaunch should succeed"$'\n'"$out"
+  assert_contains "$out" "relaunched rl99c harness=claude from=claude" "the fm-control relaunch outcome is missing"
+  assert_fast_forwarded_relaunch "$dir" "$out" "a safe fast-forward fm-control relaunch"
+  [ "$(journal_field "$dir" rl99c phase)" = complete ] \
+    || fail "the safe fast-forward relaunch transaction should end complete"
+  assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
+  pass "fm-control relaunch: a clean branch behind its own pipeline push fast-forwards and relaunches without manual sync"
+}
+
 test_spawn_relaunch_origin_probe_timeout_refuses() {
   local dir out before
   dir=$(new_case prprobe-timeout rl94)
@@ -3577,7 +3665,7 @@ test_concurrent_relaunch_is_refused() {
   out=$(run_control "$dir" rl19 relaunch --note "concurrent"); rc=$?
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
-  expect_code 1 "$rc" "a second concurrent control action should refuse"
+  expect_code 5 "$rc" "a second concurrent control action should refuse"
   assert_contains "$out" "another lifecycle action is already running" \
     "the refusal should name the concurrent action"
   [ "$(cat "$dir/fake/command")" = claude ] \
@@ -4897,6 +4985,8 @@ test_spawn_relaunch_of_promoted_scout_uses_the_recorded_branch
 test_spawn_relaunch_resyncs_the_recorded_branch_to_its_published_head
 test_spawn_relaunch_under_an_active_run_is_monitoring_only
 test_spawn_relaunch_keeps_a_clean_local_ahead_commit
+test_spawn_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
+test_control_relaunch_fast_forwards_a_clean_branch_behind_its_pipeline_push
 test_spawn_relaunch_origin_probe_timeout_refuses
 test_spawn_relaunch_of_a_successor_ignores_its_source_line
 test_promoted_scout_relaunch_receives_the_current_delivery_contract

@@ -506,6 +506,42 @@ fm_backend_herdr_client_select() {  # <session> [force]
   return 0
 }
 
+# fm_backend_herdr_client_mismatch: after a forced selection for <session>,
+# print one actionable line and return 0 when a running server is reported
+# incompatible with the selected client, which means no herdr on PATH can drive
+# that session; return 1, printing nothing, otherwise (compatible, stopped, or
+# unknown). Read-only: it never starts, stops, or restarts a server. A server
+# whose protocol is older than the client's is a stale server, such as one an
+# older herdr binary started at boot; a newer one means the client is behind.
+fm_backend_herdr_client_mismatch() {  # <session>
+  local session=$1 bin running compatible fields cver cproto sver sproto advice
+  fm_backend_herdr_client_select "$session" force
+  bin=$(fm_backend_herdr_bin)
+  [ "$bin" != herdr ] || bin=$(command -v herdr 2>/dev/null) || return 1
+  IFS='|' read -r running compatible \
+    <<< "$(fm_backend_herdr_client_status "$bin" "$session")"
+  [ "$running" = true ] && [ "$compatible" = false ] || return 1
+  fields=$(HERDR_SESSION="$session" "$bin" status --json --session "$session" 2>/dev/null \
+    | jq -r '[(.client.version // "" | tostring), (.client.protocol // "" | tostring),
+              (if (.server | type) == "object" then (.server.version // "" | tostring) else "" end),
+              (if (.server | type) == "object" then (.server.protocol // "" | tostring) else "" end)] | join("|")' 2>/dev/null) || fields='|||'
+  IFS='|' read -r cver cproto sver sproto <<< "$fields"
+  advice="make the herdr client and server versions match"
+  case "$cproto|$sproto" in
+    '|'*|*'|'|*[!0-9]*'|'*|*'|'*[!0-9]*) ;;
+    *)
+      if [ "$sproto" -lt "$cproto" ]; then
+        advice="the server is older than the client, so a stale server holds the session (for example one an older herdr binary started at boot); an operator must restart that session's server with $bin, which interrupts every pane on it"
+      elif [ "$sproto" -gt "$cproto" ]; then
+        advice="the client is older than the server; update herdr (herdr update) or put the newer herdr first on PATH"
+      fi
+      ;;
+  esac
+  printf "herdr protocol mismatch on session '%s': client %s %s (protocol %s) cannot drive the running server %s (protocol %s), and no other herdr on PATH matches it, so every pane read on that session fails; %s\n" \
+    "$session" "$bin" "${cver:-unknown}" "${cproto:-unknown}" "${sver:-unknown}" "${sproto:-unknown}" "$advice"
+  return 0
+}
+
 # fm_backend_herdr_tool_check: refuse loudly if herdr or jq is missing.
 fm_backend_herdr_tool_check() {
   command -v herdr >/dev/null 2>&1 || { echo "error: backend=herdr selected but the 'herdr' CLI is not installed (https://herdr.dev) (Apache-2.0)" >&2; return 1; }
@@ -1715,7 +1751,7 @@ fm_backend_herdr_server_owner_name() {  # <owner-marker>
 # NOT auto-start the server, so this must run before any workspace/tab/pane
 # call. The server outlives its launcher and passes its startup environment to
 # every later pane, so remove home, harness identity, supervision selection,
-# and the agent-kit lifecycle pair inherited from whichever agent happened to
+# and the agent-kit lifecycle variables inherited from whichever agent happened to
 # start it. Bounded poll for the
 # server to report running.
 #
@@ -3988,7 +4024,7 @@ fm_backend_herdr_list_live() {  # <session>
 # herdr homes: instead of a blind sleep, it blocks on herdr's native event
 # stream and returns the instant a subscribed pane transitions to `blocked`, so
 # a crew waiting on the human wakes its supervisor sub-second instead of after
-# the ~240s stale-pane wedge timer. Everything not `blocked` is streamed too
+# the ~300s stale-pane wedge timer. Everything not `blocked` is streamed too
 # (the policy, not the subscription, makes `blocked` the sole immediate action)
 # so `working` edges clear the per-pane dedupe marker. Polling stays the
 # permanent fail-closed backstop: below-capability, a connect/subscribe failure,
