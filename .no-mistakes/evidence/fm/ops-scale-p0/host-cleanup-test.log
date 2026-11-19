@@ -1,0 +1,9 @@
+1..6
+ok - report measures free space, old files, and worktrees without deleting
+ok - an under-target reading exits 3 and says why
+ok - clean without --apply deletes nothing
+ok - clean --apply removes only whole old cache and log entries and logs the run
+ok - npm's _cacache is judged and removed as one whole entry under the default roots
+ok - usage errors exit 2 and --help prints the contract
+FM_TEST_COMPLETE
+exit=0

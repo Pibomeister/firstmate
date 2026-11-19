@@ -1,0 +1,46 @@
+$ sample (1)
+host-ledger: 1795124893	171.67	2189	unknown	unknown	unknown	34.77	30.37	34.85	1111.19	59191540	codex=9:1372832,grok=12:2189136,droid=8:6551008,cursor-agent=12:2784992,agy=5:1717424,opencode=1:152192,claude=46:27206432	unknown file=$LEDGER/ledger-2026-11-19.tsv
+bin/fm-host-ledger.sh sample  0.24s user 2.45s system 16% cpu 16.096 total
+exit=0
+$ sample (2)
+host-ledger: 1795124911	157.24	2142	258	17	15.18	unknown	unknown	unknown	1111.19	59192124	codex=9:1372832,grok=12:2190176,droid=8:6550032,cursor-agent=12:2787760,agy=5:1717424,opencode=1:152288,claude=48:27904512	bash=118,(bash)=78,launchd=19,timeout=10,zsh=5 file=$LEDGER/ledger-2026-11-19.tsv
+exit=0
+--- ledger file
+ledger-2026-11-19.tsv
+prev-pids.tsv
+ts_epoch	load1	procs	new_pids	interval_s	new_per_s	cpu_user	cpu_sys	cpu_idle	swap_used_mib	disk_free_kib	cli	parents
+1795124893	171.67	2189	unknown	unknown	unknown	34.77	30.37	34.85	1111.19	59191540	codex=9:1372832,grok=12:2189136,droid=8:6551008,cursor-agent=12:2784992,agy=5:1717424,opencode=1:152192,claude=46:27206432	unknown
+1795124911	157.24	2142	258	17	15.18	unknown	unknown	unknown	1111.19	59192124	codex=9:1372832,grok=12:2190176,droid=8:6550032,cursor-agent=12:2787760,agy=5:1717424,opencode=1:152288,claude=48:27904512	bash=118,(bash)=78,launchd=19,timeout=10,zsh=5
+$ report --hours 1
+host-ledger report: rows=2 peak_new_per_s=15.18 peak_load1=171.67 min_disk_free_kib=59191540 last_disk_free_kib=59192124
+host-ledger cli: cursor-agent peak_count=12 peak_rss_kib=2787760
+host-ledger cli: droid peak_count=8 peak_rss_kib=6551008
+host-ledger cli: opencode peak_count=1 peak_rss_kib=152288
+host-ledger cli: grok peak_count=12 peak_rss_kib=2190176
+host-ledger cli: agy peak_count=5 peak_rss_kib=1717424
+host-ledger cli: codex peak_count=9 peak_rss_kib=1372832
+host-ledger cli: claude peak_count=48 peak_rss_kib=27904512
+exit=0
+$ limits
+kern.maxproc: 16000
+kern.maxprocperuid: 10666
+kern.maxfiles: 491520
+kern.num_taskthreads: 16384
+launchctl 	maxproc     10666          16000          
+launchctl 	maxfiles    256            unlimited      
+ulimit -u: 10666
+ulimit -n: 1048576
+exit=0
+$ microbench --n 20
+host-microbench: load1=154.02 n=20 (run at a quiet time for gate numbers)
+host-microbench: cached_binary ms_per_exec=29.549 n=20
+host-microbench: cached_script ms_per_exec=48.777 n=20
+host-microbench: fresh_script_with_write ms_per_exec=360.534 n=20
+host-microbench: bash_c_true ms_per_exec=43.816 n=20
+exit=0
+$ bad
+usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|--help
+exit=2
+$ unwritable dir
+fm-host-ledger: cannot create /dev/null/x
+exit=1

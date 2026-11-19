@@ -1,0 +1,8 @@
+stat on PATH: stat (GNU coreutils) 9.12
+host-ledger: 1795124978	100.60	2044	unknown	unknown	unknown
+exit=0
+host-ledger: 1795124979	100.60	2137	145	1	145.00
+exit=0
+host-ledger: 1795124983	102.96	2101	136	3	45.33
+exit=0
+rows (incl header):        4

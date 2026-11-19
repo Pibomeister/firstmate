@@ -1,0 +1,55 @@
+$ fm-host-cleanup.sh report
+host-cleanup report: free_kib=59304536 free_gib=56.6 target_gib=1 volume=/System/Volumes/Data
+host-cleanup cache: root=$LAB/cache size_kib=12 old_entries=1 old_kib=4 age_days=7
+host-cleanup cache: root=$LAB/npm size_kib=8 old_entries=0 old_kib=0 age_days=7
+host-cleanup logs: root=$LAB/logs size_kib=8 old_entries=1 old_kib=4 age_days=14
+host-cleanup worktrees: root=$LAB/wt/projA size_kib=4
+exit=0
+$ fm-host-cleanup.sh clean (dry-run)
+host-cleanup clean: mode=dry-run free_before_kib=59301628 free_before_gib=56.6
+host-cleanup clean: root=$LAB/cache old_entries=1 old_kib=4 remaining_old_entries=1
+host-cleanup clean: root=$LAB/npm old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=$LAB/logs old_entries=1 old_kib=4 remaining_old_entries=1
+host-cleanup clean: mode=dry-run free_after_kib=59298812 free_after_gib=56.6 target_gib=1
+exit=0
+--- tree after dry-run
+./cache/mixed/fresh-index
+./cache/mixed/oldblob
+./cache/oldtool/sub/blob
+./logs/new.log
+./logs/old.log
+./npm/_cacache/content-v2/b
+./npm/_cacache/index-v5/i
+./wt/projA/main.go
+$ fm-host-cleanup.sh clean --apply
+host-cleanup clean: mode=apply free_before_kib=59293212 free_before_gib=56.5
+host-cleanup clean: root=$LAB/cache old_entries=1 old_kib=4 remaining_old_entries=0
+host-cleanup clean: root=$LAB/npm old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=$LAB/logs old_entries=1 old_kib=4 remaining_old_entries=0
+host-cleanup clean: mode=apply free_after_kib=59286404 free_after_gib=56.5 target_gib=1
+exit=0
+--- tree after apply
+./cache/mixed/fresh-index
+./cache/mixed/oldblob
+./logs/new.log
+./npm/_cacache/content-v2/b
+./npm/_cacache/index-v5/i
+./state/cleanup.log
+./wt/projA/main.go
+--- cleanup.log
+2026-11-19T15:47:29-0600 clean free_before_kib=59293212 free_after_kib=59286404 target_gib=1 volume=/System/Volumes/Data
+$ second clean --apply (idempotent)
+host-cleanup clean: mode=apply free_before_kib=59283260 free_before_gib=56.5
+host-cleanup clean: root=$LAB/cache old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=$LAB/npm old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=$LAB/logs old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: mode=apply free_after_kib=59281436 free_after_gib=56.5 target_gib=1
+exit=0
+$ FM_CLEANUP_TARGET_GIB=100000 report (under target)
+host-cleanup: free space is under the 100000 GiB target
+exit=3
+$ bad args
+usage: fm-host-cleanup.sh report|clean [--apply]|--help
+exit=2
+usage: fm-host-cleanup.sh report|clean [--apply]|--help
+exit=2
