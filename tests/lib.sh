@@ -64,6 +64,12 @@ export FM_HEARTBEAT_BIN=true
 # is not a directory reads as absent. A case that verifies a level sets its own.
 export FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
 
+# Keep the launch quota floor (bin/fm-quota-floor-lib.sh) off the host's real
+# quota-axi, so a launch in a test never depends on the accounts of the machine
+# running the suite. An absent command reads as quota-axi not installed. A case
+# that verifies the floor points this at its own fake.
+export FM_QUOTA_FLOOR_BIN=/nonexistent/fm-test-quota-axi
+
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary

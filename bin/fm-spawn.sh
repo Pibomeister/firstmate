@@ -628,6 +628,11 @@
 #   relaunch reuses the recorded entry unless --account moves it. Without the
 #   list, --account refuses and nothing else changes. docs/configuration.md
 #   "Several Claude accounts" owns the contract.
+# Launch quota floor:
+#   A Claude or Codex launch, including a relaunch and a secondmate, refuses
+#   before any endpoint, worktree, or record exists when the account it would
+#   spend has under 15% of its weekly or 5-hour window left, and names the
+#   reroute. bin/fm-quota-floor-lib.sh owns the rule; T3 Code is skipped.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
 #   bin/fm-omp-profile-lib.sh owns the file and its refusals. A pinned launch
@@ -1099,6 +1104,8 @@ fm_backlog_directory_present "$STATE" "state directory" || {
 . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-quota-floor-lib.sh
+. "$SCRIPT_DIR/fm-quota-floor-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-ak-supervisor-lib.sh
@@ -4182,6 +4189,12 @@ if [ "$BACKEND" = t3code ]; then
     echo "error: backend=t3code cannot apply the $HARNESS worker account pin because T3's provider instance owns the account; select that instance in config/t3code-instances instead" >&2
     exit 1
   fi
+fi
+# Launch quota floor (bin/fm-quota-floor-lib.sh), before any endpoint,
+# worktree, or record exists. T3's provider instance owns its account, so no
+# read here would measure the account that launch spends.
+if [ "$BACKEND" != t3code ]; then
+  fm_quota_floor_check "$HARNESS" "$WORKER_ACCOUNT_DECLARED" "$WORKER_ACCOUNT_ROOT" "$CONFIG" "$KIND" "$ID" || exit 1
 fi
 if [ -n "$WORKER_ACCOUNT" ] && [ "$HARNESS" = claude ]; then
   if [ -n "$WORKER_ACCOUNT_ROOT" ]; then
