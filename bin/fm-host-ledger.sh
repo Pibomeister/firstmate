@@ -177,7 +177,7 @@ snapshot_build() {
 # Prints "new_pids parents" comparing snapshot $2 (current) against $1 (prev).
 new_pids_calc() {
   local prev=$1 cur=$2
-  if [ ! -s "$prev" ]; then
+  if [ ! -s "$prev" ] || [ ! -s "$cur" ]; then
     printf 'unknown unknown\n'
     return 0
   fi
@@ -257,7 +257,13 @@ EOF
       interval=unknown
     fi
   fi
-  mv -f "$cur_tmp" "$prev" 2>/dev/null || rm -f "$cur_tmp"
+  # A failed snapshot never replaces the baseline: the next good sample
+  # still counts against the last good one.
+  if [ -n "$snap" ]; then
+    mv -f "$cur_tmp" "$prev" 2>/dev/null || rm -f "$cur_tmp"
+  else
+    rm -f "$cur_tmp"
+  fi
   load1=$(load1_read)
   swap=$(swap_used_mib_read)
   free_kib=$(disk_free_kib_read)

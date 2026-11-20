@@ -219,6 +219,33 @@ test_failed_quota_read_is_unreported_and_row_still_written() {
   pass "a failed or unparsable quota-axi read degrades to unreported and still appends the row"
 }
 
+test_failed_ps_read_is_unknown_and_keeps_baseline() {
+  local dir="$TMP_ROOT/ps-fail" ps1="$TMP_ROOT/ps-fail-1" ps2="$TMP_ROOT/ps-fail-2" row
+  mkdir -p "$dir"
+  cat > "$ps1" <<'EOF'
+  100     1  10000 /sbin/launchd
+  200   100   5000 /usr/local/bin/claude
+EOF
+  cat > "$ps2" <<'EOF'
+  100     1  10000 /sbin/launchd
+  200   100   5000 /usr/local/bin/claude
+  400   100   2000 /usr/local/bin/grok
+EOF
+  run_ledger "$ps1" "$dir" sample
+  [ "$RC" = 0 ] || fail "baseline sample: expected exit 0, got $RC"$'\n'"$OUT"
+  run_ledger "$TMP_ROOT/no-such-ps-file" "$dir" sample
+  [ "$RC" = 0 ] || fail "failed ps sample: expected exit 0, got $RC"$'\n'"$OUT"
+  row=$(tail -n 1 "$dir"/ledger-*.tsv)
+  assert_equals "unknown" "$(printf '%s' "$row" | awk -F '\t' '{ print $4 }')" \
+    "a failed ps read records new pids as unknown, never zero"
+  run_ledger "$ps2" "$dir" sample
+  [ "$RC" = 0 ] || fail "recovery sample: expected exit 0, got $RC"$'\n'"$OUT"
+  row=$(tail -n 1 "$dir"/ledger-*.tsv)
+  assert_equals "1" "$(printf '%s' "$row" | awk -F '\t' '{ print $4 }')" \
+    "the next good sample still counts against the pre-failure baseline"
+  pass "a failed ps read is unknown and keeps the previous baseline"
+}
+
 test_render_launchd_runs_sample_every_minute() {
   local dir="$TMP_ROOT/launchd-ledger" plist="$TMP_ROOT/ledger.plist"
   mkdir -p "$dir"
@@ -283,6 +310,7 @@ fm_test_run \
   test_account_wide_quota_recorded_and_never_rated_per_host \
   test_gap_interval_is_unknown_and_credits_no_worker_hours \
   test_failed_quota_read_is_unreported_and_row_still_written \
+  test_failed_ps_read_is_unknown_and_keeps_baseline \
   test_render_launchd_runs_sample_every_minute \
   test_report_without_ledger_is_honest \
   test_microbench_and_limits_run \

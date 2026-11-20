@@ -96,6 +96,15 @@ test_report_under_target_exits_3() {
   pass "an under-target reading exits 3 and says why"
 }
 
+test_report_unreadable_free_reading_exits_3() {
+  run_cleanup bogus report
+  assert_equals "3" "$RC" "an unreadable free-space reading exits 3, never success"
+  assert_contains "$OUT" "free_gib=unknown" "the unreadable reading is printed as unknown"
+  run_cleanup bogus clean
+  assert_equals "3" "$RC" "clean with an unreadable free-space reading exits 3"
+  pass "an unreadable free-space reading exits 3 instead of looking healthy"
+}
+
 test_clean_dry_run_deletes_nothing() {
   run_cleanup 209715200 clean
   [ "$RC" = 0 ] || fail "dry run: expected exit 0, got $RC"$'\n'"$OUT"
@@ -243,6 +252,7 @@ test_usage_errors_exit_2() {
 fm_test_run \
   test_report_measures_and_deletes_nothing \
   test_report_under_target_exits_3 \
+  test_report_unreadable_free_reading_exits_3 \
   test_clean_dry_run_deletes_nothing \
   test_clean_apply_deletes_only_old_cache_and_logs \
   test_clean_lists_each_root_once \

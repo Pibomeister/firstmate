@@ -57,7 +57,8 @@
 #
 # Free space is read on FM_CLEANUP_VOLUME (default /System/Volumes/Data, or /
 # where that path is absent). FM_CLEANUP_TARGET_GIB (default 100) is the
-# health line: report and clean exit 3 while free space is under it, so the
+# health line: report and clean exit 3 while free space is under it or the
+# reading fails, so the
 # periodic job's log shows the blocker instead of looking healthy. Usage
 # errors exit 2. An entry whose delete fails is counted in
 # remaining_old_entries, never hidden.
@@ -101,8 +102,8 @@ gib_of() {
   awk -v k="$1" 'BEGIN { if (k ~ /^[0-9]+$/) printf "%.1f", k / 1048576; else print "unknown" }'
 }
 
-under_target() {  # <free_kib>: true when a known reading is under the target
-  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+under_target() {  # <free_kib>: true when under the target or unreadable
+  case "$1" in ''|*[!0-9]*) return 0 ;; esac
   awk -v k="$1" -v t="$TARGET_GIB" 'BEGIN { exit !(k < t * 1048576) }'
 }
 
