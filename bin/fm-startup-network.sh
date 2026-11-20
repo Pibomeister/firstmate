@@ -22,7 +22,8 @@
 # The stage worker owns the scan journal outside its timed child. Inventory is
 # collected before bootstrap, and pending identities are replayed if the outer
 # deadline stops discovery, refresh, or proofs (fm-unpushed-reconcile.sh).
-# Each scan's own bound is lowered to end 2 s before the outer deadline: a GNU
+# The stage passes its deadline as FM_UNPUSHED_DEADLINE, and the scanner ends
+# its own bound 3 s before that deadline: a GNU
 # or BSD timeout runs its command in a process group the outer bound's signal
 # cannot reach, so a longer scan bound would keep the scan running after the
 # stage replayed, published, and removed its journal. A scan with no time left
