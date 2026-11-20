@@ -537,8 +537,13 @@ test_ring_submits_own_doorbell_split_into_orca_draft() {
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
   doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
   log="$dir/send.log"; composer="$dir/composer"
+  # Each stub read spawns python3 and node, and one ring makes several reads,
+  # so a loaded host can overrun the default 20s ring budget and return 2
+  # before the ownership proof finishes. The budget has its own test
+  # (tests/fm-supervision-bounds.test.sh); this case judges ownership only.
   ring() {
     PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_SEND_RING_BUDGET=300 \
       inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1
   }
 
