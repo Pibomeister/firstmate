@@ -301,11 +301,17 @@ assert_contains "$out" 'incomplete' 'timeout became success'
 pass 'a slow forge read retains all discovered branches and an incomplete scan'
 
 new_world deadline
+# As in the startup stage, inventory comes first so a deadline cut, however
+# little time it leaves on a loaded host, still names the discovered branch.
+deadline_work="$TMP_ROOT/deadline-work"
+mkdir -m 700 "$deadline_work"
+bash "$ROOT/bin/fm-unpushed-reconcile.sh" discover --work-dir "$deadline_work" >/dev/null
 deadline=$(( $(date +%s) + 12 ))
 # Time spent before the scan reaches its timer, as on a loaded host, must come
 # out of the caller's deadline rather than extend past it.
 sleep 4
-out=$(FM_UNPUSHED_DEADLINE=$deadline FM_UNPUSHED_TIMEOUT_SECS=20 FM_GH_SLEEP=60 scan)
+out=$(FM_UNPUSHED_DEADLINE=$deadline FM_UNPUSHED_TIMEOUT_SECS=20 FM_GH_SLEEP=60 \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan --work-dir "$deadline_work")
 finished=$(date +%s)
 [ "$finished" -le "$deadline" ] || fail "the scan ended at $finished, after its deadline $deadline"
 assert_contains "$out" 'branch=fm/task' 'the deadline hid the branch'
