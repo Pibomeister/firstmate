@@ -75,7 +75,8 @@
 # A SHA-256 inventory verifies source paths, bytes, modes and symlinks before
 # admission; Git HEAD, tree and index identity are checked separately.
 # A mismatch falls back locally before any workload starts.
-# Mirror locks serialize preparations; busy or abandoned locks fall back locally.
+# Mirror locks serialize preparations; a busy lock falls back locally, and a lock
+# abandoned for more than 30 minutes is reclaimed.
 # Commands that need older history must fetch it explicitly. Git, rsync, Python 3,
 # Bash and test dependencies must already exist remotely.
 # Ignored dependencies, credentials and caller environment are not copied. Worktree paths in argv are rewritten to the remote checkout;

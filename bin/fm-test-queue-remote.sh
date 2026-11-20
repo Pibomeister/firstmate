@@ -3,6 +3,7 @@
 # The queue header owns configuration and the execution contract.
 
 REMOTE_HOST="" REMOTE_DIR="" REMOTE_ROOT="" REMOTE_CWD="" REMOTE_LOCAL="" REMOTE_CACHE=""
+REMOTE_LOCK_HOST=""
 SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
 
 remote_quote() {
@@ -14,6 +15,13 @@ remote_quote() {
 # shellcheck disable=SC2029
 remote_ssh() { ssh "${SSH_OPTIONS[@]}" "$@"; }
 
+# Release a mirror lock only while its owner record still names this run, so a
+# run whose lock was reclaimed as stale cannot release its successor's lock.
+remote_lock_release() {  # <remote shell word naming the mirror cache directory>
+  printf '{ c=%s; if grep -qxF -- %s "$c/lock/owner" 2>/dev/null && grep -qxF -- %s "$c/lock/owner"; then rm -f -- "$c/lock/owner" && rmdir -- "$c/lock"; fi; }' \
+    "$1" "$(remote_quote "host=$REMOTE_LOCK_HOST")" "$(remote_quote "pid=$$")"
+}
+
 remote_cleanup() {
   if [ -n "$REMOTE_HOST" ] && [ -n "$REMOTE_DIR" ]; then
     if [ -f "$REMOTE_LOCAL/execution-uncertain" ]; then
@@ -23,7 +31,7 @@ remote_cleanup() {
     fi
   fi
   if [ -n "$REMOTE_HOST" ] && [ -n "$REMOTE_CACHE" ]; then
-    remote_ssh "$REMOTE_HOST" "rm -f -- $(remote_quote "$REMOTE_CACHE/lock/owner"); rmdir -- $(remote_quote "$REMOTE_CACHE/lock")" </dev/null >/dev/null 2>&1 || true
+    remote_ssh "$REMOTE_HOST" "$(remote_lock_release "$(remote_quote "$REMOTE_CACHE")")" </dev/null >/dev/null 2>&1 || true
   fi
   REMOTE_CACHE=""
   [ -z "$REMOTE_LOCAL" ] || rm -rf "$REMOTE_LOCAL"
@@ -124,12 +132,6 @@ to_hash = []
 new_cache = {}
 tree = {b"queue": {}, b"repo": {}}
 
-gitlinks = set()
-staged = subprocess.check_output(["git", "-C", root, "ls-files", "-s", "-z"])
-for entry in staged.split(b"\0"):
-    if entry.startswith(b"160000 "):
-        gitlinks.add(entry.split(b"\t", 1)[1])
-
 def add_entry(rel, full):
     rel = rel.rstrip(b"/")
     if not rel:
@@ -144,8 +146,6 @@ def add_entry(rel, full):
     for part in parts[:-1]:
         cur = cur.setdefault(part, {})
     if stat.S_ISDIR(mode):
-        if rel in gitlinks:
-            return
         node = cur.setdefault(parts[-1], {})
         if not isinstance(node, dict):
             sys.exit(1)
@@ -219,9 +219,10 @@ def emit(node, relative=b""):
             manifest_lines.append(json.dumps([os.fsdecode(rel), *child], ensure_ascii=True))
 
 emit(tree)
+manifest_text = ("\n".join(manifest_lines) + "\n") if manifest_lines else ""
 with open(os.path.join(local_b, b"stage", b"manifest"), "w", encoding="utf-8") as fh:
-    if manifest_lines:
-        fh.write("\n".join(manifest_lines) + "\n")
+    fh.write(manifest_text)
+manifest_sha = hashlib.sha256(manifest_text.encode("utf-8")).hexdigest()
 
 if cache_path:
     try:
@@ -234,7 +235,7 @@ if cache_path:
         pass
 
 with open(os.path.join(local_b, b"meta"), "w", encoding="utf-8") as fh:
-    fh.write(f"{root}\n{rel_cwd}\n{key}\n{local_head}\n{local_tree}\n")
+    fh.write(f"{root}\n{rel_cwd}\n{key}\n{local_head}\n{local_tree}\n{manifest_sha}\n")
 PYSTAGE
 }
 
@@ -275,10 +276,12 @@ PYDELTA
 # Prepare before starting any workload. A failed preparation can safely fall
 # back to local admission. Once remote_exec starts, no local retry is safe.
 # A per-repository mirror is locked only for sync/copy, never for test execution.
-# Refuse a busy or abandoned lock rather than overwriting another preparation.
+# A busy lock falls back to the next host or local admission; a lock abandoned
+# for more than 30 minutes is reclaimed. The private copy must match this run's
+# own manifest, so a run racing a reclaimed lock cannot admit another's source.
 remote_prepare() {
-  local root host rel hosts key reply dir cache rhead transport note
-  local local_head local_tree git_mode finalize heal_marker heal_c=""
+  local root host rel hosts key reply dir cache rhead transport note valid
+  local local_head local_tree manifest_sha git_mode finalize heal_marker heal_c=""
   command -v ssh >/dev/null 2>&1 && command -v git >/dev/null 2>&1 &&
     command -v rsync >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1 || return 1
   REMOTE_LOCAL=$(mktemp -d "${TMPDIR:-/tmp}/fm-test-offload.XXXXXXXX") || return 1
@@ -293,7 +296,10 @@ remote_prepare() {
     IFS= read -r key
     IFS= read -r local_head
     IFS= read -r local_tree
+    IFS= read -r manifest_sha
   } < "$REMOTE_LOCAL/meta"
+  REMOTE_LOCK_HOST=$(hostname 2>/dev/null) || REMOTE_LOCK_HOST=""
+  [ -n "$REMOTE_LOCK_HOST" ] || REMOTE_LOCK_HOST=unknown
   heal_marker="$SPOOL/offload-checksum-$key"
   [ ! -e "$heal_marker" ] || heal_c=c
   hosts=${REMOTE_HOSTS:-}
@@ -309,7 +315,7 @@ import stat
 import subprocess
 import sys
 
-cache, rdir, git_mode, lhead, ltree = sys.argv[1:6]
+cache, rdir, git_mode, lhead, ltree, mhash = sys.argv[1:7]
 snap = os.path.join(cache, "snapshot")
 repo = os.path.join(snap, "repo")
 expected_files = set()
@@ -429,9 +435,12 @@ for rel_p, kind, meta, _ in entries:
     else:
         verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
 
-expected_text = open(os.path.join(rdir, "manifest"), "r", encoding="utf-8").read()
+with open(os.path.join(rdir, "manifest"), "rb") as fh:
+    expected_bytes = fh.read()
+if hashlib.sha256(expected_bytes).hexdigest() != mhash:
+    sys.exit(1)
 actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
-if expected_text != actual_text:
+if expected_bytes != actual_text.encode("utf-8"):
     sys.exit(1)
 
 rrepo = os.path.join(rdir, "repo")
@@ -448,7 +457,7 @@ PYFINAL
   for host in $hosts; do
     # HOME is resolved on the remote host. Only this user's private cache and
     # a newly minted run directory are used; no project checkout is modified.
-    reply=$(remote_ssh "$host" "bash -s -- $key $(hostname 2>/dev/null || echo unknown) $$" 2>/dev/null <<'SHREMOTE'
+    reply=$(remote_ssh "$host" "bash -s -- $key $(remote_quote "$REMOTE_LOCK_HOST") $$" 2>/dev/null <<'SHREMOTE'
 set -e
 umask 077
 command -v bash >/dev/null
@@ -498,15 +507,20 @@ SHREMOTE
     note=${reply#*$'\n'}
     [ "$note" != "$rhead" ] || note=none
     [ "$rhead" != none ] || rhead=""
+    [ -z "$heal_c" ] || rhead=""
     case "$note" in *[!a-zA-Z0-9\ ._-]*) note=none ;; esac
     [ "$note" = none ] || echo "fm-test-queue: $note on $host" >&2
     # Only a private directory minted by this protocol may ever be removed.
     # A validation failure still holds this attempt's mirror lock: release it
     # through the deterministic remote cache path before trying another host.
-    case "$dir" in /tmp/fm-test-offload.*) ;; *) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
-    case "$dir" in *[!a-zA-Z0-9/._-]*) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
-    case "$cache" in /*/.cache/firstmate/test-mirrors/"$key") ;; *) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
-    case "$cache" in *[!a-zA-Z0-9/._-]*) remote_ssh "$host" "rm -f -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock/owner\"; rmdir -- \"\$HOME/.cache/firstmate/test-mirrors/$key/lock\"" </dev/null >/dev/null 2>&1 || true; continue ;; esac
+    valid=1
+    case "$dir" in /tmp/fm-test-offload.*) ;; *) valid=0 ;; esac
+    case "$cache" in /*/.cache/firstmate/test-mirrors/"$key") ;; *) valid=0 ;; esac
+    case "$dir$cache" in *[!a-zA-Z0-9/._-]*) valid=0 ;; esac
+    if [ "$valid" = 0 ]; then
+      remote_ssh "$host" "$(remote_lock_release "\"\$HOME/.cache/firstmate/test-mirrors/$key\"")" </dev/null >/dev/null 2>&1 || true
+      continue
+    fi
     REMOTE_HOST=$host REMOTE_DIR=$dir REMOTE_CACHE=$cache
     rm -rf "$REMOTE_LOCAL/stage/delta.pack" "$REMOTE_LOCAL/stage/cold.git" "$REMOTE_LOCAL/cold-repo"
     git_mode=""
@@ -528,7 +542,7 @@ SHREMOTE
     if { [ ! -s "$REMOTE_LOCAL/files" ] || rsync "-a$heal_c" --force --files-from="$REMOTE_LOCAL/files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
       { [ ! -s "$REMOTE_LOCAL/recent_files" ] || rsync -ac --force --files-from="$REMOTE_LOCAL/recent_files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
       rsync -a --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$cache/snapshot/" >/dev/null 2>&1 &&
-      remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") && cd $(remote_quote "$dir/repo$rel") && rm -f -- $(remote_quote "$cache/lock/owner") && rmdir $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1; then
+      remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") $(remote_quote "$manifest_sha") && cd $(remote_quote "$dir/repo$rel") && $(remote_lock_release "$(remote_quote "$cache")")" </dev/null >/dev/null 2>&1; then
       REMOTE_CACHE=""
       rm -f "$heal_marker"
       REMOTE_ROOT="$dir/repo"
@@ -538,7 +552,7 @@ SHREMOTE
       return 0
     fi
     : > "$heal_marker" 2>/dev/null || true
-    remote_ssh "$host" "rm -rf -- $(remote_quote "$dir"); rm -f -- $(remote_quote "$cache/lock/owner"); rmdir -- $(remote_quote "$cache/lock")" </dev/null >/dev/null 2>&1 || true
+    remote_ssh "$host" "rm -rf -- $(remote_quote "$dir"); $(remote_lock_release "$(remote_quote "$cache")")" </dev/null >/dev/null 2>&1 || true
     REMOTE_HOST="" REMOTE_DIR="" REMOTE_CACHE=""
   done
   remote_cleanup

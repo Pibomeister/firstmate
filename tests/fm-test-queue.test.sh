@@ -1121,6 +1121,26 @@ done
 dest=${1#*:}
 "$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
 if [ "${CORRUPT_SNAPSHOT:-}" = 1 ] && [ -d "$dest/repo" ]; then printf stale > "$dest/repo/source"; fi
+if [ -f "$dest/manifest" ] && [ "${STEAL_LOCK:-}" = 1 ]; then
+  printf 'host=successor\npid=1\nepoch=%s\n' "$(date +%s)" > "${dest%/}/../lock/owner"
+fi
+if [ -f "$dest/manifest" ] && [ "${FOREIGN_SNAPSHOT:-}" = 1 ]; then
+  # Another worktree's consistent files and manifest land in the shared mirror.
+  python3 - "$dest" <<'PYFOREIGN'
+import hashlib, json, os, sys
+snap = sys.argv[1]
+with open(os.path.join(snap, "repo", "source"), "w") as fh:
+    fh.write("foreign\n")
+lines = []
+for line in open(os.path.join(snap, "manifest")):
+    item = json.loads(line)
+    if item[0] == "repo/source":
+        item[3] = hashlib.sha256(b"foreign\n").hexdigest()
+    lines.append(json.dumps(item, ensure_ascii=True))
+with open(os.path.join(snap, "manifest"), "w") as fh:
+    fh.write("\n".join(lines) + "\n")
+PYFOREIGN
+fi
 SH
   chmod +x "${1%/*}/rsync"
   export REAL_RSYNC
@@ -1340,7 +1360,7 @@ test_remote_offload_hardening() {
   printf 'gitlink-content\n' > "$CASE/repo/sub/file.txt"
   git -C "$CASE/repo" update-index --add --cacheinfo "160000,$sha,sub" || fail 'gitlink fixture'
   out=$( ( cd "$CASE/repo" && q run -- sh -c 'printf "%s|%s" "$(cat nested/inner.txt)" "$([ -e sub/file.txt ] && echo present || echo absent)"' ) 2>"$CASE/nested.err") || fail 'nested repo offload'
-  assert_equals 'inner|absent' "$out" 'nested repo was not staged recursively or gitlink was staged'
+  assert_equals 'inner|present' "$out" 'nested repo or submodule working tree was not staged'
   assert_grep 'offloading to m3' "$CASE/nested.err" 'nested repo disabled offload instead of staging recursively'
   git -C "$CASE/repo" rm -q --cached sub 2>/dev/null || true
   rm -rf "$CASE/repo/sub" "$CASE/repo/nested"
@@ -1352,6 +1372,20 @@ test_remote_offload_hardening() {
   assert_equals stale-ok "$out" 'stale lock was not reclaimed'
   assert_grep 'reclaimed stale test-mirror lock' "$CASE/stale.err" 'stale lock reclaim printed no diagnostic'
   assert_grep 'offloading to m3' "$CASE/stale.err" 'run after stale lock reclaim was not offloaded'
+  out=$( ( cd "$CASE/repo" && FOREIGN_SNAPSHOT=1 q run -- cat source ) 2>"$CASE/foreign.err") || fail 'foreign snapshot run'
+  assert_equals 'original-content' "$out" 'run admitted another worktree snapshot instead of falling back locally'
+  assert_grep 'no remote prepared' "$CASE/foreign.err" 'foreign manifest was accepted'
+  out=$( ( cd "$CASE/repo" && STEAL_LOCK=1 q run -- echo stolen-ok ) 2>"$CASE/steal.err") || fail 'reclaimed lock run'
+  assert_equals stolen-ok "$out" 'run whose lock was reclaimed did not complete'
+  assert_grep 'host=successor' "$mirror/lock/owner" 'a run released the lock its successor reclaimed'
+  rm -f "$mirror/lock/owner"
+  rmdir "$mirror/lock"
+  git -C "$mirror/snapshot/repo" rm -q --cached source || fail 'stale index fixture'
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/index1.err") || fail 'stale index run'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'stale mirror index was admitted'
+  out=$( ( cd "$CASE/repo" && q run -- cat source ) 2>"$CASE/index2.err") || fail 'stale index repair run'
+  assert_equals 'original-content' "$out" 'stale index repair run output'
+  assert_grep 'offloading to m3' "$CASE/index2.err" 'stale mirror index was not rebuilt after a failed verification'
   touch -t 202001010000 "$CASE/repo/source"
   printf 'XXXXXXXX-content\n' > "$mirror/snapshot/repo/source"
   touch -r "$CASE/repo/source" "$mirror/snapshot/repo/source"
