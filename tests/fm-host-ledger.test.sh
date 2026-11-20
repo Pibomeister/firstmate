@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-host-ledger.sh: a sample row is appended
 # with the documented columns, a second sample counts new pids against the
-# first, report summarizes peaks, token readings come only from quota-axi's
-# token-unit credits and report derives tokens per active-agent-hour from
-# them, microbench and limits run, render-launchd emits a runnable 60-second
+# first, report summarizes peaks and local worker-hours, quota-axi's
+# account-wide percent remaining and pace are recorded as reported and never
+# turned into a per-host token rate, microbench and limits run, render-launchd emits a runnable 60-second
 # LaunchAgent, and usage errors exit 2.
 set -u
 
@@ -97,13 +97,30 @@ EOF
   pass "sample appends rows, counts new pids by parent, and report summarizes peaks"
 }
 
-quota_json() {  # <file> <claude-remaining> <grok-remaining>
+# Shape captured from a live quota-axi 0.1.69 --json read (schemaVersion 5):
+# effectiveAvailability entries carry scope, effectivePercentRemaining and
+# pace.status; credits is null or unit "credits"; an auth failure has no
+# entries; a provider that is not set up says notSetUp.
+quota_json() {  # <file> <claude-all-models-pct>
   cat > "$1" <<EOF
-{"schemaVersion":5,"providers":[
- {"provider":"claude","credits":{"remaining":$2,"unlimited":false,"unit":"tokens"},"windows":[]},
- {"provider":"grok","credits":{"remaining":$3,"unlimited":false,"unit":"tokens"},"windows":[]},
- {"provider":"codex","credits":{"remaining":17325.4,"unlimited":false,"unit":"credits"},"windows":[]},
- {"provider":"zai","notSetUp":true,"windows":[]}
+{"schemaVersion":5,"generatedAt":"2026-11-19T23:33:48.766Z","providers":[
+ {"provider":"claude","accountKeys":["default"],"plan":"max","state":{"status":"fresh","stale":false,"reused":true},
+  "quotaSemantics":{"status":"known","effectiveAvailability":[
+   {"scope":"all_models","status":"known","effectivePercentRemaining":$2,"boundedBy":["seven_day"],"limitingWindowIds":["seven_day"],
+    "pace":{"status":"ahead","aheadWindowIds":["seven_day"],"worstReservePercentPoints":-6.9265,"worstReserveWindowId":"seven_day"},
+    "runway":{"status":"projected_exhaustion","usableRunwaySeconds":189123},"selection":{"status":"known","spendPriority":-0.2845}},
+   {"scope":"model:fable","status":"known","effectivePercentRemaining":35,"boundedBy":["seven_day","model:fable"],
+    "pace":{"status":"mixed","aheadWindowIds":["seven_day"]}}]},
+  "windows":[{"id":"seven_day","label":"week","kind":"weekly","percentRemaining":$2,"pace":{"status":"ahead","burnMultiple":1.07}}]},
+ {"provider":"codex","accountKeys":["default"],"plan":"pro","state":{"status":"fresh","stale":false},
+  "quotaSemantics":{"status":"known","effectiveAvailability":[
+   {"scope":"all_models","status":"known","effectivePercentRemaining":0,"boundedBy":["weekly"],
+    "pace":{"status":"ahead","aheadWindowIds":["weekly"]},"runway":{"status":"exhausted_now","usableRunwaySeconds":0}}]},
+  "windows":[{"id":"weekly","label":"week","kind":"weekly","percentRemaining":0,"pace":{"status":"ahead","burnMultiple":1.3542}}],
+  "credits":{"remaining":17325.436353,"unlimited":false,"unit":"credits"}},
+ {"provider":"kimi","accountKeys":[],"state":{"status":"auth_required","stale":false,"error":"kimi_code_cli_credential_invalid"},
+  "quotaSemantics":{"status":"unknown","effectiveAvailability":[]},"windows":[],"credits":null},
+ {"provider":"zai","accountKeys":[],"notSetUp":true,"state":{"status":"not_set_up"},"quotaSemantics":{"status":"unknown","effectiveAvailability":[]},"windows":[]}
 ]}
 EOF
 }
@@ -112,8 +129,8 @@ age_prev_pids() {  # <ledger-dir> <seconds>: backdate the previous snapshot
   perl -e 'my $t = time - $ARGV[1]; utime $t, $t, $ARGV[0] or die "utime: $!"' "$1/prev-pids.tsv" "$2"
 }
 
-test_tokens_recorded_from_quota_axi_and_rated_per_agent_hour() {
-  local dir="$TMP_ROOT/tokens" ps="$TMP_ROOT/ps-tokens" q1="$TMP_ROOT/q1.json" q2="$TMP_ROOT/q2.json"
+test_account_wide_quota_recorded_and_never_rated_per_host() {
+  local dir="$TMP_ROOT/quota" ps="$TMP_ROOT/ps-quota" q1="$TMP_ROOT/q1.json" q2="$TMP_ROOT/q2.json"
   local args="$TMP_ROOT/quota-args" row
   mkdir -p "$dir"
   cat > "$ps" <<'EOF'
@@ -121,53 +138,57 @@ test_tokens_recorded_from_quota_axi_and_rated_per_agent_hour() {
   200   100   5000 /usr/local/bin/claude
   300   100   3000 /bin/bash
 EOF
-  quota_json "$q1" 1000000 500000
-  quota_json "$q2" 940000 500000
+  quota_json "$q1" 40
+  quota_json "$q2" 35
   FM_FAKE_QUOTA_JSON="$q1" FM_FAKE_QUOTA_ARGS="$args" run_ledger "$ps" "$dir" sample
-  [ "$RC" = 0 ] || fail "first token sample: expected exit 0, got $RC"$'\n'"$OUT"
+  [ "$RC" = 0 ] || fail "first quota sample: expected exit 0, got $RC"$'\n'"$OUT"
+  assert_equals "quota_account_wide" "$(head -n 1 "$dir"/ledger-*.tsv | awk -F '\t' '{ print $14 }')" \
+    "the header labels the quota column account-wide"
   row=$(tail -n 1 "$dir"/ledger-*.tsv)
-  assert_equals "claude=1000000,grok=500000" "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" \
-    "only token-unit credits are recorded, per provider, unchanged"
+  assert_equals "claude/all_models=40/ahead,claude/model:fable=35/mixed,codex/all_models=0/ahead" \
+    "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" \
+    "each known scope's effectivePercentRemaining and pace are recorded as quota-axi reported them"
   assert_equals "7" "$(printf '%s' "$row" | awk -F '\t' '{ print $15 }')" \
-    "the seven known CLI providers without a token reading are counted as unreported"
+    "the seven known CLI providers without an entry (kimi failed auth among them) are unreported"
   assert_contains "$(cat "$args")" "--json" "quota-axi is read as JSON"
   assert_contains "$(cat "$args")" "--no-credential-refresh" "the read never refreshes credentials"
   assert_contains "$(cat "$args")" "--max-age" "the read reuses quota-axi's cache"
   age_prev_pids "$dir" 1800
   FM_FAKE_QUOTA_JSON="$q2" run_ledger "$ps" "$dir" sample
-  [ "$RC" = 0 ] || fail "second token sample: expected exit 0, got $RC"$'\n'"$OUT"
+  [ "$RC" = 0 ] || fail "second quota sample: expected exit 0, got $RC"$'\n'"$OUT"
   run_ledger "$ps" "$dir" report --hours 1
-  [ "$RC" = 0 ] || fail "token report: expected exit 0, got $RC"$'\n'"$OUT"
-  local claude_line rate
-  claude_line=$(printf '%s\n' "$OUT" | grep -F "host-ledger tokens: claude ")
-  # 60000 tokens over one claude worker for ~1800 s (0.50 agent-hours) is ~120000 per agent-hour
-  assert_contains "$claude_line" "tokens_consumed=60000" "consumption is the exact drop in remaining tokens"
-  assert_contains "$claude_line" "active_agent_hours=0.50" "agent-hours are one worker over the measured interval"
-  rate=$(printf '%s' "$claude_line" | sed -n 's/.*tokens_per_active_agent_hour=\([0-9]*\).*/\1/p')
-  [ -n "$rate" ] && [ "$rate" -ge 119000 ] && [ "$rate" -le 120000 ] \
-    || fail "expected about 120000 tokens per active-agent-hour, got: $claude_line"
-  assert_contains "$OUT" "host-ledger tokens: grok tokens_consumed=0 active_agent_hours=0 tokens_per_active_agent_hour=unknown reason=no_active_workers" \
-    "a provider with token readings but no live workers is not given a rate"
-  pass "token readings come from quota-axi and report derives tokens per active-agent-hour only where both exist"
+  [ "$RC" = 0 ] || fail "quota report: expected exit 0, got $RC"$'\n'"$OUT"
+  assert_contains "$OUT" "host-ledger quota account-wide: claude/all_models last_pct_remaining=35 min_pct_remaining=35 last_pace=ahead" \
+    "report carries the latest and lowest account-wide percent as reported"
+  # one claude worker across the ~1800 s second interval is 0.50 local worker-hours
+  assert_contains "$OUT" "host-ledger cli: claude peak_count=1 peak_rss_kib=5000 local_worker_hours=0.50" \
+    "local worker-hours are recorded next to the account-wide figures"
+  assert_contains "$OUT" "host-ledger tokens_per_active_agent_hour: unreported: no per-host token source" \
+    "tokens per active-agent-hour is stated as unreported"
+  if printf '%s\n' "$OUT" | grep -Eq 'tokens_per_active_agent_hour[=:] *[0-9]'; then
+    fail "report must never print a numeric tokens per active-agent-hour from account-wide inputs"$'\n'"$OUT"
+  fi
+  pass "account-wide quota is recorded as reported and never divided by local worker-hours"
 }
 
 test_failed_quota_read_is_unreported_and_row_still_written() {
-  local dir="$TMP_ROOT/tokens-fail" ps="$TMP_ROOT/ps-tokens" bad="$TMP_ROOT/bad.json" row
+  local dir="$TMP_ROOT/quota-fail" ps="$TMP_ROOT/ps-quota" bad="$TMP_ROOT/bad.json" row
   mkdir -p "$dir"
   run_ledger "$ps" "$dir" sample
   [ "$RC" = 0 ] || fail "failed quota read: expected exit 0, got $RC"$'\n'"$OUT"
   row=$(tail -n 1 "$dir"/ledger-*.tsv)
-  assert_equals "none" "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" "a failed read records no tokens"
+  assert_equals "unreported" "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" "a failed read records the quota as unreported"
   assert_equals "9" "$(printf '%s' "$row" | awk -F '\t' '{ print $15 }')" "a failed read leaves every known provider unreported"
   printf 'not json {\n' > "$bad"
   FM_FAKE_QUOTA_JSON="$bad" run_ledger "$ps" "$dir" sample
   [ "$RC" = 0 ] || fail "unparsable quota read: expected exit 0, got $RC"$'\n'"$OUT"
   row=$(tail -n 1 "$dir"/ledger-*.tsv)
-  assert_equals "none" "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" "an unparsable read records no tokens"
+  assert_equals "unreported" "$(printf '%s' "$row" | awk -F '\t' '{ print $14 }')" "an unparsable read records the quota as unreported"
   assert_equals "9" "$(printf '%s' "$row" | awk -F '\t' '{ print $15 }')" "an unparsable read leaves every known provider unreported"
   assert_equals "3" "$(wc -l < "$dir"/ledger-*.tsv | tr -d ' ')" "both samples appended their rows after the header"
   run_ledger "$ps" "$dir" report --hours 1
-  assert_contains "$OUT" "host-ledger tokens: unreported" "report says tokens per active-agent-hour cannot be derived"
+  assert_contains "$OUT" "host-ledger tokens_per_active_agent_hour: unreported: no per-host token source" \
+    "report states tokens per active-agent-hour as unreported"
   pass "a failed or unparsable quota-axi read degrades to unreported and still appends the row"
 }
 
@@ -232,7 +253,7 @@ test_usage_errors_exit_2() {
 
 fm_test_run \
   test_sample_appends_row_and_counts_new_pids \
-  test_tokens_recorded_from_quota_axi_and_rated_per_agent_hour \
+  test_account_wide_quota_recorded_and_never_rated_per_host \
   test_failed_quota_read_is_unreported_and_row_still_written \
   test_render_launchd_runs_sample_every_minute \
   test_report_without_ledger_is_honest \
