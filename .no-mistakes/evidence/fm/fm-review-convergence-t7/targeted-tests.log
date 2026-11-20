@@ -1,0 +1,15 @@
+1..13
+ok - verify-finding: red at the head and green at the merge base is introduced evidence
+ok - verify-finding: red at both the head and the merge base is red-at-both, never pre-existing
+ok - verify-finding: a failing script the head adds is red-at-both, so the finding still blocks
+ok - verify-finding: a silent failure in a function the head adds to an existing file is red-at-both
+ok - verify-finding: a helper sourced from a wrong path at the head is introduced, not a run error
+ok - verify-finding: a reproduction that passes at the head gives no evidence
+ok - verify-finding: a timeout or a write outside the test directory leaves no evidence
+ok - verify-finding refuses paths outside a new tests/*.test.sh file, supervisor sessions, and replaced evidence
+ok - review snapshot ignores export-ignore and export-subst while preserving committed bytes
+ok - canonical snapshot reads SHA-256 source repositories without changing object format
+ok - snapshot refuses file or directory aliases only when the filesystem cannot represent distinct Git paths
+ok - TMPDIR cannot place reviewers under a checkout, a symlinked checkout path, or a bare repository
+ok - snapshot accepts distinct regular files and symlinks even when their bytes or targets match
+FM_TEST_COMPLETE

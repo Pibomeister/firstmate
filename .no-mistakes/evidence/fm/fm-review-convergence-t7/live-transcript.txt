@@ -1,0 +1,69 @@
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out out1 
+verify-finding: introduced head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=green path=tests/add.test.sh repro_sha256=c2f962d96e1a3dd9a186550ceda8c0f0ade8e436a770618c2057d20631d52626
+exit=0
+
+head.log:
+add 2 3 gave -1
+result file:
+verify-finding: introduced head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=green path=tests/add.test.sh repro_sha256=c2f962d96e1a3dd9a186550ceda8c0f0ade8e436a770618c2057d20631d52626
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro redboth.sh --path tests/rb.test.sh --out out2 
+verify-finding: red-at-both head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=red path=tests/rb.test.sh repro_sha256=09644f7f95037d90754012963154aec5f7705d4012fc55925aba937f04fb1601
+exit=0
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro green.sh --path tests/g.test.sh --out out3 
+verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=green base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/g.test.sh repro_sha256=fb99eae951f1adc14d1a4a9a186c21930db2786b3208c94c7d9af382bd1048e5
+exit=0
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro err.sh --path tests/e.test.sh --out out4 
+verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=error base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/e.test.sh repro_sha256=e65e0b91d5a4d56d7cd33040ef937231227f21c6da6dd0a1f1bd2abb260c18c6
+exit=0
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro slow.sh --path tests/s.test.sh --out out5 --timeout 2
+verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=timeout base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/s.test.sh repro_sha256=d952a3216ea63d254e3d5b24e156bbccf264c892bf822cd857315b4d87c6aac4
+exit=0
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro outside.sh --path tests/o.test.sh --out out6 
+verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=wrote-outside base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/o.test.sh repro_sha256=f1c8ef04cc9aac326fe8478cdaaba9c543f93afe35969229aefdba465f8b129b
+exit=0
+
+## refusals
+$ FM_TASK_ID= verify-finding --repro introduced.sh --path tests/add.test.sh --out outA 
+error: verify-finding belongs in a background worker: it runs a reviewer-written reproduction, and FM_TASK_ID is not set
+exit=2
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path bin/add.test.sh --out outB 
+error: --path bin/add.test.sh is outside tests/; a reproduction may only add a test file there
+exit=2
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/sub/add.test.sh --out outC 
+error: --path tests/sub/add.test.sh must name one file directly under tests/
+exit=2
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.sh --out outD 
+error: --path tests/add.sh must be a tests/<name>.test.sh file the project test command runs
+exit=2
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out out1 
+error: --out /tmp/fm-vf-live.n8l9cv/out1 already holds a reproduction result; evidence is never replaced
+exit=2
+
+$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out outE --timeout 0
+error: --timeout must be 1 to 3600 seconds
+exit=2
+
+## source repo status after all runs (expect empty):
+4ed0bdeaa4b48b373af99ac3011647084ed6e7ea
+## adversarial
+$ --path tests/exists.test.sh (already committed at head)
+error: --path tests/exists.test.sh already exists at 38e3427e46471c54c4c26d13d1e71184e48b7107; a reproduction may only add a new test file
+exit=2
+$ reproduction probes for an enclosing git repository
+verify-finding: red-at-both head=38e3427e46471c54c4c26d13d1e71184e48b7107 head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=red path=tests/probe.test.sh repro_sha256=87814a7980d1e595bdf4943490d22e1942ee1d6f9e8105dc0d018bb92dbe8756
+exit=0
+head.log: no repository visible from snapshot
+$ TMPDIR inside a git repository
+error: temporary directory is inside a repository; use a TMPDIR outside repositories
+exit=2
+## source repo status after adversarial runs (expect empty):
+0
