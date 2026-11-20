@@ -807,9 +807,22 @@ test_prioritized_spawn_still_refuses_unreadable_lane_config() {
   pass "a prioritized spawn still refuses when the lane-capacity file cannot be read"
 }
 
-# A backlog priority that changes while the endpoint starts is caught at the
-# dispatch commit, so the worker never runs with stale or missing priority.
-test_priority_change_during_startup_refuses_dispatch_commit() {
+# A backlog priority that changes while the endpoint starts is adopted at the
+# dispatch commit: the already-launched worker keeps its record, so supervision
+# never loses it, and that record carries the row's current priority.
+assert_race_kept_worker() {  # <case-dir> <home> <id> <out> <rc> <want-priority>
+  local case_dir=$1 home=$2 id=$3 out=$4 rc=$5 want=$6
+  expect_code 0 "$rc" "a spawn whose row priority changed mid-launch was not committed: $out"
+  assert_contains "$out" "warning: backlog item $id priority changed" "the commit did not warn about the priority change"
+  assert_present "$home/state/$id.meta" "the launched worker for $id lost its task record"
+  assert_equals "$want" "$(sed -n 's/^priority=//p' "$home/state/$id.meta")" \
+    "the record for $id did not take the row's current priority"
+  [ "$(row_state "$home" "$id")" = in_flight ] ||
+    fail "the committed spawn did not move $id's backlog item In flight: $(row_state "$home" "$id")"
+  grep -Fqx -- "fm-$id" "$case_dir/calls.log.window" ||
+    fail "the launched endpoint for $id was not left running"
+}
+test_priority_change_during_startup_keeps_worker_with_current_priority() {
   local case_dir home pane out rc=0
   case_dir=$(make_case priority-race task-r task-q)
   home="$case_dir/home"
@@ -820,24 +833,16 @@ test_priority_change_during_startup_refuses_dispatch_commit() {
   pane=$(new_worktree "$case_dir" task-r)
   out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-r --priority 0 --file '$home/data/backlog.md' >/dev/null" \
     run_spawn "$case_dir" "$home" "$pane" task-r "$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
-  expect_code 1 "$rc" "an ordinary spawn whose row became P0 mid-launch was committed: $out"
-  assert_contains "$out" "priority" "the commit refusal did not name the priority change"
-  assert_absent "$home/state/task-r.meta" "a refused commit kept an ordinary record for a P0 row"
-  [ "$(row_state "$home" task-r)" = queued ] ||
-    fail "a refused commit moved task-r's backlog item: $(row_state "$home" task-r)"
+  assert_race_kept_worker "$case_dir" "$home" task-r "$out" "$rc" 0
 
   tasks-axi update task-q --priority 1 --file "$home/data/backlog.md" >/dev/null
   pane=$(new_worktree "$case_dir" task-q)
   rc=0
-  out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-q --priority 0 --file '$home/data/backlog.md' >/dev/null" \
+  out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-q --priority 3 --file '$home/data/backlog.md' >/dev/null" \
     run_spawn "$case_dir" "$home" "$pane" task-q "$case_dir/project" \
       --mode no-mistakes --yolo off --priority 1) || rc=$?
-  expect_code 1 "$rc" "a priority 1 spawn whose row became P0 mid-launch was committed: $out"
-  assert_contains "$out" "priority" "the commit refusal did not name the priority change"
-  assert_absent "$home/state/task-q.meta" "a refused commit kept a priority 1 record for a P0 row"
-  [ "$(row_state "$home" task-q)" = queued ] ||
-    fail "a refused commit moved task-q's backlog item: $(row_state "$home" task-q)"
-  pass "a backlog priority that changes during endpoint startup refuses the dispatch commit"
+  assert_race_kept_worker "$case_dir" "$home" task-q "$out" "$rc" 3
+  pass "a backlog priority that changes during endpoint startup keeps the worker and records the row's priority"
 }
 
 # Every explicit priority 1-4, not only P0, gets its worker past a full
@@ -910,6 +915,32 @@ test_missing_or_mismatched_priority_refuses_before_anything_exists() {
   assert_priority_refusal_launched_nothing "$case_dir" "$home" task-x "$before" "$worktrees"
   pass "a missing or mismatched --priority is refused before any record, endpoint, worktree, or backlog move"
 }
+# Priority is validated before capacity admission, so a prioritized row spawned
+# without --priority on a full project names the missing argument instead of
+# deferring as if it were ordinary queued work.
+test_missing_priority_is_reported_before_capacity_deferral() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case priority-before-capacity task-m)
+  home="$case_dir/home"
+  if [ "$HAVE_TASKS_AXI" != 1 ]; then
+    pass "skipped: tasks-axi is not installed, so no backlog row carries a priority"
+    return 0
+  fi
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  tasks-axi update task-m --priority 2 --file "$home/data/backlog.md" >/dev/null
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-m "$case_dir/project" \
+    --mode no-mistakes --yolo off) || rc=$?
+  expect_code 1 "$rc" "a priority 2 row without --priority on a full project was deferred instead of refused: $out"
+  assert_contains "$out" "pass --priority 2" "the refusal did not name the missing priority"
+  case "$out" in
+    *deferred:*) fail "the missing-priority refusal was masked by a capacity deferral: $out" ;;
+  esac
+  assert_priority_refusal_launched_nothing "$case_dir" "$home" task-m "$before" "$worktrees"
+  pass "a missing --priority is reported before a full project's capacity deferral"
+}
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_lane_capacity_defers_spawn_past_home_cap
@@ -919,9 +950,10 @@ test_exhausted_capacity_defers_without_leaving_anything_behind
 test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes
 test_prioritized_spawn_passes_lane_and_load_deferral
 test_prioritized_spawn_still_refuses_unreadable_lane_config
-test_priority_change_during_startup_refuses_dispatch_commit
+test_priority_change_during_startup_keeps_worker_with_current_priority
 test_priorities_one_to_four_are_admitted_past_full_capacity
 test_missing_or_mismatched_priority_refuses_before_anything_exists
+test_missing_priority_is_reported_before_capacity_deferral
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
 test_symlinked_home_counts_each_worker_once

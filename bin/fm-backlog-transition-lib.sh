@@ -865,12 +865,38 @@ fm_backlog_relaunch_admission() {  # <config-dir> <data-dir> <kind> <id>
   return 0
 }
 
+fm_backlog_record_set_priority() {  # <meta> <priority-or-empty> <state>
+  local meta=$1 value=$2 state=$3 tmp line
+  tmp=$(mktemp "$state/.$(basename "$meta").priority.XXXXXX") || {
+    FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"
+    return 1
+  }
+  {
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        priority=*) ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done < "$meta"
+    [ -z "$value" ] || printf 'priority=%s\n' "$value"
+  } > "$tmp" || {
+    rm -f "$tmp"
+    FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"
+    return 1
+  }
+  if ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$state"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
 # <mode> is `relaunch` for a replacement worker, which admits a held In-flight
 # row without moving or releasing it (fm_backlog_row_relaunchable); any other
 # value, or none, is a fresh dispatch.
-# A fresh dispatch also requires the row's priority to still equal the
-# priority= the task record carries: the spawn compared them before launch,
-# and the row can change while the endpoint starts.
+# A fresh dispatch whose row priority changed while the endpoint started adopts
+# the row's current priority into the task record and warns, instead of
+# refusing: the endpoint is already running, and a refusal here would roll back
+# the only record that lets supervision find it.
 fm_backlog_dispatch_transition() {
   local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status recorded
   fm_backlog_record_present "$meta" "task record" "$state" || return 1
@@ -896,8 +922,9 @@ fm_backlog_dispatch_transition() {
   else
     recorded=$(sed -n 's/^priority=//p' "$meta" | tail -n 1)
     if [ "$recorded" != "$FM_BACKLOG_ROW_PRIORITY" ]; then
-      FM_BACKLOG_TRANSITION_ERROR="backlog item $id priority changed before dispatch commit: its row is ${FM_BACKLOG_ROW_PRIORITY:--}, but this spawn recorded ${recorded:--}"
-      return 1
+      fm_backlog_record_set_priority "$meta" "$FM_BACKLOG_ROW_PRIORITY" "$state" || return 1
+      printf 'warning: backlog item %s priority changed while its worker started: its row is %s, so the task record now carries %s instead of %s\n' \
+        "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" >&2
     fi
   fi
   case "$row" in

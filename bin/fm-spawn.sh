@@ -301,8 +301,11 @@
 #   --priority records the backlog priority selected at intake for a fresh ship
 #   or scout.
 #   Where the tasks-axi backlog gate applies, omission for a prioritized row or
-#   disagreement with that row is refused before launch, and again at the
-#   backlog dispatch commit if the row changed while the endpoint started.
+#   disagreement with that row is refused before launch and before any capacity
+#   admission, so that diagnostic is never masked by a deferral. A row whose
+#   priority changes while the endpoint starts is adopted at the backlog
+#   dispatch commit: priority= takes the row's current value with a warning,
+#   because refusing there would drop the record of a worker already running.
 #   When automatic backlog enforcement does not apply (including a manual
 #   backend), --priority is the caller's explicit intake authority and is not
 #   presented as row-verified.
@@ -4986,6 +4989,40 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
     exit 1
   }
 fi
+# Backlog row probe and priority validation (bin/fm-backlog-transition-lib.sh),
+# ahead of the capacity admissions so a missing or mismatched --priority is
+# reported as such rather than masked by a deferral that leaves it looking
+# queued. The rest of the backlog preflight runs further below.
+BACKLOG_TRANSITION=0
+BACKLOG_ROW_STATE=
+BACKLOG_ROW_PRIORITY=
+if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
+  BACKLOG_TRANSITION=1
+  if fm_backlog_row_probe "$DATA" "$ID"; then
+    BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
+    BACKLOG_ROW_PRIORITY=$FM_BACKLOG_ROW_PRIORITY
+  elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (bin/fm-tasks-axi.sh add $ID '<title>' --kind $KIND) and re-run" >&2
+    exit 1
+  else
+    echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
+    exit 1
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 0 ] && [ -n "$BACKLOG_ROW_PRIORITY" ]; then
+    echo "error: task $ID has backlog priority $BACKLOG_ROW_PRIORITY; pass --priority $BACKLOG_ROW_PRIORITY so its dedicated worker cannot wait behind ordinary lanes" >&2
+    exit 1
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 1 ] && [ "$PRIORITY" != "$BACKLOG_ROW_PRIORITY" ]; then
+    echo "error: task $ID priority mismatch: its backlog row is ${BACKLOG_ROW_PRIORITY:--}, but this spawn passed --priority $PRIORITY" >&2
+    exit 1
+  fi
+else
+  BACKLOG_GATE_STATUS=$?
+  if [ "$BACKLOG_GATE_STATUS" -eq 2 ]; then
+    echo "error: task $ID cannot be dispatched because its backlog data directory is inaccessible: $DATA ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
+  fi
+fi
 if [ -n "$SPAWN_PROJECT_CAPACITY" ] && [ "$PRIORITY_SET" -eq 0 ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
@@ -5813,34 +5850,13 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
   esac
 }
 
-# Backlog preflight (bin/fm-backlog-transition-lib.sh). This spawn is about to
+# Backlog preflight, continued from the row probe above the capacity
+# admissions (bin/fm-backlog-transition-lib.sh). This spawn is about to
 # become the sole owner of the row's In-flight transition, so prove the row is
 # transitionable BEFORE any endpoint, worktree, or record exists: a refusal here
 # costs nothing to unwind, while the same refusal after publication would strand
 # a live pane. The authoritative mutation still runs under the meta lock below.
-BACKLOG_TRANSITION=0
-BACKLOG_ROW_STATE=
-BACKLOG_ROW_PRIORITY=
-if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
-  BACKLOG_TRANSITION=1
-  if fm_backlog_row_probe "$DATA" "$ID"; then
-    BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
-    BACKLOG_ROW_PRIORITY=$FM_BACKLOG_ROW_PRIORITY
-  elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
-    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (bin/fm-tasks-axi.sh add $ID '<title>' --kind $KIND) and re-run" >&2
-    exit 1
-  else
-    echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
-    exit 1
-  fi
-  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 0 ] && [ -n "$BACKLOG_ROW_PRIORITY" ]; then
-    echo "error: task $ID has backlog priority $BACKLOG_ROW_PRIORITY; pass --priority $BACKLOG_ROW_PRIORITY so its dedicated worker cannot wait behind ordinary lanes" >&2
-    exit 1
-  fi
-  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 1 ] && [ "$PRIORITY" != "$BACKLOG_ROW_PRIORITY" ]; then
-    echo "error: task $ID priority mismatch: its backlog row is ${BACKLOG_ROW_PRIORITY:--}, but this spawn passed --priority $PRIORITY" >&2
-    exit 1
-  fi
+if [ "$BACKLOG_TRANSITION" = 1 ]; then
   spawn_preflight_actor=$(fm_lease_actor) || exit "$FM_LEASE_REFUSE_EXIT"
   if [ "$RELAUNCH" -ne 1 ] && [ "$spawn_preflight_actor" = branch ] && fm_lease_away_relocated; then
     if [ "$BACKLOG_ROW_STATE" != "queued no no" ]; then
@@ -5854,12 +5870,6 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
     fi
   elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
     echo "error: this home's backlog item $ID is not dispatchable in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
-    exit 1
-  fi
-else
-  BACKLOG_GATE_STATUS=$?
-  if [ "$BACKLOG_GATE_STATUS" -eq 2 ]; then
-    echo "error: task $ID cannot be dispatched because its backlog data directory is inaccessible: $DATA ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
 fi
