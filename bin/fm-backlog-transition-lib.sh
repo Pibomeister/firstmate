@@ -868,8 +868,11 @@ fm_backlog_relaunch_admission() {  # <config-dir> <data-dir> <kind> <id>
 # <mode> is `relaunch` for a replacement worker, which admits a held In-flight
 # row without moving or releasing it (fm_backlog_row_relaunchable); any other
 # value, or none, is a fresh dispatch.
+# A fresh dispatch also requires the row's priority to still equal the
+# priority= the task record carries: the spawn compared them before launch,
+# and the row can change while the endpoint starts.
 fm_backlog_dispatch_transition() {
-  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status
+  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status recorded
   fm_backlog_record_present "$meta" "task record" "$state" || return 1
   fm_backlog_row_probe "$data" "$id"
   row_status=$?
@@ -890,6 +893,12 @@ fm_backlog_dispatch_transition() {
   elif ! fm_backlog_row_dispatchable "$row"; then
     FM_BACKLOG_TRANSITION_ERROR="backlog item $id is not dispatchable in state $row"
     return 1
+  else
+    recorded=$(sed -n 's/^priority=//p' "$meta" | tail -n 1)
+    if [ "$recorded" != "$FM_BACKLOG_ROW_PRIORITY" ]; then
+      FM_BACKLOG_TRANSITION_ERROR="backlog item $id priority changed before dispatch commit: its row is ${FM_BACKLOG_ROW_PRIORITY:--}, but this spawn recorded ${recorded:--}"
+      return 1
+    fi
   fi
   case "$row" in
     in_flight\ no\ no|in_flight\ yes\ no) return 0 ;;

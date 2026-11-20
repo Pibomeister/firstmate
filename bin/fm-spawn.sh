@@ -301,9 +301,11 @@
 #   --priority records the backlog priority selected at intake for a fresh ship
 #   or scout.
 #   Where the tasks-axi backlog gate applies, omission for a prioritized row or
-#   disagreement with that row is refused before launch. When automatic backlog
-#   enforcement does not apply (including a manual backend), --priority is the
-#   caller's explicit intake authority and is not presented as row-verified.
+#   disagreement with that row is refused before launch, and again at the
+#   backlog dispatch commit if the row changed while the endpoint started.
+#   When automatic backlog enforcement does not apply (including a manual
+#   backend), --priority is the caller's explicit intake authority and is not
+#   presented as row-verified.
 #   Every explicit priority 0-4 preempts; this is not restricted to P0 or P1.
 #   A prioritized fresh worker is admitted past an exhausted project-capacity
 #   declaration, the lane-cap and load-ceiling deferral, or away spend cap

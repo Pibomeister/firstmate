@@ -99,6 +99,9 @@ case "${1:-}" in
   display-message) printf 'firstmate\n' ;;
   list-windows) [ ! -s "$window_file" ] || cat "$window_file" ;;
   new-window)
+    # A spawn's endpoint starts here, after its preflight checks and before
+    # its backlog commit, so a test can change the backlog mid-launch.
+    [ -z "${FM_FAKE_ON_NEW_WINDOW:-}" ] || bash -c "$FM_FAKE_ON_NEW_WINDOW"
     name=
     previous=
     for arg in "$@"; do
@@ -804,6 +807,109 @@ test_prioritized_spawn_still_refuses_unreadable_lane_config() {
   pass "a prioritized spawn still refuses when the lane-capacity file cannot be read"
 }
 
+# A backlog priority that changes while the endpoint starts is caught at the
+# dispatch commit, so the worker never runs with stale or missing priority.
+test_priority_change_during_startup_refuses_dispatch_commit() {
+  local case_dir home pane out rc=0
+  case_dir=$(make_case priority-race task-r task-q)
+  home="$case_dir/home"
+  if [ "$HAVE_TASKS_AXI" != 1 ]; then
+    pass "skipped: tasks-axi is not installed, so no backlog priority can change mid-launch"
+    return 0
+  fi
+  pane=$(new_worktree "$case_dir" task-r)
+  out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-r --priority 0 --file '$home/data/backlog.md' >/dev/null" \
+    run_spawn "$case_dir" "$home" "$pane" task-r "$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code 1 "$rc" "an ordinary spawn whose row became P0 mid-launch was committed: $out"
+  assert_contains "$out" "priority" "the commit refusal did not name the priority change"
+  assert_absent "$home/state/task-r.meta" "a refused commit kept an ordinary record for a P0 row"
+  [ "$(row_state "$home" task-r)" = queued ] ||
+    fail "a refused commit moved task-r's backlog item: $(row_state "$home" task-r)"
+
+  tasks-axi update task-q --priority 1 --file "$home/data/backlog.md" >/dev/null
+  pane=$(new_worktree "$case_dir" task-q)
+  rc=0
+  out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-q --priority 0 --file '$home/data/backlog.md' >/dev/null" \
+    run_spawn "$case_dir" "$home" "$pane" task-q "$case_dir/project" \
+      --mode no-mistakes --yolo off --priority 1) || rc=$?
+  expect_code 1 "$rc" "a priority 1 spawn whose row became P0 mid-launch was committed: $out"
+  assert_contains "$out" "priority" "the commit refusal did not name the priority change"
+  assert_absent "$home/state/task-q.meta" "a refused commit kept a priority 1 record for a P0 row"
+  [ "$(row_state "$home" task-q)" = queued ] ||
+    fail "a refused commit moved task-q's backlog item: $(row_state "$home" task-q)"
+  pass "a backlog priority that changes during endpoint startup refuses the dispatch commit"
+}
+
+# Every explicit priority 1-4, not only P0, gets its worker past a full
+# project and records that priority for supervision.
+test_priorities_one_to_four_are_admitted_past_full_capacity() {
+  local case_dir home pane out rc p
+  case_dir=$(make_case priority-levels task-p1 task-p2 task-p3 task-p4)
+  home="$case_dir/home"
+  if [ "$HAVE_TASKS_AXI" != 1 ]; then
+    pass "skipped: tasks-axi is not installed, so no backlog row carries a priority"
+    return 0
+  fi
+  declare_capacity "$home" "project 1"
+  write_live "$home" live-a "$case_dir/project"
+  for p in 1 2 3 4; do
+    tasks-axi update "task-p$p" --priority "$p" --file "$home/data/backlog.md" >/dev/null
+    pane=$(new_worktree "$case_dir" "task-p$p")
+    rc=0
+    out=$(run_spawn "$case_dir" "$home" "$pane" "task-p$p" "$case_dir/project" \
+      --mode no-mistakes --yolo off --priority "$p") || rc=$?
+    expect_code 0 "$rc" "a priority $p spawn waited behind a full project: $out"
+    assert_contains "$out" "spawned task-p$p" "the priority $p item did not receive its worker"
+    assert_equals "$p" "$(sed -n 's/^priority=//p' "$home/state/task-p$p.meta")" \
+      "the priority $p worker did not record its priority"
+    [ "$(row_state "$home" "task-p$p")" = in_flight ] ||
+      fail "the priority $p spawn did not move its item In flight"
+  done
+  assert_present "$home/state/live-a.meta" "priority admission stopped the existing lane"
+  pass "explicit priorities 1-4 are admitted past a full project and recorded"
+}
+
+# A priority refusal comes after the launch brief is rendered but before any
+# record, endpoint, worktree, or backlog move exists.
+assert_priority_refusal_launched_nothing() {  # <case-dir> <home> <id> <calls-before> <worktrees-before>
+  local case_dir=$1 home=$2 id=$3 before=$4 worktrees=$5 after
+  assert_absent "$home/state/$id.meta" "a refused spawn published a task record for $id"
+  after=$(call_count "$case_dir")
+  [ "$after" -eq "$before" ] ||
+    fail "a refused spawn touched the terminal or worktree pool for $id: $(tail -n +"$((before + 1))" "$case_dir/calls.log")"
+  assert_equals "$worktrees" "$(worktree_list "$case_dir")" "a refused spawn left a git worktree for $id"
+  [ "$(row_state "$home" "$id")" = queued ] ||
+    fail "a refused spawn moved $id's backlog item: $(row_state "$home" "$id")"
+}
+# A prioritized row spawned without --priority, or with a different one, is
+# refused before any record, endpoint, worktree, or backlog move.
+test_missing_or_mismatched_priority_refuses_before_anything_exists() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case priority-match task-m task-x)
+  home="$case_dir/home"
+  if [ "$HAVE_TASKS_AXI" != 1 ]; then
+    pass "skipped: tasks-axi is not installed, so no backlog row carries a priority"
+    return 0
+  fi
+  tasks-axi update task-m --priority 2 --file "$home/data/backlog.md" >/dev/null
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-m "$case_dir/project" \
+    --mode no-mistakes --yolo off) || rc=$?
+  expect_code 1 "$rc" "a priority 2 row spawned without --priority was not refused: $out"
+  assert_contains "$out" "pass --priority 2" "the refusal did not name the missing priority"
+  assert_priority_refusal_launched_nothing "$case_dir" "$home" task-m "$before" "$worktrees"
+
+  tasks-axi update task-x --priority 1 --file "$home/data/backlog.md" >/dev/null
+  before=$(call_count "$case_dir")
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-x "$case_dir/project" \
+    --mode no-mistakes --yolo off --priority 0) || rc=$?
+  expect_code 1 "$rc" "a priority 1 row spawned with --priority 0 was not refused: $out"
+  assert_contains "$out" "priority mismatch" "the refusal did not name the mismatch"
+  assert_priority_refusal_launched_nothing "$case_dir" "$home" task-x "$before" "$worktrees"
+  pass "a missing or mismatched --priority is refused before any record, endpoint, worktree, or backlog move"
+}
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_lane_capacity_defers_spawn_past_home_cap
@@ -813,6 +919,9 @@ test_exhausted_capacity_defers_without_leaving_anything_behind
 test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes
 test_prioritized_spawn_passes_lane_and_load_deferral
 test_prioritized_spawn_still_refuses_unreadable_lane_config
+test_priority_change_during_startup_refuses_dispatch_commit
+test_priorities_one_to_four_are_admitted_past_full_capacity
+test_missing_or_mismatched_priority_refuses_before_anything_exists
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
 test_symlinked_home_counts_each_worker_once
