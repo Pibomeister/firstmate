@@ -23,7 +23,7 @@ For each configured captain on this host, one pass fires the first wake only whe
 6. The captain is not in the no-progress stop: after two consecutive nudges whose output, heartbeat, and commit fingerprint did not move, the tool emits `nudge_no_progress` at high severity and stops until progress resumes.
 
 If a modal is visible it logs `blocker` and types nothing.
-If the input line is not empty it logs `skipped_input_not_empty` and types nothing.
+If the input line is not empty it logs `skipped_input_not_empty` and types nothing - except when the pending line is exactly one of this tool's own fixed prompts left unsent by an earlier pass, including the single-line continue or escalate prompt that carries the lane table suffix; then it logs a `nudge` and submits that text with Enter only, never typing over anyone else's text.
 Unknown or unproven composer state is a `blocker`: the tool never overwrites or clears typed text.
 
 The typed payloads, each followed by Enter, are the fixed prompts that [`captain-nudge-spec.md`](captain-nudge-spec.md#fixed-prompts) lists.
@@ -46,11 +46,13 @@ The ladder climbs once per stall:
 | --- | --- | --- |
 | `idle_min`, or a lane at `lane_stall_min` | `nudge` | The continue prompt, plus the lane table when a lane is stalled |
 | `escalate_min` (default 40), after a first wake | `stall_escalate` | The relaunch-or-replace prompt, plus the lane table |
-| `council_min` (default 60) | `stall_council` | Nothing; the row asks the owner's council to rule, even behind a modal |
+| `council_min` (default 60) | `stall_council` | Nothing; the row asks the owner's council to rule, even behind a modal, once per stall |
+
+The council row types nothing, so it never retires a rung the ladder has not typed: it climbs to tier 3 only after the escalate rung was sent, and a first row before any wake, or one behind a modal, leaves the ladder free to climb wake by wake.
 
 The ack is the captain's own progress after a wake: new output, a new heartbeat, or a new commit.
 The next pass records it as `stall_acked` and resets the ladder.
-A prompt this tool types is not an ack: after each send it rereads the pane once a second until two readings match (at most 10 readings), stores that settled view, and the stall age keeps counting from the start of the stall.
+A prompt this tool types is not an ack: after each send it rereads the pane once a second until two readings match (at most 10 readings), and only a settled view that differs from the pre-send view acknowledges the send; a settle with no reading at all, or one that still shows the pre-send view (the echo has not rendered), leaves the send unacknowledged with an empty fingerprint, so the next pass can never mistake this tool's own echo for the captain's progress. The stall age keeps counting from the start of the stall.
 A `0` for `escalate_min`, `council_min`, or `lane_stall_min` turns that step off.
 
 ## Stall ledger

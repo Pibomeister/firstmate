@@ -219,6 +219,7 @@ A restart needs every one of these:
 
 - `restart=on` and `mode=act`;
 - under `restart-scope=second-mates`, a second-mate home: a primary is never restarted, its asks are recorded as refused restarts, and the status file names the scope;
+- a `restart-scope` that names `all` or `second-mates`: any other value refuses every restart (stall asks record a refused restart, requested or low-context asks hold as a gap with no handoff) and the status file names the unrecognized scope;
 - a running-turn verdict of no and a measured CPU rate below `cpu-busy-pct`, where an unknown reading of either one holds;
 - at least two independent kinds of signal, from rendered, filesystem, kernel, and records;
 - a live lock holder that matches its recorded instance, or a dead holder, which gets no signal;
@@ -436,7 +437,7 @@ An absent file means dry-run on the owner home alone.
 | `mode` | `dry-run` | `act` takes actions; anything else records them as `dry-run` |
 | `decisions` | the `mode` value | `act` lets the decision nudge, the council, and the ruling nudge act; any other value keeps them a dry run |
 | `restart` | `off` | `on` allows restarts when `mode=act` |
-| `restart-scope` | `all` | `second-mates` allows restarts for second mates only: a primary home is never restarted, its stall records a refused restart, and its low-context or requested restart is a gap with no handoff asked for. `all`, the default, restarts any home, as does any other value. |
+| `restart-scope` | `all` | `second-mates` allows restarts for second mates only: a primary home is never restarted, its stall records a refused restart, and its low-context or requested restart is a gap with no handoff asked for. `all`, the default, restarts any home. Any other value is unrecognized and refuses every restart - stall asks record a refused restart naming the unrecognized value, requested or low-context asks hold as a gap with no handoff - and the status file names the unrecognized scope. |
 | `restart-command` | none | Starts a new captain session and appends the prompt as one argument. When the command word, after any leading `NAME=value`, `env`, `exec`, or `command` and again after `&&`, `||`, `;`, or `|`, is `muse`, `muse-bin`, or `muse-bin-*`, or a path ending in one of them, with one layer of surrounding quotes removed, and the command carries none of `--yolo`, `--disable-approval`, `--approval-mode never`, or `--approval-mode=never`, `--yolo` is inserted as the first argument after the first such word. Any other command runs unchanged, even when another word names muse. |
 | `do-not-touch` | none | Comma-separated homes, home names, or terminal targets never typed into or restarted |
 | `models` | `claude:haiku,agy:gemini-3.8-flash-low` | Ordered judge models; empty disables the judge |

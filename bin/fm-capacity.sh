@@ -220,13 +220,19 @@ fi
 # --- lanes ------------------------------------------------------------------
 # A lane frees its place only when it is both idle and dead: nothing changed
 # within LIVE_LANE_MIN to the task's record, status, busy state, steering
-# inbox, or the watcher's terminal marker, and its recorded endpoint is gone.
-# A record a finished or abandoned worker left behind must not hold a place, or
-# a cap freezes every spawn until someone archives it; a live worker idle on a
-# decision or a long validation keeps its place. An idle lane's endpoint is
-# probed through fm_backend_target_exists, every lane in one pass bounded to
-# LIVE_LANE_PROBE_SECS; a record with no endpoint, a remote one, or a lane the
-# pass did not answer for keeps its place.
+# inbox, or the watcher's terminal marker, and its recorded endpoint is
+# provably gone. A failed probe is unknown, never gone: a tmux window counts
+# as gone only when the tmux server itself answers, and a herdr pane only
+# when its session's server is running (tri-state read, never auto-started)
+# yet the pane query fails - so a down or unreachable endpoint keeps the
+# lane's place instead of silently freeing it. A record a finished or
+# abandoned worker left behind must not hold a place, or a cap freezes every
+# spawn until someone archives it; a live worker idle on a decision or a
+# long validation keeps its place. Orca lanes share one trusted terminal
+# list whose absent verdict frees the lane; an untrusted list answers for
+# none of them. A record with no endpoint, a remote one, a backend the pass
+# cannot prove anything about, or a lane the pass did not answer for keeps
+# its place.
 LIVE_LANE_MIN=120
 LIVE_LANE_PROBE_SECS=20
 
@@ -259,17 +265,38 @@ lane_read_meta() {
 
 # shellcheck disable=SC2329 # Invoked through fm_run_timed_fn.
 lane_terminal_batch() {  # <rows>: one `<id> <backend> <target>` per line
-  local id backend target orca_ids='' orca_rows='' handle verdict
+  local id backend target orca_ids='' orca_rows='' handle verdict session
   while read -r id backend target; do
     [ -n "$target" ] || continue
     if [ "$backend" = orca ]; then
       orca_ids="$orca_ids $target"
       orca_rows="$orca_rows$target $id
 "
-    elif fm_backend_target_exists "$backend" "$target" "fm-$id" >/dev/null 2>&1; then
-      echo "$id exists"
-    else
-      echo "$id gone"
+    elif [ "$backend" = tmux ]; then
+      # Proven absence only: the tmux server must itself answer before a
+      # missing target counts as gone; a failed or unreachable probe emits
+      # no verdict and the lane keeps its place.
+      if fm_backend_source tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+        if fm_backend_tmux_target_exists "$target" >/dev/null 2>&1; then
+          echo "$id exists"
+        else
+          echo "$id gone"
+        fi
+      fi
+    elif [ "$backend" = herdr ]; then
+      session=${target%%:*}
+      # Proven absence only: a pane counts as gone when its session's server
+      # is actually running (tri-state read, never auto-starting a server)
+      # yet the pane query fails. A stopped or unreachable server is
+      # unknown, and the lane keeps its place.
+      if fm_backend_source herdr >/dev/null 2>&1 \
+         && [ "$(fm_backend_herdr_server_running_state "$session")" = running ]; then
+        if fm_backend_herdr_cli "$session" pane get "${target#*:}" >/dev/null 2>&1; then
+          echo "$id exists"
+        else
+          echo "$id gone"
+        fi
+      fi
     fi
   done <<EOF_ROWS
 $1

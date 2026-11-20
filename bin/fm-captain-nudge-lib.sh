@@ -146,7 +146,7 @@ fm_nudge_open_work_summary_flag() {
 fm_nudge_decide() {
   local obs=${1-} idle idle_th open_sum dialog composer cool consec maxn
   local esc_min council_min tier lane_age lane_min stall lane_hit=false
-  local open_work=false progress=false escalated=false
+  local open_work=false progress=false escalated=false council_raised=false
   [ -n "$obs" ] || { printf 'fm-captain-nudge-lib: decide needs observation JSON\n' >&2; return 2; }
   printf '%s' "$obs" | jq -e . >/dev/null 2>&1 || {
     printf 'fm-captain-nudge-lib: observation is not JSON\n' >&2
@@ -169,6 +169,7 @@ fm_nudge_decide() {
   fm_nudge_json_bool "$obs" '.open_work' && open_work=true
   fm_nudge_json_bool "$obs" '.progress_since_nudge' && progress=true
   fm_nudge_json_bool "$obs" '.escalated' && escalated=true
+  fm_nudge_json_bool "$obs" '.council_raised' && council_raised=true
 
   case "$idle" in ''|*[!0-9]*) idle=0 ;; esac
   case "$idle_th" in ''|*[!0-9]*) idle_th=15 ;; esac
@@ -207,9 +208,12 @@ fm_nudge_decide() {
   fi
 
   # The council row types nothing, so a modal or typed text cannot block it:
-  # a captain that died behind an API error is exactly the case it exists for.
+  # a captain that died behind an API error is exactly the case it exists
+  # for. It is raised once per stall (council_raised), and the ladder keeps
+  # whatever tier was actually typed: the row itself never retires the
+  # escalate rung.
   if [ "$council_min" -gt 0 ] && [ "$stall" -ge "$council_min" ] && [ "$open_work" = true ] \
-     && [ "$tier" -lt 3 ]; then
+     && [ "$tier" -lt 3 ] && [ "$council_raised" != true ]; then
     _fm_nudge_decision stall_council high \
       "stalled ${stall}m with open work past ${council_min}m; council row raised, nothing typed" false
     return 0

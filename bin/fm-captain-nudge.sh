@@ -365,14 +365,35 @@ send_enter_only() {  # <backend> <target> [session]
 
 # True when the composer's pending line is exactly one of the fixed prompts
 # (ours, left unsent), so pressing Enter cannot submit anybody else's text.
+# A continue or escalate wake is typed as one line with the lane table
+# appended (`<base> Stalled lanes: <subject> <age>m, ....`), so that same
+# single-line form with the table suffix is accepted too; anything else,
+# including unrelated text after the prompt, still refuses.
 pending_is_fixed_prompt() {  # <screen>
-  local text kind tail
+  local text kind marker tail line rest lanes
   tail=$(printf '%s\n' "$1" | awk 'NF' | tail -n 8)
-  for kind in continue escalate merge; do
-    text=$(fm_nudge_text "$kind")
-    text=${text%$'\n'}
-    printf '%s\n' "$tail" | LC_ALL=C grep -Fxq -e "› $text" -e "❯ $text" -e "> $text" -e "›  $text" && return 0
-  done
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    for kind in continue escalate merge; do
+      text=$(fm_nudge_text "$kind")
+      text=${text%$'\n'}
+      for marker in "› " "❯ " "> " "›  "; do
+        rest=${line#"$marker"}
+        [ "$rest" = "$line" ] && continue
+        [ "$rest" = "$text" ] && return 0
+        case "$kind" in
+          continue|escalate)
+            lanes=${rest#"$text Stalled lanes: "}
+            if [ "$lanes" != "$rest" ] && [ -n "$lanes" ] \
+               && printf '%s\n' "$lanes" | LC_ALL=C grep -Eq \
+                 -- '^[A-Za-z0-9._-]+ [0-9]+m(, [A-Za-z0-9._-]+ [0-9]+m)*( \(\+[0-9]+ more\))?\.?$'; then
+              return 0
+            fi
+            ;;
+        esac
+      done
+    done
+  done <<< "$tail"
   return 1
 }
 
@@ -549,8 +570,15 @@ idle_min_from_obs() {
   printf '%s\n' "$age"
 }
 
-store_post_send_fingerprint() {  # <id> <captain-json>
-  local id=$1 cap=$2 backend prev='' cur reads=0 limit=${FM_NUDGE_SETTLE_READS:-10}
+# The send's fingerprint is the settled post-send view, never a pre-send one.
+# The caller passes the pre-send fingerprint: a settle that cannot read the
+# pane at all, or that settles on a view still equal to the pre-send view
+# (the echo has not rendered yet), leaves the send unacknowledged (empty
+# fingerprint) instead, so the next pass can never read this tool's own echo
+# as the captain's progress. After the first successful read, a failed or
+# empty reread keeps the last good reading.
+store_post_send_fingerprint() {  # <id> <captain-json> [pre-send-fp]
+  local id=$1 cap=$2 presend=${3:-} backend prev='' cur reads=0 limit=${FM_NUDGE_SETTLE_READS:-10}
   case "$limit" in ''|*[!0-9]*|0) limit=10 ;; esac
   backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
   while :; do
@@ -559,7 +587,10 @@ store_post_send_fingerprint() {  # <id> <captain-json>
     else
       observe_live "$cap" && [ -n "${OBS_SCREEN:-}" ]
     fi || {
-      [ "$reads" -gt 0 ] || return 0
+      if [ "$reads" -eq 0 ]; then
+        write_captain_state "$id" "$(jq -nc '{fingerprint:""}')"
+        return 0
+      fi
       cur=$prev
       break
     }
@@ -569,7 +600,11 @@ store_post_send_fingerprint() {  # <id> <captain-json>
     prev=$cur
     [ "$backend" = fixture ] || sleep "${FM_NUDGE_SETTLE_DELAY:-1}"
   done
-  write_captain_state "$id" "$(jq -nc --arg fp "$cur" '{fingerprint:$fp}')"
+  if [ -n "$presend" ] && [ "$cur" = "$presend" ]; then
+    write_captain_state "$id" "$(jq -nc '{fingerprint:""}')"
+  else
+    write_captain_state "$id" "$(jq -nc --arg fp "$cur" '{fingerprint:$fp}')"
+  fi
 }
 
 process_captain() {  # <captain-json> [force]
@@ -617,6 +652,9 @@ process_captain() {  # <captain-json> [force]
   case "$since" in ''|*[!0-9]*) since=0 ;; esac
   escalated=false
   fm_nudge_json_bool "$st" '.escalated' && escalated=true
+  # One council row per stall: progress or a fresh force resets it.
+  council=false
+  fm_nudge_json_bool "$st" '.council_raised' && council=true
   case "$last_nudge" in ''|*[!0-9]*) last_nudge=0 ;; esac
   case "$consec" in ''|*[!0-9]*) consec=0 ;; esac
   now=$(fm_nudge_now)
@@ -680,7 +718,11 @@ process_captain() {  # <captain-json> [force]
     if cfg_mode_is_act; then
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
       if send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
-        store_post_send_fingerprint "$id" "$cap"
+        # The pre-send view is this pass's reading, not the state's stored
+        # fingerprint: a settle that never sees past it leaves the send
+        # unacknowledged.
+        store_post_send_fingerprint "$id" "$cap" \
+          "$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")"
       else
         decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"submit of pending fixed prompt failed",should_send:false}')
       fi
@@ -743,6 +785,7 @@ process_captain() {  # <captain-json> [force]
   if [ "$progress" = true ]; then
     consec=0
     escalated=false
+    council=false
     if [ "$tier" -gt 0 ]; then
       decision=$(jq -nc --argjson t "$tier" \
         '{event:"stall_acked",severity:"info",reason:("captain progressed after stall tier " + ($t|tostring)),should_send:false}')
@@ -752,6 +795,7 @@ process_captain() {  # <captain-json> [force]
   fi
   if [ "$force" = 1 ]; then
     tier=0
+    council=false
     esc_th=0
     council_th=0
     lane_th=0
@@ -772,6 +816,7 @@ process_captain() {  # <captain-json> [force]
     --argjson escmin "$esc_th" \
     --argjson councilmin "$council_th" \
     --argjson tier "$tier" \
+    --argjson council "$([ "$council" = true ] && echo true || echo false)" \
     --argjson laneage "$lane_age" \
     --argjson lanemin "$lane_th" \
     '{
@@ -780,7 +825,7 @@ process_captain() {  # <captain-json> [force]
       cooldown_remaining_min:$cool, consecutive_no_progress:$consec,
       progress_since_nudge:$progress, escalated:$esc, max_no_progress:$maxn,
       escalate_min:$escmin, council_min:$councilmin, stall_tier:$tier,
-      lane_age_min:$laneage, lane_stall_min:$lanemin
+      council_raised:$council, lane_age_min:$laneage, lane_stall_min:$lanemin
     }')
   decision=$(fm_nudge_decide "$obs") || die "decide failed for $id"
 
@@ -809,7 +854,11 @@ process_captain() {  # <captain-json> [force]
   ev=$(fm_nudge_json_get "$decision" '.event' '') || true
   new_tier=$tier
   if [ "$ev" = stall_council ]; then
-    new_tier=3
+    # The council row types nothing, so it never retires a rung the ladder
+    # has not typed: only a council raised after the escalate rung was typed
+    # (tier 2) completes the ladder at tier 3.
+    council=true
+    [ "$tier" -ge 2 ] && new_tier=3
   elif [ "$would_send" = 1 ] && [ "$prompt" = escalate ]; then
     new_tier=2
   elif [ "$would_send" = 1 ] && [ "$tier" -lt 1 ]; then
@@ -818,24 +867,30 @@ process_captain() {  # <captain-json> [force]
 
   if [ "$send_ok" = 1 ]; then
     [ "$since" -gt 0 ] || since=$(( now - idle * 60 ))
+    # The fingerprint is the settled post-send view, never the pre-send one:
+    # it starts empty and only the settle below can acknowledge the send.
     write_captain_state "$id" "$(jq -nc \
-      --argjson now "$now" --arg fp "$cur_fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
-      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false, stall_tier:$tier, stall_since_epoch:$since}')"
-    store_post_send_fingerprint "$id" "$cap"
+      --argjson now "$now" --arg fp "" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
+      --argjson council "$([ "$council" = true ] && echo true || echo false)" \
+      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false, stall_tier:$tier, council_raised:$council, stall_since_epoch:$since}')"
+    store_post_send_fingerprint "$id" "$cap" "$cur_fp"
   else
     if [ "$ev" = nudge_no_progress ]; then
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "$fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true, stall_tier:$tier, stall_since_epoch:$since}')"
+        --argjson council "$([ "$council" = true ] && echo true || echo false)" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true, stall_tier:$tier, council_raised:$council, stall_since_epoch:$since}')"
     elif [ "$progress" = true ]; then
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "$cur_fp" --argjson tier "$new_tier" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false, stall_tier:$tier, stall_since_epoch:0}')"
+        --argjson council "$([ "$council" = true ] && echo true || echo false)" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false, stall_tier:$tier, council_raised:$council, stall_since_epoch:0}')"
     else
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "${fp:-$cur_fp}" --argjson consec "$consec" \
         --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" --argjson tier "$new_tier" --argjson since "$since" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc, stall_tier:$tier, stall_since_epoch:$since}')"
+        --argjson council "$([ "$council" = true ] && echo true || echo false)" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc, stall_tier:$tier, council_raised:$council, stall_since_epoch:$since}')"
     fi
   fi
 
@@ -852,7 +907,7 @@ process_captain() {  # <captain-json> [force]
 merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backend> <target> <session> <idle> <sent> <captain-json>
   local id=$1 owner=$2 home=$3 min=$4 dialog=$5 composer=$6 backend=$7 target=$8 session=$9
   local idle=${10} sent=${11} cap=${12}
-  local json rows old new now key pr entry first nudged due='' due_prs='' extra decision summary
+  local json rows old new now key pr entry first nudged due='' due_prs='' extra decision summary pre=''
   [ -n "$home" ] && [ "$min" -gt 0 ] || return 0
   json=$(ready_discovery_json "$home") || return 0
   printf '%s' "$json" | jq -e '.runs | type == "array"' >/dev/null 2>&1 || return 0
@@ -902,8 +957,11 @@ merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backen
     else
       decision=$(jq -nc --argjson m "$min" '{event:"merge_ready_wait",severity:"info",reason:("merge-ready PR unmerged for " + ($m|tostring) + "m; asking to dispatch the merge or record why"),should_send:true,prompt:"merge"}')
       if cfg_mode_is_act; then
+        # Pre-send view, from this pass's reading: a settle that never sees
+        # past it leaves the merge prompt unacknowledged.
+        pre=$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")
         if send_fixed_prompt merge "$backend" "$target" "$session"; then
-          store_post_send_fingerprint "$id" "$cap"
+          store_post_send_fingerprint "$id" "$cap" "$pre"
         else
           decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"merge-ready prompt send failed",should_send:false}')
           due=''

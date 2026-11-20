@@ -750,6 +750,126 @@ test_once_refuses_a_send_after_the_lock_moves() {
     || fail "the refused send must be recorded as a blocker: $(cat "$home/state/nudge.jsonl")"
   pass "fm-captain-nudge: a lock handoff between read and send stops the send"
 }
+test_decide_council_row_once_per_stall() {
+  local out obs
+  obs() {  # <idle> <tier> <cool> [dialog] [extra-json]
+    base_obs "$1" 20 true "2 open PRs" "${4:-}" empty "$3" 0 false false \
+      | jq -c --argjson tier "$2" '. + {escalate_min:40, council_min:60, stall_tier:$tier}'"${5:-}"
+  }
+  out=$(decide "$(obs 65 1 0 permission)")
+  assert_equals stall_council "$(event_of "$out")" "the council row still fires behind a modal before escalate was typed"
+  out=$(decide "$(obs 70 1 0 permission ' + {council_raised:true}')")
+  assert_equals blocker "$(event_of "$out")" "the council row is raised once per stall, never every pass"
+  out=$(decide "$(obs 70 2 0 permission ' + {council_raised:true}')")
+  assert_equals blocker "$(event_of "$out")" "a raised council row does not repeat even at the escalate tier"
+  pass "fm-captain-nudge: decide raises one council row per stall at any tier"
+}
+
+test_once_settle_no_reading_keeps_send_unacknowledged() {
+  local home cap echoed now=2000000000 st
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c '.fixture.after_send = [{read_failed:true}]')
+  home=$(write_home settle-no-read "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.fingerprint == ""' >/dev/null \
+    || fail "a settle with no reading must leave the send unacknowledged, not the pre-send view: $st"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at | .fixture.after_send = []')
+  write_home settle-no-read "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "a send whose settle could not read the pane must not be acked by its own later echo"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "the ladder still escalates when the settle got no reading"
+  pass "fm-captain-nudge: a settle read failure keeps the send unacknowledged"
+}
+
+test_once_settle_before_the_echo_keeps_send_unacknowledged() {
+  local home cap echoed now=2000000000 st
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c '.fixture.after_send = [{}]')
+  home=$(write_home settle-early "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.fingerprint == ""' >/dev/null \
+    || fail "a settle that finishes before the echo must not store the pre-send view: $st"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at | .fixture.after_send = []')
+  write_home settle-early "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "a send whose echo rendered after the settle must not be acked by that echo"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "the ladder still escalates when the settle beat the echo"
+  pass "fm-captain-nudge: a settle that beats the echo keeps the send unacknowledged"
+}
+
+test_once_submits_own_lane_table_prompt_left_unsent() {
+  local home cap now=2000000000 prompt
+  prompt="$FIXED Stalled lanes: ship-one 25m."
+  cap=$(fixture_captain 25 true "" pending "› $prompt" $((now - 25 * 60)))
+  home=$(write_home own-unsent-lanetable "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "the own lane-table wake left unsent is submitted"
+  [ "$(cut -f3 "$home/send.log")" = "<Enter>" ] \
+    || fail "only Enter may be sent for the own unsent lane-table prompt: $(cat "$home/send.log")"
+  cap=$(fixture_captain 25 true "" pending "› $prompt, ship-two 30m and more from eduardo" $((now - 25 * 60)))
+  home=$(write_home own-unsent-lanetable-edited "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals skipped_input_not_empty "$(last_event "$home")" "an edited lane table is never submitted"
+  [ ! -s "$home/send.log" ] || fail "an edited lane table must not receive Enter"
+  pass "fm-captain-nudge: submits its own lane-table wake left unsent, Enter only"
+}
+
+test_once_council_never_retires_the_escalate_rung() {
+  local home cap now=2000000000 st
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)))
+  home=$(write_home council-modal "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "the first wake fires at 20m"
+  cap=$(fixture_captain 60 true "permission" empty "❯ " $((now - 20 * 60)))
+  write_home council-modal "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 40 * 60)) run_once "$home"
+  assert_equals stall_council "$(last_event "$home")" "a council row is raised behind the modal at 60m"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 1' >/dev/null \
+    || fail "the council row must not retire the unsent escalate rung: $st"
+  cap=$(fixture_captain 75 true "" empty "❯ " $((now - 20 * 60)))
+  write_home council-modal "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 55 * 60)) run_once "$home"
+  assert_equals stall_escalate "$(last_event "$home")" "once the modal clears the escalate rung still fires"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 2' >/dev/null || fail "escalate must record tier 2: $st"
+  pass "fm-captain-nudge: a council row never retires the escalate rung"
+}
+
+test_once_first_sample_past_council_still_climbs() {
+  local home cap now=2000000000 st
+  cap=$(fixture_captain 65 true "" empty "❯ " $((now - 65 * 60)))
+  home=$(write_home council-first "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals stall_council "$(last_event "$home")" "a first sample past 60m raises the council row without typing"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 0' >/dev/null \
+    || fail "a council row before any wake must not climb the tier: $st"
+  FM_NUDGE_NOW=$((now + 1 * 60)) run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "the first wake still fires after the council row"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 1' >/dev/null || fail "the wake must record tier 1: $st"
+  FM_NUDGE_NOW=$((now + 25 * 60)) run_once "$home"
+  assert_equals stall_escalate "$(last_event "$home")" "the escalate rung still fires after a first-sample council row"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 2' >/dev/null || fail "escalate must record tier 2: $st"
+  pass "fm-captain-nudge: a first sample past the council minute still climbs the ladder in order"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -762,6 +882,7 @@ fm_test_run \
   test_decide_escalation_no_progress \
   test_decide_modal_beats_idle \
   test_decide_ladder_escalates_then_councils \
+  test_decide_council_row_once_per_stall \
   test_once_fixture_nudge_writes_jsonl_and_beacon \
   test_once_dry_run_does_not_send \
   test_once_modal_never_sends \
@@ -781,6 +902,11 @@ fm_test_run \
   test_once_ladder_wakes_escalates_councils_and_records_ack \
   test_once_ladder_does_not_ack_its_own_wake \
   test_once_settle_keeps_last_reading_when_a_reread_fails \
+  test_once_settle_no_reading_keeps_send_unacknowledged \
+  test_once_settle_before_the_echo_keeps_send_unacknowledged \
+  test_once_submits_own_lane_table_prompt_left_unsent \
+  test_once_council_never_retires_the_escalate_rung \
+  test_once_first_sample_past_council_still_climbs \
   test_once_merge_ready_nudges_once_after_15_minutes \
   test_once_records_the_captain_home_stall_ledger \
   test_once_stalled_lane_wakes_with_the_lane_table \

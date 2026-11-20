@@ -703,6 +703,33 @@ test_new_remote_or_unanswered_lanes_keep_their_place() {
   [ "$elapsed" -lt 50 ] || fail "a hung terminal probe was not bounded: ${elapsed}s"
   pass "a new, remote, or unanswered lane keeps its place"
 }
+
+# A probe that fails is not a death: only proven absence (the tmux server
+# answers and the target is missing from its answer, or the Orca trusted list
+# names the terminal absent) frees a lane. A tmux that cannot answer, or a
+# herdr session that never answers, keeps the lane's place.
+test_probe_failure_is_unknown_never_gone() {
+  local home fakebin out rc
+  home=$(make_home prodefail 0 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-prodefail" 0.50 60 8 20971520)
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/tmux"
+  chmod +x "$fakebin/tmux"
+  printf '1\n' > "$home/config/lane-capacity"
+  write_lane "$home" ship-unreachable 10800 10800 'window=%2'
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a lane whose tmux server cannot answer must keep its place: $out"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" ' not_live=0' "a failed tmux probe must never read as gone"
+  rm "$home/state/ship-unreachable.meta" "$home/state/ship-unreachable.status"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/herdr"
+  chmod +x "$fakebin/herdr"
+  write_lane "$home" ship-herdr-down 10800 10800 'backend=herdr' 'window=sess:pane1'
+  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a herdr lane whose server never answers must keep its place: $out"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" ' not_live=0' "a failed herdr probe must never read as gone"
+  pass "a failed endpoint probe is unknown, never gone"
+}
 test_no_target_prints_counts_only
 test_no_target_never_prints_constrained_line
 test_target_yields_open_lanes_and_full
@@ -719,6 +746,7 @@ test_limits_and_admit
 test_pr_ready_lanes_free_their_place
 test_idle_and_gone_lanes_hold_no_place
 test_new_remote_or_unanswered_lanes_keep_their_place
+test_probe_failure_is_unknown_never_gone
 test_spawn_gate_uses_one_load_ceiling
 test_spawn_gate_follows_load_relief_levels
 test_publish_document

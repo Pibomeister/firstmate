@@ -1190,13 +1190,23 @@ wd_restart_command_yolo() {
 }
 
 wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal otherwise
-  local symptom=$1 id now count last
+  local symptom=$1 id now count last scope
   shift
   id=$(wd_id) now=$(wd_now)
+  scope=$(cfg restart-scope all)
+  case "$scope" in
+    all|second-mates) ;;
+    *)
+      # An unrecognized restart-scope never fails open to all: it refuses
+      # every restart until the value is fixed.
+      wd_rec "$id" "$symptom" restart refused "restart-scope is '$scope' (unrecognized; expected all or second-mates); refusing"
+      return 1
+      ;;
+  esac
   wd_rate_open "$symptom" restart "$(cfgi restart-secs 7200)" || return 1
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "RESTART LOOP escalated; clear $WD/escalated/$O_KEY after review"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" restart refused "endpoint is on do-not-touch"; return 1; fi
-  if [ "$O_PARENT" = - ] && [ "$(cfg restart-scope all)" = second-mates ]; then
+  if [ "$O_PARENT" = - ] && [ "$scope" = second-mates ]; then
     wd_rec "$id" "$symptom" restart refused "restart-scope is second-mates; a primary is never restarted"
     return 1
   fi
@@ -1223,9 +1233,21 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
 }
 
 wd_restart_available() {
-  local last
+  local last scope
   if [ "$(cfg restart off)" != on ]; then wd_gap "restart requested or context low, but restart is off; no handoff is asked for"; return 1; fi
-  if [ "$O_PARENT" = - ] && [ "$(cfg restart-scope all)" = second-mates ]; then wd_gap "restart requested or context low, but restart-scope is second-mates; no handoff is asked for"; return 1; fi
+  scope=$(cfg restart-scope all)
+  case "$scope" in
+    all) ;;
+    second-mates)
+      if [ "$O_PARENT" = - ]; then wd_gap "restart requested or context low, but restart-scope is second-mates; no handoff is asked for"; return 1; fi
+      ;;
+    *)
+      # An unrecognized restart-scope never fails open to all: it refuses
+      # every restart and every handoff until the value is fixed.
+      wd_gap "restart requested or context low, but restart-scope is '$scope' (unrecognized; expected all or second-mates); refusing restarts and no handoff is asked for"
+      return 1
+      ;;
+  esac
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "restart requested or context low, but restarts are escalated; no handoff is asked for"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_gap "restart requested or context low, but this endpoint is on do-not-touch; no handoff is asked for"; return 1; fi
   if [ "$O_ACT_AGE" = unknown ]; then wd_gap "restart requested or context low, but no activity source can prove quiet; no handoff is asked for"; return 1; fi
@@ -2798,7 +2820,13 @@ wd_write_status() {  # <health-file> <gaps-file>
   now=$(wd_now)
   interval=$(cfgi interval-secs 120)
   restart_word=$(cfg restart off)
-  [ "$restart_word" = on ] && [ "$(cfg restart-scope all)" = second-mates ] && restart_word='on (second mates only)'
+  if [ "$restart_word" = on ]; then
+    case "$(cfg restart-scope all)" in
+      second-mates) restart_word='on (second mates only)' ;;
+      all) ;;
+      *) restart_word="on (unrecognized restart-scope; restarts refused)" ;;
+    esac
+  fi
   read_at=$(head -n 1 "$WD/last-read" 2>/dev/null | tr -cd '0-9')
   [ -n "$read_at" ] || read_at=$((now - 3600))
   host=$(hostname -s 2>/dev/null || hostname)

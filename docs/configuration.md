@@ -1209,9 +1209,9 @@ The optional local, gitignored `config/lane-capacity` file says how many ship an
 With the file absent nothing changes: the report prints counts and host figures only, never invents a target, never advises holding dispatch, and nothing is published; a malformed value is reported as invalid rather than guessed.
 Persistent secondmates hold no lane.
 A lane whose task has recorded its ready PR frees its place, as project capacity does, while it still counts among the running lanes.
-A lane that is not live frees its place the same way, but only when both hold: nothing about it changed in two hours (its task record, status, busy state, steering inbox, or the watcher's terminal marker), and its recorded terminal is gone.
+A lane that is not live frees its place the same way, but only when both hold: nothing about it changed in two hours (its task record, status, busy state, steering inbox, or the watcher's terminal marker), and its recorded terminal is provably gone.
 A live terminal keeps its lane's place however long it has been idle, and so does recent activity with a gone terminal.
-Only evidence frees a place: a remote lane and a lane whose terminal check did not answer in 20 seconds keep theirs.
+Only proven absence frees a place: a remote lane, a lane whose terminal check did not answer in 20 seconds, and a lane whose endpoint probe failed without proof keep theirs - a tmux window counts as gone only when the tmux server itself answers, a herdr pane only when its session's server is running (never auto-started by the probe) yet the pane query fails, and an Orca terminal only on the trusted terminal list's absent verdict.
 The file is a per-machine choice and is not inherited by secondmate homes, so each home owns its own numbers.
 
 The first non-comment line is the cap, one non-negative integer, so a file holding only that integer keeps its earlier meaning.

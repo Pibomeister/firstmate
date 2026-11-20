@@ -3148,6 +3148,21 @@ restart-command=/bin/true"
   pass "restart scope: second-mates restarts a second mate and never a primary"
 }
 
+test_restart_scope_typo_refuses_instead_of_failing_open() {
+  make_home $'Captain session\n> ' "restart=on
+restart-scope=second-mate
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart refused)" "a dead primary is refused under an unrecognized scope: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows agent-gone restart pending)" "an unrecognized scope starts nothing"
+  assert_absent "$H/pickup.out" "no new captain session was launched"
+  assert_grep "unrecognized restart-scope" "$H/data/watchdog/status.md" "the status header names the unrecognized scope"
+  pass "restart scope: an unrecognized value refuses restarts instead of failing open"
+}
+
 test_second_mate_zero_exit_relaunch_is_not_done() {
   local dead new
   mate_restarted
@@ -6627,4 +6642,5 @@ fm_test_run \
   test_heartbeat_recovery_respects_recent_wake_activity \
   test_heartbeat_recovery_requires_a_known_activity_source \
   test_zero_cap_runs_only_unmetered_models \
-  test_restart_scope_second_mates_never_restarts_a_primary
+  test_restart_scope_second_mates_never_restarts_a_primary \
+  test_restart_scope_typo_refuses_instead_of_failing_open
