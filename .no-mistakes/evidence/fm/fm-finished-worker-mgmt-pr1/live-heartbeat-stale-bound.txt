@@ -1,0 +1,2 @@
+load=50 cycle=60 grace=0 -> stale_after_secs=471
+load=300 cycle=60 grace=0 -> stale_after_secs=651

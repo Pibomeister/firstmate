@@ -1,0 +1,15 @@
+== S3 normal --json run publishes a document and releases the home lock ==
+  exit=0 stdout_bytes=2444 schema=fm-fleet-snapshot.v1 stderr=
+  lock absent after exit
+
+== S4 adversarial: a running holder blocks a second snapshot past the wait bound ==
+holder=96555
+  exit=75 stdout_bytes=0 schema= stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 96555); not starting a second
+  waited ~3s
+  contribution-input while lock held:
+  exit=0 stderr=
+
+== S5 a second snapshot waits for the holder to finish instead of overlapping ==
+  exit=0 stdout_bytes=2444 schema=fm-fleet-snapshot.v1 stderr=
+  waited ~10s (holder released ~12s after start)
+  lock absent after both exit

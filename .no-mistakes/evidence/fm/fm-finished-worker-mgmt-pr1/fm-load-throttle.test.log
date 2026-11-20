@@ -1,0 +1,12 @@
+1..9
+ok - load interval follows the threshold and ignores an unreadable load
+ok - configured load threshold wins and an invalid one falls back
+ok - a second fleet snapshot never starts while one holds the home lock
+ok - a fleet snapshot releases the home lock when it exits normally
+ok - a second fleet snapshot waits for the running one instead of overlapping it
+ok - contribution-input stays outside the snapshot single-flight lock
+ok - heartbeat skips a publication inside the throttled interval
+ok - heartbeat publishes on the ordinary cadence when calm and again once a throttled interval elapses
+ok - heartbeat stale bound counts the throttled cycle
+FM_TEST_COMPLETE
+FM_TEST_SKIP_ORPHAN_REAP=1 timeout 600 bash tests/fm-load-throttle.test.sh  5.86s user 9.33s system 8% cpu 2:56.09 total

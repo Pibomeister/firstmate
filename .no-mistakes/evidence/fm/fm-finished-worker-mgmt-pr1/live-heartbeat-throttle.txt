@@ -1,0 +1,24 @@
+== S0 real host load probe (no seam) ==
+load1=223.37 threshold=200 factor=4 interval60=240
+sysctl vm.loadavg: { 223.37 245.49 251.38 }
+
+== S1 heartbeat under synthetic load 300, watcher cycle 60 (throttled interval 240) ==
+T=1795206100
+run A at T (no prior ledger -> publish):
+  exit=0 generated_epoch=1795206100 stale_after_secs=null
+run B at T+60 (inside throttled interval -> skip, epoch unchanged):
+  exit=0 generated_epoch=1795206100 stale_after_secs=null
+run C at T+179 (age 179 < 240-60 -> skip):
+  exit=0 generated_epoch=1795206100 stale_after_secs=null
+run D at T+239 (launch jitter, 1s short of 240 -> publish):
+  exit=0 generated_epoch=1795206339 stale_after_secs=null
+
+== S2 load falls to 50 -> ordinary cadence on next launch ==
+run E at T+299 (60s later):
+  exit=0 generated_epoch=1795206399 stale_after_secs=null
+run F at T+359 (60s later):
+  exit=0 generated_epoch=1795206459 stale_after_secs=null
+
+== S2b adversarial: unreadable load never throttles ==
+run G at T+360 (1s later):
+  exit=0 generated_epoch=1795206460 stale_after_secs=null

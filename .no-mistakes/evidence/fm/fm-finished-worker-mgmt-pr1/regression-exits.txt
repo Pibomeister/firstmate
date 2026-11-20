@@ -1,0 +1,2 @@
+fm-heartbeat exit=1
+fm-fleet-snapshot-view exit=143
