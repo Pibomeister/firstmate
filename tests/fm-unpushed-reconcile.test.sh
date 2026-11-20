@@ -300,6 +300,25 @@ assert_contains "$out" 'branch=fm/another' 'slow comparison hid another local br
 assert_contains "$out" 'incomplete' 'timeout became success'
 pass 'a slow forge read retains all discovered branches and an incomplete scan'
 
+new_world deadline
+deadline=$(( $(date +%s) + 12 ))
+# Time spent before the scan reaches its timer, as on a loaded host, must come
+# out of the caller's deadline rather than extend past it.
+sleep 4
+out=$(FM_UNPUSHED_DEADLINE=$deadline FM_UNPUSHED_TIMEOUT_SECS=20 FM_GH_SLEEP=60 scan)
+finished=$(date +%s)
+[ "$finished" -le "$deadline" ] || fail "the scan ended at $finished, after its deadline $deadline"
+assert_contains "$out" 'branch=fm/task' 'the deadline hid the branch'
+assert_contains "$out" 'incomplete' 'the deadline cut became success'
+: > "$FM_GH_LOG"
+out=$(FM_UNPUSHED_DEADLINE=$(( $(date +%s) - 1 )) scan)
+assert_contains "$out" 'incomplete' 'a passed deadline became success'
+assert_equals '' "$(cat "$FM_GH_LOG")" 'a passed deadline still read the forge'
+rc=0
+FM_UNPUSHED_DEADLINE=soon scan >/dev/null 2>&1 || rc=$?
+assert_equals 2 "$rc" 'an invalid deadline was accepted'
+pass 'a caller deadline bounds the scan from where its timer starts'
+
 new_world resolved-blocker
 printf 'resolved [at=101] [key=nm-daemon-gate-context]: retry authorized\n' >> "$FM_HOME/state/task.status"
 out=$(scan)

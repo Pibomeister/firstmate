@@ -46,7 +46,9 @@
 #
 # FM_HOME selects the home. FM_DATA_OVERRIDE, FM_STATE_OVERRIDE and
 # FM_PROJECTS_OVERRIDE select its directories. FM_UNPUSHED_TIMEOUT_SECS bounds
-# the entire scan (default 20, maximum 120). A timeout retains partial output,
+# the entire scan (default 20, maximum 120). FM_UNPUSHED_DEADLINE, an optional
+# absolute epoch second, lowers that bound so the scan ends before it, or skips
+# the scan when no time is left. A timeout retains partial output,
 # names every discovered branch not yet resolved, and prints an actionable
 # incomplete-scan diagnostic. Exit 0 includes
 # findings/unknowns; usage or an invalid bound exits 2.
@@ -297,13 +299,25 @@ case "${1:-}" in
     secs=${FM_UNPUSHED_TIMEOUT_SECS:-20}
     case "$secs" in ''|*[!0-9]*) exit 2 ;; esac
     [ "$secs" -gt 0 ] && [ "$secs" -le 120 ] || exit 2
+    # The deadline caps the bound where the timer starts, so time a caller
+    # spent reaching this line cannot push the timed group past it. The
+    # margin covers the floored clock, the one-second kill grace and reaping.
+    case "${FM_UNPUSHED_DEADLINE:-}" in
+      '') ;;
+      *[!0-9]*) exit 2 ;;
+      *)
+        left=$(( FM_UNPUSHED_DEADLINE - $(date +%s) - 3 ))
+        [ "$left" -ge "$secs" ] || secs=$left
+        [ "$secs" -ge 0 ] || secs=0
+        ;;
+    esac
     child_mode=--scan
     [ "$mode" != discover ] || child_mode=--discover
     # A timeout still names every discovered branch the scan had not resolved.
-    FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" "$child_mode" || {
+    if [ "$secs" -eq 0 ] || ! FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" "$child_mode"; then
       pending_inventory "$work"
       printf 'UNPUSHED: incomplete scan (failed or exceeded %ss); rerun %s scan\n' "$secs" "$SCRIPT_DIR/fm-unpushed-reconcile.sh"
-    }
+    fi
     ;;
   --scan|--discover)
     DISCOVER_ONLY=0

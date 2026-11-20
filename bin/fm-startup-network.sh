@@ -599,18 +599,8 @@ EOF
         script_dir=$1
         work=$2
         deadline=$3
-        unpushed() {  # <mode> [--work-dir <dir>]: scan bounded inside this stage
-          local left=$(( deadline - $(date +%s) - 2 )) secs=${FM_UNPUSHED_TIMEOUT_SECS:-20}
-          if [ "$left" -lt 1 ]; then
-            [ "$1" != scan ] || [ -z "$work" ] \
-              || "$script_dir/fm-unpushed-reconcile.sh" pending --work-dir "$work"
-            return 1
-          fi
-          case "$secs" in
-            ""|*[!0-9]*) ;;
-            *) [ "$secs" -gt 120 ] || [ "$secs" -le "$left" ] || secs=$left ;;
-          esac
-          FM_UNPUSHED_TIMEOUT_SECS=$secs "$script_dir/fm-unpushed-reconcile.sh" "$@"
+        unpushed() {  # <mode> [--work-dir <dir>]: the scanner ends inside this stage
+          FM_UNPUSHED_DEADLINE=$deadline "$script_dir/fm-unpushed-reconcile.sh" "$@"
         }
         if [ -n "$work" ]; then
           unpushed discover --work-dir "$work" || true
