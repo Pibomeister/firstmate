@@ -44,7 +44,7 @@
 # A failed refresh backs off before the next --best-effort attempt: the
 # delay doubles after each consecutive failure, from
 # FM_HOME_SUMMARY_BACKOFF_BASE_SECS (default 30) up to
-# FM_HOME_SUMMARY_BACKOFF_MAX_SECS (default 1800), and a success clears it.
+# FM_HOME_SUMMARY_BACKOFF_MAX_SECS (default 1800), and a publication clears it.
 # The record is state/.home-summary-refresh.backoff (failures and the next
 # permitted attempt epoch). A direct call without --best-effort always runs,
 # so tests and diagnostics are never deferred. This is the interim relief
@@ -304,6 +304,7 @@ home_summary_refresh_once() {
     return 1
   fi
   HOME_SUMMARY_TMP=
+  rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
   fm_lock_release "$REFRESH_LOCK"
   HOME_SUMMARY_LOCK_HELD=0
   trap - EXIT HUP INT TERM
@@ -472,7 +473,6 @@ export FM_SNAPSHOT_STAGE_FD
 
 if home_summary_refresh_once; then
   home_summary_stage_orphan_cleanup
-  rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
   exit 0
 else
   refresh_rc=$?

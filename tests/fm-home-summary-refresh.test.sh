@@ -585,12 +585,20 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "repeated publication lock timeouts vanished from failure reporting"
 # A deadline hit while queued behind another refresh must name the lock wait.
 : > "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
   || fail "a lock-wait timeout changed the best-effort caller result"
 grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the lock wait was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
+  || fail "a lock-wait timeout did not record a backoff"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" \
+  || fail "an if-idle refresh behind a held lock did not skip cleanly"
+[ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
+  || fail "an if-idle refresh that skipped a held lock cleared the backoff"
 kill "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 LOCK_HOLDER_PID=
