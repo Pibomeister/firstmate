@@ -701,8 +701,13 @@ p0_blocker_alarm() {  # <window> <task>
   # Keyed by task, not endpoint: recovery can give the task a new terminal
   # while keeping its status log, and that must not re-alarm a surfaced opening.
   marker="$STATE/.p0-blocker-surfaced-$task"
-  if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
+  if [ ! -e "$statusf" ] && [ ! -L "$statusf" ]; then
     rm -f "$marker"
+    return 0
+  fi
+  # A status log that exists but cannot be read right now proves nothing about
+  # its openings, so the marker stays; dropping it would re-alarm them later.
+  if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
     return 0
   fi
   open=$(status_open_decisions_incremental "$statusf" '' timed-all) || exit 1

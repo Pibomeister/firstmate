@@ -238,6 +238,22 @@ test_p0_once_only_survives_endpoint_replacement() {
   [ "$(count_wakes)" = 2 ] || fail 'a new opening on the replacement endpoint did not alarm'
   pass 'a replacement endpoint keeps the task once-only alarm and still alarms a new opening'
 }
+test_p0_marker_survives_unreadable_status() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: deployment key missing\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm'
+  chmod 000 "$STATE/worker.status"
+  FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+  chmod 644 "$STATE/worker.status"
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a momentarily unreadable status log re-alarmed the same opening'
+  rm -f "$STATE/worker.status"
+  FM_WATCH_NOW=1900 p0_blocker_alarm test:worker worker
+  [ ! -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'an absent status log kept the surfaced marker'
+  pass 'an unreadable status log keeps the once-only marker; an absent one clears it'
+}
 test_p0_invalid_opening_time_is_explicit_and_reopens() {
   local declaration diagnostic
   for declaration in \
@@ -471,6 +487,7 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
   test_p0_origins_only_for_due_unsurfaced_blockers \
   test_p0_keyed_note_updates_keep_first_opening test_p0_once_only_survives_endpoint_replacement \
+  test_p0_marker_survives_unreadable_status \
   test_p0_invalid_opening_time_is_explicit_and_reopens \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
