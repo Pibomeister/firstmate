@@ -1,0 +1,16 @@
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.nVUb0n/state/fm-old.status
+watcher[1] exit=0
+== real ak log
+council decline: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.nVUb0n/data/fm-old/gate-council-nm-r1-review-1795132041/record.json
+== exit=0
+== record.json (top-level fields)
+  "schema": "council-record",
+  "outcome": "decline",
+  "choice": "decline",
+check: gate council ruled: fm-old key=nm-r1-review outcome=decline choice=decline record=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.nVUb0n/data/fm-old/gate-council-nm-r1-review-1795132041/record.json
+watcher[2] exit=0
+== council wake
+1795135864	3	check	gate-council:fm-old:nm-r1-review	check: gate council ruled: fm-old key=nm-r1-review outcome=decline choice=decline record=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.nVUb0n/data/fm-old/gate-council-nm-r1-review-1795132041/record.json
+== status log unchanged (gate not answered)?
+yes, unchanged
+lab removed

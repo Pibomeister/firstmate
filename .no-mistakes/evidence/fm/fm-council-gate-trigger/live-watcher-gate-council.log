@@ -1,0 +1,74 @@
+LAB=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h
+== config/gate-council
+roster=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/roster.json
+projects=ShipContent,Casco,AgentKit,firstmate
+away record entered
+
+===== S1: hour-old gate on firstmate (listed); fresh gate on Casco (40 min); gate on Goodword (unlisted, 2h)
+--- watcher[1] exit=0
+stdout:
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+stderr:
+== claims after cycle 1
+fm-old	nm-r1-review	1795131342	running	1795135374	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342
+run dir: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342
+== card.json (sent to real ak)
+{"id":"gate-fm-old-nm-r1-review-1795131342","question":"A Firstmate worker's no-mistakes validation gate (fm-old, nm-r1-review) has waited at least 3600 seconds on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?","options":["fix","decline"],"approve":"fix"}
+== task-intent.md
+ship the widget
+== real ak log
+ak council: invalid council configuration: [{"instancePath":"","schemaPath":"#/required","keyword":"required","params":{"missingProperty":"veto"},"message":"must have required property 'veto'"}]
+== exit: 2
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/casco-young:
+brief.md
+nm-r1-findings.txt
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/goodword-old:
+brief.md
+nm-r1-findings.txt
+
+===== S1b: next cycle surfaces the finished run as one wake
+--- watcher[2] exit=0
+stdout:
+check: gate council ruled: fm-old key=nm-r1-review outcome=error exit=2 choice=- log=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342/log
+stderr:
+== wake queue
+1795135441	1	signal	casco-young.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135444	2	signal	fm-old.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135445	3	signal	goodword-old.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135447	4	signal	casco-young.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135449	5	signal	fm-old.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135451	6	signal	goodword-old.status	needs-decision: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/casco-young.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/fm-old.status /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/state/goodword-old.status
+1795135488	7	check	gate-council:fm-old:nm-r1-review	check: gate council ruled: fm-old key=nm-r1-review outcome=error exit=2 choice=- log=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342/log
+== claims
+fm-old	nm-r1-review	1795131342	running	1795135374	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342
+fm-old	nm-r1-review	1795131342	surfaced	1795135487	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.s2Km1h/data/fm-old/gate-council-nm-r1-review-1795131342
+--- watcher[3] exit=0
+stdout:
+check: rearm-resurface
+stderr:
+== wake queue after cycle 3 (no repeat expected)
+1
+
+===== S2 (adversarial): roster missing -> watcher must keep running, council skipped
+--- watcher[4] exit=0
+stdout:
+check: rearm-resurface
+stderr:
+watcher: gate council roster is missing or unreadable
+watcher: away gate council check failed; the council is skipped this cycle
+no council run dir for fm-old2 (expected)
+===== S2b: invalid after-secs
+--- watcher[5] exit=0
+stdout:
+check: rearm-resurface
+stderr:
+watcher: invalid gate council after-secs
+watcher: away gate council check failed; the council is skipped this cycle
+===== S3: present posture (away record cleared) -> no council
+--- watcher[6] exit=0
+stdout:
+check: rearm-resurface
+stderr:
+no council run dir for fm-old2 while present (expected)
+lab removed

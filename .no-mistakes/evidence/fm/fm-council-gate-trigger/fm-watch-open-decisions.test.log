@@ -1,4 +1,4 @@
-1..23
+1..26
 ok - absent flag emits nothing and does not fold status
 ok - oldest key surfaces once, and independent per-key backoff doubles up to its cap
 ok - keys 1 and 01 receive separate reminders and retain independent bounded backoff
@@ -12,7 +12,7 @@ watcher: open-decision backoff cap is below threshold
 ok - invalid settings refuse the tick without queueing reminders
 ok - task retirement removes the timed cursor and ends reminders
 ok - the actual watcher wakes and exits on an overdue key without any recorded pane
-fm-afk-contract: quiet mode became the away posture; the quiet record is archived at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-watch-open-decisions.4DuTmr/state/afk-contracts/1795127486-superseded-1795127489.afk-contract
+fm-afk-contract: quiet mode became the away posture; the quiet record is archived at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-watch-open-decisions.fSxXcd/state/afk-contracts/1795135146-superseded-1795135149.afk-contract
 ok - only away posture routes one decision at the default age
 ok - overdue decision pages and stale generation refuses route
 ok - changed away confirmation leaves the open decision to page later
@@ -24,10 +24,8 @@ ok - gate council stays off without config, away posture, allowlist, age, gate k
 ok - one council per gate episode, ruling surfaced once as evidence, gate left unanswered
 ok - closed gates drop their ruling, read failures keep it, escalations and failed runs surface as evidence
 ok - an unfinished council surfaces after its bound and invalid config fails the check
+ok - findings whose real path leaves the task data folder never start a council
+ok - a failed captain-hold lookup counts as held and skips the council
+ok - an unreadable status file counts as open and keeps the ruling
 ok - real watcher logs an invalid gate council config, skips the council, and keeps running
 FM_TEST_COMPLETE
-bash tests/fm-watch-open-decisions.test.sh  18.98s user 48.57s system 7% cpu 15:19.99 total
-~/.local/bin/ak
-usage: ak council run --card <card.json> --council-config <private roster> [--context <file>]... [--out <record.json>]
-
-[exited with code 0]
