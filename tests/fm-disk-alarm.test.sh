@@ -490,6 +490,8 @@ SH
     cat > "$root/bin/fm-dispatch-resolve.sh" <<'SH'
 #!/usr/bin/env bash
 dir=$(dirname "$1")
+shift
+printf '%s\n' "$*" > "$dir/resolve-args"
 status=clear
 harness=codex
 [ ! -f "$dir/stub-status" ] || status=$(cat "$dir/stub-status")
@@ -606,6 +608,8 @@ test_retry_redispatches_when_the_alarm_clears() {
   rc=0
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || rc=$?
   [ "$rc" = 0 ] || fail "a clearing scan must exit 0, got $rc"$'\n'"$out"
+  assert_equals "--project a" "$(cat "$home/data/ship-a/resolve-args")" "the resolver receives the ship project name"
+  assert_equals "--project b" "$(cat "$home/data/scout-b/resolve-args")" "the resolver receives the scout project name"
   assert_equals "ship-a"$'\n'"/p/a"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off$FRESH"$'\n\n'"scout-b"$'\n'"/p/b"$'\n'"--scout$FRESH" "$(stub_calls "$home")" "the cleared alarm dispatches each record again, oldest first, with its arguments and freshly resolved routing in place of the recorded routing"
   assert_contains "$out" "check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh:" "the result names the reading and the re-dispatch"
   assert_contains "$out" " ship-a" "the result names the re-dispatched ship"
@@ -826,6 +830,9 @@ test_retry_skips_held_or_blocked_backlog_items() {
   assert_equals "" "$out" "a repeat scan does not report the same skip again"
   assert_equals 1 "$(wake_rows "$home")" "a repeat scan does not notify again"
   assert_equals "ship-blocked ship-held " "$(recorded_ids "$home")" "a repeat scan still keeps the records"
+  retry_at_level "$home" "$volume" 9437184 record ship-held ship-held --mode no-mistakes --yolo off || fail "re-record ship-held"
+  out=$(cd "$home" && TASKS_AXI_BACKEND=markdown FAKE="$FAKE:$axi_dir" retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the re-recorded scan must exit 0"$'\n'"$out"
+  assert_contains "$out" "skipped, backlog item held or blocked, record kept: ship-held" "replacing a record reports a held item once again"
   pass "a held or blocked backlog item is skipped once, keeps its record, and is never launched"
 }
 

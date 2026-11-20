@@ -125,17 +125,13 @@ write_record() {  # <task-id> <epoch> <spawn-arg>...
 }
 
 scan_lock() {
-  local pid
   mkdir -p "$DIR" || return 1
-  if ! mkdir "$LOCK" 2>/dev/null; then
-    pid=$(cat "$LOCK/pid" 2>/dev/null) || pid=
-    case "$pid" in '' | *[!0-9]*) return 1 ;; esac
-    ! kill -0 "$pid" 2>/dev/null || return 1
-    rm -rf -- "$LOCK"
-    mkdir "$LOCK" 2>/dev/null || return 1
-  fi
-  printf '%s\n' "$$" > "$LOCK/pid"
-  trap 'rm -rf -- "$LOCK"' EXIT
+  FM_ROOT_OVERRIDE=$FM_ROOT
+  FM_STATE_OVERRIDE=$STATE
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  fm_lock_try_acquire "$LOCK" || return 1
+  trap 'fm_lock_release "$LOCK"' EXIT
 }
 
 # True when the dispatch ledger names a dispatch of <task-id> at or after <epoch>.
@@ -174,23 +170,12 @@ backlog_queued() {  # <task-id>
 # profile and the recorded harness-scoped selectors, and return 0. Otherwise
 # set RESOLVED to the resolution status and return 1.
 resolve_routing() {  # <task-id> <spawn-arg>...
-  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was='' account_set=0
-  local -a scoped=()
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos=0 was='' account_set=0 project_dir='' project=''
+  local -a scoped=() resolve_args=()
   shift
   ROUTED=()
   RESOLVED=error
   [ -f "$DATA/$id/brief.md" ] || { RESOLVED='no brief'; return 1; }
-  env FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-dispatch-resolve.sh" "$DATA/$id/brief.md" </dev/null >/dev/null 2>&1 || return 1
-  RESOLVED=$(jq -r '.status // "error"' "$rec" 2>/dev/null) || RESOLVED=
-  [ -n "$RESOLVED" ] || RESOLVED=off
-  [ "$RESOLVED" = clear ] || return 1
-  harness=$(jq -r '.profile.harness // empty' "$rec" 2>/dev/null) || harness=
-  model=$(jq -r '.profile.model // empty' "$rec" 2>/dev/null) || model=
-  effort=$(jq -r '.profile.effort // empty' "$rec" 2>/dev/null) || effort=
-  [ -n "$harness" ] || { RESOLVED=error; return 1; }
-  ROUTED=()
-  pos=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --harness) [ $# -lt 2 ] || was=$2; shift ;;
@@ -217,6 +202,7 @@ resolve_routing() {  # <task-id> <spawn-arg>...
         pos=$((pos + 1))
         if [ "$pos" -le 2 ]; then
           ROUTED+=("$1")
+          [ "$pos" -ne 2 ] || project_dir=$1
         elif [ "$pos" -eq 3 ]; then
           was=$1
         fi
@@ -224,6 +210,22 @@ resolve_routing() {  # <task-id> <spawn-arg>...
     esac
     [ $# -eq 0 ] || shift
   done
+  project=$project_dir
+  while [ -n "$project" ] && [ "${project%/}" != "$project" ]; do
+    project=${project%/}
+  done
+  project=${project##*/}
+  resolve_args=("$DATA/$id/brief.md")
+  [ -z "$project" ] || resolve_args+=(--project "$project")
+  env FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-dispatch-resolve.sh" "${resolve_args[@]}" </dev/null >/dev/null 2>&1 || return 1
+  RESOLVED=$(jq -r '.status // "error"' "$rec" 2>/dev/null) || RESOLVED=
+  [ -n "$RESOLVED" ] || RESOLVED=off
+  [ "$RESOLVED" = clear ] || return 1
+  harness=$(jq -r '.profile.harness // empty' "$rec" 2>/dev/null) || harness=
+  model=$(jq -r '.profile.model // empty' "$rec" 2>/dev/null) || model=
+  effort=$(jq -r '.profile.effort // empty' "$rec" 2>/dev/null) || effort=
+  [ -n "$harness" ] || { RESOLVED=error; return 1; }
   if [ "${#scoped[@]}" -gt 0 ] && [ "$was" != "$harness" ]; then
     RESOLVED="clear on $harness, but ${scoped[0]} was recorded for ${was:-the default harness}"
     return 1
@@ -246,6 +248,8 @@ scan() {
   rows=$(records)
   [ -n "$rows" ] || return 0
   scan_lock || return 0
+  rows=$(records)
+  [ -n "$rows" ] || return 0
   line=$("$SCRIPT_DIR/fm-disk-alarm.sh" --gate crew 2>/dev/null) || return 0
   level=unknown
   free=unknown
@@ -315,13 +319,7 @@ EOF
   [ -z "$skipped" ] || parts="${parts:+$parts; }skipped, backlog item held or blocked, record kept:$skipped"
   [ -n "$parts" ] || return 0
   reason="check: disk alarm cleared (level=$level free_kib=$free): $parts"
-  (
-    FM_ROOT_OVERRIDE=$FM_ROOT
-    FM_STATE_OVERRIDE=$STATE
-    # shellcheck source=bin/fm-wake-lib.sh
-    . "$SCRIPT_DIR/fm-wake-lib.sh"
-    fm_wake_append check disk-retry "$reason"
-  ) >/dev/null 2>&1 || {
+  fm_wake_append check disk-retry "$reason" >/dev/null 2>&1 || {
     echo "fm-disk-retry: could not queue the notification: $reason" >&2
     return 1
   }
@@ -346,6 +344,7 @@ case "${1:-}" in
       echo "fm-disk-retry: could not record $id" >&2
       exit 1
     }
+    rm -f -- "$DIR/.skipped.$id"
     ;;
   clear)
     { [ $# -eq 2 ] && valid_id "$2"; } || usage_error
