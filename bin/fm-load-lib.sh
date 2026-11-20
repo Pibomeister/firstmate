@@ -2,11 +2,11 @@
 # fm-load-lib.sh - host-load throttling for the periodic monitoring paths.
 #
 # This file is the single owner of the load probe, the throttle threshold,
-# and the interval arithmetic the heartbeat, fleet-snapshot, and watcher
-# cadences share. When the 1-minute load average is above the threshold
-# (default 200), periodic monitoring runs at FM_LOAD_THROTTLE_FACTOR times
-# its ordinary interval (default 4); when the load falls back, the ordinary
-# interval returns on the very next read, because nothing here is cached.
+# and the interval arithmetic the heartbeat publication (and the fleet
+# snapshot it starts) and the watcher cadences share. When the 1-minute
+# load average is above the threshold (default 200), periodic monitoring
+# runs at FM_LOAD_THROTTLE_FACTOR times its ordinary interval (default 4);
+# when the load falls back, the ordinary interval returns on the very next read, because nothing here is cached.
 # An unreadable load never throttles: a broken probe must not stall
 # supervision, so it reads as the ordinary interval.
 #

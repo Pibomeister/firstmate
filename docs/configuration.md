@@ -596,7 +596,7 @@ Blank lines and lines that start with `#` are ignored, and an unusable value cou
 ## Heartbeat stale grace (config/heartbeat)
 
 `bin/fm-heartbeat.sh` publishes a stale bound, `stale_after_secs`, in `state/heartbeat.json`, and its header owns that record and the bound's formula.
-The bound is the watcher cycle period, plus the grace set here, plus one whole-run cap of the publisher.
+The bound is the watcher cycle period (stretched while the host-load throttle in `bin/fm-load-lib.sh` is engaged), plus the grace set here, plus one whole-run cap of the publisher.
 The record also carries `published_epoch`, stamped at the successful publication, and heartbeat age is measured from it.
 A dead publisher therefore reads stale `stale_after_secs` after its last publication, except on an idle home, which [`bin/fm-health-verdict.sh`](../bin/fm-health-verdict.sh) reads as `ok` (idle) at any heartbeat age.
 
@@ -3733,7 +3733,7 @@ FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query ins
 FM_HEARTBEAT_QUOTA_TIMEOUT=10      # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 10
 FM_HEARTBEAT_DEADLINE=240           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 240
 FM_HEARTBEAT_CYCLE_SECS=            # set by bin/fm-watch.sh for each heartbeat publication; see bin/fm-heartbeat.sh
-FM_LOAD_THROTTLE_THRESHOLD=200      # 1-minute load above which periodic monitoring (heartbeat publication, fleet snapshot, watcher heartbeat cadence) stretches its interval; invalid values use 200; bin/fm-load-lib.sh owns the contract
+FM_LOAD_THROTTLE_THRESHOLD=200      # 1-minute load above which periodic monitoring (the watcher's heartbeat ticker and heartbeat wake cadence, and the heartbeat publication with the fleet snapshot it starts) stretches its interval; invalid values use 200; bin/fm-load-lib.sh owns the contract
 FM_LOAD_THROTTLE_FACTOR=4           # interval multiplier while the load is above FM_LOAD_THROTTLE_THRESHOLD; invalid values use 4
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
