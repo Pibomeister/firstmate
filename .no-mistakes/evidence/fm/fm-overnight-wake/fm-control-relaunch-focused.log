@@ -1,0 +1,4 @@
+1..1
+ok - fm-control relaunch: the quota floor refuses an exhausted recorded account before stop, and --account reroutes a tooled Claude task
+FM_TEST_COMPLETE
+exit=0

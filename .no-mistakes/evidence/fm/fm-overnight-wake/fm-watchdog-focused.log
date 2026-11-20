@@ -1,0 +1,5 @@
+1..2
+ok - boundary: daily-max-usd=0 keeps the judge on unmetered models and spends nothing
+ok - restart scope: second-mates restarts a second mate and never a primary
+FM_TEST_COMPLETE
+exit=0

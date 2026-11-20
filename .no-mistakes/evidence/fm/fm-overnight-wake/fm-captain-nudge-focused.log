@@ -1,0 +1,42 @@
+1..36
+ok - fm-captain-nudge: help and usage plumbing
+ok - fm-captain-nudge: decide nudges when idle with open work and empty composer
+ok - fm-captain-nudge: decide skips when idle is below threshold
+ok - fm-captain-nudge: decide skips when there is no open work
+ok - fm-captain-nudge: decide never types when a modal is visible
+ok - fm-captain-nudge: decide skips when the input line is not empty
+ok - fm-captain-nudge: decide refuses unknown or unproven composer
+ok - fm-captain-nudge: decide skips during cooldown
+ok - fm-captain-nudge: decide escalates after two no-progress nudges and resumes on progress
+ok - fm-captain-nudge: decide reports blocker before skipped_input_not_empty
+ok - fm-captain-nudge: decide wakes, escalates once past 40m, and raises one council row past 60m
+ok - fm-captain-nudge: once nudges, logs JSONL, emits NUDGE v1, and sends only the fixed prompt
+ok - fm-captain-nudge: dry-run logs a nudge and never sends
+ok - fm-captain-nudge: once never sends when a modal is visible
+ok - fm-captain-nudge: once never overwrites typed text
+ok - fm-captain-nudge: cooldown, two no-progress nudges, then high stop until progress
+ok - fm-captain-nudge: test-nudge still refuses a visible modal
+ok - fm-captain-nudge: test-nudge proves the send path on an empty composer
+ok - fm-captain-nudge: guard restarts when its own heartbeat is stale
+ok - fm-captain-nudge: guard is a no-op while the loop heartbeat is fresh
+installed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+installed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+removed launchd com.firstmate.captain-nudge and com.firstmate.captain-nudge-guard
+ok - fm-captain-nudge: install and uninstall are idempotent
+ok - fm-captain-nudge: queue-file probe treats checkboxes as open work
+ok - fm-captain-nudge: beacon line is wrap-join parseable
+ok - fm-captain-nudge: example host configs parse
+ok - fm-captain-nudge: literal ~ in config paths expands to HOME
+ok - fm-captain-nudge: herdr idle tracks screen change, not a cron heartbeat
+ok - fm-captain-nudge: submits only its own unsent fixed prompt, Enter only
+ok - fm-captain-nudge: once wakes at 20m, escalates at 40m, raises a council row at 60m, and records the ack
+ok - fm-captain-nudge: the ladder never reads the pane's echo of its own wake as the captain's ack
+ok - fm-captain-nudge: a failed reread during the settle keeps the last good reading
+ok - fm-captain-nudge: a ci-ready PR waiting 15 minutes gets one merge prompt, never over typed text
+ok - fm-captain-nudge: each pass records the captain home's stall ledger even when its watcher is quiet
+ok - fm-captain-nudge: a lane with no progress for 20m wakes the captain with the lane table
+ok - fm-captain-nudge: an Orca captain with a home is reached at its lock owner's terminal, not the configured pane
+ok - fm-captain-nudge: a captain home without a held lock is reported unknown and never typed into
+ok - fm-captain-nudge: a lock handoff between read and send stops the send
+FM_TEST_COMPLETE
+exit=0

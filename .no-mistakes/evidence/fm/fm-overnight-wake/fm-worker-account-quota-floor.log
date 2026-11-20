@@ -1,0 +1,9 @@
+ 2:38  up 3 days, 16:50, 221 users, load averages: 129.63 127.45 131.86
+TMPDIR=/tmp/qfT.2S954D/tmp
+ok - the quota floor refuses a listed account under 15%, passes exactly 15%, and names the declared accounts to move to
+ok - the quota floor reads a pinned account's 5-hour window, for templated and raw Claude launches
+ok - unknown quota is disclosed and the launch proceeds
+ok - the quota floor refuses Codex and an unpinned Claude account under 15% and leaves other runners alone
+ok - a secondmate refused by the quota floor is pointed at its failover
+# five quota-floor cases passed
+exit=0

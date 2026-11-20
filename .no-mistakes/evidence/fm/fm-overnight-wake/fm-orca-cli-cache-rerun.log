@@ -1,0 +1,8 @@
+1..2
+not ok - terminal wait was cached or dropped the cached read (expected '2', got '3')
+exit=1
+1..2
+ok - fm_orca_cli: terminal wait is not cached and does not drop cached reads
+ok - fm_orca_terminals_listed: one complete list answers many ids, and an untrusted one answers none
+FM_TEST_COMPLETE
+exit=0

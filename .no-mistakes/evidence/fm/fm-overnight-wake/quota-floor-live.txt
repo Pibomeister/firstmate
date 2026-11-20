@@ -1,0 +1,7 @@
+--- harness=claude verdict: ok seven_day 24
+check rc=0
+--- harness=codex verdict: below weekly 0
+quota-floor: refused codex account the launching account: weekly at 0% (under 15%); not launching qf-demo-codex on it
+quota-floor: Firstmate never spends Codex credits, which a Codex plan falls back to once its windows run out
+reroute: choose another runtime or account with at least 15% left (bin/fm-quota-reroute.sh suggest names one), or keep the work queued until a window resets
+check rc=1
