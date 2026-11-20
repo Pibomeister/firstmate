@@ -775,6 +775,9 @@ test_prioritized_spawn_passes_lane_and_load_deferral() {
     --mode no-mistakes --yolo off --priority 0) || rc=$?
   expect_code 0 "$rc" "a P0 spawn waited behind the lane cap and host load: $out"
   assert_contains "$out" "spawned task-p0" "the P0 did not receive its dedicated worker"
+  case "$out" in
+    *deferred:*) fail "the admitted P0 spawn still printed a deferral line: $out" ;;
+  esac
   assert_equals 0 "$(sed -n 's/^priority=//p' "$home/state/task-p0.meta")" \
     "the dedicated worker did not retain its P0 identity"
   assert_present "$home/state/live-a.meta" "priority admission stopped the existing lane"

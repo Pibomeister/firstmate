@@ -9,7 +9,7 @@ fm_live_gate default-on FM_PRIORITY_WORKER_LIVE_E2E tmux python3 tasks-axi
 REAL_TMUX=$(command -v tmux)
 TMP_ROOT=$(fm_test_tmproot fm-priority-worker)
 mkdir -p "$TMP_ROOT"
-SOCKET="$ROOT/.priority-$$.sock"
+SOCKET="$TMP_ROOT/priority.sock"
 ID="priority-proof-$$"
 cleanup() {
   local rc=$?

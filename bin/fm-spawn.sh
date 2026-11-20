@@ -5011,12 +5011,20 @@ fi
 # an unreadable limit is not permission.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   lane_admit_rc=0
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" || lane_admit_rc=$?
+  lane_admit_msg=$( { FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" 2>&1 1>&3 3>&-; } 3>&1) || lane_admit_rc=$?
   case "$lane_admit_rc" in
-    0) ;;
-    75) [ "$PRIORITY_SET" -eq 1 ] || exit 75 ;;
+    0) [ -z "$lane_admit_msg" ] || printf '%s\n' "$lane_admit_msg" >&2 ;;
+    75)
+      if [ "$PRIORITY_SET" -eq 1 ]; then
+        echo "note: explicit --priority $PRIORITY admitted past the lane capacity deferral" >&2
+      else
+        printf '%s\n' "$lane_admit_msg" >&2
+        exit 75
+      fi
+      ;;
     *)
+      [ -z "$lane_admit_msg" ] || printf '%s\n' "$lane_admit_msg" >&2
       echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known" >&2
       exit 1
       ;;
