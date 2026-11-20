@@ -2,7 +2,8 @@
 # Behavioral coverage for bin/fm-host-cleanup.sh: report measures without
 # deleting, clean without --apply is a dry run, clean --apply removes only
 # whole entries whose newest content is past the age limit under the
-# configured roots (never a partly fresh entry, never worktree files) and
+# configured roots (never a partly fresh entry, never a cache entry off the
+# allowlist such as an installed runtime, never worktree files) and
 # prints the worktree size report, render-launchd emits a runnable 6-hour
 # LaunchAgent, and a free-space reading under the target exits 3.
 set -u
@@ -31,26 +32,32 @@ SH
 chmod +x "$FAKE/df"
 
 # Fixture layout under $TMP_ROOT/world (old means mtime in 2025):
-#   cache/old.bin                 old file entry: removed whole
+#   cache/pip                     old allowlisted file entry: removed whole
 #   cache/sub/new.bin             fresh entry: kept
 #   cache/pre-commit/repo1/hook.py + repo1/  old, pre-commit/db.db fresh:
 #                                 a structured cache that must stay intact
-#   cache/stale/a/b.bin + a/ + stale/  fully old directory entry: removed whole
+#   cache/uv/a/b.bin + a/ + uv/   fully old allowlisted entry: removed whole
+#   cache/ms-playwright/chromium/chrome + chromium/ + ms-playwright/
+#                                 fully old installed runtime, not allowlisted:
+#                                 kept whole and reported as kept
 #   logs/old.log                  old log entry: removed
 #   workspaces/proj/tracked.txt   old but never in scope
 WORLD="$TMP_ROOT/world"
-mkdir -p "$WORLD/cache/sub" "$WORLD/cache/pre-commit/repo1" "$WORLD/cache/stale/a" \
+mkdir -p "$WORLD/cache/sub" "$WORLD/cache/ms-playwright/chromium" "$WORLD/cache/pre-commit/repo1" "$WORLD/cache/uv/a" \
   "$WORLD/logs" "$WORLD/workspaces/proj" "$WORLD/state" "$WORLD/vol"
-printf 'old cache bytes\n' > "$WORLD/cache/old.bin"
+printf 'old cache bytes\n' > "$WORLD/cache/pip"
 printf 'new cache bytes\n' > "$WORLD/cache/sub/new.bin"
 printf 'old hook env\n' > "$WORLD/cache/pre-commit/repo1/hook.py"
 printf 'fresh index\n' > "$WORLD/cache/pre-commit/db.db"
-printf 'stale bytes\n' > "$WORLD/cache/stale/a/b.bin"
+printf 'stale bytes\n' > "$WORLD/cache/uv/a/b.bin"
+printf 'browser binary\n' > "$WORLD/cache/ms-playwright/chromium/chrome"
 printf 'old log bytes\n' > "$WORLD/logs/old.log"
 printf 'project bytes\n' > "$WORLD/workspaces/proj/tracked.txt"
-touch -t 202501010000 "$WORLD/cache/old.bin" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/tracked.txt" \
+touch -t 202501010000 "$WORLD/cache/pip" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/tracked.txt" \
   "$WORLD/cache/pre-commit/repo1/hook.py" "$WORLD/cache/pre-commit/repo1" \
-  "$WORLD/cache/stale/a/b.bin" "$WORLD/cache/stale/a" "$WORLD/cache/stale"
+  "$WORLD/cache/uv/a/b.bin" "$WORLD/cache/uv/a" "$WORLD/cache/uv" \
+  "$WORLD/cache/ms-playwright/chromium/chrome" "$WORLD/cache/ms-playwright/chromium" \
+  "$WORLD/cache/ms-playwright"
 
 line_for() {  # <prefix>: print the first output line starting with prefix
   printf '%s\n' "$OUT" | grep -F -- "$1" | head -n 1
@@ -75,8 +82,10 @@ test_report_measures_and_deletes_nothing() {
   assert_contains "$OUT" "host-cleanup cache: root=$WORLD/cache" "report names the cache root"
   assert_contains "$(line_for "host-cleanup cache: root=$WORLD/cache ")" "old_entries=2" "report counts exactly the two fully old cache entries"
   assert_contains "$(line_for "host-cleanup logs: root=$WORLD/logs ")" "old_entries=1" "report counts the one old log entry"
+  assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "entry=ms-playwright size_kib=" "report names the old runtime as kept"
+  assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "reason=not-allowlisted" "report says why the runtime is kept"
   assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj" "report sizes the worktree"
-  assert_present "$WORLD/cache/old.bin" "report deletes nothing"
+  assert_present "$WORLD/cache/pip" "report deletes nothing"
   pass "report measures free space, old files, and worktrees without deleting"
 }
 
@@ -93,8 +102,8 @@ test_clean_dry_run_deletes_nothing() {
   assert_contains "$OUT" "mode=dry-run" "clean without --apply is a dry run"
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "old_entries=2 " "dry run counts the same two old cache entries as report"
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=2" "dry run leaves the old entries counted"
-  assert_present "$WORLD/cache/stale/a/b.bin" "dry run keeps the fully old entry"
-  assert_present "$WORLD/cache/old.bin" "dry run keeps the old cache file"
+  assert_present "$WORLD/cache/uv/a/b.bin" "dry run keeps the fully old entry"
+  assert_present "$WORLD/cache/pip" "dry run keeps the old cache file"
   assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "dry run prints the worktree size report"
   assert_present "$WORLD/logs/old.log" "dry run keeps the old log file"
   pass "clean without --apply deletes nothing"
@@ -104,12 +113,14 @@ test_clean_apply_deletes_only_old_cache_and_logs() {
   run_cleanup 209715200 clean --apply
   [ "$RC" = 0 ] || fail "apply: expected exit 0, got $RC"$'\n'"$OUT"
   assert_contains "$OUT" "mode=apply" "apply mode is named in the output"
-  assert_absent "$WORLD/cache/old.bin" "the old cache file is deleted"
+  assert_absent "$WORLD/cache/pip" "the old cache file is deleted"
   assert_absent "$WORLD/logs/old.log" "the old log file is deleted"
   assert_present "$WORLD/cache/sub/new.bin" "a fresh cache file survives"
-  assert_absent "$WORLD/cache/stale" "a fully old entry is removed whole"
+  assert_absent "$WORLD/cache/uv" "a fully old entry is removed whole"
   assert_present "$WORLD/cache/pre-commit/repo1/hook.py" "an old file inside a partly fresh entry survives"
   assert_present "$WORLD/cache/pre-commit/db.db" "the fresh index of that entry survives"
+  assert_present "$WORLD/cache/ms-playwright/chromium/chrome" "a fully old installed runtime that is not allowlisted survives whole"
+  assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "entry=ms-playwright size_kib=" "apply names the kept runtime"
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=0" "apply leaves no old cache entry behind"
   assert_present "$WORLD/workspaces/proj/tracked.txt" "an old worktree file is never in scope"
   assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "the scheduled apply run prints the worktree size report"
@@ -156,9 +167,9 @@ SH
     [ "$mode" = apply ] && args+=(--apply)
     rm -rf "$world"
     mkdir -p "$world/cache/fresh" "$world/logs" "$world/state" "$world/vol"
-    printf 'old\n' > "$world/cache/old.bin"
+    printf 'old\n' > "$world/cache/pip"
     printf 'new\n' > "$world/cache/fresh/new.bin"
-    touch -t 202501010000 "$world/cache/old.bin"
+    touch -t 202501010000 "$world/cache/pip"
     : > "$log"
     RC=0
     OUT=$(FM_TEST_SEAM=1 FM_CLEANUP_VOLUME="$world/vol" FM_FAKE_VOLUME="$world/vol" \
@@ -173,7 +184,7 @@ SH
   done
   assert_contains "$(printf '%s\n' "$OUT" | grep -F "root=$world/cache ")" "old_entries=1 old_kib=" "the apply pass counts the one old entry"
   assert_contains "$(printf '%s\n' "$OUT" | grep -F "root=$world/cache ")" "remaining_old_entries=0" "the apply pass reports it gone without a rescan"
-  assert_absent "$world/cache/old.bin" "the old entry is deleted"
+  assert_absent "$world/cache/pip" "the old entry is deleted"
   assert_present "$world/cache/fresh/new.bin" "the fresh entry is kept"
   pass "clean walks each root once per run"
 }

@@ -12,7 +12,7 @@
 #       Dry run: print what clean --apply would delete and the same
 #       worktree size lines report prints. Deletes nothing.
 #   fm-host-cleanup.sh clean --apply
-#       Delete every old entry under the cache and log roots, print the
+#       Delete every removable old entry under the cache and log roots, print the
 #       worktree size lines, and append one before/after line to the log.
 #       This is the mode a launchd or cron job runs.
 #   fm-host-cleanup.sh render-launchd
@@ -38,6 +38,13 @@
 # intact, old files included, so a cache whose index is still fresh is never
 # half-deleted. An entry that cannot be fully read is never treated as old.
 # report and clean count entries by this same rule.
+# Under a cache root only an allowlisted entry may be removed: one whose
+# name is a cache its tool re-creates on its own (_cacache _npx _logs pip uv
+# pre-commit pnpm Homebrew Yarn yarn go-build node-gyp pypoetry typescript).
+# Any other old cache entry, such as an installed tool runtime
+# (ms-playwright, codex-runtimes, opencode, puppeteer), is never removed:
+# report and clean name it on a "host-cleanup kept:" line with its size and
+# reason=not-allowlisted. Every old entry under a log root is removable.
 # Default cache roots: $HOME/Library/Caches, $HOME/.cache, and
 # $HOME/.npm, so npm's _cacache (content-v2 with its index-v5) is one entry.
 # Default log roots: $HOME/Library/Logs.
@@ -122,9 +129,34 @@ entries_stats() {
   done | awk '{ n++; s += $1 } END { printf "%d %d\n", n + 0, s + 0 }'
 }
 
-# Prints "<entries> <kib>" for the old entries under root $1 (age $2 days).
-old_entries_stats() {
-  old_entries "$1" "$2" | entries_stats
+allowlisted() {  # <entry>: true when the entry names a self-regenerating cache
+  case "${1##*/}" in
+    _cacache|_npx|_logs|pip|uv|pre-commit|pnpm|Homebrew|Yarn|yarn|go-build|node-gyp|pypoetry|typescript) return 0 ;;
+  esac
+  return 1
+}
+
+# Lists root $1's old entries (age $2 days) once and writes the removable
+# ones to $4 and, under a cache root ($3 = cache), the kept ones to $5.
+old_lists() {
+  local root=$1 days=$2 kind=$3 entry
+  : > "$4"
+  : > "$5"
+  old_entries "$root" "$days" | while IFS= read -r -d '' entry; do
+    if [ "$kind" = log ] || allowlisted "$entry"; then
+      printf '%s\0' "$entry" >> "$4"
+    else
+      printf '%s\0' "$entry" >> "$5"
+    fi
+  done
+}
+
+kept_report() {  # <root> <kept-list>
+  local entry
+  while IFS= read -r -d '' entry; do
+    printf 'host-cleanup kept: root=%s entry=%s size_kib=%s reason=not-allowlisted\n' \
+      "$1" "${entry##*/}" "$(du -sk "$entry" 2>/dev/null | awk '{ print $1; exit }')"
+  done < "$2"
 }
 
 root_size_kib() {
@@ -147,26 +179,30 @@ worktree_report() {
   done
 }
 
+report_root() {  # <cache|log> <label> <root> <days>
+  local remove kept stats
+  remove=$(mktemp) || return 0
+  kept=$(mktemp) || { rm -f "$remove"; return 0; }
+  old_lists "$3" "$4" "$1" "$remove" "$kept"
+  stats=$(entries_stats < "$remove")
+  printf 'host-cleanup %s: root=%s size_kib=%s old_entries=%s old_kib=%s age_days=%s\n' \
+    "$2" "$3" "$(root_size_kib "$3")" "${stats%% *}" "${stats##* }" "$4"
+  kept_report "$3" "$kept"
+  rm -f "$remove" "$kept"
+}
+
 cmd_report() {
-  local free root stats
+  local free root
   free=$(free_kib_read)
   printf 'host-cleanup report: free_kib=%s free_gib=%s target_gib=%s volume=%s\n' \
     "${free:-unknown}" "$(gib_of "${free:-}")" "$TARGET_GIB" "$VOLUME"
   each_root "$CACHE_ROOTS" | while IFS= read -r root; do
     [ -n "$root" ] || continue
-    stats=$(old_entries_stats "$root" "$AGE_DAYS")
-    printf 'host-cleanup cache: root=%s size_kib=%s old_entries=%s old_kib=%s age_days=%s\n' \
-      "$root" "$(root_size_kib "$root")" \
-      "$(printf '%s' "$stats" | awk '{ print $1 }')" \
-      "$(printf '%s' "$stats" | awk '{ print $2 }')" "$AGE_DAYS"
+    report_root cache cache "$root" "$AGE_DAYS"
   done
   each_root "$LOG_ROOTS" | while IFS= read -r root; do
     [ -n "$root" ] || continue
-    stats=$(old_entries_stats "$root" "$LOG_AGE_DAYS")
-    printf 'host-cleanup logs: root=%s size_kib=%s old_entries=%s old_kib=%s age_days=%s\n' \
-      "$root" "$(root_size_kib "$root")" \
-      "$(printf '%s' "$stats" | awk '{ print $1 }')" \
-      "$(printf '%s' "$stats" | awk '{ print $2 }')" "$LOG_AGE_DAYS"
+    report_root log logs "$root" "$LOG_AGE_DAYS"
   done
   worktree_report
   if under_target "$free"; then
@@ -175,12 +211,13 @@ cmd_report() {
   fi
 }
 
-# Removes the old entries under $1 (older than $2 days) when $3 is 1.
-# Prints "<entries_before> <kib_before> <entries_after>".
+# Removes the removable old entries under root $2 (older than $3 days,
+# kind $1) when $4 is 1, and prints the root's clean and kept lines.
 clean_root() {
-  local root=$1 days=$2 apply=$3 list before remaining entry
-  list=$(mktemp) || { printf '0 0 0\n'; return 0; }
-  old_entries "$root" "$days" > "$list"
+  local kind=$1 root=$2 days=$3 apply=$4 list kept before remaining entry
+  list=$(mktemp) || return 0
+  kept=$(mktemp) || { rm -f "$list"; return 0; }
+  old_lists "$root" "$days" "$kind" "$list" "$kept"
   before=$(entries_stats < "$list")
   remaining=${before%% *}
   if [ "$apply" = 1 ]; then
@@ -189,8 +226,10 @@ clean_root() {
         if [ -e "$entry" ] || [ -L "$entry" ]; then echo x; fi
       done < "$list" | grep -c x)
   fi
-  rm -f "$list"
-  printf '%s %s\n' "$before" "$remaining"
+  printf 'host-cleanup clean: root=%s old_entries=%s old_kib=%s remaining_old_entries=%s\n' \
+    "$root" "${before%% *}" "${before##* }" "$remaining"
+  kept_report "$root" "$kept"
+  rm -f "$list" "$kept"
 }
 
 cmd_clean() {
@@ -201,7 +240,7 @@ cmd_clean() {
     *) die_usage ;;
   esac
   [ $# -le 1 ] || die_usage
-  local free_before free_after root result mode_word
+  local free_before free_after root mode_word
   free_before=$(free_kib_read)
   if [ "$apply" = 1 ]; then mode_word=apply; else mode_word=dry-run; fi
   printf 'host-cleanup clean: mode=%s free_before_kib=%s free_before_gib=%s\n' \
@@ -209,14 +248,9 @@ cmd_clean() {
   each_root "$CACHE_ROOTS:$LOG_ROOTS" | while IFS= read -r root; do
     [ -n "$root" ] || continue
     case ":$LOG_ROOTS:" in
-      *":$root:"*) result=$(clean_root "$root" "$LOG_AGE_DAYS" "$apply") ;;
-      *) result=$(clean_root "$root" "$AGE_DAYS" "$apply") ;;
+      *":$root:"*) clean_root log "$root" "$LOG_AGE_DAYS" "$apply" ;;
+      *) clean_root cache "$root" "$AGE_DAYS" "$apply" ;;
     esac
-    printf 'host-cleanup clean: root=%s old_entries=%s old_kib=%s remaining_old_entries=%s\n' \
-      "$root" \
-      "$(printf '%s' "$result" | awk '{ print $1 }')" \
-      "$(printf '%s' "$result" | awk '{ print $2 }')" \
-      "$(printf '%s' "$result" | awk '{ print $3 }')"
   done
   worktree_report
   free_after=$(free_kib_read)
