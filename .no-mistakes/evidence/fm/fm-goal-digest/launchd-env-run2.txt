@@ -1,0 +1,17 @@
+# launchd-style run 2: env -i with FM_HOME, PATH (installer PATH, no shim) and the real HOME, cwd /
+rc=0
+goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T01:03:42Z
+--- links to github PRs in digest ---
+25
+## Unreachable sources
+
+- repo Pibomeister/definitely-not-a-real-repo-xyz: gh api failed
+- repo-open Pibomeister/definitely-not-a-real-repo-xyz: gh api failed
+- status dev01: ssh:fm-nonexistent-host.invalid:/tmp/x.md
+
+# control: same env -i but PATH=/usr/bin:/bin:/usr/sbin:/sbin (launchd default, i.e. the pre-fix plist)
+goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T01:04:07Z
+## Unreachable sources
+
+- repo Pibomeister/firstmate: gh api failed
+- repo-open Pibomeister/firstmate: gh api failed

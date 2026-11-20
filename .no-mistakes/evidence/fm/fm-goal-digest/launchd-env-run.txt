@@ -1,0 +1,28 @@
+# launchd-style run: env -i with only the plist EnvironmentVariables, cwd /, stdout/stderr to the plist log path
+rc=0
+--- launchd.log ---
+goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T01:02:29Z
+--- gh calls ---
+api repos/Pibomeister/firstmate/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/firstmate/pulls?state=open&sort=created&direction=asc&per_page=30
+api repos/Pibomeister/agent-kit/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/agent-kit/pulls?state=open&sort=created&direction=asc&per_page=30
+api repos/Pibomeister/definitely-not-a-real-repo-xyz/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/definitely-not-a-real-repo-xyz/pulls?state=open&sort=created&direction=asc&per_page=30
+--- sources reached ---
+0
+## Unreachable sources
+
+- repo Pibomeister/firstmate: gh api failed
+- repo-open Pibomeister/firstmate: gh api failed
+- repo Pibomeister/agent-kit: gh api failed
+- repo-open Pibomeister/agent-kit: gh api failed
+- repo Pibomeister/definitely-not-a-real-repo-xyz: gh api failed
+- repo-open Pibomeister/definitely-not-a-real-repo-xyz: gh api failed
+- status dev01: ssh:fm-nonexistent-host.invalid:/tmp/x.md
+--- history count ---
+       8
+
+# uninstall
+goal-digest: uninstalled=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/Library/LaunchAgents/dev.firstmate.goal-digest-4143052087.plist
+launchctl bootout gui/501/dev.firstmate.goal-digest-4143052087

@@ -1,0 +1,6 @@
+1..4
+ok - new merge detection, changed flag and changed-only summarizer
+ok - missed ETA, stall, unreachable source and review record
+ok - missing config writes an empty digest in the default directory
+ok - launchagent install and uninstall
+FM_TEST_COMPLETE

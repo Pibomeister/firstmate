@@ -1,0 +1,39 @@
+$ echo "- Studio launch: eta: 2026-11-18" >> status/m4.md; FM_HOME=$LAB bin/fm-goal-digest.sh run   # run 3, status changed
+goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T01:01:36Z
+rc=0
+## Missed ETAs
+
+- M4: eta 2026-01-10 - - T1 parser: eta: 2026-01-10 still open
+- M4: eta 2026-11-18 - - Studio launch: eta: 2026-11-18
+- Casco: eta 2026-11-15 - Casco: eta 2026-11-15 integration
+
+--- every gh invocation during run 3 ---
+api repos/Pibomeister/firstmate/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/firstmate/pulls?state=open&sort=created&direction=asc&per_page=30
+api repos/Pibomeister/agent-kit/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/agent-kit/pulls?state=open&sort=created&direction=asc&per_page=30
+api repos/Pibomeister/definitely-not-a-real-repo-xyz/pulls?state=closed&sort=updated&direction=desc&per_page=30
+api repos/Pibomeister/definitely-not-a-real-repo-xyz/pulls?state=open&sort=created&direction=asc&per_page=30
+
+$ HOME=$LAB FM_HOME=$LAB bin/fm-goal-digest.sh install   (launchctl recorded by a PATH shim, no real agent loaded)
+goal-digest: installed=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/Library/LaunchAgents/dev.firstmate.goal-digest-4143052087.plist interval_seconds=1200
+rc=0
+plist=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/Library/LaunchAgents/dev.firstmate.goal-digest-4143052087.plist
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/Library/LaunchAgents/dev.firstmate.goal-digest-4143052087.plist: OK
+{
+  "EnvironmentVariables" => {
+    "FM_HOME" => "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci"
+    "HOME" => "/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci"
+    "PATH" => "/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/shim:~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:~/go/bin:~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:~/.grok/bin:~/.kimi-code/bin:~/Library/pnpm:~/.bun/bin:~/Library/Python/3.9/bin:/opt/homebrew/opt/node@24/bin:~/.antigravity/antigravity/bin:~/.cargo/bin:~/bin:/opt/homebrew/sbin:/usr/local/sbin:~/.orbstack/bin:~/.lmstudio/bin:~/.orbstack/bin"
+  }
+  "Label" => "dev.firstmate.goal-digest-4143052087"
+  "ProgramArguments" => [
+    0 => "{run-worktree}/bin/fm-goal-digest.sh"
+    1 => "run"
+  ]
+  "StandardErrorPath" => "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/launchd.log"
+  "StandardOutPath" => "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/launchd.log"
+  "StartInterval" => 1200
+}
+launchctl bootout gui/501/dev.firstmate.goal-digest-4143052087
+launchctl bootstrap gui/501 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/Library/LaunchAgents/dev.firstmate.goal-digest-4143052087.plist

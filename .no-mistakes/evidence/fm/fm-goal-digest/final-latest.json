@@ -1,0 +1,73 @@
+{
+  "generated_at": "2026-11-20T01:02:29Z",
+  "generated_at_cst": "2026-11-19T19:02:29-0600",
+  "changed": true,
+  "new_merges": [],
+  "waiting_on_captain": [],
+  "missed_etas": [
+    {
+      "source": "M4",
+      "eta": "2026-01-10",
+      "line": "- T1 parser: eta: 2026-01-10 still open"
+    },
+    {
+      "source": "M4",
+      "eta": "2026-11-18",
+      "line": "- Studio launch: eta: 2026-11-18"
+    },
+    {
+      "source": "Casco",
+      "eta": "2026-11-15",
+      "line": "Casco: eta 2026-11-15 integration"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "Casco",
+      "age_hours": 7747
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "T7",
+      "last_line": "T7 round 3: 2 findings open"
+    }
+  ],
+  "unreachable_sources": [
+    {
+      "kind": "repo",
+      "source": "Pibomeister/firstmate",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "repo-open",
+      "source": "Pibomeister/firstmate",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "repo",
+      "source": "Pibomeister/agent-kit",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "repo-open",
+      "source": "Pibomeister/agent-kit",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "repo",
+      "source": "Pibomeister/definitely-not-a-real-repo-xyz",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "repo-open",
+      "source": "Pibomeister/definitely-not-a-real-repo-xyz",
+      "detail": "gh api failed"
+    },
+    {
+      "kind": "status",
+      "source": "dev01",
+      "detail": "ssh:fm-nonexistent-host.invalid:/tmp/x.md"
+    }
+  ]
+}

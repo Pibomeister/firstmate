@@ -1,0 +1,26 @@
+$ FM_HOME=$LAB bin/fm-goal-digest.sh run   # run 1
+goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T00:58:59Z
+rc=0
+
+$ FM_HOME=$LAB bin/fm-goal-digest.sh run   # run 2, nothing changed
+goal-digest: changed=no latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-lab.17HQci/data/goal-digest/latest.md generated=2026-11-20T00:59:26Z
+rc=0
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/data/goal-digest:
+total 48
+drwxr-xr-x@ 7 eduardopicazo  staff   224 Nov 19 18:59 .
+drwxr-xr-x@ 3 eduardopicazo  staff    96 Nov 19 18:58 ..
+drwxr-xr-x@ 5 eduardopicazo  staff   160 Nov 19 18:59 .state
+drwxr-xr-x@ 6 eduardopicazo  staff   192 Nov 19 18:59 history
+-rw-r--r--@ 1 eduardopicazo  staff  9791 Nov 19 18:59 latest.json
+-rw-r--r--@ 1 eduardopicazo  staff  5558 Nov 19 18:59 latest.md
+-rw-r--r--@ 1 eduardopicazo  staff     9 Nov 19 18:59 summary.txt
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-gd-lab.17HQci/data/goal-digest/history:
+total 128
+drwxr-xr-x@ 6 eduardopicazo  staff    192 Nov 19 18:59 .
+drwxr-xr-x@ 7 eduardopicazo  staff    224 Nov 19 18:59 ..
+-rw-r--r--@ 1 eduardopicazo  staff  25532 Nov 19 18:59 20261120T005925Z.json
+-rw-r--r--@ 1 eduardopicazo  staff  15462 Nov 19 18:59 20261120T005925Z.md
+-rw-r--r--@ 1 eduardopicazo  staff   9791 Nov 19 18:59 20261120T005947Z.json
+-rw-r--r--@ 1 eduardopicazo  staff   5558 Nov 19 18:59 20261120T005947Z.md
