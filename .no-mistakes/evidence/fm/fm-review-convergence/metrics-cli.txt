@@ -1,0 +1,12 @@
+$ FM_HOME=<tmp> fm-merge-review.sh metrics 
+merge-review-metrics: summary prs=0 rounds_median=0 rounds_max=0 seat_calls=0 tokens_in=0 tokens_out=0 tokens_unreported=0
+exit=0
+$ FM_HOME=<tmp> fm-merge-review.sh metrics --since 0
+merge-review-metrics: summary prs=0 rounds_median=0 rounds_max=0 seat_calls=0 tokens_in=0 tokens_out=0 tokens_unreported=0
+exit=0
+$ FM_HOME=<tmp> fm-merge-review.sh metrics --since soon
+error: --since requires a whole-second epoch
+exit=2
+$ FM_HOME=<tmp> fm-merge-review.sh metrics --bogus
+error: unknown argument: --bogus
+exit=2
