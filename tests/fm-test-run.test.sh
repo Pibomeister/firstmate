@@ -2713,8 +2713,75 @@ test_broad_selections_wait_in_the_machine_wide_queue() {
   pass "broad selections wait in the machine-wide queue with at most two inner scripts; targeted runs stay prompt"
 }
 
+# An offloaded broad selection must name its interpreter so the remote host
+# resolves its own Bash, and a run given --json must stay on this machine so
+# the artifact lands where the caller asked. The fake ssh answers the queue's
+# transport protocol (mint scratch, accept upload, record the served command)
+# without running anything remotely.
+test_offloaded_broad_selection_is_portable_and_json_runs_stay_local() {
+  local tmp repo probe spool qenv exec_line f
+  tmp=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/fm-test-run-offload.XXXXXX")" && pwd -P)
+  repo="$tmp/repo"
+  probe="$tmp/probe"
+  spool="$tmp/spool"
+  init_queue_admission_fixture_repo "$repo" "$probe"
+  git -C "$repo" remote add origin https://example.invalid/owner/firstmate.git
+  mkdir -p "$spool" "$tmp/fakebin"
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=builder\n' >"$spool/config"
+  echo 9 >"$tmp/load"
+  cat >"$tmp/fakebin/ssh" <<SH
+#!/usr/bin/env bash
+while [ "\${1:-}" = -o ]; do shift 2; done
+shift
+case "\$*" in
+  *"mktemp -d"*) echo /tmp/fm-test-offload.fixture ;;
+  *"tar -xzf"*) cat >/dev/null ;;
+  *"fm-test-queue.sh' run --"*) printf '%s\n' "\$*" >>"$tmp/ssh-exec.log" ;;
+esac
+exit 0
+SH
+  chmod +x "$tmp/fakebin/ssh"
+  qenv=(PATH="$tmp/fakebin:$PATH" FM_TEST_QUEUE_DIR="$spool" FM_TEST_QUEUE_LOAD_FILE="$tmp/load")
+
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-run.sh" --family pure-contract-unit \
+    >"$tmp/offload.out" 2>"$tmp/offload.err" &
+  queue_fixture_wait $! "an offloaded broad selection" \
+    || fail "offloaded broad selection failed: $(cat "$tmp/offload.err")"
+  [ -s "$tmp/ssh-exec.log" ] || fail "broad selection above the offload threshold was not offloaded: $(cat "$tmp/offload.err")"
+  exec_line=$(cat "$tmp/ssh-exec.log")
+  assert_contains "$exec_line" "fm-test-queue.sh' run -- 'bash' '/tmp/fm-test-offload.fixture/repo/bin/fm-test-run.sh' '--family' 'pure-contract-unit'" \
+    "the offloaded command must name bash and the remote copy of the runner"
+  case "$exec_line" in
+    *"$repo"*) fail "the offloaded command still names a local path: $exec_line" ;;
+  esac
+  for f in "$probe"/held.*; do
+    [ ! -e "$f" ] || fail "an offloaded broad selection also ran a script locally"
+  done
+
+  rm -f "$tmp/ssh-exec.log"
+  queue_fixture_run "${qenv[@]}" "$repo/bin/fm-test-run.sh" --family pure-contract-unit \
+    --json "$tmp/local.json" >"$tmp/json.out" 2>"$tmp/json.err" &
+  queue_fixture_wait $! "a broad selection given --json" \
+    || fail "broad selection given --json failed: $(cat "$tmp/json.err")"
+  [ ! -e "$tmp/ssh-exec.log" ] || fail "a broad selection given --json was offloaded: $(cat "$tmp/ssh-exec.log")"
+  [ "$(queue_fixture_selection "$tmp/local.json")" = "family=pure-contract-unit" ] \
+    || fail "a broad selection given --json must write its artifact locally"
+  [ "$(find "$probe" -maxdepth 1 -name 'held.*' | wc -l | tr -d ' ')" -eq 6 ] \
+    || fail "a broad selection given --json must run its scripts on this machine"
+  for f in "$probe"/held.*; do
+    case "$(cat "$f")" in
+      "$spool"/*) ;;
+      *) fail "a broad selection given --json must still wait in the local line" ;;
+    esac
+  done
+
+  rm -rf "$tmp"
+  pass "offloaded broad selections name bash portably; runs given --json stay local"
+}
+
 test_list_all_exact_suite_coverage
 test_broad_selections_wait_in_the_machine_wide_queue
+test_offloaded_broad_selection_is_portable_and_json_runs_stay_local
 test_family_selection
 test_single_script_selection
 test_changed_file_selection_is_conservative

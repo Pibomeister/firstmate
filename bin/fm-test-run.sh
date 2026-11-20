@@ -122,10 +122,15 @@
 #   lowered count. A runner started by one of this runner's own scripts
 #   (FM_TEST_RUN_INNER, exported to every script it runs) leaves admission and
 #   that cap to the outer run.
+#   The served command names its interpreter as plain `bash`, so a run the
+#   queue offloads to another host finds that host's own Bash; the Bash 5
+#   re-exec above then applies there. A run given --json is never offloaded:
+#   it may still wait in the local line, but it always runs on this machine, so
+#   the timing artifact lands at the path the caller named.
 #   FM_TEST_RUN_QUEUE selects admission: auto (default) queues broad
 #   selections except on a GitHub Actions runner (GITHUB_ACTIONS=true), whose
-#   dedicated machine needs no shared line; on queues them everywhere; off runs
-#   them at once. Any other value is a usage error. When admission applies but
+#   dedicated machine needs no shared line; off runs them at once. Any other
+#   value is a usage error. When admission applies but
 #   bin/fm-test-queue.sh is missing beside this runner, the run refuses instead
 #   of bypassing the line. A queued run exits with the queue's status: the
 #   suite's own, 125 when the queue cannot run it, or 128+N for a signal.
@@ -2662,9 +2667,8 @@ esac
 
 case "${FM_TEST_RUN_QUEUE:-auto}" in
   auto) if [ "${GITHUB_ACTIONS:-}" = true ]; then QUEUE_ADMISSION=0; else QUEUE_ADMISSION=1; fi ;;
-  on) QUEUE_ADMISSION=1 ;;
   off) QUEUE_ADMISSION=0 ;;
-  *) die "FM_TEST_RUN_QUEUE must be auto, on, or off (got '${FM_TEST_RUN_QUEUE}')" ;;
+  *) die "FM_TEST_RUN_QUEUE must be auto or off (got '${FM_TEST_RUN_QUEUE}')" ;;
 esac
 
 # Refuse before any suite is selected or run. The inspection modes execute
@@ -2847,8 +2851,9 @@ elif [ -z "${FM_TEST_RUN_INNER:-}" ] && [ "$QUEUE_ADMISSION" -eq 1 ]; then
       [ -f "$queue_bin" ] \
         || die "broad selection $SELECTION_DESC needs the machine-wide test queue, but $queue_bin is missing; set FM_TEST_RUN_QUEUE=off only on a dedicated machine"
       export FM_TEST_RUN_ADMITTED=1
+      [ -z "$JSON_PATH" ] || export FM_TEST_QUEUE_REMOTE_DISABLE=1
       exec "$BASH" "$queue_bin" run --label "fm-test-run $SELECTION_DESC" -- \
-        "$BASH" "$SELF" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+        bash "$SELF" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
       ;;
   esac
 fi
