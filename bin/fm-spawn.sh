@@ -4992,7 +4992,25 @@ fi
 # total is already at a stop.
 "$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" || exit 1
 spawn_claim_transition() {
-  [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] || return 0
+  [ "$KIND" != secondmate ] || return 0
+  if [ "$RELAUNCH" -eq 1 ]; then
+    # Relaunch recovers a task whose worker was already delivered. A claim
+    # that never attempted a launch has no delivered worker to recover:
+    # letting relaunch proceed would perform the first launch past every
+    # claim authority check, so refuse it toward claim recovery instead.
+    local receipt="$STATE/ledger-claims/$ID.json" phase=''
+    if [ -e "$receipt" ] || [ -L "$receipt" ]; then
+      [ -f "$receipt" ] && [ -r "$receipt" ] && [ ! -L "$receipt" ] && phase=$(jq -r '.phase // empty' "$receipt" 2>/dev/null)
+      case "$phase" in
+        launching | launched) return 0 ;;
+        *)
+          echo "error: task $ID holds a ledger claim that has not launched (phase=${phase:-unreadable}); relaunch would bypass claim checks - recover it through fm-ledger.sh claim --resume or claim-release" >&2
+          return 1
+          ;;
+      esac
+    fi
+    return 0
+  fi
   if [ -n "$LEDGER_CLAIM" ] || [ -e "$STATE/ledger-claims/$ID.json" ] || [ -L "$STATE/ledger-claims/$ID.json" ]; then
     FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
       "$SCRIPT_DIR/fm-ledger.sh" "claim-$1" "$ID" "$LEDGER_CLAIM" "$PROJ_ABS"
@@ -9559,6 +9577,9 @@ else
   ENV_SCRUB_FILE=$(shell_quote "$LAUNCH_DIR/env-scrub.$SPAWN_GEN.sh")
   LAUNCH="$(shell_quote "$FM_ROOT/bin/fm-env-scrub.sh") ${scrub_option}unset-file $ENV_SCRUB_FILE && . $ENV_SCRUB_FILE || return 1 2>/dev/null || exit 1; $LAUNCH"
 fi
+# Final claim authority read at the delivery point, after all backend setup:
+# a hold or revocation published since the launch fence still refuses delivery.
+spawn_claim_transition fence || exit 1
 if [ "$BACKEND" = t3code ]; then
   # No pane: the launch is the thread's first message, carrying the same
   # encoded brief the LAUNCH template embeds; MODEL/EFFORT were fixed as the

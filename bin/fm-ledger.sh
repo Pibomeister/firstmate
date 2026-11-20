@@ -120,12 +120,14 @@
 # authority and issues a different token, so stale spawn calls remain fenced.
 # Any pre-launch allocations left by a crash still use normal owner cleanup.
 #
-# Spawn-only entry points: claim-check, claim-begin, claim-launch, claim-finish <id> <token>
+# Spawn-only entry points: claim-check, claim-begin, claim-launch, claim-fence, claim-finish <id> <token>
 # <canonical-project-path>. They require the direct caller to hold .spawn-<id>.lock.
 # begin changes reserved -> dispatching; launch saves the endpoint and changes
 # dispatching -> launching after metadata publication and before worker delivery;
+# fence re-reads claim authority at the delivery point without moving the receipt;
 # finish changes launching -> launched after delivery and backlog commit.
-# A missing token refuses an existing claim; relaunch is the recovery path.
+# A missing token refuses an existing claim; relaunch is the recovery path only
+# after a launch was attempted, never for a claim that has not launched.
 #
 # DEPTH. `depth` reports every active project whose ready queue is below the
 # target, so the night always has work:
@@ -476,6 +478,9 @@ EOF
 # --- claims --------------------------------------------------------------------
 
 claim_init() {
+  # Receipts bind the physical home spelling spawn resolves, never a
+  # relative FM_HOME the caller happened to use.
+  FM_HOME=$(cd "$FM_HOME" && pwd -P) || die "claim home is unavailable"
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   # shellcheck source=bin/fm-classify-lib.sh
@@ -502,7 +507,12 @@ claim_slug() {
 }
 
 claim_scope() {
-  local projects
+  local projects home cfg
+  # The grant must come from this home's own config directory: a config
+  # path that resolves outside the physical home borrows another grant.
+  home=$(cd "$FM_HOME" && pwd -P) || die "claim home is unavailable"
+  cfg=$(cd "$CONFIG" && pwd -P) || die "claim config directory is unavailable"
+  case "$cfg/" in "$home/"*) ;; *) die "claim config directory is outside this home" ;; esac
   projects=$(fm_secondmate_claim_projects "$CONFIG") || die "invalid claim-project configuration"
   printf '%s\n' "$projects" | grep -Fx -- "$1" >/dev/null || die "claims are not enabled for project $1 in this home"
 }
@@ -628,7 +638,10 @@ cmd_claim() {
     claim_slug "$resume"
     claim_read "$resume"
     [ "$project" = "$CLAIM_PROJECT" ] || die "claim belongs to another project"
-    if [ "$CLAIM_PHASE" = reserved ]; then claim_validate "$resume" || return 1; fi
+    # A dispatch that never launched re-runs every authority check before
+    # recovery may deliver its first worker; a launched dispatch is fenced
+    # by its saved endpoint evidence instead.
+    if [ "$CLAIM_PHASE" = reserved ] || [ "$CLAIM_PHASE" = dispatching ]; then claim_validate "$resume" || return 1; fi
     claim_print "$resume"
     if [ "$CLAIM_PHASE" = dispatching ] || [ "$CLAIM_PHASE" = launching ]; then
       printf 'claim %s: dispatch incomplete; use claim-release with the token if no task record remains, otherwise recover the existing task\n' "$resume" >&2
@@ -674,7 +687,7 @@ EOF
   return 3
 }
 
-cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
+cmd_claim_spawn() { # <check|begin|launch|fence|finish> <id> <token> <project-path>
   local action=$1 id=$2 token=$3 path=$4 tmp
   claim_slug "$id"
   [ "$(cat "$STATE/.spawn-$id.lock/pid" 2>/dev/null)" = "$PPID" ] || die "claim transition requires the caller's spawn lock"
@@ -688,6 +701,14 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
   path=$(cd "$path" && pwd -P) || die "claim project is unavailable"
   [ "$path" = "$CLAIM_PATH" ] || die "task $id claim belongs to another project path"
   [ "$(claim_project_path "$CLAIM_PROJECT")" = "$path" ] || die "claim project path is outside its approved home"
+  if [ "$action" = fence ]; then
+    # Final authority read at the point of delivery: a hold or revocation
+    # published after the launch fence still refuses the worker launch.
+    # Read-only under the claim lock; the receipt does not move.
+    [ "$CLAIM_PHASE" = launching ] || die "claim $id is not launching"
+    claim_publication_authorized "$id" "$CLAIM_PROJECT" || return 1
+    return 0
+  fi
   if [ "$action" = finish ]; then
     [ "$CLAIM_PHASE" = launching ] || die "claim $id is not launching"
     [ -f "$STATE/$id.meta" ] || die "claim $id has no task record"
@@ -803,6 +824,10 @@ record_intake() {  # <source> <item-id> <project> <title>
 }
 
 cmd_intake() {
+  # The intake log is the recorded approval a claim later verifies against,
+  # so only a supervisor session may write it; a worker filing its own
+  # proposal reference would be supplying its own approval evidence.
+  [ -z "${FM_TASK_ID:-}" ] || die "intake is supervisor-only"
   local id='' mint=0 project='' title='' source='' kind='' priority='' body='' body_file='' have_body=0
   local -a blocked=() args=()
   local out new_id tmp already first repo got_title
@@ -1158,7 +1183,7 @@ case "${1:-}" in
   next) shift; cmd_next "$@" ;;
   claim) shift; cmd_claim "$@" ;;
   claim-release) shift; cmd_claim_release "$@" ;;
-  claim-check|claim-begin|claim-launch|claim-finish)
+  claim-check|claim-begin|claim-launch|claim-fence|claim-finish)
     action=${1#claim-}; shift
     [ "$#" -eq 3 ] || usage_die "claim transition needs id, token and project path"
     cmd_claim_spawn "$action" "$@"

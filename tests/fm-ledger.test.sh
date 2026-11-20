@@ -698,6 +698,86 @@ SH
   pass 'refused claim publications remove their receipt staging files'
 }
 
+test_claim_authority_boundaries() {
+  # P1-1: a worker cannot mint its own approval record through intake.
+  claim_fixture claim-auth-intake
+  local out rc token oid rel_home
+  out=$(FM_TASK_ID=worker ledger intake self-approved --project alpha --title 'self approved' --source proposal:unapproved 2>&1); rc=$?
+  expect_code 1 "$rc" 'a worker cannot file intake as its own approval record'
+  assert_contains "$out" 'supervisor' 'worker intake refusal names the supervisor boundary'
+  out=$(tasks show self-approved 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail 'worker intake filed a backlog item'
+  out=$(ledger intake supervisor-filed --project alpha --title 'supervisor filed' --source proposal:V12 2>&1) || fail "supervisor intake refused: $out"
+
+  # P1-4: a symlinked config directory cannot borrow another home's grant.
+  new_home claim-auth-config
+  mkdir -p "$HOME_DIR/projects/alpha" "$TMP_ROOT/foreign-config"
+  printf 'claim-project=alpha\n' > "$TMP_ROOT/foreign-config/mission-ledger"
+  rmdir "$HOME_DIR/config" 2>/dev/null || { rm -rf "$HOME_DIR/config"; }
+  ln -s "$TMP_ROOT/foreign-config" "$HOME_DIR/config"
+  ledger intake claim-one --project alpha --title 'approved work' --source proposal:V12 >/dev/null || fail 'config fixture intake failed'
+  fm_test_spawn_brief "$HOME_DIR" claim-one
+  out=$(ledger claim --project alpha 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail 'claim borrowed a grant through a symlinked config directory'
+  assert_absent "$HOME_DIR/state/ledger-claims/claim-one.json" 'borrowed grant got no receipt'
+
+  # P1-2: the launch fence refuses a hold published after the launch fence.
+  claim_fixture claim-auth-fence
+  out=$(ledger claim --project alpha) || fail 'cannot reserve fence fixture'
+  token=${out##*token=}
+  claim_transition_for_test "$token" begin || fail 'fence begin failed'
+  mkdir -p "$HOME_DIR/worker-copy"
+  cat > "$HOME_DIR/state/claim-one.meta" <<EOF
+window=firstmate:fm-claim-one
+endpoint_task_id=claim-one
+project=$HOME_DIR/projects/alpha
+worktree=$HOME_DIR/worker-copy
+harness=codex
+kind=scout
+EOF
+  claim_transition_for_test "$token" launch || fail 'fence launch failed'
+  claim_transition_for_test "$token" fence || fail 'fence refused a clear launch point'
+  order send --hold --from test -- 'hold before delivery' >/dev/null || fail 'hold publish failed'
+  out=$(claim_transition_for_test "$token" fence 2>&1); rc=$?
+  [ "$rc" -ne 0 ] || fail 'launch fence missed a hold published after the launch fence'
+  assert_contains "$out" 'standing holds' 'fence refusal names standing holds'
+
+  # P1-3: resume re-runs authority checks before a first launch can recover.
+  new_home claim-auth-resume
+  mkdir -p "$HOME_DIR/projects/alpha"
+  printf 'claim-project=alpha\n' > "$HOME_DIR/config/mission-ledger"
+  oid=$(order send --from test -- 'approved order to claim' | awk '/^queued / {print $2}')
+  ledger intake claim-one --project alpha --title 'order work' --source "order:$oid" >/dev/null || fail 'resume fixture intake failed'
+  fm_test_spawn_brief "$HOME_DIR" claim-one
+  out=$(ledger claim --project alpha) || fail 'cannot reserve resume fixture'
+  token=${out##*token=}
+  claim_transition_for_test "$token" begin || fail 'resume begin failed'
+  mkdir -p "$HOME_DIR/worker-copy"
+  cat > "$HOME_DIR/state/claim-one.meta" <<EOF
+window=firstmate:fm-claim-one
+endpoint_task_id=claim-one
+project=$HOME_DIR/projects/alpha
+worktree=$HOME_DIR/worker-copy
+harness=codex
+kind=scout
+EOF
+  order ack "$oid" >/dev/null || fail 'resume order ack failed'
+  order finish "$oid" parked -- 'defer this work' >/dev/null || fail 'resume order park failed'
+  out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
+  expect_code 1 "$rc" 'resume refuses a pre-launch dispatch whose order was parked'
+  assert_contains "$out" 'parked' 'resume refusal identifies the revoked source order'
+  [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = dispatching ] || fail 'refused resume consumed the dispatch'
+
+  # Relative FM_HOME normalizes so spawn can consume the receipt.
+  claim_fixture claim-relative-home
+  rel_home=${HOME_DIR##*/}
+  out=$( (cd "$TMP_ROOT" && FM_HOME="$rel_home" bash "$LEDGER" claim --project alpha) 2>&1) || fail "relative-home claim failed: $out"
+  [ "$(jq -r .home "$HOME_DIR/state/ledger-claims/claim-one.json")" = "$(cd "$HOME_DIR" && pwd -P)" ] || fail 'receipt stored a relative home spelling'
+  out=$(ledger claim --project alpha --resume claim-one) || fail "absolute-home resume cannot read the relative-home receipt: $out"
+  assert_contains "$out" 'phase=reserved' 'relative-home receipt resumes under the absolute home'
+  pass 'claims start only approved, unheld work recorded by a supervisor in its own home'
+}
+
 test_claim_release_requires_proven_retirement() {
   claim_fixture claim-release-proof
   local out token rc fakebin dead_pid next_token
@@ -836,7 +916,7 @@ if [ "${FM_TEST_ONLY:-}" = claims ]; then
 fi
 
 if [ "${FM_TEST_ONLY:-}" = claim-recovery ]; then
-  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_refusals_leave_no_staging_files test_claim_release_requires_proven_retirement
+  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_refusals_leave_no_staging_files test_claim_authority_boundaries test_claim_release_requires_proven_retirement
   exit
 fi
 
@@ -849,6 +929,7 @@ fm_test_run \
   test_claim_project_symlink_cannot_cross_home \
   test_claim_rechecks_hold_at_publication \
   test_claim_refusals_leave_no_staging_files \
+  test_claim_authority_boundaries \
   test_claim_release_requires_proven_retirement \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_claim_spawn_waits_for_concurrent_claim_lock \
