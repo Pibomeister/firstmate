@@ -1,0 +1,26 @@
+--- claim before opt-in
+fm-ledger: claims are not enabled for project alpha in this home
+rc=1
+--- three concurrent claimants
+a rc=0 CLAIM item-1 project=alpha phase=reserved token=daf4fffa625538a53ff9f32768fee2e5 
+b rc=0 CLAIM item-2 project=alpha phase=reserved token=5a584cfab4b55bbd29cb21c46eec45a6 
+c rc=0 CLAIM item-3 project=alpha phase=reserved token=c53e209e671396eeb499aeaf69df0385 
+distinct items: 3
+--- fourth claimant on empty queue
+claim: nothing claimable for project alpha
+rc=3
+--- receipts
+{"task":null,"phase":"reserved","project":"alpha"}
+{"task":null,"phase":"reserved","project":"alpha"}
+{"task":null,"phase":"reserved","project":"alpha"}
+--- hold one item then resume
+fm-ledger: claim item-1 is no longer queued and ready in project alpha
+rc=1
+--- secondmate guidance from lab config
+
+# Approved local queue continuation
+
+Continue approved ready work in this home through bin/fm-ledger.sh claim when the supervisor is quiet.
+Read bin/fm-ledger.sh --help for the claim, spawn and recovery contract before using it.
+The exact project grants within this charter are: alpha.
+rc=0

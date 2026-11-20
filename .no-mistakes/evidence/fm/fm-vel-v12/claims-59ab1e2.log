@@ -1,0 +1,16 @@
+1..7
+ok - claim is opt-in, exclusive and resumable without replacing its identity
+ok - approval, scope, dependencies, decisions, quota and standing holds refuse claims; in-flight work stays owned
+ok - two claimants and two launch calls produce one worker; a lost response and late replay do not duplicate it
+tests/fm-ledger.test.sh: line 533:  9486 Killed: 9               FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.spawn-claim-one.lock" || exit 1
+    "$1/bin/fm-ledger.sh" claim-begin claim-one "$2" "$FM_HOME/projects/alpha" || exit 1
+    kill -KILL "$$"
+  ' _ "$ROOT" "$token" > /dev/null 2>&1
+ok - a killed prelaunch dispatcher can be released without reusing its dispatch identity
+ok - unprepared items do not stall ready work and claim guidance stays inside one home
+ok - spawn claim transitions wait for concurrent claim lock without losing launch completion
+ok - a claimant waits for a concurrent claim scan instead of refusing
+FM_TEST_COMPLETE
+rc=0
