@@ -114,13 +114,17 @@ old_entries() {  # <root> <days>: print NUL-separated old entries of root
   rm -f "$scratch"
 }
 
+# Prints "<entries> <kib>" for the NUL-separated entries on stdin.
+entries_stats() {
+  local entry
+  while IFS= read -r -d '' entry; do
+    du -sk "$entry" 2>/dev/null | awk '{ print $1; exit }'
+  done | awk '{ n++; s += $1 } END { printf "%d %d\n", n + 0, s + 0 }'
+}
+
 # Prints "<entries> <kib>" for the old entries under root $1 (age $2 days).
 old_entries_stats() {
-  old_entries "$1" "$2" \
-    | while IFS= read -r -d '' entry; do
-        du -sk "$entry" 2>/dev/null | awk '{ print $1; exit }'
-      done \
-    | awk '{ n++; s += $1 } END { printf "%d %d\n", n + 0, s + 0 }'
+  old_entries "$1" "$2" | entries_stats
 }
 
 root_size_kib() {
@@ -174,14 +178,19 @@ cmd_report() {
 # Removes the old entries under $1 (older than $2 days) when $3 is 1.
 # Prints "<entries_before> <kib_before> <entries_after>".
 clean_root() {
-  local root=$1 days=$2 apply=$3 before after entry
-  before=$(old_entries_stats "$root" "$days")
+  local root=$1 days=$2 apply=$3 list before remaining entry
+  list=$(mktemp) || { printf '0 0 0\n'; return 0; }
+  old_entries "$root" "$days" > "$list"
+  before=$(entries_stats < "$list")
+  remaining=${before%% *}
   if [ "$apply" = 1 ]; then
-    old_entries "$root" "$days" \
-      | while IFS= read -r -d '' entry; do rm -rf -- "$entry" 2>/dev/null; done
+    while IFS= read -r -d '' entry; do rm -rf -- "$entry" 2>/dev/null; done < "$list"
+    remaining=$(while IFS= read -r -d '' entry; do
+        if [ -e "$entry" ] || [ -L "$entry" ]; then echo x; fi
+      done < "$list" | grep -c x)
   fi
-  after=$(old_entries_stats "$root" "$days")
-  printf '%s %s\n' "$before" "$(printf '%s' "$after" | awk '{ print $1 }')"
+  rm -f "$list"
+  printf '%s %s\n' "$before" "$remaining"
 }
 
 cmd_clean() {
