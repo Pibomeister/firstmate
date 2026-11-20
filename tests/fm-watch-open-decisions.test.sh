@@ -533,6 +533,72 @@ test_gate_council_unfinished_and_bad_config() {
   pass 'an unfinished council surfaces after its bound and invalid config fails the check'
 }
 
+# A fresh status log for one findings path. The timed fold reads an
+# append-only log incrementally, so a case that changes the note starts over.
+gate_council_fresh_status() {  # <findings-path>
+  rm -f -- "$STATE/worker.status" "$STATE"/.worker.open-decisions-cursor*
+  printf 'needs-decision [at=1000] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' "$1" > "$STATE/worker.status"
+}
+
+test_gate_council_refuses_findings_outside_task_data() {
+  local claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir -p "$TMP_ROOT/outside"
+  printf 'x\n' > "$TMP_ROOT/outside/nm-r1-findings.txt"
+  ln -s "$TMP_ROOT/outside" "$FM_HOME/data/worker/linked"
+  gate_council_fresh_status "$FM_HOME/data/worker/linked/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  [ ! -e "$claims" ] || fail 'findings behind a symlinked folder started a council'
+  rm -rf -- "$FM_HOME/data/worker"
+  mkdir -p "$TMP_ROOT/outside-task"
+  printf 'x\n' > "$TMP_ROOT/outside-task/nm-r1-findings.txt"
+  ln -s "$TMP_ROOT/outside-task" "$FM_HOME/data/worker"
+  gate_council_fresh_status "$FM_HOME/data/worker/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  [ ! -e "$claims" ] || fail 'findings in a symlinked task data folder started a council'
+  [ ! -e "$TMP_ROOT/outside-task/gate-council-nm-r1-review-1000" ] || fail 'council run wrote outside the task data'
+  rm -f -- "$FM_HOME/data/worker"
+  mkdir -p "$FM_HOME/data/worker/sub"
+  printf 'x\n' > "$FM_HOME/data/worker/sub/nm-r1-findings.txt"
+  gate_council_fresh_status "$FM_HOME/data/worker/sub/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  grep -q $'\trunning\t' "$claims" || fail 'findings in a real task data subfolder did not start a council'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'findings whose real path leaves the task data folder never start a council'
+}
+
+test_gate_council_hold_lookup_failure_counts_as_held() {
+  local claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir "$FM_HOME/data/backlog.md"
+  away_gate_council_tick 4600 2>/dev/null || true
+  [ ! -e "$claims" ] || fail 'council started while the captain-hold lookup failed'
+  rmdir "$FM_HOME/data/backlog.md"
+  away_gate_council_tick 4600
+  grep -q $'\trunning\t' "$claims" || fail 'council did not start once the hold lookup answered not held'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'a failed captain-hold lookup counts as held and skips the council'
+}
+
+test_gate_council_unreadable_status_keeps_ruling() {
+  local dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000" claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  chmod 000 "$STATE/worker.status"
+  away_gate_council_tick 4700 2>/dev/null || true
+  chmod 600 "$STATE/worker.status"
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status file was unreadable'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'unreadable status file recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after an unreadable status file: $GATE_COUNCIL_WAKE"
+  pass 'an unreadable status file counts as open and keeps the ruling'
+}
+
 test_invalid_gate_council_config_keeps_watcher_running() {
   local dir="$TMP_ROOT/invalid-gate-council"
   mkdir -p "$dir/state" "$dir/config"
@@ -563,4 +629,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_away_page_retries_after_channel_configured \
   test_gate_council_off_and_filters test_gate_council_runs_once_and_surfaces \
   test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config \
-  test_invalid_gate_council_config_keeps_watcher_running
+  test_gate_council_refuses_findings_outside_task_data test_gate_council_hold_lookup_failure_counts_as_held \
+  test_gate_council_unreadable_status_keeps_ruling test_invalid_gate_council_config_keeps_watcher_running

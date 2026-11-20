@@ -3736,10 +3736,13 @@ gate_council_claim_state() {  # <claims-file> <task> <key> <opened>
 }
 
 # 0 while <task>'s <key> is still the same open needs-decision episode, 1 when
-# it has closed, and 2 when the status log could not be read.
+# it has closed or its status log is gone, and 2 when the log exists but could
+# not be read, so an unreadable log is never mistaken for a closed gate.
 gate_council_still_open() {  # <task> <key> <opened>
-  local open key verb opened
-  open=$(status_open_decisions_incremental "$STATE/$1.status" '' timed) || return 2
+  local f="$STATE/$1.status" open key verb opened
+  [ -e "$f" ] || [ -L "$f" ] || return 1
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
+  open=$(status_open_decisions_incremental "$f" '' timed) || return 2
   while IFS=$'\t' read -r key verb opened _; do
     [ "$key" = "$2" ] && [ "$opened" = "$3" ] && [ "$verb" = needs-decision ] && return 0
   done <<EOT
@@ -3748,17 +3751,31 @@ EOT
   return 1
 }
 
-# The findings path an ask-user gate note names, when it is a regular file
-# under this home's data directory for <task>.
+# The resolved findings path an ask-user gate note names, when it is a regular
+# file whose real location is under this home's real data directory for <task>,
+# so a symlinked folder anywhere on the path cannot point the council elsewhere.
 gate_council_findings_path() {  # <task> <note>
-  local task=$1 note=$2 path
+  local task=$1 note=$2 path real_dir real_data
   case "$note" in 'ask-user findings='*' file='*) ;; *) return 1 ;; esac
   path=${note##* file=}
   path=${path%% *}
   case "$path" in "$FM_HOME/data/$task/"*) ;; *) return 1 ;; esac
   case "/$path/" in */../*|*/./*) return 1 ;; esac
+  real_dir=$(cd -P -- "${path%/*}" 2>/dev/null && pwd -P) || return 1
+  real_data=$(cd -P -- "$FM_HOME/data" 2>/dev/null && pwd -P) || return 1
+  case "$real_dir/" in "$real_data/$task/"*) ;; *) return 1 ;; esac
+  path="$real_dir/${path##*/}"
   [ -f "$path" ] && [ -r "$path" ] && [ ! -L "$path" ] || return 1
   printf '%s\n' "$path"
+}
+
+# 0 unless the backlog answers that <task> is not an open captain call, so a
+# hold lookup that cannot answer counts as held and the council skips the task.
+gate_council_task_held() {  # <task>
+  local rc=0
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" open "$1" --distinguish-absent >/dev/null 2>&1 || rc=$?
+  case "$rc" in 1|3) return 1 ;; esac
+  return 0
 }
 
 gate_council_record_field() {  # <record> <top-level-field>
@@ -3864,7 +3881,7 @@ away_gate_council_tick() {  # [now-epoch]
     project=$(sed -n 's/^project=//p' "$meta" | head -n 1)
     gate_council_project_allowed "$projects" "$project" || continue
     status_is_paused_or_captain_held "$(status_declared_wait_line "$f")" && continue
-    task_captain_call_open "$task" && continue
+    gate_council_task_held "$task" && continue
     open=$(status_open_decisions_incremental "$f" '' timed) || return 1
     while IFS=$'\t' read -r key verb opened _ note; do
       [ "$verb" = needs-decision ] || continue
@@ -3893,7 +3910,7 @@ EOT
   fi
   dir="$FM_HOME/data/$due_task/gate-council-$due_key-$due_opened"
   id=$(printf 'gate-%s-%s-%s' "$due_task" "$due_key" "$due_opened" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' '-')
-  if ! mkdir -p -- "$dir" || [ -L "$dir" ] || ! chmod 700 "$dir" \
+  if [ -L "$FM_HOME/data/$due_task" ] || ! mkdir -p -- "$dir" || [ -L "$dir" ] || ! chmod 700 "$dir" \
     || ! printf '{"id":"%s","question":"%s","options":["fix","decline"],"approve":"fix"}\n' "$id" \
       "A Firstmate worker's no-mistakes validation gate ($due_task, $due_key) has waited at least $after seconds on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?" \
       > "$dir/card.json"; then

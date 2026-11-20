@@ -1471,8 +1471,8 @@ The file holds `key=value` lines; blank lines and `#` comments are ignored:
 
 A non-regular config file, a missing roster, an invalid `after-secs`, or no executable `ak` logs a watcher diagnostic and skips the council for that poll; the rest of the watcher cycle still runs.
 
-A gate qualifies when its open status record has verb `needs-decision`, key `nm-<run>-<step>`, a valid `[at=<epoch>]` at least `after-secs` old, and the note `ask-user findings=<ids> file=<path>` with `<path>` a regular file under `data/<task>/`.
-Deferred waits, captain-held tasks, open captain calls, and the parent channel are excluded.
+A gate qualifies when its open status record has verb `needs-decision`, key `nm-<run>-<step>`, a valid `[at=<epoch>]` at least `after-secs` old, and the note `ask-user findings=<ids> file=<path>` with `<path>` a regular file whose real path, after symlinks resolve, is under `data/<task>/`.
+Deferred waits, captain-held tasks, open captain calls, and the parent channel are excluded; a captain-call lookup that cannot answer counts as held.
 `state/.away-gate-council-claims` binds one council to each task, key and opening epoch; the away confirmation and the open gate are checked again under its lock before the council starts.
 
 Each council runs detached in `data/<task>/gate-council-<key>-<opened>/`, which holds `card.json`, `task-intent.md` (the brief's `## Captain's intent` body, when present), `record.json`, `log`, and `exit`.
@@ -1480,7 +1480,8 @@ The card asks whether the worker should `fix` or `decline` the findings, with `f
 The context is the findings file and the task intent; AgentKit's outbound gate decides whether they may leave the host.
 When `exit` appears, the next poll queues one `check: gate council ruled:` wake naming the outcome, the choice, and the record or log path.
 A run with no `exit` after `FM_GATE_COUNCIL_UNFINISHED_SECS` (default `7200`) surfaces as `outcome=unfinished`.
-A ruling for a gate that has since closed is recorded as `gate-closed` and not surfaced.
+A ruling for a gate that has since closed, or whose status log is gone, is recorded as `gate-closed` and not surfaced.
+A status log that exists but cannot be read counts as open, so the ruling waits for a later poll.
 
 The record is evidence, never captain approval: the trigger never answers the gate, waives a check, merges, or lifts a hold.
 Firstmate applies a ruling only through the normal gate response that `ask-user-authority` owns.
