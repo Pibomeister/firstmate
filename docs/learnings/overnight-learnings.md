@@ -64,3 +64,23 @@ Keep every entry general: no person, company, project, customer, host, account, 
 ### 1. Setup and install changes passed only in a warm worktree
 - Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
 - Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.
+
+## 2026-11-19 (from a nightly reflection)
+
+### 1. One restart launched three successors
+- Failure: one keep-alive restart started three sessions on the same prompt within 90 seconds.
+- Failure: each session ran more than 150 commands and spawned its own reviewers, so one assessment cost three times its budget.
+- Rule: a restart or keep-alive launcher is single-flight: before it launches, it checks whether a successor for the same prompt is already starting or live, and after it launches, it confirms exactly one successor session is running.
+- Rule: when more than one successor is found, stop the extras before they start work, keep the one that holds the session lock, and report the duplicate launch.
+
+### 2. Pickups were redirected to a session that could not take the lock
+- Failure: an away-mode run and a successor pickup were each sent to a session that session start then refused, because another live session held the fleet lock.
+- Failure: one pickup went ahead only after someone proved the holder's process was dead and removed the lock files by hand.
+- Rule: before redirecting an away-mode run or a successor pickup to a session, run `FM_HOME=<that home> bin/fm-lock.sh status`.
+- Rule: `lock: held by live harness pid <n>` means route the work to the holding session or wait for it to exit; never start a second supervisor there.
+- Rule: `lock: stale` or `lock: free` means the receiving session's own lock acquisition reclaims it; never delete lock files by hand.
+
+### 3. Host-suite failures blamed on a change came from the session's environment
+- Failure: host-suite cases failed with `this session does not own supervision` when run inside a live agent session, and passed in a clean environment on both the change and its base.
+- Rule: when a host-suite case fails only inside a live agent session, rerun it under `env -i` (passing only `HOME`, `PATH`, and `TERM`) on both the change and its base before attributing the failure to the change.
+- Rule: report a failure as caused by the change only when it fails in the clean environment on the change and passes there on the base.
