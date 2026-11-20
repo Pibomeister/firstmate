@@ -1,0 +1,5 @@
+ok - session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (39227 to 39227): Operation not permitted
+ok - session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes
+bash $R/focused.sh  35.71s user 58.66s system 5% cpu 27:02.00 total
+exit=143

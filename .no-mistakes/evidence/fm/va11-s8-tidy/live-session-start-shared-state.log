@@ -1,0 +1,24 @@
+=== 1 first start, no git config, no NM db (107s) ===
+(no SHARED_STATE line)
+baseline: d8cb7a2288ce
+=== 2 after shared DB first creation (expect silent) (109s) ===
+(no SHARED_STATE line)
+baseline: 9d149146ed43
+=== 3 after DML row inserts (expect silent) (111s) ===
+(no SHARED_STATE line)
+baseline: 9d149146ed43
+=== 4 read-only (held lock) after worker git config edit (113s) ===
+SHARED_STATE: global git config changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//s8sb.BKZTKY/home/.gitconfig) - workers must never edit shared git config; inspect recent changes and restore any unintended setting
+baseline: 03f2ec27eba6
+=== 5 --reemit (expect report, baseline kept) (82s) ===
+(no SHARED_STATE line)
+baseline: 03f2ec27eba6
+=== 6 full locked start (expect report, baseline advances) (113s) ===
+(no SHARED_STATE line)
+baseline: 03f2ec27eba6
+=== 7 unchanged (expect silent) (83s) ===
+(no SHARED_STATE line)
+baseline: 03f2ec27eba6
+=== 8 after DDL ALTER TABLE on shared DB (expect report) (62s) ===
+SHARED_STATE: shared no-mistakes database schema changed since the last session start (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//s8sb.BKZTKY/nm/state.sqlite) - workers must never alter shared databases; inspect no-mistakes version and state database before dispatching pipeline runs
+baseline: 756cad0f94fa
