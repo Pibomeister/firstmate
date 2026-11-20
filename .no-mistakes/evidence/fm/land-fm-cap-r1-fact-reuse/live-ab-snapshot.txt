@@ -1,0 +1,213 @@
+== round 1
+DIFF
+12c12
+<       "detail": "harness state unavailable (unknown codex-unverified)",
+---
+>       "detail": "",
+14,15c14,15
+<       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+<       "source": "pane",
+---
+>       "raw": "",
+>       "source": "none",
+20c20
+<       "exists": true,
+---
+>       "exists": null,
+27c27
+<       "blocked_event": false,
+---
+>       "blocked_event": true,
+29,30c29,41
+<       "open_decisions": [],
+<       "pending_decision": false,
+---
+>       "open_decisions": [
+>         {
+>           "key": "route",
+>           "summary": "pick route",
+>           "verb": "needs-decision"
+>         },
+>         {
+>           "key": "cred",
+>           "summary": "need login",
+>           "verb": "blocked"
+>         }
+>       ],
+>       "pending_decision": true,
+85c96
+<       "detail": "harness state unavailable (unknown codex-unverified)",
+---
+>       "detail": "",
+87,88c98,99
+<       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+<       "source": "pane",
+---
+>       "raw": "",
+>       "source": "none",
+158c169
+<       "detail": "backend target gone: firstmate:fm-gamma",
+---
+>       "detail": "",
+160c171
+<       "raw": "state: unknown · source: none · backend target gone: firstmate:fm-gamma",
+---
+>       "raw": "",
+166c177
+<       "exists": false,
+---
+>       "exists": null,
+168c179
+<       "status": "absent",
+---
+>       "status": "unknown",
+12c12
+<       "detail": "",
+---
+>       "detail": "harness state unavailable (unknown codex-unverified)",
+14,15c14,15
+<       "raw": "",
+<       "source": "none",
+---
+>       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+>       "source": "pane",
+20c20
+<       "exists": null,
+---
+>       "exists": true,
+27c27
+<       "blocked_event": true,
+---
+>       "blocked_event": false,
+29,41c29,30
+<       "open_decisions": [
+<         {
+<           "key": "route",
+<           "summary": "pick route",
+<           "verb": "needs-decision"
+<         },
+<         {
+<           "key": "cred",
+<           "summary": "need login",
+<           "verb": "blocked"
+<         }
+<       ],
+<       "pending_decision": true,
+---
+>       "open_decisions": [],
+>       "pending_decision": false,
+96c85
+<       "detail": "",
+---
+>       "detail": "harness state unavailable (unknown codex-unverified)",
+98,99c87,88
+<       "raw": "",
+<       "source": "none",
+---
+>       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+>       "source": "pane",
+169c158
+<       "detail": "",
+---
+>       "detail": "backend target gone: firstmate:fm-gamma",
+171c160
+<       "raw": "",
+---
+>       "raw": "state: unknown · source: none · backend target gone: firstmate:fm-gamma",
+177c166
+<       "exists": null,
+---
+>       "exists": false,
+179c168
+<       "status": "unknown",
+---
+>       "status": "absent",
+{"id":"alpha","open":[],"pending":false}
+{"id":"beta","open":[],"pending":false}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha same: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+crew-state beta same: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma
+== round 2-after-append
+DIFF
+12c12
+<       "detail": "harness state unavailable (unknown codex-unverified)",
+---
+>       "detail": "",
+14,15c14,15
+<       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+<       "source": "pane",
+---
+>       "raw": "",
+>       "source": "none",
+20c20
+<       "exists": true,
+---
+>       "exists": null,
+27c27
+<       "blocked_event": false,
+---
+>       "blocked_event": true,
+29,30c29,41
+<       "open_decisions": [],
+<       "pending_decision": false,
+---
+>       "open_decisions": [
+>         {
+>           "key": "cred",
+>           "summary": "need login",
+>           "verb": "blocked"
+>         },
+>         {
+>           "key": "next",
+>           "summary": "next step",
+>           "verb": "needs-decision"
+>         }
+>       ],
+>       "pending_decision": true,
+85c96
+<       "detail": "harness state unavailable (unknown codex-unverified)",
+---
+>       "detail": "",
+87,88c98,99
+<       "raw": "state: unknown · source: pane · harness state unavailable (unknown codex-unverified)",
+<       "source": "pane",
+---
+>       "raw": "",
+>       "source": "none",
+102,103c113,120
+<       "open_decisions": [],
+<       "pending_decision": false,
+---
+>       "open_decisions": [
+>         {
+>           "key": "b",
+>           "summary": "b",
+>           "verb": "needs-decision"
+>         }
+>       ],
+>       "pending_decision": true,
+158c175
+<       "detail": "backend target gone: firstmate:fm-gamma",
+---
+>       "detail": "",
+160c177
+<       "raw": "state: unknown · source: none · backend target gone: firstmate:fm-gamma",
+---
+>       "raw": "",
+{"id":"alpha","open":["cred","next"],"pending":true}
+{"id":"beta","open":["b"],"pending":true}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha same: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+crew-state beta same: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma
+== round 3-mid-line
+tasks[] identical base vs target(cold) vs target(warm)
+{"id":"alpha","open":[],"pending":false}
+{"id":"beta","open":[],"pending":false}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha DIFF
+ base: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+ tgt:  state: unknown · source: none · backend unreachable (tmux endpoint probe timed out after 3s)
+crew-state beta same: state: unknown · source: pane · harness state unavailable (unknown codex-unverified)
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma

@@ -1,0 +1,24 @@
+== round 1
+tasks[] identical base vs target(cold) vs target(warm)
+{"id":"alpha","open":["route","cred"],"pending":true}
+{"id":"beta","open":[],"pending":false}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha same: state: unknown · source: none · backend target gone: firstmate:fm-alpha
+crew-state beta same: state: unknown · source: none · backend target gone: firstmate:fm-beta
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma
+== round 2-after-append
+tasks[] identical base vs target(cold) vs target(warm)
+{"id":"alpha","open":["cred","next"],"pending":true}
+{"id":"beta","open":["b"],"pending":true}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha same: state: unknown · source: none · backend target gone: firstmate:fm-alpha
+crew-state beta same: state: unknown · source: none · backend target gone: firstmate:fm-beta
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma
+== round 3-mid-line
+tasks[] identical base vs target(cold) vs target(warm)
+{"id":"alpha","open":["cred","next"],"pending":true}
+{"id":"beta","open":["b","partial"],"pending":true}
+{"id":"gamma","open":[],"pending":false}
+crew-state alpha same: state: unknown · source: none · backend target gone: firstmate:fm-alpha
+crew-state beta same: state: unknown · source: none · backend target gone: firstmate:fm-beta
+crew-state gamma same: state: unknown · source: none · backend target gone: firstmate:fm-gamma
