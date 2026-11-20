@@ -1723,6 +1723,19 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 10 council --task t1 --key nm-deploy --record-file "$H/record.txt" 2>&1) || fail "human-only council failed: $out"
   assert_contains "$out" "council=held answer=none" "a deploy awaiting_approval stays the owner's: $out"
   assert_equals 2 "$(seat_calls)" "no seat saw the human-only record"
+  printf '%s\n' 'PR #9 no-mistakes push step awaiting_approval. A force-push the rebased branch to origin, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key nm-force-push --record-file "$H/record.txt" 2>&1) || fail "force-push council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a force-push awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 no-mistakes push step awaiting_approval. A run git push origin +main, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 30 council --task t1 --key nm-plus-ref --record-file "$H/record.txt" 2>&1) || fail "+ref council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a +ref push awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve and publish the package, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 40 council --task t1 --key nm-publish --record-file "$H/record.txt" 2>&1) || fail "publish council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a publish awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. The fixture holds customer PII. A approve, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 50 council --task t1 --key nm-pii --record-file "$H/record.txt" 2>&1) || fail "PII council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a PII awaiting_approval stays the owner's: $out"
+  assert_equals 2 "$(seat_calls)" "no seat saw a force-push, publish, or PII record"
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
@@ -1764,15 +1777,40 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling"
 }
 
+test_council_failed_revisit_keeps_the_prior_ruling() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "first council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "the first council holds: $out"
+  fake_models "$H" fail fail
+  printf '%s\n' 'Later standing order contradicting the hold on PR #562: accept the known flake risk. A approve the park, or B hold for the owner?' > "$H/record2.txt"
+  out=$(run_wd 10 council --task t1 --key nm-hold --record-file "$H/record2.txt" --revisit 2>&1) || fail "failed revisit errored: $out"
+  assert_contains "$out" "council=failed" "a revisit no seat answers is a failed council: $out"
+  out=$(run_wd 20 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "replay after failed revisit failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "the prior ruling still replays after a failed revisit: $out"
+  assert_contains "$out" "prior=1" "the replay comes from the recorded outcome: $out"
+  sed -i.bak 's/^council-seats=.*/council-seats=claude:haiku,claude:sonnet/' "$H/config/watchdog"
+  out=$(run_wd 30 council --task t1 --key nm-hold --record-file "$H/record2.txt" --revisit 2>&1) || fail "refused revisit errored: $out"
+  assert_contains "$out" "council=refused" "a one-family revisit is refused: $out"
+  out=$(run_wd 40 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "replay after refused revisit failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "the prior ruling still replays after a refused revisit: $out"
+  [ -z "$(ls -A "$H/data/watchdog/revisits" 2>/dev/null)" ] || fail "a revisit that published nothing archived the prior ruling: $(ls "$H/data/watchdog/revisits")"
+  pass "council: a failed or refused revisit leaves the prior ruling final, so no later pass re-rolls it"
+}
+
 test_decision_nudge_names_pr_by_number() {
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
   fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
   transcript 100 "Working."
-  printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 no-mistakes test awaiting_approval for PR #562. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 per Firstmate issue #306, no-mistakes test awaiting_approval for PR #562. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1 || fail "decision pass failed"
   assert_equals 1 "$(ledger_rows decisions nudge pending)" "the aged decision gets its nudge: $(ledger | cut -f5-8)"
   grep -rqs 'PR #562' "$H/state/operational-inbox" || fail "the decision nudge does not name the PR by number: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  ! grep -rqs 'PR #306' "$H/state/operational-inbox" || fail "the decision nudge named an earlier issue number as the PR: $(cat "$H"/state/operational-inbox/* 2>&1)"
   pass "decisions: the nudge names work by PR number from the record, not by a goal alias alone"
 }
 
@@ -7251,6 +7289,7 @@ fm_test_run \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
   test_council_revisit_on_contradicting_record \
+  test_council_failed_revisit_keeps_the_prior_ruling \
   test_decision_nudge_names_pr_by_number \
   test_judge_fallback_and_spend_cap \
   test_no_model_still_acts_and_reports_gap \

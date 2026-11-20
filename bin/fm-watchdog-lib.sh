@@ -21,15 +21,16 @@
 #       release it would unblock does not by itself make it the owner's.
 #   fm_wd_human_only <text>
 #       Returns 0 when the text names a human-only category for an
-#       awaiting_approval decision (deploy, spend, secrets or credentials,
-#       sign-in, security, production or shared-database writes, messages to
-#       people, deletion, or a failure in the PR's own changed behavior).
+#       awaiting_approval decision (deploy, publish, force-push, spend,
+#       secrets or credentials, sign-in, security, production or
+#       shared-database writes, PII, messages to people, deletion, or a
+#       failure in the PR's own changed behavior).
 #   fm_wd_known_unreachable_timing_flake <text>
 #       Returns 0 when the text describes a known timing flake in a test the
 #       PR cannot reach: a timing word, a flake word, and an unreachable word.
 #   fm_wd_pr_label <text>
-#       Prints `PR #<n>` for the first PR the text names, by `/pull/<n>` URL,
-#       `PR #<n>`, or `#<n>`; prints nothing when it names none.
+#       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
+#       else its first `PR #<n>`; prints nothing when it names neither.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -317,7 +318,7 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='(^|[^a-z])(deploy|spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|shared (db|database)|e-?mail|sms|message to|delet|destroy|wipe|changed behavio)'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared (db|database)|e-?mail|sms|message to|delet|destroy|wipe|changed behavio|force.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
 fm_wd_nm_awaiting_approval() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval'
@@ -337,7 +338,8 @@ fm_wd_known_unreachable_timing_flake() {  # <text>
 
 fm_wd_pr_label() {  # <text>
   local hit n
-  hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+|PR #[0-9]+|#[0-9]+' | head -n 1 || true)
+  hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE 'PR #[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || return 0
   n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')
   [ -n "$n" ] && printf 'PR #%s\n' "$n"
