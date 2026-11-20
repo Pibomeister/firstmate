@@ -18,6 +18,8 @@ remote_ssh() { ssh "${SSH_OPTIONS[@]}" "$@"; }
 # Release a mirror lock only while its owner record still names this run, so a
 # run whose lock was reclaimed as stale cannot release its successor's lock.
 remote_lock_release() {  # <remote shell word naming the mirror cache directory>
+  # The format is a template for the remote shell, where $c must expand there.
+  # shellcheck disable=SC2016
   printf '{ c=%s; if grep -qxF -- %s "$c/lock/owner" 2>/dev/null && grep -qxF -- %s "$c/lock/owner"; then rm -f -- "$c/lock/owner" && rmdir -- "$c/lock"; fi; }' \
     "$1" "$(remote_quote "host=$REMOTE_LOCK_HOST")" "$(remote_quote "pid=$$")"
 }
