@@ -50,26 +50,24 @@
 #         not sandboxed, which is why only a worker runs it. One line on
 #         stdout and in
 #         <out>/result, with head.log and base.log beside it:
-#           verify-finding: <introduced|pre-existing|no-evidence>
+#           verify-finding: <introduced|red-at-both|no-evidence>
 #             head=<full-sha> head_result=<r> base=<full-sha> base_result=<r>
 #             path=<path> repro_sha256=<sha256>
-#         <r> is red (any other nonzero exit), green (exit 0), timeout,
-#         error (it could not run: exit 126, 127 or 128, or output that
-#         reports a command, file or module not found), wrote-outside (it
-#         changed the snapshot outside tests/), or skipped (base only, when
-#         the head was not red).
+#         <r> is red (any nonzero exit other than 124, 126 or 127), green
+#         (exit 0), timeout, error (exit 126 or 127: it could not run),
+#         wrote-outside (it changed the snapshot outside tests/), or skipped
+#         (base only, when the head was not red).
 #         introduced  red at the head and green at the merge base: an
 #                     evidence-backed finding.
-#         pre-existing red at both, only when the merge base ran the same
-#                     code: no file the head adds is named in the
-#                     reproduction, and both logs are identical. Only
-#                     then is it a follow-up, never a blocker.
-#         no-evidence anything else, including red at both without that
-#                     proof; the finding keeps its normal standing and
-#                     rests on reading alone.
+#         red-at-both red at the head and at the merge base. This command
+#                     never marks a finding pre-existing; only the council
+#                     or the captain may, and until then the finding keeps
+#                     its normal blocking standing.
+#         no-evidence anything else; the finding keeps its normal standing
+#                     and rests on reading alone.
 #         The snapshot holds committed files only, so a reproduction that
-#         needs ignored dependencies or Git history reports error and leaves
-#         no evidence. <out> must not already hold a result; evidence is never
+#         needs ignored dependencies or Git history fails there like any
+#         other failure. <out> must not already hold a result; evidence is never
 #         replaced. Recording the result against a finding belongs to the
 #         finding ledger, not to this command.
 #
@@ -982,14 +980,8 @@ mr_verify_side() {  # <scratch> <path> <log>
   case "$rc" in
     0) printf 'green\n' ;;
     124) printf 'timeout\n' ;;
-    126 | 127 | 128) printf 'error\n' ;;
-    *)
-      if grep -qE 'command not found|No such file or directory|Cannot find module|ModuleNotFoundError' "$log"; then
-        printf 'error\n'
-      else
-        printf 'red\n'
-      fi
-      ;;
+    126 | 127) printf 'error\n' ;;
+    *) printf 'red\n' ;;
   esac
 }
 
@@ -998,7 +990,7 @@ mr_verify_cleanup() {
 }
 
 mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
-  local repo=$1 base_ref=$2 repro=$3 path=$4 out=$5 repo_root name commit head_result base_result result line repro_sha named
+  local repo=$1 base_ref=$2 repro=$3 path=$4 out=$5 repo_root name commit head_result base_result result line repro_sha
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'verify-finding belongs in a background worker: it runs a reviewer-written reproduction, and FM_TASK_ID is not set'
   fi
@@ -1055,16 +1047,7 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
   fi
   case "$head_result:$base_result" in
     red:green) result=introduced ;;
-    red:red)
-      result=no-evidence
-      if cmp -s "$out/head.log" "$out/base.log"; then
-        git --no-replace-objects -C "$repo" diff --no-renames --diff-filter=A --name-only -z "$MR_BASE" "$MR_HEAD" \
-          | tr '\0' '\n' > "$MR_VERIFY_WORK/added.paths" || mr_die 'cannot list the files the head adds'
-        named=0
-        grep -qwF -f "$MR_VERIFY_WORK/added.paths" "$repro" || named=$?
-        [ "$named" -ne 1 ] || result=pre-existing
-      fi
-      ;;
+    red:red) result=red-at-both ;;
     *) result=no-evidence ;;
   esac
   line="verify-finding: $result head=$MR_HEAD head_result=$head_result base=$MR_BASE base_result=$base_result path=$path repro_sha256=$repro_sha"

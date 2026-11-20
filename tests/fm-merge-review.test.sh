@@ -1187,59 +1187,82 @@ test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence() {
   pass "verify-finding: red at the head and green at the merge base is introduced evidence"
 }
 
-test_verify_finding_red_at_both_is_pre_existing() {
+# Commit <file> with <content> in the case repository.
+commit_case_file() {  # <file> <content> <message>
+  mkdir -p "$(dirname "$REPO/$1")"
+  printf '%s\n' "$2" > "$REPO/$1"
+  git -C "$REPO" add "$1"
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm "$3"
+}
+
+# Put <file> with <content> on origin/main, then rebuild the head on top of it.
+set_case_base_file() {  # <file> <content>
+  git -C "$REPO" reset -q --hard refs/remotes/origin/main
+  commit_case_file "$1" "$2" 'base file'
+  git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse HEAD)"
+  commit_case_file feature.txt 'the feature' feature
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+test_verify_finding_red_at_both_keeps_the_finding_blocking() {
   local rc=0
-  make_case verify-pre-existing
+  make_case verify-red-at-both
   write_repro repro.sh 'echo "always broken"; exit 1'
   run_verify repro.sh tests/repro-defect.test.sh --out "$CASE/evidence" || rc=$?
-  expect_code 0 "$rc" "verify pre-existing"
-  expect_verify_field 'pre-existing' "verify pre-existing"
-  expect_verify_field 'head_result=red' "verify pre-existing"
-  expect_verify_field 'base_result=red' "verify pre-existing"
-  pass "verify-finding: red at both the head and the merge base is pre-existing"
+  expect_code 0 "$rc" "verify red at both"
+  expect_verify_field 'red-at-both' "verify red at both"
+  expect_verify_field 'head_result=red' "verify red at both"
+  expect_verify_field 'base_result=red' "verify red at both"
+  pass "verify-finding: red at both the head and the merge base is red-at-both, never pre-existing"
 }
 
-test_verify_finding_red_at_both_on_a_file_the_head_adds_gives_no_evidence() {
+test_verify_finding_red_at_both_on_a_script_the_head_adds() {
   local rc=0
-  make_case verify-new-file
-  mkdir -p "$REPO/bin"
-  printf 'echo "tool is broken"; exit 1\n' > "$REPO/bin/new-tool.sh"
-  git -C "$REPO" add bin/new-tool.sh
-  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm 'add a tool'
+  make_case verify-new-script
+  commit_case_file bin/new-tool.sh 'echo "tool is broken"; exit 1' 'add a tool'
   HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
-  write_repro quiet.sh 'bash bin/new-tool.sh > /dev/null 2>&1; echo "the tool fails"; exit 1'
-  run_verify quiet.sh tests/repro-quiet.test.sh --out "$CASE/quiet" || rc=$?
-  expect_code 0 "$rc" "verify new file"
-  expect_verify_field 'no-evidence' "verify new file"
-  expect_verify_field 'head_result=red' "verify new file"
-  expect_verify_field 'base_result=red' "verify new file"
-
-  rc=0
-  write_repro direct.sh 'bash bin/new-tool.sh || exit 1'
-  run_verify direct.sh tests/repro-direct.test.sh --out "$CASE/direct" || rc=$?
-  expect_code 0 "$rc" "verify new file direct"
-  expect_verify_field 'no-evidence' "verify new file direct"
-  expect_verify_field 'head_result=red' "verify new file direct"
-  pass "verify-finding: red at both on a file the head adds is not pre-existing"
+  write_repro repro.sh 'bash bin/new-tool.sh || exit 1'
+  run_verify repro.sh tests/repro-new-tool.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify new script"
+  expect_verify_field 'red-at-both' "verify new script"
+  expect_verify_field 'head_result=red' "verify new script"
+  expect_verify_field 'base_result=red' "verify new script"
+  pass "verify-finding: a failing script the head adds is red-at-both, so the finding still blocks"
 }
 
-test_verify_finding_a_reproduction_that_cannot_run_reports_error() {
+test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file() {
   local rc=0
-  make_case verify-cannot-run
-  write_repro history.sh 'git rev-parse HEAD'
-  run_verify history.sh tests/repro-history.test.sh --out "$CASE/history" || rc=$?
-  expect_code 0 "$rc" "verify git history"
-  expect_verify_field 'no-evidence' "verify git history"
-  expect_verify_field 'head_result=error' "verify git history"
-  expect_verify_field 'base_result=skipped' "verify git history"
+  make_case verify-new-function
+  set_case_base_file bin/lib.sh 'old_fn() { return 0; }'
+  commit_case_file bin/lib.sh 'old_fn() { return 0; }
+new_fn() { return 1; }' 'add new_fn'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  write_repro repro.sh '. bin/lib.sh; new_fn 2>/dev/null || exit 1'
+  run_verify repro.sh tests/repro-new-fn.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify new function"
+  expect_verify_field 'red-at-both' "verify new function"
+  expect_verify_field 'head_result=red' "verify new function"
+  expect_verify_field 'base_result=red' "verify new function"
+  assert_equals '' "$(cat "$CASE/evidence/head.log")" "verify new function: the head failure is not silent"
+  pass "verify-finding: a silent failure in a function the head adds to an existing file is red-at-both"
+}
 
-  rc=0
-  write_repro dependency.sh '. node_modules/helper.sh || exit 1'
-  run_verify dependency.sh tests/repro-dependency.test.sh --out "$CASE/dependency" || rc=$?
-  expect_code 0 "$rc" "verify missing dependency"
-  expect_verify_field 'no-evidence' "verify missing dependency"
-  expect_verify_field 'head_result=error' "verify missing dependency"
-  pass "verify-finding: a reproduction that cannot run in the snapshot reports error, not red"
+test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced() {
+  local rc=0
+  make_case verify-wrong-path
+  set_case_base_file bin/helper.sh 'greet() { echo hello; }'
+  commit_case_file bin/tool.sh '. bin/helper.sh || exit 1; greet' 'add the tool at the base'
+  git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse HEAD)"
+  commit_case_file bin/tool.sh '. bin/helpers.sh || exit 1; greet' 'source the helper from a wrong path'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  write_repro repro.sh 'bash bin/tool.sh || exit 1'
+  run_verify repro.sh tests/repro-tool.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify wrong path"
+  expect_verify_field 'introduced' "verify wrong path"
+  expect_verify_field 'head_result=red' "verify wrong path"
+  expect_verify_field 'base_result=green' "verify wrong path"
+  assert_grep 'No such file or directory' "$CASE/evidence/head.log" "verify wrong path: the head did not fail on the missing helper"
+  pass "verify-finding: a helper sourced from a wrong path at the head is introduced, not a run error"
 }
 
 test_verify_finding_green_at_head_gives_no_evidence() {
@@ -1305,9 +1328,10 @@ test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors() {
 
 fm_test_run \
   test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
-  test_verify_finding_red_at_both_is_pre_existing \
-  test_verify_finding_red_at_both_on_a_file_the_head_adds_gives_no_evidence \
-  test_verify_finding_a_reproduction_that_cannot_run_reports_error \
+  test_verify_finding_red_at_both_keeps_the_finding_blocking \
+  test_verify_finding_red_at_both_on_a_script_the_head_adds \
+  test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
+  test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
   test_verify_finding_green_at_head_gives_no_evidence \
   test_verify_finding_timeout_and_outside_writes_give_no_evidence \
   test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
