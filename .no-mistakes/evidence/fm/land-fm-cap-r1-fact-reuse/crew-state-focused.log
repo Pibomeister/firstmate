@@ -1,0 +1,7 @@
+ok - a no-mistakes status field reads the first exact key's value
+ok - override guard: the captured open-decision fold is reused only beside its own captured log
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (47909 to 47909): Operation not permitted
+ok - override guard: a matching-name override still steers the read at the captured generation
+ok - override guard: a foreign-named override is ignored and the task's own state files are read
+SELECTED crew-state tests passed
+cs rc=0

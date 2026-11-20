@@ -1,0 +1,10 @@
+1..7
+ok - repeated snapshots fold only new status bytes and match the whole-log fold
+ok - durable fold clears a decision only on a keyed resolution
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+FM_TEST_COMPLETE
+fs rc=0
