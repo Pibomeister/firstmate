@@ -1,0 +1,10 @@
+## Host load: 14:44  up 4 days,  4:56, 220 users, load averages: 256.51 216.48 216.90
+## F: stage shape - discover into a work dir, then scan with a passed deadline -> pending branch replayed, no forge read
+discover exit=0
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.VEMekS/home/projects/demo branch=fm/task head=8836e8be1eede6f2c87d8c112a4dd0cc184475df; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 0s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+scan exit=0 forge_calls=0
+## G: exact new-test shape x3 (deadline +12, sleep 4, bound 20, forge sleeps 60)
+run1 start_after_sleep=1795207455 finished=1795207462 deadline=1795207463 within=yes named=NO :: UNPUSHED: incomplete scan (failed or exceeded 2s); rerun /Us
+run2 start_after_sleep=1795207468 finished=1795207472 deadline=1795207475 within=yes named=NO :: UNPUSHED: incomplete scan (failed or exceeded 0s); rerun /Us
+run3 start_after_sleep=1795207477 finished=1795207482 deadline=1795207484 within=yes named=yes :: UNPUSHED: incomplete scan (failed or exceeded 4s); rerun /Us

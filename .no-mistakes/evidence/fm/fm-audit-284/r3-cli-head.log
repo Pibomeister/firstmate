@@ -1,0 +1,13 @@
+== A: discover, then 4 s wait, then scan with deadline=now+20 (taken before wait), bound 20, forge stalls 60 s
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-r3.Vj6Fal/home/projects/demo branch=fm/task head=fc0ae8b3552e4efe147f2d9a03633621375bfb32; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 12s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+deadline=1795212422 finished=1795212420 -> WITHIN by -2s
+== B: deadline already passed
+UNPUSHED: incomplete scan (failed or exceeded 0s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+rc=0 forge_calls=0
+== C: invalid deadline
+rc=2
+== D: no deadline, normal scan (forge fast)
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-r3.Vj6Fal/home/projects/demo branch=fm/task head=fc0ae8b3552e4efe147f2d9a03633621375bfb32 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/task ledger=missing pr=none merged=unknown (invalid forge response); reconcile the ledger and resume the owning task or escalate its blocker
+rc=0 forge_calls=2

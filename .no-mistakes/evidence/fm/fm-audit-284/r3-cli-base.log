@@ -1,0 +1,5 @@
+BASE=eb3fb89b
+== A: discover, then 4 s wait, then scan with deadline=now+20 (taken before wait), bound 20, forge stalls 60 s
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-r3.GxfCbK/home/projects/demo branch=fm/task head=8f89b243610158d335ddc7894b2dd5746c9a4518; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 20s); rerun /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-base.H4ZP9W/bin/fm-unpushed-reconcile.sh scan
+deadline=1795212480 finished=1795212485 -> PAST by 5s

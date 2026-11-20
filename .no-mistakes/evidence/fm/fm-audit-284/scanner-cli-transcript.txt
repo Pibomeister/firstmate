@@ -1,0 +1,23 @@
+## Host load: 14:42  up 4 days,  4:54, 221 users, load averages: 263.51 204.44 213.25
+
+## A: far deadline, fast forge -> normal finding
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.YnXS27/home/projects/demo branch=fm/task head=b8d193d8dd2a9043b860fb774c7b107c0c54a6f1 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/task ledger=In flight pr=none merged=none; reconcile the ledger and resume the owning task or escalate its blocker
+exit=0
+
+## B: deadline=now+10, bound 20, forge sleeps 60 -> ends by deadline, incomplete
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.YnXS27/home/projects/demo branch=fm/task head=b8d193d8dd2a9043b860fb774c7b107c0c54a6f1; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 6s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+exit=0 started=1795207364 finished=1795207372 deadline=1795207374
+
+## C: passed deadline -> skip, pending branch replayed, no forge read
+UNPUSHED: incomplete scan (failed or exceeded 0s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+exit=0 forge_calls=0
+
+## D: invalid deadline -> exit 2
+exit=2
+
+## E: no deadline, bound 4, forge sleeps 60 -> bound still applies (regression)
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.YnXS27/home/projects/demo branch=fm/task head=b8d193d8dd2a9043b860fb774c7b107c0c54a6f1; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 4s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+exit=0 elapsed=6s
