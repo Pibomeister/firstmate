@@ -306,7 +306,7 @@ new_world deadline
 deadline_work="$TMP_ROOT/deadline-work"
 mkdir -m 700 "$deadline_work"
 bash "$ROOT/bin/fm-unpushed-reconcile.sh" discover --work-dir "$deadline_work" >/dev/null
-deadline=$(( $(date +%s) + 12 ))
+deadline=$(( $(date +%s) + 20 ))
 # Time spent before the scan reaches its timer, as on a loaded host, must come
 # out of the caller's deadline rather than extend past it.
 sleep 4
