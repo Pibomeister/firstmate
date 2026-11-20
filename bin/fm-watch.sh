@@ -167,6 +167,13 @@
 #                          opt-in config/open-decision-reminders record-age
 #                          backstop, independent of pane and branch state;
 #                          open_decision_reminder_tick owns its bounded repeats
+#   check: disk alarm cleared (...): <result>
+#                          the disk alarm refused these fresh launches and now
+#                          admits a launch; bin/fm-disk-retry.sh dispatched
+#                          them again, dropped stale ones, or names a failed
+#                          re-dispatch, a task to dispatch by hand, or a held
+#                          or blocked item it skipped; bin/fm-disk-retry.sh's
+#                          header owns the result parts
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
@@ -3514,6 +3521,32 @@ EOF
   fi
 }
 
+# Disk-refused launches are dispatched again by bin/fm-disk-retry.sh once the
+# alarm admits a launch. A spawn can outlast a poll, so the scan runs in the
+# background in its own process group, and this tick wakes with each report
+# file the scan leaves. With no record and no report this costs two globs and
+# never reads the disk.
+disk_retry_tick() {
+  local f monitor=0
+  DISK_RETRY_REASON=
+  for f in "$STATE/disk-refused"/.report.*; do
+    [ -f "$f" ] || continue
+    DISK_RETRY_REASON=$(cat "$f" 2>/dev/null) || DISK_RETRY_REASON=
+    rm -f -- "$f" 2>/dev/null || true
+    [ -z "$DISK_RETRY_REASON" ] || return 0
+  done
+  for f in "$STATE/disk-refused"/*; do
+    [ -f "$f" ] || continue
+    case $- in *m*) monitor=1 ;; esac
+    set -m 2>/dev/null || true
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+      nohup "$SCRIPT_DIR/fm-disk-retry.sh" scan >/dev/null 2>&1 </dev/null &
+    disown "$!" 2>/dev/null || true
+    [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
+    return 0
+  done
+}
+
 # Away decisions use the timed status fold. Without a council entrypoint every
 # overdue decision is a captain page; nothing authorizes an unattended decision.
 # The claim covers task, key and opening epoch, so a repeat scan or a new away
@@ -5254,6 +5287,10 @@ while :; do
     exit 1
   }
   [ -z "$OPEN_DECISION_REMINDER" ] || wake "$OPEN_DECISION_REMINDER"
+
+  watch_stage disk-retry
+  disk_retry_tick
+  [ -z "$DISK_RETRY_REASON" ] || wake "$DISK_RETRY_REASON"
 
   away_decision_age_tick || {
     echo 'watcher: away decision age check failed' >&2
