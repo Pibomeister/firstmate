@@ -40,6 +40,15 @@
 # teardown use that mode so this side-band publication can never change their
 # result. Without it, failures are printed and returned to the direct caller
 # for tests and diagnostics.
+#
+# A failed refresh backs off before the next --best-effort attempt: the
+# delay doubles after each consecutive failure, from
+# FM_HOME_SUMMARY_BACKOFF_BASE_SECS (default 30) up to
+# FM_HOME_SUMMARY_BACKOFF_MAX_SECS (default 1800), and a success clears it.
+# The record is state/.home-summary-refresh.backoff (failures and the next
+# permitted attempt epoch). A direct call without --best-effort always runs,
+# so tests and diagnostics are never deferred. This is the interim relief
+# until the producer itself is fast enough that failures stop recurring.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,6 +59,9 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 LEDGER="$STATE/home-summary.json"
+BACKOFF_FILE="$STATE/.home-summary-refresh.backoff"
+BACKOFF_BASE=${FM_HOME_SUMMARY_BACKOFF_BASE_SECS:-30}
+BACKOFF_MAX=${FM_HOME_SUMMARY_BACKOFF_MAX_SECS:-1800}
 ERROR_LOG="$STATE/.home-summary-refresh.log"
 REFRESH_LOCK="$STATE/.home-summary-refresh.lock"
 ERROR_LOG_MAX_BYTES=${FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES:-65536}
@@ -66,6 +78,10 @@ HOME_SUMMARY_LOCK_HELD=0
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+
+# shellcheck source=bin/fm-clock-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-clock-lib.sh"
 
 usage() {
   sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'
@@ -93,6 +109,55 @@ case "$HOME_SUMMARY_IF_IDLE" in
   0|1) ;;
   *) HOME_SUMMARY_IF_IDLE=0 ;;
 esac
+case "$BACKOFF_BASE" in
+  ''|*[!0-9]*|0) BACKOFF_BASE=30 ;;
+esac
+case "$BACKOFF_MAX" in
+  ''|*[!0-9]*|0) BACKOFF_MAX=1800 ;;
+esac
+[ "$BACKOFF_MAX" -ge "$BACKOFF_BASE" ] || BACKOFF_MAX=$BACKOFF_BASE
+
+BACKOFF_FAILURES=0
+BACKOFF_NEXT=0
+backoff_read() {
+  local line key value
+  BACKOFF_FAILURES=0
+  BACKOFF_NEXT=0
+  [ -f "$BACKOFF_FILE" ] || return 0
+  while IFS= read -r line; do
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      failures) case "$value" in ''|*[!0-9]*) ;; *) BACKOFF_FAILURES=$value ;; esac ;;
+      next) case "$value" in ''|*[!0-9]*) ;; *) BACKOFF_NEXT=$value ;; esac ;;
+    esac
+  done < "$BACKOFF_FILE" 2>/dev/null || true
+}
+
+backoff_delay() {  # <consecutive-failures>
+  local delay=$BACKOFF_BASE i=1
+  while [ "$i" -lt "$1" ] && [ "$delay" -lt "$BACKOFF_MAX" ]; do
+    delay=$((delay * 2))
+    [ "$delay" -le "$BACKOFF_MAX" ] || delay=$BACKOFF_MAX
+    i=$((i + 1))
+  done
+  printf '%s\n' "$delay"
+}
+
+backoff_record_failure() {  # <now-epoch>
+  local failures delay tmp
+  backoff_read
+  failures=$((BACKOFF_FAILURES + 1))
+  delay=$(backoff_delay "$failures")
+  # Never create the state directory here: this can run in the parent after
+  # its timed worker died, outside that deadline, so a stalled creation
+  # would escape the bound. Without a state directory there is no record.
+  [ -d "$STATE" ] || return 0
+  tmp="$BACKOFF_FILE.tmp.${BASHPID:-$$}"
+  (umask 077; printf 'failures=%s\nnext=%s\n' "$failures" "$(($1 + delay))" > "$tmp") 2>/dev/null \
+    && mv -f -- "$tmp" "$BACKOFF_FILE" 2>/dev/null \
+    || rm -f -- "$tmp" 2>/dev/null || true
+}
 
 if [ "$HOME_SUMMARY_MODE" != parent ] && [ "$HOME_SUMMARY_MODE" != stage-note ]; then
   # shellcheck source=bin/fm-wake-lib.sh
@@ -304,6 +369,16 @@ home_summary_stage_remove() {  # <path>
 }
 
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
+  backoff_now=$(fm_now 2>/dev/null) || backoff_now=
+  case "$backoff_now" in
+    ''|*[!0-9]*) backoff_now= ;;
+  esac
+  if [ "$BEST_EFFORT" -eq 1 ] && [ -n "$backoff_now" ]; then
+    backoff_read
+    if [ "$BACKOFF_NEXT" -gt "$backoff_now" ]; then
+      exit 0
+    fi
+  fi
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
   stage_file=
   # A signalled parent must not leave its stage file behind in state/, so the
@@ -350,6 +425,15 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   fi
   home_summary_stage_remove "$stage_file"
   stage_file=
+  # The parent records the failures it observes itself: a timeout, a dead
+  # worker, or a worker returning non-zero. A best-effort worker that
+  # swallows its failure records it itself below before returning success,
+  # so each failure is counted once.
+  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
+  case "$backoff_failure_now" in
+    ''|*[!0-9]*) ;;
+    *) backoff_record_failure "$backoff_failure_now" ;;
+  esac
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
       parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline${stage_note}"
@@ -388,6 +472,7 @@ export FM_SNAPSHOT_STAGE_FD
 
 if home_summary_refresh_once; then
   home_summary_stage_orphan_cleanup
+  rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
   exit 0
 else
   refresh_rc=$?
@@ -399,6 +484,11 @@ if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
   HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_HOME_SUMMARY_STAGE_FILE")"
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
+  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
+  case "$backoff_failure_now" in
+    ''|*[!0-9]*) ;;
+    *) backoff_record_failure "$backoff_failure_now" ;;
+  esac
   home_summary_log_failure
   exit 0
 fi

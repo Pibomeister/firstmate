@@ -555,7 +555,8 @@ grep -F 'summary producer failed' "$HOME_DIR/state/.home-summary-refresh.log" >/
 pass "best-effort publication logs and continues"
 
 LOCK_MARKER="$TMP_ROOT/lock-held"
-rm -f "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" bash -c '
   . "$1/bin/fm-wake-lib.sh"
   fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"
@@ -576,6 +577,7 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "lock timeout changed the best-effort caller result"
 elapsed=$(( $(date +%s) - started ))
 [ "$elapsed" -lt 4 ] || fail "best-effort refresh waited $elapsed seconds on its lock"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_HOME_SUMMARY_TIMEOUT=1 "$WRITER" --best-effort \
   || fail "repeated lock timeout changed the best-effort caller result"
@@ -717,6 +719,7 @@ done
 exec "$FM_TEST_REAL_JQ" "$@"
 SH
 chmod +x "$HANGBIN/jq"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=1 \
@@ -1181,6 +1184,7 @@ done
 exec "$FM_TEST_REAL_MKDIR" "$@"
 SH
 chmod +x "$MKBIN/mkdir"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$MKBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" \
   FM_TEST_STALLED_STATE="$HOME_DIR/state" FM_ROOT_OVERRIDE="$ROOT" \
@@ -1205,7 +1209,8 @@ fi
 exec "$FM_TEST_REAL_ENV" "$@"
 SH
 chmod +x "$SIGNALBIN/env"
-rm -f "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$SIGNALBIN:$FAKEBIN:$PATH" FM_TEST_REAL_ENV="$REAL_ENV" \
   FM_TEST_SIGNAL_MARKER="$SIGNAL_MARKER" FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" "$WRITER" --best-effort \
@@ -1215,7 +1220,8 @@ grep -F 'refresh worker failed with exit 143' \
   || fail "worker termination was not logged at the parent boundary"
 pass "best-effort refresh logs worker termination"
 
-rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 mkdir "$HOME_DIR/state/.home-summary-refresh.log"
 if ! PATH="$SIGNALBIN:$FAKEBIN:$PATH" FM_TEST_REAL_ENV="$REAL_ENV" \
   FM_TEST_SIGNAL_MARKER="$SIGNAL_MARKER" FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
@@ -1737,3 +1743,50 @@ case "$report_out" in
     ;;
 esac
 pass "repeated publication failure is reported at session start until it clears"
+
+# A failed refresh must wait longer before the next side-band attempt instead
+# of costing a full producer run on every watcher poll. The delay doubles
+# after each failure and is capped; a success resets it.
+BACKOFF_HOME="$TMP_ROOT/backoff-home"
+mkdir -p "$BACKOFF_HOME/state" "$BACKOFF_HOME/data" "$BACKOFF_HOME/config" \
+  "$BACKOFF_HOME/projects"
+printf '# Seeded Firstmate home\n' > "$BACKOFF_HOME/AGENTS.md"
+printf 'backoff\n' > "$BACKOFF_HOME/.fm-secondmate-home"
+cat > "$BACKOFF_HOME/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+backoff_failures() {
+  grep -c 'summary producer failed' "$BACKOFF_HOME/state/.home-summary-refresh.log" 2>/dev/null || true
+}
+backoff_attempt() {  # <now-epoch>
+  PATH="$FAILBIN:$FAKEBIN:$PATH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+    FM_TEST_SEAM=1 FM_NOW="$1" \
+    FM_HOME_SUMMARY_BACKOFF_BASE_SECS=10 FM_HOME_SUMMARY_BACKOFF_MAX_SECS=25 \
+    "$WRITER" --best-effort \
+    || fail "backed-off refresh changed the best-effort caller result"
+}
+backoff_attempt 1000
+[ "$(backoff_failures)" -eq 1 ] || fail "the first failed refresh was not recorded"
+backoff_attempt 1005
+[ "$(backoff_failures)" -eq 1 ] || fail "a refresh retried at once after a failure instead of backing off"
+backoff_attempt 1011
+[ "$(backoff_failures)" -eq 2 ] || fail "a refresh did not retry after its first backoff delay"
+backoff_attempt 1020
+[ "$(backoff_failures)" -eq 2 ] || fail "the second backoff was not longer than the first"
+backoff_attempt 1032
+[ "$(backoff_failures)" -eq 3 ] || fail "a refresh did not retry after its second backoff delay"
+backoff_attempt 1050
+[ "$(backoff_failures)" -eq 3 ] || fail "a refresh retried before its capped backoff delay elapsed"
+backoff_attempt 1058
+[ "$(backoff_failures)" -eq 4 ] || fail "the capped backoff delay did not let a refresh retry"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+  "$WRITER" || fail "a direct refresh did not run and clear the backoff"
+backoff_attempt 1059
+[ "$(backoff_failures)" -eq 5 ] || fail "a successful refresh did not reset the backoff"
+pass "failed refresh backs off exponentially with a cap and resets on success"
