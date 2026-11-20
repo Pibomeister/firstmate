@@ -3990,7 +3990,7 @@ EOF
 
   # Read-only session reports the change in BOOTSTRAP without overwriting baseline.
   rm -f "$home/state/.lock" "$home/state/.lock-session"
-  sleep 300 &
+  sleep 900 &
   holder_pid=$!
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$fakebin:$BASE_PATH")
@@ -4198,7 +4198,7 @@ import pathlib, sqlite3, sys, time
 conn = sqlite3.connect(sys.argv[1], isolation_level=None)
 conn.execute("BEGIN EXCLUSIVE")
 pathlib.Path(sys.argv[2]).write_text("locked\n", encoding="utf-8")
-time.sleep(30)
+time.sleep(900)
 PY
   lock_pid=$!
   while [ ! -f "$lock_ready" ]; do
@@ -4221,7 +4221,7 @@ PY
   mkdir -p "$slowpy_bin"
   cat > "$slowpy_bin/python3" <<'SH'
 #!/usr/bin/env bash
-sleep 15
+sleep 60
 SH
   chmod +x "$slowpy_bin/python3"
   out=$(run_isolated_shared_session_start "$git_home" "$nm_home" "$home" "$root" "$slowpy_bin:$fakebin:$BASE_PATH")

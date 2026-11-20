@@ -1019,7 +1019,7 @@ classify_missing_path() {
   local path=$1 verdict=''
   command -v python3 >/dev/null 2>&1 || return 1
   # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
-  verdict=$(fm_run_timed 5 python3 -c '
+  verdict=$(fm_run_timed 10 python3 -c '
 import errno, os, sys
 try:
     os.lstat(sys.argv[1])
@@ -1121,7 +1121,7 @@ nm_db_schema_snapshot() {
   command -v python3 >/dev/null 2>&1 || return 1
   rc=0
   # shellcheck disable=SC2016  # Python code uses its own sys.argv, not shell expansion.
-  out=$(fm_run_timed 5 python3 -c '
+  out=$(fm_run_timed 10 python3 -c '
 import hashlib, sqlite3, sys
 from contextlib import closing
 from pathlib import Path
