@@ -1,0 +1,13 @@
+# watcher path: fm-watch.sh disk_retry_tick sourced from the real watcher, disk now 20 GiB free
+# ship-two: ledger shows it dispatched elsewhere after refusal; ship-three: resolver endpoint unreachable
+tick1 (report left by the earlier scan) => [check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh: ship-live]
+tick2 (records exist, starts background scan pid=90990) => []
+tick3 (reads the scan's report) => [check: disk alarm cleared (level=ok free_kib=20971520): dropped, already launched or placed elsewhere: ship-two; not re-dispatched, routing needs a decision, dispatch by hand: ship-three (error)]
+tick4 (nothing left) => []
+records left: []
+new task records: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/state/ship-live.meta
+--- wake queue:
+1795146039	1	check	disk-retry	check: disk alarm cleared (level=ok free_kib=20971520): re-dispatched by bin/fm-spawn.sh: ship-live
+1795146176	2	check	disk-retry	check: disk alarm cleared (level=ok free_kib=20971520): dropped, already launched or placed elsewhere: ship-two; not re-dispatched, routing needs a decision, dispatch by hand: ship-three (error)
+--- lab tmux:
+no server running on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/tmux/tmux-501/default

@@ -1,0 +1,6 @@
+# alarm still standing (9 GiB free): scan
+$ bin/fm-disk-retry.sh scan
+exit=0
+records: ship-live
+wake queue:        0
+resolver requests so far:        8

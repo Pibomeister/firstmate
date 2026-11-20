@@ -1,0 +1,23 @@
+$ echo 9437184 > vol-avail   # 9 GiB free => PAUSE
+$ bin/fm-spawn.sh ship-live $LAB/projects/demo --mode no-mistakes --yolo off --harness claude --model opus --effort max
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC
+disk-alarm: PAUSE free space on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/vol is under 10 GiB (9.0 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+exit=1
+$ ls -A state/disk-refused; record contents:
+ship-live
+1795145725
+ship-live
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/projects/demo
+--mode
+no-mistakes
+--yolo
+off
+--harness
+claude
+--model
+opus
+--effort
+max
+--- task record / worktree created?
+ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/state/ship-live.meta: No such file or directory
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/projects/demo  cdc208d [main]

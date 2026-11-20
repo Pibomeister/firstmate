@@ -1,0 +1,8 @@
+# disk recovers to 20 GiB; project demo is at capacity (cap 1, one holder)
+$ bin/fm-disk-retry.sh scan
+exit=0
+records kept: ship-live
+wake queue rows: 0
+resolver hit: 1
+fresh resolution: {"task":"ship-live","status":"clear","profile":{"harness":"codex","model":"gpt-5.5","effort":"low"}}
+ship-live task record: ls: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BA5mYC/state/ship-live.meta: No such file or directory
