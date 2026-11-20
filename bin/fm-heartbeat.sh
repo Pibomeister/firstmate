@@ -124,10 +124,9 @@
 # watcher loop work can delay a launch.
 #
 # Host-load throttle (bin/fm-load-lib.sh owns the probe and arithmetic):
-# while the 1-minute load is above the throttle threshold, a launch less
-# than the throttled cycle interval after the previous publication's
-# launch (its generated_epoch) exits
-# 0 without publishing or starting a snapshot, and stale_after_secs counts
+# while the 1-minute load is above the throttle threshold, a launch more
+# than one base cycle short of the throttled cycle interval after the
+# previous publication's launch (its generated_epoch) exits 0 without publishing or starting a snapshot, and stale_after_secs counts
 # the throttled cycle, so the health verdict does not read the deliberate
 # gap as a dead publisher. A calm load restores the ordinary cadence on
 # the next launch.
@@ -860,9 +859,11 @@ heartbeat_on_signal() {
 # ago is still fresh enough, so this launch publishes nothing and exits 0 -
 # the snapshot fan-out it would have started is exactly the churn being
 # relieved. Age is measured between launches, from the prior ledger's
-# generated_epoch, so a launch paced one throttled interval after the prior
-# one publishes. The guard needs the watcher-passed cycle and a readable
-# prior generated_epoch; without either it never skips, and a calm load never
+# generated_epoch, and the guard skips only while that age is more than one
+# base cycle short of the throttled interval, so a launch paced about one
+# throttled interval after the prior one publishes even when startup
+# latency shifts either stamp by a few seconds. The guard needs the
+# watcher-passed cycle and a readable prior generated_epoch; without either it never skips, and a calm load never
 # skips, so the ordinary cadence returns as soon as the load falls back.
 heartbeat_throttle_skip() {
   local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} launched effective
@@ -872,7 +873,7 @@ heartbeat_throttle_skip() {
   launched=$(jq -r '.generated_epoch // empty' "$LEDGER" 2>/dev/null) || return 1
   case "$launched" in ''|*[!0-9]*) return 1 ;; esac
   effective=$(fm_load_interval "$cycle")
-  [ $((HEARTBEAT_EPOCH - launched)) -lt "$effective" ]
+  [ $((HEARTBEAT_EPOCH - launched)) -lt $((effective - cycle)) ]
 }
 
 if [ ! -d "$STATE" ]; then

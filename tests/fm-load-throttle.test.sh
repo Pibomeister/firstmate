@@ -213,6 +213,12 @@ test_heartbeat_publishes_when_calm_or_due() {
   run_heartbeat "$HB_HOME"
   assert_equals 1 "$(cat "$COUNT_FILE")" \
     "a launch one throttled interval after the prior launch skipped because the prior run published late"
+  heartbeat_fixture hb-jitter
+  seed_ledger "$HB_HOME" $((NOW_EPOCH - 399))
+  set_load 300.00
+  run_heartbeat "$HB_HOME"
+  assert_equals 1 "$(cat "$COUNT_FILE")" \
+    "a launch one second short of the throttled interval skipped, doubling the publication gap"
   pass "heartbeat publishes on the ordinary cadence when calm and again once a throttled interval elapses"
 }
 
