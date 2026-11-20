@@ -225,4 +225,20 @@ time.sleep(300)' "$lock" "$ready" &
   pass "ssh quoting, concurrent-run lock, crashed-run lock release and install failure"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure
+test_lingering_summarizer_helper_does_not_hold_lock() {
+  write_fixtures 0
+  cat > "$TMP_ROOT/linger-summarize.sh" <<SH
+#!/usr/bin/env bash
+cat >/dev/null
+sh -c 'sleep 120' "$TMP_ROOT/linger-helper" </dev/null >/dev/null 2>&1 &
+SH
+  chmod +x "$TMP_ROOT/linger-summarize.sh"
+  local home
+  home=$(make_home home7 "$TMP_ROOT/linger-summarize.sh")
+  run_digest "$home" >/dev/null || fail "first run with lingering summarizer failed"
+  run_digest "$home" >/dev/null 2>&1 || fail "background helper left by summarize_cmd kept the run lock held"
+  pkill -f "$TMP_ROOT/linger-helper" 2>/dev/null || true
+  pass "summarizer background helper does not hold the run lock"
+}
+
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock
