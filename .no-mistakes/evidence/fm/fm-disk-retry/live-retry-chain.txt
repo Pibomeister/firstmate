@@ -1,0 +1,40 @@
+lab home: /private/tmp/fm-lab.gOzcMn (disposable, fm-lab-home marked); disk via FM_TEST_SEAM volume + df fixture; routing provider = local systemone emulator on 127.0.0.1, shared_quota home; project has an unborn HEAD so the re-dispatched real fm-spawn stops before any worktree or agent launch (no spend)
+### A. Real bin/fm-spawn.sh refused at PAUSE (9 GiB) for ship-live and ship-moved (recorded routing: claude/opus/max)
+disk-alarm: PAUSE free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.UFPyqllEIe is under 10 GiB (9.0 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+ship-live spawn exit=
+disk-alarm: PAUSE free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.UFPyqllEIe is under 10 GiB (9.0 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+ship-moved spawn exit=
+--- records ---
+ship-live
+ship-moved
+
+### B. ship-moved is placed elsewhere (real fm-dispatch-log.sh)
+2026-11-20T00:52:31Z received g-moved-202611191900: summary=moved goal
+2026-11-20T00:52:31Z dispatched g-moved-202611191900: task=ship-moved note=placed on another host
+2026-11-20T00:52:31Z	1795135951	received	g-moved-202611191900	summary=moved goal
+2026-11-20T00:52:31Z	1795135951	dispatched	g-moved-202611191900	task=ship-moved note=placed on another host
+
+### C. Real scan still under PAUSE (9 GiB) -> nothing launched, no notification
+exit=0 out=[]
+ship-live
+ship-moved
+ls: /private/tmp/fm-lab.gOzcMn/state/.wake-queue: No such file or directory
+
+### D. Real scan after the alarm clears (20 GiB)
+check: disk alarm cleared (level=ok free_kib=20971520): dropped, already launched or placed elsewhere: ship-moved; re-dispatch failed, see state/disk-refused/.log.<task-id>: ship-live
+exit=0
+--- records left ---
+.log.ship-live
+.report.1795135967.2409
+--- fresh resolution for ship-live ---
+{"status":"clear","profile":{"harness":"codex","model":"gpt-5.1","effort":"low"}}
+--- ship-moved resolved? ---
+ls: /private/tmp/fm-lab.gOzcMn/data/ship-moved/dispatch-resolution.json: No such file or directory
+--- real fm-spawn output kept (.log.ship-live) ---
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/tmp/fm-lab.gOzcMn
+error: spawn refused: project /private/tmp/fm-lab.gOzcMn/projects/proj-unborn has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C /private/tmp/fm-lab.gOzcMn/projects/proj-unborn commit --allow-empty -m "chore: initial commit"', then spawn again
+--- wake queue ---
+1795135966	3	check	disk-retry	check: disk alarm cleared (level=ok free_kib=20971520): dropped, already launched or placed elsewhere: ship-moved; re-dispatch failed, see state/disk-refused/.log.<task-id>: ship-live
+
+### E. Repeat scan -> no second notification
+exit=0 out=[] wake_rows=1

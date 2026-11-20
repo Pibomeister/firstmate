@@ -1,0 +1,32 @@
+lab home: /private/tmp/fm-lab.gOzcMn (disposable, fm-lab-home marked); disk via FM_TEST_SEAM volume + df fixture; routing provider = local systemone emulator on 127.0.0.1, shared_quota home
+### A. Real bin/fm-spawn.sh refused at PAUSE (9 GiB) for two tasks
+disk-alarm: PAUSE free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.UFPyqllEIe is under 10 GiB (9.0 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+disk-alarm: PAUSE free space on /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.UFPyqllEIe is under 10 GiB (9.0 GiB free); no new crewmate launch. Place this work on another host or cloud. Do not retry it on this host.
+--- records ---
+ship-live
+ship-moved
+
+### B. ship-moved is placed elsewhere (real fm-dispatch-log.sh dispatched)
+fm-dispatch-log: unknown argument: g-moved
+fm-dispatch-log: unknown argument: g-moved
+tail: /private/tmp/fm-lab.gOzcMn/state/dispatch-log.tsv: No such file or directory
+
+### C. Real scan still under PAUSE (9 GiB) -> nothing
+exit=0 out=[]
+ship-live
+ship-moved
+
+### D. Real scan after clear (20 GiB)
+check: disk alarm cleared (level=ok free_kib=20971520): not re-dispatched, routing needs a decision, dispatch by hand: ship-live (clear on codex, but --account was recorded for claude) ship-moved (clear on codex, but --account was recorded for claude)
+exit=0
+--- records left ---
+.report.1795135867.48261
+--- fresh resolution for ship-live ---
+{"status":"clear","profile":{"harness":"codex","model":"gpt-5.1","effort":"low"}}
+--- real fm-spawn output (.log.ship-live) ---
+cat: /private/tmp/fm-lab.gOzcMn/state/disk-refused/.log.ship-live: No such file or directory
+--- wake queue ---
+1795135866	2	check	disk-retry	check: disk alarm cleared (level=ok free_kib=20971520): not re-dispatched, routing needs a decision, dispatch by hand: ship-live (clear on codex, but --account was recorded for claude) ship-moved (clear on codex, but --account was recorded for claude)
+
+### E. Repeat scan -> no second notification
+exit=0 out=[] wake_rows=       1
