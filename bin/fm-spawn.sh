@@ -5439,7 +5439,7 @@ if [ "$KIND" = secondmate ]; then
   if [ -n "$CLAIM_GUIDANCE" ]; then
     CLAIM_CHARTER="$PROJ_ABS/state/launch-charter.md"
     mkdir -p "$PROJ_ABS/state"
-    { cat "$BRIEF" && printf '\n%s\n' "$CLAIM_GUIDANCE"; } > "$CLAIM_CHARTER.tmp.$$" || exit 1
+    { cat "$BRIEF" && printf '\n%s\n' "$CLAIM_GUIDANCE"; } > "$CLAIM_CHARTER.tmp.$$" || { rm -f "$CLAIM_CHARTER.tmp.$$"; exit 1; }
     mv "$CLAIM_CHARTER.tmp.$$" "$CLAIM_CHARTER"
     BRIEF=$CLAIM_CHARTER
   fi

@@ -487,6 +487,7 @@ claim_init() { # [try|wait]
   CLAIM_TASK_LOCK=
   CLAIM_META_LOCK=
   CLAIM_RELEASE_TMP=
+  CLAIM_STAGE_TMP=
   [ ! -L "$CLAIM_DIR" ] || die "claim directory is a symlink"
   mkdir -p "$CLAIM_DIR" || die "cannot create claim directory"
   CLAIM_LOCK="$STATE/.ledger-claim.lock"
@@ -495,7 +496,7 @@ claim_init() { # [try|wait]
   else
     fm_lock_try_acquire "$CLAIM_LOCK" || die "another claim operation is in progress"
   fi
-  trap 'if [ -n "$CLAIM_RELEASE_TMP" ]; then rm -f "$CLAIM_RELEASE_TMP"; fi; if [ -n "$CLAIM_META_LOCK" ]; then fm_lock_release "$CLAIM_META_LOCK"; fi; if [ -n "$CLAIM_TASK_LOCK" ]; then fm_lock_release "$CLAIM_TASK_LOCK"; fi; fm_lock_release "$CLAIM_LOCK"' EXIT
+  trap 'if [ -n "$CLAIM_RELEASE_TMP" ]; then rm -f "$CLAIM_RELEASE_TMP"; fi; if [ -n "$CLAIM_STAGE_TMP" ]; then rm -f "$CLAIM_STAGE_TMP" "$CLAIM_STAGE_TMP.next"; fi; if [ -n "$CLAIM_META_LOCK" ]; then fm_lock_release "$CLAIM_META_LOCK"; fi; if [ -n "$CLAIM_TASK_LOCK" ]; then fm_lock_release "$CLAIM_TASK_LOCK"; fi; fm_lock_release "$CLAIM_LOCK"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   trap 'exit 129' HUP
@@ -664,10 +665,12 @@ cmd_claim() {
     token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
     [ "${#token}" = 32 ] || die "cannot create claim nonce"
     tmp=$(mktemp "$CLAIM_DIR/.receipt.XXXXXX") || die "cannot stage claim"
+    CLAIM_STAGE_TMP=$tmp
     jq -n --arg id "$id" --arg home "$FM_HOME" --arg project "$project" --arg path "$path" --arg token "$token" --arg snapshot "$snapshot" \
       '{version:2,id:$id,home:$home,project:$project,path:$path,token:$token,snapshot:$snapshot,phase:"reserved",launch_attempted:false}' > "$tmp" || die "cannot stage claim"
     claim_publication_authorized "$id" "$project" || return 1
     mv "$tmp" "$file" || die "cannot publish claim"
+    CLAIM_STAGE_TMP=
     claim_read "$id"
     claim_print "$id"
     return 0
@@ -708,6 +711,7 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
     CLAIM_PHASE=dispatching
   fi
   tmp=$(mktemp "$CLAIM_DIR/.receipt.XXXXXX") || die "cannot stage claim transition"
+  CLAIM_STAGE_TMP=$tmp
   jq --arg phase "$CLAIM_PHASE" '.phase=$phase' "$CLAIM_DIR/$id.json" > "$tmp" || die "cannot stage claim transition"
   if [ "$action" = begin ]; then
     jq '.version=2 | .launch_attempted=false' "$tmp" > "$tmp.next" || die "cannot stage dispatch fence"
@@ -718,6 +722,7 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
   fi
   if [ "$action" != finish ]; then claim_publication_authorized "$id" "$CLAIM_PROJECT" || return 1; fi
   mv "$tmp" "$CLAIM_DIR/$id.json" || die "cannot publish claim transition"
+  CLAIM_STAGE_TMP=
 }
 
 cmd_claim_release() { # <id> --token <nonce>
