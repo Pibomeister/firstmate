@@ -734,20 +734,38 @@ test_disabled_cache_skips_list_and_invalidate() {
 }
 
 test_timed_call_keeps_the_rest_of_its_function() {
-  local switch out
-  # A timed call runs its function as a background job; macOS /bin/bash 3.2 can
-  # replace that job with the CLI, which loses the captured body and every step after it.
+  local switch body after problems
+  # A timed call runs its function as a background job. macOS /bin/bash 3.2
+  # can replace that job with the CLI, which drops every step after the call.
+  # The call stays in the current shell so that replacement is visible.
+  # Both cache switches are recorded before any failure, so cache off and the
+  # steps after the call are visible in the same red run.
+  problems=
   for switch in 1 0; do
     setup_case "timed-$switch"
     FM_ORCA_READ_BODY='{"ok":true,"result":{"terminal":{"tail":["drawn"]}}}'
-    out=$(PATH="$CASE/fakebin:$PATH" FM_ORCA_CLI_CACHE="$switch" FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
+    PATH="$CASE/fakebin:$PATH" FM_ORCA_CLI_CACHE="$switch" FM_ORCA_CLI_CACHE_DIR="$FM_ORCA_CLI_CACHE_DIR" \
       FM_ORCA_LOG="$LOG" FM_ORCA_COUNT="$COUNT" FM_ORCA_LIST="$LIST" FM_ORCA_READ_BODY="$FM_ORCA_READ_BODY" \
-      bash -c '. "$1"; . "$2"
-        read_then_mark() { local body; body=$(fm_orca_cli terminal read --terminal term-a --json); printf "%s\nafter\n" "$body"; }
-        fm_run_timed_fn 10 read_then_mark' _ "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-orca-cli-cache.sh" 2>&1)
-    assert_contains "$out" '"drawn"' "cache=$switch: a timed read lost the CLI body: $out"
-    assert_contains "$out" after "cache=$switch: a timed read lost the steps after the CLI: $out"
+      /bin/bash -c '. "$1"; . "$2"
+        marker_dir=$3
+        read_then_mark() {
+          fm_orca_cli terminal read --terminal term-a --json > "$marker_dir/body.out"
+          printf "after\n" > "$marker_dir/after.out"
+        }
+        fm_run_timed_fn 10 read_then_mark' _ \
+        "$ROOT/bin/fm-timeout-lib.sh" "$ROOT/bin/fm-orca-cli-cache.sh" "$CASE"
+    body=$(cat "$CASE/body.out" 2>/dev/null || true)
+    after=$(cat "$CASE/after.out" 2>/dev/null || true)
+    case "$body" in
+      *'"drawn"'*) : ;;
+      *) problems="${problems}cache=$switch body missing;" ;;
+    esac
+    case "$after" in
+      *after*) : ;;
+      *) problems="${problems}cache=$switch after missing;" ;;
+    esac
   done
+  [ -z "$problems" ] || fail "a timed read lost the CLI body or the steps after it: $problems"
   pass "fm_orca_cli: a timed call keeps the CLI body and the rest of its function, cache on or off"
 }
 
