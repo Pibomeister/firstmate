@@ -140,7 +140,7 @@ def add_entry(rel, full):
         return
     try:
         st = os.lstat(full)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         return
     mode = st.st_mode
     parts = rel.split(b"/")
@@ -151,10 +151,30 @@ def add_entry(rel, full):
         node = cur.setdefault(parts[-1], {})
         if not isinstance(node, dict):
             sys.exit(1)
-        for name in sorted(os.listdir(full)):
-            if name == b".git":
-                continue
-            add_entry(rel + b"/" + name, os.path.join(full, name))
+        # Directories ride the file list so rsync creates them on the mirror;
+        # an unlisted empty directory would never arrive and verification
+        # would fail on every run.
+        files.append(rel)
+        if os.path.lexists(os.path.join(full, b".git")):
+            # A submodule or nested repository stages by its own Git rules,
+            # so its ignored files (credentials, dependencies, sockets)
+            # stay out of the manifest exactly like the top level's.
+            try:
+                sub_raw = subprocess.check_output(
+                    ["git", "-C", os.fsdecode(full), "ls-files", "-z",
+                     "--cached", "--others", "--exclude-standard"],
+                    stderr=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError:
+                sys.exit(1)
+            for sub_rel in sub_raw.split(b"\0"):
+                if sub_rel:
+                    add_entry(rel + b"/" + sub_rel, os.path.join(full, sub_rel))
+        else:
+            for name in sorted(os.listdir(full)):
+                if name == b".git":
+                    continue
+                add_entry(rel + b"/" + name, os.path.join(full, name))
     elif stat.S_ISLNK(mode):
         recent.append(rel)
         cur[parts[-1]] = ["link", os.fsdecode(os.readlink(full))]

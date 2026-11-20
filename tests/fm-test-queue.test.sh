@@ -1412,6 +1412,32 @@ test_remote_offload_hardening() {
   out=$( ( cd "$CASE/repo" && q run -- cat source ) 2>"$CASE/heal2.err") || fail 'quick-check self-heal run'
   assert_equals 'original-content' "$out" 'quick-check self-heal did not repair the mirror'
   assert_grep 'offloading to m3' "$CASE/heal2.err" 'self-heal run was not offloaded'
+  mkdir -p "$CASE/repo/empty-sub"
+  git -C "$CASE/repo" update-index --add --cacheinfo "160000,$sha,empty-sub" || fail 'empty gitlink fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c '[ -d empty-sub ] && echo dir-ok' ) 2>"$CASE/empty-sub.err") || fail 'empty gitlink run'
+  assert_equals dir-ok "$out" 'empty gitlink directory missing from snapshot'
+  assert_grep 'offloading to m3' "$CASE/empty-sub.err" 'empty gitlink directory was not offloaded'
+  git -C "$CASE/repo" rm -q --cached empty-sub 2>/dev/null || true
+  rmdir "$CASE/repo/empty-sub"
+  mkdir -p "$CASE/repo/nested"
+  git -C "$CASE/repo/nested" init -q 2>/dev/null || fail 'nested ignore fixture init'
+  printf 'inner\n' > "$CASE/repo/nested/inner.txt"
+  printf 'ignored.txt\npipe\n' > "$CASE/repo/nested/.gitignore"
+  printf 'must-not-stage\n' > "$CASE/repo/nested/ignored.txt"
+  mkfifo "$CASE/repo/nested/pipe" || fail 'nested fifo fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'printf "%s|%s" "$(cat nested/inner.txt)" "$([ -e nested/ignored.txt ] && echo present || echo absent)"' ) 2>"$CASE/nested-ignore.err") || fail 'nested ignore run'
+  assert_equals 'inner|absent' "$out" 'ignored file inside nested repo was staged'
+  assert_grep 'offloading to m3' "$CASE/nested-ignore.err" 'ignored special file inside nested repo aborted staging'
+  rm -rf "$CASE/repo/nested"
+  mkdir -p "$CASE/repo/repl"
+  printf 'inside\n' > "$CASE/repo/repl/file"
+  git -C "$CASE/repo" add repl/file
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm repl-fixture
+  rm -rf "$CASE/repo/repl"
+  printf 'now-a-file' > "$CASE/repo/repl"
+  out=$( ( cd "$CASE/repo" && q run -- cat repl ) 2>"$CASE/repl.err") || fail 'directory replaced by file run'
+  assert_equals 'now-a-file' "$out" 'directory replaced by file output'
+  assert_grep 'offloading to m3' "$CASE/repl.err" 'directory replaced by file crashed staging instead of offloading'
   PATH=$saved_path
   pass 'fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold'
 }
