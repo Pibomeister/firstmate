@@ -18,6 +18,9 @@
 # duration is informational. Scoring recomputes stall duration as end minus
 # start and handoff duration as detect minus start, and recomputes a heartbeat
 # age as epoch minus start. start on an hb row is the heartbeat published_epoch.
+# detect on an hb row is the first epoch at which that heartbeat is stale:
+# published_epoch plus its stale_after_secs plus 1, with a floor of 600 for the
+# bound. An hb row whose detect is - uses the 600 second bound.
 # ref is class:subject:start for a stall, the handoff nonce, order:<id>,
 # note:<id>, or - for an hb row.
 #
@@ -108,8 +111,11 @@ _fm_stall_json_epoch() { # <file> <key>
       p = index($0, needle)
       if (p == 0) next
       s = substr($0, p + length(needle))
+      if (!match(s, /^[ \t]*:[ \t]*[0-9]+/)) next
+      s = substr(s, 1, RLENGTH)
       sub(/^[^0-9]*/, "", s)
-      if (match(s, /^[0-9]+/)) { print substr(s, RSTART, RLENGTH); exit }
+      print s
+      exit
     }
   ' "$file"
 }
@@ -166,7 +172,7 @@ _fm_stall_missing_hb() { # <class> <subject>
 _fm_stall_hb_recovery_epoch() { # <class> <subject> <detect> <completion>
   awk -F '\t' -v c="$1" -v s="$2" -v d="$3" -v ended="$4" -v now="$FM_STALL_NOW" '
     NF == 10 && $2 == "hb" && $3 == c && $4 == s {
-      if ($1 >= d && $1 - $5 > 600) stale = 1
+      if ($1 >= d && ($6 ~ /^[0-9]+$/ ? $1 >= $6 + 0 : $1 - $5 > 600)) stale = 1
       if ($1 == now) { published = $5; current = 1 }
     }
     END {
@@ -264,22 +270,21 @@ _fm_stall_prepare() {
 }
 
 _fm_stall_record_hb() { # <file> <class> <subject>
-  local file=$1 cls=$2 sub=$3 published age detect
+  local file=$1 cls=$2 sub=$3 published bound detect
   published=$(_fm_stall_json_epoch "$file" published_epoch)
   if ! _fm_stall_is_num "$published"; then
     published=$(_fm_stall_json_epoch "$file" generated_epoch)
   fi
   _fm_stall_is_num "$published" || return 0
+  bound=$(_fm_stall_json_epoch "$file" stale_after_secs)
+  if ! _fm_stall_is_num "$bound" || [ "$bound" -lt 600 ]; then
+    bound=600
+  fi
+  detect=$((published + bound + 1))
   if ! _fm_stall_have_hb "$cls" "$sub" "$FM_STALL_NOW"; then
-    _fm_stall_append "$FM_STALL_NOW" hb "$cls" "$sub" "$published" - - - - - || return 1
+    _fm_stall_append "$FM_STALL_NOW" hb "$cls" "$sub" "$published" "$detect" - - - - || return 1
   fi
-  if [ "$FM_STALL_NOW" -ge "$published" ]; then
-    age=$((FM_STALL_NOW - published))
-  else
-    age=0
-  fi
-  if [ "$age" -gt 600 ]; then
-    detect=$((published + 601))
+  if [ "$FM_STALL_NOW" -ge "$detect" ]; then
     printf '1\t%s\t%s\t%s\t%s\n' "$cls" "$sub" "$published" "$detect" >> "$FM_STALL_WORK/signals.tsv" || return 1
   fi
 }
@@ -1056,6 +1061,7 @@ fm_stall_ledger_score() {
       subj[n] = $4
       st[n] = $5 + 0
       det[n] = $6 + 0
+      hbdet[n] = ($2 == "hb" && $6 ~ /^[0-9]+$/) ? $6 : ""
       who[n] = $7
       rend[n] = $8
       ref[n] = $10
@@ -1089,8 +1095,7 @@ fm_stall_ledger_score() {
           add("intervention", line[i])
         }
         if (ev[i] == "hb" && ep[i] >= since + 0 && ep[i] < until + 0) {
-          age = ep[i] - st[i]
-          if (age > 600 && !exempt(cls[i], subj[i], ep[i])) add("heartbeat-age", line[i])
+          if ((hbdet[i] != "" ? ep[i] >= hbdet[i] + 0 : ep[i] - st[i] > 600) && !exempt(cls[i], subj[i], ep[i])) add("heartbeat-age", line[i])
         }
         if (ev[i] != "stall-open") continue
         if (seen[ref[i]]) continue

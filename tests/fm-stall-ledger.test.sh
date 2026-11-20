@@ -303,6 +303,31 @@ test_observe_opens_and_closes_a_stale_heartbeat() {
   pass "a stale primary heartbeat opens one stall and a fresh one closes it as firstmate"
 }
 
+test_observe_uses_the_heartbeat_stale_bound() {
+  local home ledger start
+  home=$(new_home quiet-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 711))
+  printf '{\n  "schema": "fm-heartbeat.v1",\n  "published_epoch": %s,\n  "generated_epoch": %s,\n  "stale_after_secs": 771\n}\n' "$start" "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  assert_equals 0 "$(count_rows "$ledger" stall-open)" "a quiet home 711 seconds old under a 771 second bound is not a stall"
+  run_score "$home" "$T0" "$((T0 + 600))"
+  assert_equals PASS "$OUT" "the 711 second sample under a 771 second bound passes the score"
+  observe_ok "$home" "$((T0 + 61))"
+  awk -F '\t' -v start="$start" -v detect="$((start + 772))" '
+    $2 == "stall-open" && $5 == start && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "age 772 under a 771 second bound did not open a stall detected at published+772"
+
+  home=$(new_home null-bound-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 601))
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":null,"snapshot":{"schema":9999}}\n' "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "a null stale bound uses 600 seconds, not a later number"
+  pass "the stall ledger honors the heartbeat's own stale bound with a 600 second floor"
+}
+
 test_observe_watchdog_closes_only_on_done() {
   local home ledger actions start
   home=$(new_home wd-step)
@@ -987,6 +1012,7 @@ fm_test_run \
   test_rows_ignore_malformed_lines \
   test_observe_records_one_fresh_heartbeat \
   test_observe_opens_and_closes_a_stale_heartbeat \
+  test_observe_uses_the_heartbeat_stale_bound \
   test_observe_watchdog_closes_only_on_done \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
