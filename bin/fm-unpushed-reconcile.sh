@@ -51,7 +51,7 @@
 # the scan when no time is left. A timeout retains partial output,
 # names every discovered branch not yet resolved, and prints an actionable
 # incomplete-scan diagnostic. Exit 0 includes
-# findings/unknowns; usage or an invalid bound exits 2.
+# findings/unknowns; usage or an invalid bound or deadline exits 2.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
