@@ -451,7 +451,10 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # it would block every later ring. A busy Codex takes that Enter as a mid-turn
 # steer (docs/verification/runtime-backends.md, "Steering-inbox doorbell on a
 # busy Codex"), so a task whose record harness is codex submits it while busy
-# too. A paste placeholder
+# too. The same ownership proof runs before a fresh copy is typed, so a
+# composer whose shape the classifier cannot prove pending (a typed Claude
+# composer on a plain-capture backend reads `unknown`) is submitted rather
+# than concatenated onto. A paste placeholder
 # such as Codex's `[Pasted Content N chars]` is opaque and never proves
 # ownership, whatever its size. On both paths a lost first Enter gets one
 # retry, and only while the composer still holds exactly the owned copies.
@@ -471,6 +474,19 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   return "$rc"
 }
 
+# Submit a composer already proven to hold only our own doorbell: one Enter,
+# plus one retry when the first Enter is lost and the composer still holds
+# exactly the owned copies (a human typing meanwhile breaks the proof and
+# gets no second Enter).
+_fm_task_inbox_submit_held_doorbell() {  # <backend> <target> <line> <label> <record-path>
+  _fm_task_inbox_note_codex_turn_start "$5"
+  fm_backend_send_key "$1" "$2" Enter "$4" >/dev/null 2>&1 || return 2
+  sleep 0.3
+  fm_task_inbox_composer_holds "$1" "$2" "$3" "$4" || return 0
+  fm_backend_send_key "$1" "$2" Enter "$4" >/dev/null 2>&1 || return 2
+  return 0
+}
+
 _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label]
   local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
@@ -486,14 +502,25 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
         [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
       fi
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 1
-      _fm_task_inbox_note_codex_turn_start "$rec"
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      sleep 0.3
-      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      return 0
+      _fm_task_inbox_submit_held_doorbell "$backend" "$target" "$line" "$label" "$rec"
+      return $?
       ;;
   esac
+  # A composer the classifier cannot prove pending can still provably hold
+  # only our own doorbell (a plain-capture backend reads a typed Claude
+  # composer `unknown`): submit that held copy instead of typing another
+  # one onto it. The proof is the same exact-match as the pending path, so
+  # foreign text is never submitted; a busy non-Codex pane keeps its skip.
+  # T3 Code has no composer to hold text (its send is native), so it keeps
+  # the direct send below.
+  if [ "$backend" != t3code ] \
+    && fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label"; then
+    if [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" = busy ]; then
+      [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
+    fi
+    _fm_task_inbox_submit_held_doorbell "$backend" "$target" "$line" "$label" "$rec"
+    return $?
+  fi
   # Accepted residual race: terminal input and Enter are separate delivery
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not
@@ -523,20 +550,39 @@ _fm_task_inbox_note_codex_turn_start() {  # <record-path>
     || echo "fm-task-inbox: warning: could not record the codex turn start at ${dir%/*}/$task.turn-start; its busy state may read idle during this turn" >&2
 }
 
-# Whether the composer's content, ignoring line wrapping, is one or more whole
+# Whether <held>, whitespace-stripped like <line>, is one or more whole
 # copies of <line> and nothing else.
-fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
-  local cap held line
-  fm_backend_source "$1" || return 1
-  cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
-  held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
-  held=$(printf '%s' "$held" | tr -d '[:space:]')
-  line=$(printf '%s' "$3" | tr -d '[:space:]')
+_fm_task_inbox_is_doorbell_copies() {  # <held> <line>
+  local held=$1 line=$2
   [ -n "$held" ] && [ -n "$line" ] || return 1
   while [ "${held#"$line"}" != "$held" ]; do
     held=${held#"$line"}
   done
   [ -z "$held" ]
+}
+
+# Whether the composer's content, ignoring line wrapping, is one or more whole
+# copies of <line> and nothing else.
+# Orca lifts the text on the cursor's prompt row out of its capture tail into
+# a separate draft field (bin/backends/orca.sh, fm_backend_orca_draft_text),
+# so a wrapped doorbell reads back split across the two: the tail extraction
+# alone is then a doorbell prefix, never whole copies, and every re-ring
+# skipped it as foreign pending text. The cursor sits at the end of typed
+# input, so the draft chunk follows the tail rows; only the concatenation is
+# judged, and anything else in either part still fails the proof.
+fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
+  local cap held line draft
+  fm_backend_source "$1" || return 1
+  cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
+  held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
+  held=$(printf '%s' "$held" | tr -d '[:space:]')
+  line=$(printf '%s' "$3" | tr -d '[:space:]')
+  _fm_task_inbox_is_doorbell_copies "$held" "$line" && return 0
+  [ "$1" = orca ] || return 1
+  draft=$(fm_backend_orca_draft_text "$2" 2>/dev/null) || return 1
+  draft=$(printf '%s' "$draft" | tr -d '[:space:]')
+  [ -n "$draft" ] || return 1
+  _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
 }
 
 # The harness recorded for the task that owns <record-path>, from the task's
