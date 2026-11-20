@@ -5797,7 +5797,7 @@ test_closed_exit_picker_drops_saved_dialog_name() {
 }
 
 test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
-  local dir state fakebin capture_file window key status_line before_out due_out repeat_out
+  local dir state fakebin capture_file window status_line before_out due_out repeat_out
   dir=$(make_case p0-blocker-ten-minutes); state="$dir/state"; fakebin="$dir/fakebin"
   capture_file="$dir/pane.txt"; window="test:fm-p0-worker"
   before_out="$dir/before.out"; due_out="$dir/due.out"; repeat_out="$dir/repeat.out"
@@ -5825,8 +5825,7 @@ test_p0_blocker_surfaces_exact_text_once_at_ten_minutes() {
     "$WATCH" > "$due_out" || fail "the P0 deadline cycle failed: $(cat "$due_out")"
   grep -Fx "stale: $window (P0 blocker open for 600s: $status_line)" "$due_out" >/dev/null \
     || fail "the ten-minute alarm did not preserve the exact blocker text: $(cat "$due_out")"
-  key=$(watch_window_key "$window")
-  assert_present "$state/.p0-blocker-surfaced-$key" "the P0 alarm left no once-only marker"
+  assert_present "$state/.p0-blocker-surfaced-p0-worker" "the P0 alarm left no once-only marker"
   ack_stopped_cycle "$state" >/dev/null || fail "the first P0 alarm could not be acknowledged"
 
   printf '%s\n' 'blocked [at=1650]: deployment key is unavailable' >> "$state/p0-worker.status"
@@ -5878,7 +5877,7 @@ test_p0_alarms_scan_all_workers_before_sibling_signals() {
 
 
 test_p0_blocker_fold_preserves_open_keys_and_ages() {
-  local dir state fakebin out window id now key status_line
+  local dir state fakebin out window id now status_line
   dir=$(make_case p0-blocker-fold); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/out"; window=test:fm-p0-fold; id=p0-fold
   mkdir -p "$dir/config"
@@ -5927,8 +5926,7 @@ test_p0_blocker_fold_preserves_open_keys_and_ages() {
         ;;
     esac
   done
-  key=$(watch_window_key "$window")
-  assert_absent "$state/.p0-blocker-surfaced-$key" "a terminal task retained blocker alarm state"
+  assert_absent "$state/.p0-blocker-surfaced-$id" "a terminal task retained blocker alarm state"
   pass "P0 alarms follow open keys, retain opening ages, and retire resolved episodes"
 }
 

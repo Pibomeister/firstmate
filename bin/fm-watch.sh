@@ -154,7 +154,9 @@
 #                          timestamp diagnostics without claiming an elapsed age.
 #                          Resolving another key does not close them. Opening
 #                          event identities preserve once-only delivery across
-#                          note updates and distinguish identical reopens.
+#                          note updates and distinguish identical reopens, and
+#                          delivery is recorded per task, so a recovered worker
+#                          on a new endpoint is not re-alarmed for an opening.
 #                          The incremental fold avoids rereading unchanged logs;
 #                          declaration text is read only for due, unsurfaced
 #                          blockers. Independent of open-decision reminders.
@@ -696,7 +698,9 @@ p0_blocker_alarm() {  # <window> <task>
   meta="$STATE/$task.meta"
   [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
   statusf="$STATE/$task.status"
-  marker="$STATE/.p0-blocker-surfaced-$(window_key "$win")"
+  # Keyed by task, not endpoint: recovery can give the task a new terminal
+  # while keeping its status log, and that must not re-alarm a surfaced opening.
+  marker="$STATE/.p0-blocker-surfaced-$task"
   if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
     rm -f "$marker"
     return 0
