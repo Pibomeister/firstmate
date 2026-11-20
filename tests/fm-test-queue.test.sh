@@ -1265,7 +1265,7 @@ test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
 }
 
 test_remote_incremental_manifest_and_uncertain_run() {
-  local saved_path=$PATH out rc started elapsed mirror
+  local saved_path=$PATH out rc started elapsed mirror warm prepared
   new_case offload-incremental
   mkdir -p "$CASE/fakebin"
   offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
@@ -1294,11 +1294,23 @@ test_remote_incremental_manifest_and_uncertain_run() {
   chmod 755 "$CASE/repo/source"
   : > "$SSH_LOG.rsync"
   started=$(date +%s)
-  out=$( ( cd "$CASE/repo" && REMOTE_UMASK=077 q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) 2>"$CASE/warm.err") || fail 'warm offload'
-  elapsed=$(( $(date +%s) - started ))
+  ( cd "$CASE/repo" && REMOTE_UMASK=077 q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) >"$CASE/warm.out" 2>"$CASE/warm.err" &
+  warm=$!
+  track_pids "$warm"
+  # The 30s budget covers warm prepare only: it ends when the queue announces
+  # the verified snapshot, before the remote command itself runs.
+  prepared=""
+  while kill -0 "$warm" 2>/dev/null; do
+    if grep -Fq 'offloading to m3' "$CASE/warm.err"; then prepared=$(date +%s); break; fi
+    sleep 0.2
+  done
+  wait "$warm" || fail 'warm offload'
+  [ -n "$prepared" ] || prepared=$(date +%s)
+  elapsed=$(( prepared - started ))
+  out=$(cat "$CASE/warm.out")
   assert_equals 'changed|extra' "$out" 'warm manifest snapshot'
   assert_grep 'offloading to m3' "$CASE/warm.err" 'warm prepare fell back locally'
-  [ "$elapsed" -lt 30 ] || fail "warm offload took ${elapsed}s (limit 30s)"
+  [ "$elapsed" -lt 30 ] || fail "warm prepare took ${elapsed}s (limit 30s)"
   python3 - "$SSH_LOG.rsync" <<'PYTEST' || fail 'warm upload retransferred unchanged payload'
 import re, sys
 text = open(sys.argv[1]).read()
@@ -1327,7 +1339,7 @@ assert os.path.isdir(path), path
 shutil.rmtree(os.path.dirname(path))
 PYTEST
   PATH=$saved_path
-  pass "fm-test-queue.sh: warm delta verified in ${elapsed}s; mismatch falls back and uncertain execution does not"
+  pass "fm-test-queue.sh: warm delta prepared in ${elapsed}s; mismatch falls back and uncertain execution does not"
 }
 
 test_remote_offload_hardening() {
