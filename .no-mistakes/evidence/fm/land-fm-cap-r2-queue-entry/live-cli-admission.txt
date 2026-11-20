@@ -1,0 +1,22 @@
+$ FM_TEST_RUN_QUEUE=on bin/fm-test-run.sh --family pure-contract-unit
+fm-test-run: FM_TEST_RUN_QUEUE must be auto or off (got 'on')
+exit=2
+
+$ bin/fm-test-run.sh --family pure-contract-unit &   (private queue, load 5 > ceiling 2)
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=1 stale=0 spool=/tmp/fmq-live.Sr0P/spool
+waiting position=1 ticket=1 pid=22546 age=2s task=- label=fm-test-run family=pure-contract-unit
+
+$ bin/fm-test-run.sh --family pure-contract-unit --list | head -3   (inspection never queues)
+tests/fm-agent-kit-pin.test.sh
+tests/fm-agy-harness.test.sh
+tests/fm-arm-pretool-check.test.sh
+
+$ GITHUB_ACTIONS=true FM_TEST_RUN_QUEUE=auto bin/fm-test-run.sh --list --all | wc -l
+     423
+
+broad run still waiting (no script started): yes
+tester stopped the waiting broad run: exit=143
+fm-test-queue: ticket 1, position 1: load 5 is not below 2
+$ bin/fm-test-queue.sh status  (after stop)
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=0 stale=0 spool=/tmp/fmq-live.Sr0P/spool

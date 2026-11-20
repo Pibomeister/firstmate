@@ -1,0 +1,20 @@
+# load=5, ceiling=2: broad --all must wait in line
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=1 stale=0 spool=/tmp/fmq2.OKqnb7/spool
+waiting position=1 ticket=1 pid=22160 age=1s task=- label=fm-test-run all
+# while it waits, a targeted run starts at once (no ticket)
+targeted rc=2 elapsed=1s
+fm-test-run: test script not found: tests/fm-test-queue-remote.test.sh
+$ bin/fm-test-queue.sh status (broad still waiting, scripts not started)
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=1 stale=0 spool=/tmp/fmq2.OKqnb7/spool
+waiting position=1 ticket=1 pid=22160 age=2s task=- label=fm-test-run all
+all.err so far:
+fm-test-queue: ticket 1, position 1: load 5 is not below 2
+# FM_TEST_RUN_QUEUE=off: same broad run starts at once, no ticket
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=0 stale=0 spool=/tmp/fmq2.OKqnb7/spool
+off.err:
+fm-test-run: gate skip: tests/fm-backend-tern-smoke.test.sh: tern not found
+tern scripts running: yes
+# GITHUB_ACTIONS=true under auto: no ticket
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=0 stale=0 spool=/tmp/fmq2.OKqnb7/spool

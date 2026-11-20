@@ -1,0 +1,19 @@
+$ bin/fm-test-run.sh --list --family tern   (inspection: never queues)
+tests/fm-backend-tern-smoke.test.sh
+tests/fm-backend-tern.test.sh
+rc=0
+$ (load=5 > ceiling=2) bin/fm-test-run.sh --family tern --json $T/tern.json &
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=0 stale=0 spool=/tmp/fmq.eIFdIN/spool
+$ (same load) bin/fm-test-run.sh tests/fm-test-queue-remote.test.sh  -- targeted, must not wait
+$ lower load to 0.5
+broad rc=0
+--- broad stderr (tail)
+fm-test-run: gate skip: tests/fm-backend-tern-smoke.test.sh: tern not found
+fm-test-run: wrote timing artifact: /tmp/fmq.eIFdIN/tern.json
+--- artifact selection
+family=tern
+$ FM_TEST_RUN_QUEUE=bogus bin/fm-test-run.sh --family tern
+fm-test-run: FM_TEST_RUN_QUEUE must be auto or off (got 'bogus')
+rc=2
+$ (load=5) FM_TEST_RUN_QUEUE=off bin/fm-test-run.sh --family tern
