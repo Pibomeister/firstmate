@@ -538,10 +538,12 @@ SHREMOTE
       fi
       rm -rf "$REMOTE_LOCAL/cold-repo"
     fi
+    # The small stage (manifest, queue scripts, Git objects) always syncs by
+    # checksum: a stale manifest of equal size and second must not be skipped.
     echo "fm-test-queue: syncing snapshot delta to $host" >&2
     if { [ ! -s "$REMOTE_LOCAL/files" ] || rsync "-a$heal_c" --force --files-from="$REMOTE_LOCAL/files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
       { [ ! -s "$REMOTE_LOCAL/recent_files" ] || rsync -ac --force --files-from="$REMOTE_LOCAL/recent_files" --from0 --no-whole-file -z -e "$transport" "$root/" "$host:$cache/snapshot/repo/" >/dev/null 2>&1; } &&
-      rsync -a --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$cache/snapshot/" >/dev/null 2>&1 &&
+      rsync -ac --no-whole-file -z -e "$transport" "$REMOTE_LOCAL/stage/" "$host:$cache/snapshot/" >/dev/null 2>&1 &&
       remote_ssh "$host" "python3 -c $(remote_quote "$finalize") $(remote_quote "$cache") $(remote_quote "$dir") $(remote_quote "$git_mode") $(remote_quote "$local_head") $(remote_quote "$local_tree") $(remote_quote "$manifest_sha") && cd $(remote_quote "$dir/repo$rel") && $(remote_lock_release "$(remote_quote "$cache")")" </dev/null >/dev/null 2>&1; then
       REMOTE_CACHE=""
       rm -f "$heal_marker"

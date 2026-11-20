@@ -1119,6 +1119,11 @@ while [ "$#" -gt 1 ]; do
   if [ "$1" = -e ]; then shift 2; else args+=("$1"); shift; fi
 done
 dest=${1#*:}
+if [ "${MIRROR_SAME_STAMP:-}" = 1 ] && [ -f "$dest/manifest" ] && [ -f "${args[${#args[@]}-1]}/manifest" ]; then
+  # The mirror's stale manifest carries the new one's size and second, as when
+  # two runs stage within one second; a quick check alone would skip it.
+  touch -r "${args[${#args[@]}-1]}/manifest" "$dest/manifest"
+fi
 "$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
 if [ "${CORRUPT_SNAPSHOT:-}" = 1 ] && [ -d "$dest/repo" ]; then printf stale > "$dest/repo/source"; fi
 if [ -f "$dest/manifest" ] && [ "${STEAL_LOCK:-}" = 1 ]; then
@@ -1387,8 +1392,9 @@ test_remote_offload_hardening() {
   out=$( ( cd "$CASE/repo" && FOREIGN_SNAPSHOT=1 q run -- cat source ) 2>"$CASE/foreign.err") || fail 'foreign snapshot run'
   assert_equals 'original-content' "$out" 'run admitted another worktree snapshot instead of falling back locally'
   assert_grep 'no remote prepared' "$CASE/foreign.err" 'foreign manifest was accepted'
-  out=$( ( cd "$CASE/repo" && STEAL_LOCK=1 q run -- echo stolen-ok ) 2>"$CASE/steal.err") || fail 'reclaimed lock run'
+  out=$( ( cd "$CASE/repo" && MIRROR_SAME_STAMP=1 STEAL_LOCK=1 q run -- echo stolen-ok ) 2>"$CASE/steal.err") || fail 'reclaimed lock run'
   assert_equals stolen-ok "$out" 'run whose lock was reclaimed did not complete'
+  assert_grep 'offloading to m3' "$CASE/steal.err" 'same-size, same-second stale mirror manifest was not replaced'
   assert_grep 'host=successor' "$mirror/lock/owner" 'a run released the lock its successor reclaimed'
   rm -f "$mirror/lock/owner"
   rmdir "$mirror/lock"
