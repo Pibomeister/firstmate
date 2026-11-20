@@ -38,13 +38,13 @@ It stops at the finding, routes the decision to firstmate, and applies only the 
 
 A no-mistakes step parked at `awaiting_approval` is a council or captain decision by default, answered with `no-mistakes axi respond --action approve` or a hold.
 The merge or release that approving would unblock does not by itself make the step human-only.
-It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, spend, secrets, production or shared-database writes, messages to people, or sign-in.
+It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push, spend, secrets, production or shared-database writes, PII, messages to people, deletion, or sign-in.
 When a once-rerun fails only on a known load-sensitive timing test the PR cannot reach, default to approve the park and label it "approved, not clean".
 The alternative to approving is a scheduled low-load rerun, never a hold for the human on that evidence alone.
 A failed once-rerun does not by itself bar approving, and an extra isolated green run is evidence to weigh, not fishing that disqualifies it.
 That default stands at full strength when a standing order already accepts flaky-test risk or merges gate-green work with no per-PR approval.
 When a later standing order or supervisor nudge contradicts a hold-for-human ruling, the ruling gets a documented revisit on the new evidence, through `bin/fm-watchdog.sh council --revisit` where a council ruled.
-Re-asking on contradicting evidence is a revisit, not fishing, and the prior ruling is archived with the revisit record rather than silently re-rolled.
+Re-asking on contradicting evidence is a revisit, not fishing, and the prior ruling is archived only once the revisit publishes its own record, never silently re-rolled; a revisit that fails leaves the prior ruling standing.
 Every escalation, nudge, and status line about a parked step names the work by PR number, never by a goal alias such as G1 or G3 alone.
 The parked question itself goes on the visible status line: PR number, run id, the failing finding, the options, and how long it has waited.
 `bin/fm-crew-state.sh` mints those parts as structured components of its parked line, and a captain-facing escalation carries them in the captain's nouns.

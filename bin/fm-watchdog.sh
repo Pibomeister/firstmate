@@ -12,8 +12,10 @@
 #                                 complete file, else its complete open decision; records over
 #                                 2000 characters are refused. --revisit (with --record-file
 #                                 carrying a later order or nudge that contradicts the recorded
-#                                 outcome) archives that outcome under data/watchdog/revisits/
-#                                 and convenes once more. Dry-run never returns an answer. Prints
+#                                 outcome) convenes once more and, only when that council
+#                                 publishes a ruling or no-ruling record, archives the prior
+#                                 outcome under data/watchdog/revisits/; any other result
+#                                 leaves the prior outcome in place. Dry-run never returns an answer. Prints
 #                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
 #                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
 #   status                        Print the status file.
@@ -988,7 +990,7 @@ wd_council_record() {
   done
 }
 
-# wd_council <task> <key> <summary>: blind seats; prints
+# wd_council <task> <key> <summary> [<prior> <archive>]: blind seats; prints
 # `outcome TAB answer TAB record TAB seats`.
 #   unanimous  every seat gave the same PROCEED; a ruling file is written.
 #   no-ruling  a seat answered and the seats did not all agree; a record is written.
@@ -996,9 +998,11 @@ wd_council_record() {
 #   refused    the seats span fewer than two model families; no seat is called.
 #   busy       another convening of this decision is running.
 # A ruling or no-ruling record is final for its task and key: the caller checks
-# wd_council_record first, and this function never overwrites one.
+# wd_council_record first, and this function never overwrites one, except for a
+# revisit naming that record as <prior>: it is moved to <archive> under the lock
+# only when the new record publishes, and is otherwise left in place.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
+  local task=$1 key=$2 summary=$3 prior=${4:-} archive=${5:-} cur seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
   local WD_CALL_MAX_USD WD_CALL_TIMEOUT
   if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
     printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
@@ -1014,7 +1018,8 @@ wd_council() {
   lock=$WD/council-locks/$locator
   mkdir -p "$WD/council-locks"
   if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
-  if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  cur=$(wd_council_record "$task" "$key" | cut -f3)
+  if [ "$cur" != "$prior" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
   tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   if fm_wd_known_unreachable_timing_flake "$summary"; then
     flake_note='This record describes a known unreachable timing flake: default to PROCEED A (approve the park, labeled approved, not clean) when A is the approve option, unless the record also names a human-only category in the line above.
@@ -1024,7 +1029,7 @@ wd_council() {
 task: $task
 key: $key
 record: $summary
-If the record itself asks for a merge, a release, a deploy, money, credentials, security, production data, a sign-in, or deletion, or says the owner reserved it, answer HOLD.
+If the record itself asks for a merge, a release, a deploy, a publish, a force-push, money, credentials, security, production data, PII, a sign-in, or deletion, or says the owner reserved it, answer HOLD.
 A no-mistakes awaiting_approval step is a council decision: a merge or release the step would unblock does not by itself make it the owner's, and a failed once-rerun or an extra isolated green run is evidence to weigh, never a reason to refuse the question.
 ${flake_note}If the record offers options and one is clearly recommended or clearly safest for continuing work, answer PROCEED followed by that option's label (for example PROCEED A or PROCEED 2).
 Otherwise answer HOLD.
@@ -1061,9 +1066,13 @@ Reply with exactly one line: PROCEED <label> or HOLD."
     fi &&
     printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
     printf 'Record:\n\n%s\n' "$summary"
-  } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
+  } > "$record.tmp" && [ ! -d "$record" ] &&
+    { [ -z "$prior" ] || { mkdir -p "$(dirname "$archive")" && cp -p "$prior" "$archive"; }; } &&
+    mv "$record.tmp" "$record"; then
+    [ -z "$prior" ] || [ "$prior" = "$record" ] || rm -f "$prior"
     fm_lock_release "$lock"
   else
+    [ -z "$prior" ] || rm -f "$archive" 2>/dev/null
     rm -f "$record.tmp" 2>/dev/null
     fm_lock_release "$lock"
     printf 'failed\t\t\t%s\n' "$answers"
@@ -1095,7 +1104,7 @@ wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
 # Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
 # It types nothing and nudges nobody; the caller applies the result.
 cmd_council() {
-  local task='' key='' home='' file='' summary res id rec revisit=0 prior_path archive detail
+  local task='' key='' home='' file='' summary res id rec revisit=0 prior_path='' archive='' detail
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --task) task=${2:?--task needs a task id}; shift ;;
@@ -1150,17 +1159,15 @@ cmd_council() {
   detail="$task $key (on demand)"
   if [ -n "$rec" ]; then
     # A documented revisit: a later standing order or supervisor nudge in the
-    # new record file contradicts the recorded outcome. Archive that outcome
-    # under data/watchdog/revisits/ and convene once more on the new record;
-    # re-asking on contradicting evidence is a revisit, not a re-roll.
+    # new record file contradicts the recorded outcome. Convene once more on
+    # the new record; the prior outcome moves to data/watchdog/revisits/ only
+    # when the new council publishes, so a failed revisit erases nothing.
     prior_path=$(printf '%s' "$rec" | cut -f3)
-    mkdir -p "$OUT/revisits"
     archive="$OUT/revisits/$(basename "${prior_path%.md}")-$(wd_now)-$id.md"
-    mv "$prior_path" "$archive" || die "cannot archive the prior council record for a revisit: $prior_path"
-    detail="$task $key (revisit; prior archived at $archive)"
+    detail="$task $key (revisit of $prior_path)"
   fi
   wd_rec "$id" "decision:$key" council pending "$detail"
-  res=$(wd_council "$task" "$key" "$summary")
+  res=$(wd_council "$task" "$key" "$summary" "$prior_path" "$archive")
   wd_council_ledger "$id" "$task" "$key" "$res"
   case "$res" in
     unanimous*) wd_council_line ruled "$(printf '%s' "$res" | cut -f2)" "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
