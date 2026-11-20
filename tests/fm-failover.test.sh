@@ -172,6 +172,11 @@ test_order_file() {
     expect_code 2 "$RC" "a malformed line '$bad'"
     assert_contains "$OUT" 'error: config/failover-order line 1' "the refusal of '$bad' names its line"
   done
+  mkdir -p "$ACCTS/x/same" "$ACCTS/y/same"
+  printf 'claude@%s/x/same\nclaude@%s/y/same\n' "$ACCTS" "$ACCTS" > "$LAB/config/failover-order"
+  fo worker nobody
+  expect_code 2 "$RC" "two Claude accounts sharing a label"
+  assert_contains "$OUT" 'share the label claude@same' 'the refusal names the shared label'
   pass 'order: the default, every entry form, off, min-5h, and each malformed line'
 }
 
@@ -185,7 +190,8 @@ test_refusal_detector() {
   done <<'ROWS'
 rate_limit|⏺ API Error: Request rejected (429) · This request would exceed your account's rate limit.
 rate_limit|■ stream error: unexpected status 429 Too Many Requests: rate_limit_exceeded
-rate_limit|Error: rate limit exceeded, retry later
+rate_limit|API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}
+rate_limit|API Error: Rate limit reached for requests
 billing|⏺ Credit balance is too low
 billing|  ⎿  Credit balance too low · Add funds: https://platform.claude.com/settings/billing
 billing|API Error: 402 {"error":{"message":"Your payment is past due"}}
@@ -195,18 +201,34 @@ billing|You're out of extra usage · resets 5pm
 billing|■ error: insufficient_quota - You exceeded your current quota
 usage_limit|You've hit your limit · resets 3pm (Europe/Madrid)
 usage_limit|⎿ Usage limit reached ∙ resets 9pm
+usage_limit|Claude usage limit reached. Your limit will reset at 5pm
+usage_limit|■ You've hit your usage limit. Upgrade to Pro or try again in 2 hours.
 none|API Error: 529 overloaded
 none|I fixed the rate limit handling and the 429 path in the API error code
 none|12 + API Error: Request rejected (429)
 none|- Credit balance is too low
 none|The credit balance too low path now returns 402
 none|+ API Error: Request rejected (429)
+none|  ⎿  Error: File content (34291 tokens) exceeds maximum allowed tokens (25000)
+none|Error: build failed after 14290ms
+none|    error: unexpected status 4290 from mock
+none|• API Error: 500 {"type":"error"} at line 429
+none|     Error: Request failed with status code 429
+none|⏺ Error: rate limit test fixture now returns 429 as expected
+none|Error: too many requests to npm registry
+none|Error: rate limit exceeded, retry later
+none|Error: billing tests failed after the past due fixture changed
+none|Usage limit reached for the GitHub API in my test, retrying later
+none|You have hit your limit on PRs today, so I stopped
+none|Credit balance too low responses now map to billing
+none|  ⎿  API Error (429 {"type":"error"}) · Retrying in 5 seconds… (attempt 2/10)
+none|API Error: Request rejected (14290)
 ROWS
   got=$(fm_wd_provider_error_screen "$(printf 'API Error: Request rejected (429)\n'; for row in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'later output %s\n' "$row"; done)") || got=none
   [ "$got" = none ] || fail "a refusal above the last 12 rows must not count, got $got"
   got=$(fm_wd_provider_error_screen "$(printf 'older\n\n⏺ Credit balance is too low\n\n❯ \n')") || got=none
   [ "$got" = billing ] || fail "an idle screen ending on a billing refusal must class billing, got $got"
-  pass 'detector: 429, rate-limit, usage-limit, billing, past-due, subscription, and quota rows class; prose, diff rows, and old rows do not'
+  pass 'detector: 429, rate-limit, usage-limit, billing, past-due, subscription, and quota rows class; prose, tool errors, digit substrings, retry rows, diff rows, and old rows do not'
 }
 
 test_stop_failure_record() {
@@ -254,7 +276,7 @@ test_worker_429_moves_to_the_next_runtime() {
   assert_contains "$OUT" 'candidate runtime=codex eligible verdict=ok' 'codex is measured and eligible'
   assert_contains "$OUT" 'switched task=w1 from=claude to=codex reason=rate_limit' 'the switch names both runtimes and the reason'
   expect_code 1 "$(control_calls)" "one relaunch"
-  assert_equals "w1 relaunch --harness codex --note" "$(control_arg 1 0) $(control_arg 1 1) $(control_arg 1 2) $(control_arg 1 3) $(control_arg 1 4)" 'the relaunch goes through fm-control in place'
+  assert_equals "w1 relaunch --harness codex --provider-failover --note" "$(control_arg 1 0) $(control_arg 1 1) $(control_arg 1 2) $(control_arg 1 3) $(control_arg 1 4) $(control_arg 1 5)" 'the relaunch goes through fm-control in place'
   assert_equals s1.w1 "$(cat "$LAB/control.gen.1")" 'the relaunch is bound to the refused incarnation'
   local note
   note=$(sed -n '6,$p' "$LAB/control.argv.1")
@@ -306,7 +328,18 @@ test_worker_walks_the_order() {
   expect_code 1 "$RC" "an unverified usage-limit picker"
   expect_code 1 "$(control_calls)" "relaunches at an unverified usage-limit picker"
   assert_contains "$OUT" 'none task=w3 from=claude reason=rate_limit why=every_relaunch_failed' 'no runtime took over'
-  pass 'walk: a failed relaunch moves on, a pre-stop refusal or an unverified usage-limit picker stops'
+  reset_lab
+  make_worker w3 claude
+  FM_FAILOVER_DEADLINE=$(( $(date +%s) + 10 )) fo worker w3
+  expect_code 1 "$RC" "a walk with less than the minimum relaunch time left"
+  assert_contains "$OUT" 'none task=w3 from=claude reason=rate_limit why=deadline_before_codex' 'the walk stops before a relaunch it cannot finish'
+  expect_code 0 "$(control_calls)" "relaunches started past the deadline"
+  reset_lab
+  make_worker w3 claude
+  FM_FAILOVER_DEADLINE=$(( $(date +%s) + 200 )) fo worker w3
+  expect_code 0 "$RC" "a walk with time left: $OUT"
+  assert_contains "$OUT" 'switched task=w3 from=claude to=codex' 'a relaunch inside the deadline runs'
+  pass 'walk: a failed relaunch moves on, a pre-stop refusal, an unverified usage-limit picker, or the deadline stops'
 }
 
 test_worker_candidates_and_skips() {
@@ -326,6 +359,13 @@ test_worker_candidates_and_skips() {
   assert_not_contains "$OUT" 'runtime=claude@A' 'the refused account is never a candidate'
   assert_contains "$OUT" 'switched task=w4 from=claude@A to=claude@B' 'another signed-in account takes over'
   assert_equals "--account $ACCTS/B" "$(control_arg 1 4) $(control_arg 1 5)" 'the account goes to fm-control'
+
+  rm -f "$LAB/control.n"
+  make_worker w4u claude
+  CLAUDE_CONFIG_DIR="$ACCTS/A" fo worker w4u
+  expect_code 0 "$RC" "an unpinned claude worker: $OUT"
+  assert_not_contains "$OUT" 'runtime=claude@A ' 'the inherited account that refused an unpinned worker is never a candidate'
+  assert_contains "$OUT" 'switched task=w4u from=claude to=claude@B' 'an unpinned worker moves off the inherited account'
 
   reset_lab
   make_worker w5 claude
@@ -413,6 +453,52 @@ test_captain_429_and_billing_start_a_successor() {
   pass 'captain 429 and billing: a handoff and a verified successor on the next runtime, recorded; refused without the lock, work, or every order'
 }
 
+# hook_primary: a plain checkout that passes the primary-home check, so the
+# captain StopFailure hook acts on it.
+hook_primary() {
+  local p="$TMP_ROOT/primary"
+  rm -rf "$p"
+  mkdir -p "$p/bin"
+  printf '# lab\n' > "$p/AGENTS.md"
+  git -C "$p" init -q >/dev/null 2>&1 || fail 'fixture: no primary checkout'
+  printf '%s\n' "$p"
+}
+
+test_captain_hook_429_and_billing_start_a_successor() {
+  local primary class err doc
+  primary=$(hook_primary)
+  for class in rate_limit billing; do
+    captain_world
+    err=rate_limit; [ "$class" = rate_limit ] || err=billing_error
+    lab_dispatch "g-hook-$class" captain
+    printf '%s' "$(payload "$err" 'API Error')" | FM_ROOT_OVERRIDE="$primary" bash "$FO" hook captain
+    expect_code 0 "$?" "the captain hook exits 0 after $err"
+    assert_contains "$(cat "$LAB/state/failover-captain.log")" "switched task=captain from=claude@ordinary to=codex reason=$class" \
+      "the $err hook starts a codex successor in its own process"
+    doc=$(sed -n 's/^handoff doc=//p' "$LAB/state/failover-captain.log")
+    [ -f "$doc" ] || fail "the $err hook wrote no handoff document"
+    assert_contains "$(cat "$doc")" "$class refusal" "the handoff after $err says why the successor started"
+    assert_equals "--harness codex --reason failover_$class $doc" "$(tr '\n' ' ' < "$LAB/handoff.argv.1" | sed 's/ $//')" \
+      "the $err successor starts through the verified handoff launcher"
+    assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" "task=captain from=claude@ordinary to=codex reason=$class" \
+      "the dispatch log records the $err captain switch"
+    [ ! -e "$LAB/state/captain.provider-error" ] || fail "the captain record must be cleared after the $err switch"
+  done
+
+  captain_world
+  printf '%s' "$(payload rate_limit)" | FM_ROOT_OVERRIDE="$TMP_ROOT/wt-none" bash "$FO" hook captain
+  [ ! -e "$LAB/handoff.n" ] || fail 'a hook outside a primary checkout must not start a successor'
+  [ ! -e "$LAB/state/captain.provider-error" ] || fail 'a hook outside a primary checkout must not record'
+  captain_world
+  unset FM_FAILOVER_TEST_LOCK_OWNER
+  printf '%s' "$(payload rate_limit)" | FM_ROOT_OVERRIDE="$primary" bash "$FO" hook captain
+  [ ! -e "$LAB/handoff.n" ] || fail 'a hook in a session without the lock must not start a successor'
+  captain_world
+  printf '%s' "$(payload server_error)" | FM_ROOT_OVERRIDE="$primary" bash "$FO" hook captain
+  [ ! -e "$LAB/handoff.n" ] || fail 'a non-provider error must not start a successor'
+  unset FM_FAILOVER_TEST_HARNESS FM_FAILOVER_TEST_LOCK_OWNER
+  pass 'captain hook: a 429 or billing StopFailure in the primary checkout hands off to a successor in one step; elsewhere, without the lock, or for another error it does nothing'
+}
 test_preflight_night_plan() {
   reset_lab
   local a
@@ -451,7 +537,7 @@ watch_case() {  # <name> <screen> -> case dir with a claude ship and a fake fm-c
   printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
   cat > "$dir/fake-control" <<SH
 #!/usr/bin/env bash
-printf '%s %s %s %s %s\n' "\$1" "\$2" "\$3" "\$4" "\$5" >> "$dir/control.calls"
+printf '%s %s %s %s %s %s\n' "\$1" "\$2" "\$3" "\$4" "\$5" "\$6" >> "$dir/control.calls"
 printf 'replacement is starting\n' > "$dir/pane.txt"
 SH
   chmod +x "$dir/fake-control"
@@ -476,7 +562,7 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   watch_once "$dir"
   assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a rate_limit refusal from its provider (task=fo from=claude to=codex reason=rate_limit)' \
     'the first idle poll of a 429 screen moves the ship and wakes with the switch'
-  assert_equals 'fo relaunch --harness codex --note' "$(cat "$dir/control.calls")" 'one relaunch on codex'
+  assert_equals 'fo relaunch --harness codex --provider-failover --note' "$(cat "$dir/control.calls")" 'one relaunch on codex'
   assert_contains "$(cat "$dir/state/dispatch-log.tsv")" 'task=fo from=claude to=codex reason=rate_limit' 'the watcher switch is in the dispatch log'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$dir/state/.wake-queue")" 'failover-fo-' 'the check wake is queued'
 
@@ -493,7 +579,15 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   watch_once "$dir"
   [ ! -e "$dir/control.calls" ] || fail "prose about a 429 must not relaunch: $(cat "$dir/control.calls")"
   assert_not_contains "$(cat "$dir/watch.out")" 'moved to the next runtime' 'prose is not a refusal'
-  pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose does not'
+
+  dir=$(watch_case watch-hook-stop $'⏺ API Error: Request rejected (429) · This request would exceed your account\'s rate limit.\n\n❯ \n  ⏵⏵ auto mode on')
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$dir/state" fo)
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" fo idle --gen "$gen" --source claude-hook --event stop >/dev/null \
+    || fail 'fixture: the ordinary Stop hook record was not applied'
+  watch_once "$dir"
+  [ -e "$dir/state/.failover-judged-$key" ] || fail 'fixture: the watcher never judged the hook-stop screen'
+  [ ! -e "$dir/control.calls" ] || fail "a Claude turn end its hook recorded as an ordinary stop must not relaunch from old screen rows: $(cat "$dir/control.calls")"
+  pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose and a hook-recorded ordinary stop do not'
 }
 
 fm_test_run \
@@ -505,5 +599,6 @@ fm_test_run \
   test_worker_walks_the_order \
   test_worker_candidates_and_skips \
   test_captain_429_and_billing_start_a_successor \
+  test_captain_hook_429_and_billing_start_a_successor \
   test_preflight_night_plan \
   test_watcher_moves_an_idle_refused_ship_in_one_poll

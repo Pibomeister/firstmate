@@ -619,11 +619,19 @@ CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
 case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
 # Provider failover of an idle ship or scout (provider_failover_check): the
 # wall-clock bound on one whole bin/fm-failover.sh worker call, every runtime
-# it tries included, and on each relaunch inside it.
+# it tries included, and on each relaunch inside it. The call blocks this
+# window's iteration, so the default stays a minute inside the watcher stale
+# grace, and fm-failover.sh gets a deadline a little earlier still, so it
+# starts no relaunch it cannot finish and records any switch before the kill.
 FAILOVER_WATCH_TIMEOUT=${FM_FAILOVER_WATCH_TIMEOUT:-}
-case "$FAILOVER_WATCH_TIMEOUT" in ''|*[!0-9]*|0) FAILOVER_WATCH_TIMEOUT=600 ;; esac
+case "$FAILOVER_WATCH_TIMEOUT" in
+  ''|*[!0-9]*|0)
+    case "$WATCHER_STALE_GRACE" in ''|*[!0-9]*) FAILOVER_WATCH_TIMEOUT=240 ;; *) FAILOVER_WATCH_TIMEOUT=$((WATCHER_STALE_GRACE - 60)) ;; esac
+    [ "$FAILOVER_WATCH_TIMEOUT" -ge 60 ] || FAILOVER_WATCH_TIMEOUT=60
+    ;;
+esac
 FAILOVER_WATCH_RELAUNCH_TIMEOUT=${FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT:-}
-case "$FAILOVER_WATCH_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) FAILOVER_WATCH_RELAUNCH_TIMEOUT=240 ;; esac
+case "$FAILOVER_WATCH_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) FAILOVER_WATCH_RELAUNCH_TIMEOUT=$((FAILOVER_WATCH_TIMEOUT - 20)) ;; esac
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held crew whose agent has confidently exited uses the same
@@ -2354,7 +2362,9 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # refusal (HTTP 429, rate, usage, or billing limit). The verdict comes from the
 # task's provider-error record, which its Claude StopFailure hook writes and
 # which counts only for the agent's current turn end, or else from the refusal
-# row the idle screen shows (fm_wd_provider_error_screen). It runs
+# row the idle screen shows (fm_wd_provider_error_screen). A screen is judged
+# once (state/.failover-judged-<key>), and a Claude task whose hook recorded an
+# ordinary turn end is not judged by its screen at all. It runs
 # bin/fm-failover.sh worker once per distinct idle screen, remembered in
 # state/.failover-seen-<key>, on the first idle poll that shows it, so a
 # refused worker moves within one cycle; that script owns the order, the
@@ -2362,17 +2372,20 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # or remote task is left to the ordinary stale path. Returns 0 when it ran and
 # queued a check wake, 1 when the window is out of scope or nothing ran.
 provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
-  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen class src out rc=0 line key now reason
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason
   case "$kind" in ship|scout) ;; *) return 1 ;; esac
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   seen="$STATE/.failover-seen-$(window_key "$w")"
   [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
   if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
     src=record
-  elif class=$(fm_wd_provider_error_screen "$screen"); then
-    src=screen
   else
-    return 1
+    judged="$STATE/.failover-judged-$(window_key "$w")"
+    [ "$(cat "$judged" 2>/dev/null || true)" != "$h" ] || return 1
+    printf '%s' "$h" > "$judged" 2>/dev/null || true
+    ! fm_failover_turn_end_known "$STATE" "$task" || return 1
+    class=$(fm_wd_provider_error_screen "$screen") || return 1
+    src=screen
   fi
   [ -z "$(fm_meta_get "$STATE/$task.meta" remote_host 2>/dev/null || true)" ] || return 1
   if status_is_captain_held "$(status_declared_wait_line "$STATE/$task.status")" || task_captain_call_open "$task"; then
@@ -2381,7 +2394,9 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   printf '%s' "$h" > "$seen" 2>/dev/null || return 1
   # shellcheck source=bin/fm-timeout-lib.sh
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
   out=$(FM_HOME=$FM_HOME FM_FAILOVER_RELAUNCH_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - 15)) \
     fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" worker "$task" \
     --reason "$class" --state "$STATE" </dev/null 2>&1) || rc=$?
   line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|off|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')

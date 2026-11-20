@@ -590,7 +590,7 @@ When a provider refuses a worker or the captain with an HTTP 429, a rate or usag
 
 A ship or scout is detected two ways.
 A Claude worker's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
-For any runtime, the watcher also reads a refusal row the idle screen shows.
+For any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
 On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
 It wakes firstmate with a check naming the switch, or why no runtime took over.
 A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
@@ -622,10 +622,12 @@ min-5h 30
 `bin/fm-failover.sh preflight` makes one real one-line call through each runtime's own CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
 A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
 An unreadable window is disclosed and does not exclude.
-The preflight spends one tiny call per runtime and nothing else.
+The preflight sends one short prompt per runtime and per declared account, each a full non-interactive session of that CLI, so a Claude call costs its usual session context rather than one line, plus one `quota-axi` read each.
+It buys nothing.
 
 Failover never signs in, adds funds, buys extra usage, or edits an account pin.
-A usage-limit picker that `bin/fm-control.sh` cannot verify is refused rather than closed, so that worker waits for its reset or a manual relaunch.
+A worker failover relaunches through `bin/fm-control.sh relaunch --provider-failover`, which closes a usage-limit picker by ending the endpoint without typing into it, since the task is leaving that provider anyway.
+An ordinary relaunch still refuses a usage-limit picker it cannot verify.
 The Claude refusal signals are live-verified in [Runtime backend verification](verification/runtime-backends.md#provider-failover-refusal-signals).
 
 ## Context reading (config/context-reading)

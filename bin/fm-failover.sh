@@ -36,7 +36,9 @@
 #              skips the calls. Rewrites state/failover-preflight.tsv:
 #              <epoch> <runtime> <verdict> <call> <five_hour> <weekly> <why>.
 #              A verdict older than FM_FAILOVER_PREFLIGHT_MAX_AGE (43200s) is
-#              ignored. Spends one tiny call per runtime and nothing else.
+#              ignored. Sends one short prompt per runtime and account, each
+#              a full non-interactive CLI session, plus one quota-axi read;
+#              buys nothing.
 #   record     Writes the provider-error record for a task or the captain.
 #   hook       The Claude StopFailure hook: maps the payload on stdin to a
 #              class and records it. For `captain` it then runs `captain` in
@@ -49,11 +51,14 @@
 #   worker     Relaunches a ship or scout in its same local copy, branch, and
 #              gates on the first eligible runtime after its current one,
 #              through bin/fm-control.sh relaunch --harness [--model]
-#              [--account] --note. A runtime is skipped when it is the
-#              current one, host-qualified, excluded by the plan, missing its
-#              executable, an undeclared or signed-out Claude account, or
-#              exhausted by quota-axi (unmeasured quota is disclosed and does
-#              not skip). A failed relaunch moves on to the next runtime.
+#              [--account] --provider-failover --note, which closes a
+#              usage-limit picker without typing into it. A runtime is skipped
+#              when it is the current one (an unpinned Claude worker counts as
+#              this home's inherited account), host-qualified, excluded by the
+#              plan, missing its executable, an undeclared or signed-out Claude
+#              account, or exhausted by quota-axi (unmeasured quota is
+#              disclosed and does not skip). A failed relaunch moves on to the
+#              next runtime.
 #              Records each switch with bin/fm-dispatch-log.sh failover and in
 #              state/.failover-<task-id>, and removes the task's record.
 #   captain    Writes a handoff with bin/fm-ledger.sh handoff and starts a
@@ -75,7 +80,9 @@
 # lock or no open work).
 # Bounds: each relaunch FM_FAILOVER_RELAUNCH_TIMEOUT (300s), each handoff
 # FM_FAILOVER_HANDOFF_TIMEOUT (900s), each preflight call
-# FM_FAILOVER_CALL_TIMEOUT (90s).
+# FM_FAILOVER_CALL_TIMEOUT (90s). FM_FAILOVER_DEADLINE (an epoch, set by the
+# watcher) caps each relaunch at the time left and starts none with less than
+# FM_FAILOVER_MIN_RELAUNCH_SECS (30s) left, so the whole walk ends on time.
 # FM_CONTROL_BIN overrides the fm-control.sh it calls, as for the watcher.
 # Test-only: FM_TEST_SEAM=1 enables FM_FAILOVER_TEST_BIN (a directory holding
 # the fm-control.sh, fm-handoff-launch.sh, and fm-ledger.sh to call),
@@ -155,6 +162,8 @@ CALL_TIMEOUT=$(int_or "${FM_FAILOVER_CALL_TIMEOUT:-}" 90)
 WINDOW_SECS=$(int_or "${FM_FAILOVER_WINDOW_SECS:-}" 3600)
 PREFLIGHT_MAX_AGE=$(int_or "${FM_FAILOVER_PREFLIGHT_MAX_AGE:-}" 43200)
 PREFLIGHT_FILE="$STATE/failover-preflight.tsv"
+DEADLINE=$(int_or "${FM_FAILOVER_DEADLINE:-}" '')
+MIN_RELAUNCH_SECS=$(int_or "${FM_FAILOVER_MIN_RELAUNCH_SECS:-}" 30)
 
 load_order() {
   local err
@@ -162,6 +171,11 @@ load_order() {
     die "${err#error: }"
   fi
   fm_failover_order_load "$CONFIG" >/dev/null
+  # Preflight verdicts and log lines name a runtime by its label, and a label
+  # keeps only an account path's last segment, so two such paths would answer
+  # for each other.
+  err=$(expand_entries 1 '' | awk -F "$FM_FO_SEP" '($5 in acct) && acct[$5] != $3 { print $5; exit } { acct[$5] = $3 }')
+  [ -z "$err" ] || die "two Claude accounts in the failover order share the label $err; give each declared account directory a distinct last path segment"
 }
 
 # expand_entries <include-current-account:0|1> <current-claude-account>
@@ -509,7 +523,7 @@ cmd_detect() {
 
 # --- worker --------------------------------------------------------------------
 cmd_worker() {
-  local meta kind wt from_h from_m from_a backend from gen reason ledger max attempts statusf last branch note row h m a label quota out rc detail
+  local meta kind wt from_h from_m from_a run_a backend from gen reason ledger max attempts statusf last branch note row h m a label quota out rc detail rto left
   valid_target "$TARGET" && [ "$TARGET" != captain ] || die "invalid task id: $TARGET"
   load_order
   [ "$FM_FO_OFF" = 0 ] || { printf 'off task=%s reason=failover_off\n' "$TARGET"; exit 4; }
@@ -551,7 +565,11 @@ cmd_worker() {
     printf 'bound task=%s from=%s attempts=%s window=%ss\n' "$TARGET" "$from" "$attempts" "$WINDOW_SECS"
     exit 3
   fi
-  evaluate worker "$from_h" "$from_a" "$backend"
+  # fm-spawn records account= only for a pinned account; an unpinned Claude
+  # worker ran on the account this home inherits, so that one is excluded too.
+  run_a=$from_a
+  [ "$from_h" != claude ] || [ -n "$run_a" ] || run_a=${CLAUDE_CONFIG_DIR:-ordinary}
+  evaluate worker "$from_h" "$run_a" "$backend"
   if [ "${#CAND[@]}" -eq 0 ]; then
     ledger_add "$ledger" none "$from" - "$reason"
     printf 'none task=%s from=%s reason=%s why=no_eligible_runtime\n' "$TARGET" "$from" "$reason"
@@ -573,10 +591,19 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
     local -a args=("$TARGET" relaunch --harness "$h")
     [ -z "$m" ] || args+=(--model "$m")
     [ -z "$a" ] || args+=(--account "$a")
-    args+=(--note "$note")
+    args+=(--provider-failover --note "$note")
+    rto=$RELAUNCH_TIMEOUT
+    if [ -n "$DEADLINE" ]; then
+      left=$(( DEADLINE - $(now) ))
+      if [ "$left" -lt "$MIN_RELAUNCH_SECS" ]; then
+        printf 'none task=%s from=%s reason=%s why=deadline_before_%s\n' "$TARGET" "$from" "$reason" "$label"
+        exit 1
+      fi
+      [ "$left" -ge "$rto" ] || rto=$left
+    fi
     ledger_add "$ledger" attempt "$from" "$label" "$reason"
     rc=0
-    out=$(FM_HOME=$FM_HOME FM_CONTROL_EXPECTED_SPAWN_GEN=$gen fm_run_timed "$RELAUNCH_TIMEOUT" "$CONTROL_BIN" "${args[@]}" </dev/null 2>&1) || rc=$?
+    out=$(FM_HOME=$FM_HOME FM_CONTROL_EXPECTED_SPAWN_GEN=$gen fm_run_timed "$rto" "$CONTROL_BIN" "${args[@]}" </dev/null 2>&1) || rc=$?
     if [ "$rc" -eq 0 ]; then
       ledger_add "$ledger" switched "$from" "$label" "$reason"
       rm -f "$(fm_failover_record_path "$STATE" "$TARGET")"
@@ -589,8 +616,8 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
     printf 'failed task=%s to=%s rc=%s detail=%s\n' "$TARGET" "$label" "$rc" "$(tok "$detail")"
     # A refusal before the old agent stopped changes nothing; any other exit
     # still leaves the record fm-control kept, so the next runtime may try.
-    # fm-control also refuses to close a usage-limit picker it has not
-    # live-verified, whatever runtime follows, so that refusal ends the walk.
+    # A usage-limit screen fm-control could not close without typing into it
+    # stays that way whatever runtime follows, so that refusal ends the walk.
     [ "$rc" -ne 7 ] || break
     case "$out" in *'at a usage-limit screen'*) break ;; esac
   done

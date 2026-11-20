@@ -209,6 +209,9 @@ A 429 `rate_limit_error` response ended the turn with a StopFailure payload whos
 A credit-balance response ended the turn with `error` `billing_error`, and the idle pane showed `Credit balance too low · Add funds`, a row without the word "is" that the portable detector had not matched until this guard ran.
 A real `bin/fm-failover.sh preflight` on the same host reached a Claude login whose subscription payment was past due; its one-line `claude -p` call printed `Claude Code can't use your Claude subscription, usually because a payment is past due`, and the preflight excluded that account with `call=fail:billing`.
 Usage-limit screens were not reproduced live; their rows stay covered only by the portable detector regression.
+The usage-limit picker that `bin/fm-control.sh relaunch --provider-failover` closes is proven only against the tmux stand-in in `tests/fm-control-relaunch.test.sh`.
+Codex and Droid refusal screens and their preflight calls were not reproduced live.
+The captain path starts only from the StopFailure hook; a captain whose hook does not fire has no screen fallback in this change.
 The captain hook uses the same payload with `"async": true`; a separate probe on the same version showed the async hook running as a child of the `claude` process, which is what the captain lock-owner check walks.
 
 Refresh the live guard and the portable regression with:
@@ -224,6 +227,7 @@ Selected output:
 ok - Claude 2.1.329 (Claude Code): a 429 refusal fires StopFailure into a rate_limit record in 1s, and the idle pane classes rate_limit
 ok - Claude 2.1.329 (Claude Code): a credit-balance refusal fires StopFailure into a billing record in 2s, and the idle pane classes billing
 ```
+
 ## Codex model catalog max validation
 
 Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.

@@ -100,7 +100,8 @@ fm_failover_order_load() {
 
 # fm_failover_label <harness> <model> <account>
 # One safe token naming a runtime, as the dispatch log and records print it:
-# <harness>[:<model>][@<account>], an account path folded to its last segment.
+# <harness>[:<model>][@<account>], an account path folded to its last segment;
+# bin/fm-failover.sh refuses an order in which two runtimes share a label.
 fm_failover_label() {
   local label=$1 account=${3:-}
   [ -z "${2:-}" ] || [ "$2" = default ] || label="$label:$2"
@@ -163,6 +164,18 @@ fm_failover_record_class() {
   printf '%s\n' "$class"
 }
 
+# fm_failover_turn_end_known <state-dir> <id>
+# Returns 0 when the task's armed busy record comes from the Claude hook and
+# names an idle turn end other than stop-failure: Claude reports every API
+# refusal as a stop-failure, so its screen is not read for one after an
+# ordinary stop. Any other source, or no valid record, returns 1.
+# Callers source bin/fm-busy-lib.sh.
+fm_failover_turn_end_known() {
+  local busy st src ev _seq
+  busy=$(fm_busy_record_read "$1" "$2" 2>/dev/null) || return 1
+  read -r st src ev _seq <<< "$busy"
+  [ "$st" = idle ] && [ "$src" = claude-hook ] && [ "$ev" != stop-failure ]
+}
 # fm_failover_hook_class <stop-failure-json>
 # Maps a Claude StopFailure payload to a class: rate_limit (usage_limit when
 # the last message states a usage limit), billing_error or account_on_hold to

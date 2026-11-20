@@ -60,8 +60,10 @@
 #       Prints `billing`, `usage_limit`, or `rate_limit` when a row of <text>
 #       opens by stating that provider refusal, checked in that order, else
 #       exit 1. Billing covers a credit balance, past-due payment, subscription,
-#       extra-usage, or account-hold refusal; rate_limit covers an error row
-#       naming HTTP 429, a rate limit, or too many requests.
+#       extra-usage, or account-hold refusal; usage_limit a limit row naming a
+#       reset, retry, upgrade, or purchase; rate_limit an API or stream error
+#       row whose status is 429 or that names a rate limit or too many
+#       requests. A row announcing an automatic retry is skipped.
 #   fm_wd_provider_error_screen <screen>
 #       The same verdict for the last FM_WD_PROVIDER_ERROR_ROWS (default 12)
 #       non-blank rows of an ANSI screen. bin/fm-failover.sh and the watcher
@@ -178,10 +180,18 @@ FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit
 # an HTTP 429 or rate-limit error, or a billing, credit, past-due, subscription,
 # or account-hold refusal. The row may open with spaces or glyphs but not a
 # digit, `+`, or `-`, so a numbered diff row quoting one is not a match.
-# Usage-limit rows stay with FM_WD_USAGE_LIMIT_RE;
-# fm_wd_provider_error_class is the one reader that joins all three.
-FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*((((api|stream) )?error[[:space:]]*(:|\()|unexpected status).*(429|rate[_ -]?limit|too many requests))'
-FM_WD_BILLING_ERROR_RE='^[^a-z0-9+-]*(credit balance (is )?too low|claude code can.t use your claude subscription|you( are|.{1,3}re) out of extra usage|your account is on hold|your org(anization)? is out of usage|(((api|stream) )?error[[:space:]]*(:|\()|unexpected status).*(billing|insufficient_quota|exceeded your current quota|credit balance|past due))'
+# A 429 counts only as the first number after an `api error`, `stream error`,
+# or `unexpected status` prefix, so a token count, duration, or line number
+# holding those digits is not one, and rate-limit or billing words count only
+# on such an error row (OpenAI's insufficient_quota tokens on any error row).
+# Usage-limit rows stay with FM_WD_USAGE_LIMIT_RE and, as a refusal, must also
+# name a reset, retry, upgrade, or purchase (FM_WD_PROVIDER_LIMIT_HINT_RE).
+# A row announcing an automatic retry (FM_WD_PROVIDER_RETRY_RE) is transient.
+# fm_wd_provider_error_class is the one reader that joins all of them.
+FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*(((api|stream) error|unexpected status)[^0-9]*(\(|[[:space:]])429([^0-9]|$)|(api|stream) error[[:space:]]*(:|\().*(rate[_ -]?limit|too many requests))'
+FM_WD_BILLING_ERROR_RE='^[^a-z0-9+-]*(credit balance (is )?too low[[:space:]]*([^a-z[:space:]]|$)|claude code can.t use your claude subscription|you( are|.{1,3}re) out of extra usage|your account is on hold|your org(anization)? is out of usage|((api|stream) )?error[[:space:]]*(:|\().*(insufficient_quota|exceeded your current quota)|((api|stream) error[[:space:]]*(:|\()|unexpected status).*(billing|credit balance|past due))'
+FM_WD_PROVIDER_LIMIT_HINT_RE='reset|try again|upgrade|purchase|more credits|extra.usage|rate-limit-options'
+FM_WD_PROVIDER_RETRY_RE='retrying in|\(attempt [0-9]+/[0-9]+\)'
 
 fm_wd_user_bin_path() {  # <path> <home>
   local rest=$1 user_bin dir out='' sep='' placed=0 more=1
@@ -345,10 +355,11 @@ fm_wd_usage_limit_text() {  # <text>
 # <text> states, in that order, and returns 1 when no row states one.
 fm_wd_provider_error_class() {  # <text>
   local t
-  t=$(fm_wd_lower "$1")
+  t=$(fm_wd_lower "$1" | LC_ALL=C grep -Ev "$FM_WD_PROVIDER_RETRY_RE" || true)
+  [ -n "$t" ] || return 1
   if printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_BILLING_ERROR_RE"; then
     printf 'billing\n'
-  elif printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_USAGE_LIMIT_RE"; then
+  elif printf '%s\n' "$t" | LC_ALL=C grep -E "$FM_WD_USAGE_LIMIT_RE" | LC_ALL=C grep -Eq "$FM_WD_PROVIDER_LIMIT_HINT_RE"; then
     printf 'usage_limit\n'
   elif printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_RATE_LIMIT_ERROR_RE"; then
     printf 'rate_limit\n'
