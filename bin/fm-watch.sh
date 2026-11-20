@@ -3736,13 +3736,14 @@ gate_council_claim_state() {  # <claims-file> <task> <key> <opened>
 }
 
 # 0 while <task>'s <key> is still the same open needs-decision episode, 1 when
-# it has closed or its status log is gone, and 2 when the log exists but could
-# not be read, so an unreadable log is never mistaken for a closed gate.
+# it has closed or its status log is gone, and 2 when the log exists but any
+# part of it could not be read, so a failed read is never mistaken for a closed
+# gate, even with no trusted cursor to fall back on.
 gate_council_still_open() {  # <task> <key> <opened>
   local f="$STATE/$1.status" open key verb opened
   [ -e "$f" ] || [ -L "$f" ] || return 1
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
-  open=$(status_open_decisions_incremental "$f" '' timed) || return 2
+  open=$(status_open_decisions_incremental "$f" '' timed strict) || return 2
   while IFS=$'\t' read -r key verb opened _; do
     [ "$key" = "$2" ] && [ "$opened" = "$3" ] && [ "$verb" = needs-decision ] && return 0
   done <<EOT

@@ -599,6 +599,29 @@ test_gate_council_unreadable_status_keeps_ruling() {
   pass 'an unreadable status file counts as open and keeps the ruling'
 }
 
+test_gate_council_status_read_failure_keeps_ruling() {
+  local dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000" claims="$STATE/.away-gate-council-claims"
+  local fail_reader="$TMP_ROOT/gate-council-failing-reader"
+  printf '#!/bin/sh\nexit 1\n' > "$fail_reader"
+  chmod +x "$fail_reader"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  rm -f "$STATE"/.worker.open-decisions-cursor*
+  FM_STATUS_IDENTITY_READER="$fail_reader" away_gate_council_tick 4700 2>/dev/null || true
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log identity could not be read'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'a failed status identity read with no cursor recorded a closed gate'
+  printf 'not a cursor\n' > "$STATE/.worker.open-decisions-cursor.timed"
+  FM_STATUS_SPAN_READER="$fail_reader" away_gate_council_tick 4750 2>/dev/null || true
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log bytes could not be read'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'a failed status span read with an invalid cursor recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after a failed status read: $GATE_COUNCIL_WAKE"
+  pass 'a status log read failure with no trusted cursor counts as open and keeps the ruling'
+}
+
 test_invalid_gate_council_config_keeps_watcher_running() {
   local dir="$TMP_ROOT/invalid-gate-council"
   mkdir -p "$dir/state" "$dir/config"
@@ -630,4 +653,5 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_gate_council_off_and_filters test_gate_council_runs_once_and_surfaces \
   test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config \
   test_gate_council_refuses_findings_outside_task_data test_gate_council_hold_lookup_failure_counts_as_held \
-  test_gate_council_unreadable_status_keeps_ruling test_invalid_gate_council_config_keeps_watcher_running
+  test_gate_council_unreadable_status_keeps_ruling test_gate_council_status_read_failure_keeps_ruling \
+  test_invalid_gate_council_config_keeps_watcher_running

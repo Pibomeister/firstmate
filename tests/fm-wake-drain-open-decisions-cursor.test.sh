@@ -221,6 +221,37 @@ test_read_failure_preserves_state_for_retry() {
   pass "a failed presentation read preserves status state for retry"
 }
 
+test_strict_read_failure_is_not_an_empty_open_set() {
+  local dir state reader statusfile rc
+  dir=$(make_case cursor-strict-read-failure)
+  state="$dir/state"
+  reader="$dir/fail-reader"
+  statusfile="$state/task5.status"
+  printf 'needs-decision [key=x]: something important\n' > "$statusfile"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$reader"
+  chmod +x "$reader"
+  strict_fold_check() {  # <expected-rc> <expected-output> <env-assignment> <args...>
+    bash -c '. "$1"; want_rc=$2; want_out=$3; shift 3; env_set=$1; shift
+      [ -z "$env_set" ] || export "${env_set?}"
+      out=$(status_open_decisions_incremental "$@"); rc=$?
+      [ "$rc" = "$want_rc" ] && [ "$out" = "$want_out" ]' \
+      _ "$ROOT/bin/fm-classify-lib.sh" "$@"
+  }
+  strict_fold_check 0 '' "FM_STATUS_IDENTITY_READER=$reader" "$statusfile" '' timed \
+    || fail "a default fold no longer steps around a failed identity read with the trusted set"
+  strict_fold_check 3 '' "FM_STATUS_IDENTITY_READER=$reader" "$statusfile" '' timed strict \
+    || fail "a strict fold with no trusted cursor reported a failed identity read as an empty open set"
+  strict_fold_check 3 '' "FM_STATUS_SPAN_READER=$reader" "$statusfile" '' timed strict \
+    || fail "a strict fold with no trusted cursor reported a failed span read as an empty open set"
+  strict_fold_check 2 '' '' "$statusfile" '' timed loose \
+    || fail "an unknown fold mode was accepted"
+  rc=0
+  bash -c '. "$1"; status_open_decisions_incremental "$2" "" timed strict' _ "$ROOT/bin/fm-classify-lib.sh" "$statusfile" \
+    | grep -F $'x\tneeds-decision\t' >/dev/null || rc=1
+  [ "$rc" = 0 ] || fail "a strict fold with working reads did not report the open decision"
+  pass "a strict fold reports a failed read instead of an empty open set"
+}
+
 test_cursor_cache_read_failure_refolds_without_replaying_unread_status() {
   local dir state fakebin statusfile cursor out probe real_cat status_bytes probe_bytes
   dir=$(make_case cursor-cache-read-failure)
@@ -413,6 +444,7 @@ test_kind_changes_invalidate_folded_decisions
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_preserves_state_for_retry
+test_strict_read_failure_is_not_an_empty_open_set
 test_cursor_cache_read_failure_refolds_without_replaying_unread_status
 test_pre_fix_cursor_refolds_corr_tagged_decision
 test_previous_fold_cache_is_refolded_under_current_semantics

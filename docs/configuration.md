@@ -1481,7 +1481,8 @@ The context is the findings file and the task intent; AgentKit's outbound gate d
 When `exit` appears, the next poll queues one `check: gate council ruled:` wake naming the outcome, the choice, and the record or log path.
 A run with no `exit` after `FM_GATE_COUNCIL_UNFINISHED_SECS` (default `7200`) surfaces as `outcome=unfinished`.
 A ruling for a gate that has since closed, or whose status log is gone, is recorded as `gate-closed` and not surfaced.
-A status log that exists but cannot be read counts as open, so the ruling waits for a later poll.
+A status log that exists but cannot be read in full counts as open, so the ruling waits for a later poll.
+This holds even when no saved read position exists to fall back on.
 
 The record is evidence, never captain approval: the trigger never answers the gate, waives a check, merges, or lifts a hold.
 Firstmate applies a ruling only through the normal gate response that `ask-user-authority` owns.
