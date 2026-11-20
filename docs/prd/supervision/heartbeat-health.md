@@ -19,7 +19,7 @@ It changes no merge, release, or deploy gate.
 
 | Capability | Evidence in this repo | State |
 | --- | --- | --- |
-| The watcher publishes a fleet heartbeat ledger each poll | `bin/fm-heartbeat.sh --write` writes `state/heartbeat.json` with schema `fm-heartbeat.v1` | Present |
+| The watcher publishes a fleet heartbeat ledger on a relevant change and otherwise once per idle interval | `bin/fm-heartbeat.sh --write` writes `state/heartbeat.json` with schema `fm-heartbeat.v1` | Present |
 | Each heartbeat read has its own time bound | `FM_HEARTBEAT_READ_TIMEOUT` defaults to 3 seconds and `FM_HEARTBEAT_NM_TIMEOUT` defaults to 2 seconds | Present |
 | The snapshot read is bounded at fleet scale | `FM_HEARTBEAT_SNAPSHOT_TIMEOUT` defaults to 120 seconds and `FM_HEARTBEAT_DEADLINE` defaults to 240 seconds | Present |
 | Unread fields report unknown instead of guessing | The `fm-heartbeat.sh` header states that unread fields carry `{unknown:true,reason}` | Present |
