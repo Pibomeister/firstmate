@@ -540,6 +540,8 @@ test_return_brief_lists_open_human_only_steps() {
   assert_not_contains "$waiting" 'worker:sunday' "a weekend step that cleared was still listed"
   assert_contains "$waiting" 'auth-task [key=human-step-gh-login] human-only step, other work continues: human-only step: sign in to gh on the build host' "the worker's open human-only step was not listed: $waiting"
   assert_not_contains "$waiting" '(nothing)' "an open human-only step left waiting on you empty"
+  assert_equals 1 "$(awk -F'\t' '$2 == "worker:auth" && $5 == "briefed"' "$dir/home/state/watchdog/human-steps.tsv" | wc -l | tr -d ' ')" "the shown step was not marked briefed"
+  assert_equals 0 "$(awk -F'\t' '$2 == "worker:done" && $5 == "briefed"' "$dir/home/state/watchdog/human-steps.tsv" | wc -l | tr -d ' ')" "a cleared step was marked briefed"
 
   # Once a person completes it, the worker resolves the key and it is gone.
   printf 'resolved [key=human-step-gh-login]: signed in\n' >> "$dir/home/state/auth-task.status"
@@ -553,6 +555,7 @@ test_return_brief_lists_open_human_only_steps() {
   [ "$rc" -eq 3 ] || fail "an ordinary blocker no longer gated the return (rc=$rc): $out"
   assert_contains "$out" 'firstmate-actionable blocker: dep-task [key=dep]' "the ordinary blocker was not assigned to firstmate"
   assert_not_contains "$out" 'human-step-gh-login' "a resolved human-only step was still listed"
+  assert_equals 1 "$(awk -F'\t' '$2 == "worker:auth" && $5 == "briefed"' "$dir/home/state/watchdog/human-steps.tsv" | wc -l | tr -d ' ')" "a step shown twice was marked briefed twice"
   pass "the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate"
 }
 

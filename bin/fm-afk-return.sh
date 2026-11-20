@@ -629,23 +629,26 @@ scan_landed_awaiting_cleanup() {  # -> <task>\t<url> rows
 }
 
 # A morning-handoff row from bin/fm-watchdog.sh stays open, however old, until
-# a later `cleared` row names the same subject.
+# a later `cleared` row names the same subject. Each open row shown here gets a
+# `briefed` row once, so the watchdog does not page it again by day.
 open_human_steps() {  # <human-steps.tsv>
   [ -r "$1" ] || return 0
   awk -F '\t' '
     $1 !~ /^[0-9]+$/ { next }
     $5 == "cleared" { delete open_at[$2]; next }
+    $5 == "briefed" { briefed[$2 SUBSEP $4] = 1; next }
     $5 == "morning-handoff" { open_at[$2] = $1; kind[$2] = $3; since[$2] = $4; order[++n] = $2 }
     END {
       for (i = 1; i <= n; i++) {
         s = order[i]
         if (!(s in open_at) || (s in shown)) continue
         shown[s] = 1
-        printf "%s\t%s\t%s\n", s, kind[s], since[s]
+        printf "%s\t%s\t%s\t%d\n", s, kind[s], since[s], ((s SUBSEP since[s]) in briefed)
       }
-    }' "$1" | while IFS="$(printf '\t')" read -r subject kind since; do
+    }' "$1" | while IFS="$(printf '\t')" read -r subject kind since briefed; do
       printf '    - %s: %s step waiting since %s; only a person can complete it\n' \
         "$subject" "$kind" "$(epoch_to_iso "$since")"
+      [ "$briefed" = 1 ] || printf '%s\t%s\t%s\t%s\tbriefed\n' "$(date +%s)" "$subject" "$kind" "$since" >> "$1" 2>/dev/null || :
     done
 }
 
