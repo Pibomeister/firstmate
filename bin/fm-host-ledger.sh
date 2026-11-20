@@ -10,16 +10,29 @@
 #       two-sample top for the user/sys/idle split.
 #   fm-host-ledger.sh report [--hours <N>]
 #       Summarize the last <N> hours (default 24): row count, peak new-pid
-#       rate, peak load1, lowest free disk, and peak live workers per CLI.
+#       rate, peak load1, lowest free disk, peak live workers per CLI, and
+#       tokens per active-agent-hour per provider where it can be derived.
 #   fm-host-ledger.sh microbench [--n <N>]
-#       Time repeated execs three ways (default N=100): a cached system
-#       binary, the same throwaway script path, and a fresh script path per
+#       Time repeated execs (default N=100, N must be positive): a cached
+#       system binary, the same throwaway script path, a fresh script path per
 #       exec (the file write is included, so that row is an upper bound on a
-#       first-exec check). Run it at a quiet time; it prints the load too.
+#       first-exec check), bash -c true, and, inside one bash process, a loop
+#       of the true builtin against the same loop of the external true. Run
+#       it at a quiet time; it prints the load too.
 #   fm-host-ledger.sh limits
 #       Print kern.maxproc, kern.maxprocperuid, kern.maxfiles,
 #       kern.num_taskthreads, the launchctl maxproc/maxfiles limits, and this
 #       shell's ulimit -u -n. Read-only. On Linux it prints /proc/sys reads.
+#   fm-host-ledger.sh render-launchd
+#       Print a home-scoped LaunchAgent plist that runs sample every 60
+#       seconds with RunAtLoad and no KeepAlive retry loop, capturing HOME,
+#       PATH, and any FM_HOST_LEDGER_* overrides; stderr goes to
+#       sample.err in the ledger directory. It only renders XML and never
+#       installs, starts, or restarts a service. Run sample once first so the
+#       ledger directory exists, save the output as
+#       ~/Library/LaunchAgents/<Label>.plist, then explicitly activate:
+#         launchctl bootstrap gui/$(id -u) <absolute-plist-path>
+#       Rollback: launchctl bootout gui/$(id -u)/<Label>
 #   fm-host-ledger.sh --help
 #
 # Files: ${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/host-ledger/
@@ -28,7 +41,8 @@
 # FM_HOST_LEDGER_DIR overrides that directory.
 #
 # Columns: ts_epoch, load1, procs, new_pids, interval_s, new_per_s,
-# cpu_user, cpu_sys, cpu_idle, swap_used_mib, disk_free_kib, cli, parents.
+# cpu_user, cpu_sys, cpu_idle, swap_used_mib, disk_free_kib, cli, parents,
+# tokens_remaining, tokens_unreported.
 # Unknown values are the word unknown. new_pids counts pids present now that
 # were absent at the previous sample, so processes that lived and died
 # between samples are missed: new_per_s is a floor on the true launch rate,
@@ -38,8 +52,20 @@
 # cli is name=count:rss_kib for each known agent CLI process basename
 # (claude, codex, grok, muse, droid, cursor-agent, agy, kimi, opencode), so
 # active RSS per CLI is measured. Token use is not visible from the process
-# table and is never guessed here; tokens per active-agent-hour must join
-# this ledger's worker counts with the harnesses' own usage records.
+# table, so it is read from quota-axi when it is on PATH: one bounded,
+# side-effect-free read (quota-axi --json --no-credential-refresh --max-age
+# FM_HOST_LEDGER_QUOTA_MAX_AGE, default 5m, under a
+# FM_HOST_LEDGER_QUOTA_TIMEOUT bound, default 10 seconds). A token reading
+# is a provider's credits object whose unit is tokens; tokens_remaining is
+# provider=remaining for each such reading, or none. tokens_unreported counts
+# the known CLI providers (claude codex grok muse droid cursor agy kimi
+# opencode-go) with no token reading in that sample, so an absent, failed,
+# timed-out, or unparsable read records all of them. Tokens are never
+# estimated or interpolated. report derives tokens consumed only from a drop
+# in one provider's remaining between two consecutive rows (a rise is a
+# reset and is skipped), and active-agent-hours from the later row's worker
+# count for that provider's CLI times its interval_s; tokens per
+# active-agent-hour is printed only where both exist, and says so otherwise.
 #
 # Exit: 0 on success, 2 on a usage error. A failed probe degrades its own
 # column to unknown and still writes the row, because a gap in the ledger is
@@ -47,7 +73,11 @@
 # directory, which exits 1 with the reason on stderr.
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LEDGER_DIR=${FM_HOST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/host-ledger}
+QUOTA_TIMEOUT=${FM_HOST_LEDGER_QUOTA_TIMEOUT:-10}
+QUOTA_MAX_AGE=${FM_HOST_LEDGER_QUOTA_MAX_AGE:-5m}
+TOKEN_PROVIDERS="claude codex grok muse droid cursor agy kimi opencode-go"
 VOLUME=${FM_HOST_LEDGER_VOLUME:-/System/Volumes/Data}
 [ -d "$VOLUME" ] || VOLUME=/
 
@@ -73,7 +103,7 @@ mtime_epoch() {  # <path>: print its mtime in epoch seconds, or nothing
 }
 
 die_usage() {
-  echo "usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|--help" >&2
+  echo "usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|render-launchd|--help" >&2
   exit 2
 }
 
@@ -166,6 +196,30 @@ new_pids_calc() {
     }' "$prev" "$cur"
 }
 
+# Prints "tokens_remaining tokens_unreported" from one bounded quota-axi read.
+tokens_read() {
+  local out='' readings='' n=0
+  if command -v quota-axi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-timeout-lib.sh
+    . "$SCRIPT_DIR/fm-timeout-lib.sh"
+    out=$(fm_run_timed "$QUOTA_TIMEOUT" quota-axi --json --no-credential-refresh \
+      --max-age "$QUOTA_MAX_AGE" </dev/null 2>/dev/null) || out=
+    readings=$(printf '%s' "$out" | jq -r --arg names "$TOKEN_PROVIDERS" '
+      ($names | split(" ")) as $known
+      | [.providers[]? | select(.provider as $p | $known | index($p))
+         | select(.credits.unit? == "tokens" and (.credits.remaining | type) == "number")]
+      | group_by(.provider)
+      | map("\(.[0].provider)=\(map(.credits.remaining) | add | floor)") | join(",")' 2>/dev/null) || readings=
+    case "$readings" in *[!a-z0-9=,-]*) readings= ;; esac
+  fi
+  if [ -n "$readings" ]; then
+    n=$(printf '%s\n' "$readings" | tr ',' '\n' | grep -c '=')
+  fi
+  # shellcheck disable=SC2086
+  set -- $TOKEN_PROVIDERS
+  printf '%s %s\n' "${readings:-none}" "$(( $# - n ))"
+}
+
 cmd_sample() {
   mkdir -p "$LEDGER_DIR" 2>/dev/null || {
     echo "fm-host-ledger: cannot create $LEDGER_DIR" >&2
@@ -209,15 +263,19 @@ EOF
   [ -n "$swap" ] || swap=unknown
   [ -n "$free_kib" ] || free_kib=unknown
   [ -n "$cu" ] || { cu=unknown; cs=unknown; ci=unknown; }
+  local tokens tokens_unreported
+  read -r tokens tokens_unreported <<EOF
+$(tokens_read)
+EOF
   if [ ! -s "$file" ]; then
-    printf 'ts_epoch\tload1\tprocs\tnew_pids\tinterval_s\tnew_per_s\tcpu_user\tcpu_sys\tcpu_idle\tswap_used_mib\tdisk_free_kib\tcli\tparents\n' >> "$file" || {
+    printf 'ts_epoch\tload1\tprocs\tnew_pids\tinterval_s\tnew_per_s\tcpu_user\tcpu_sys\tcpu_idle\tswap_used_mib\tdisk_free_kib\tcli\tparents\ttokens_remaining\ttokens_unreported\n' >> "$file" || {
       echo "fm-host-ledger: cannot write $file" >&2
       exit 1
     }
   fi
-  now=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+  now=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$ts" "$load1" "$procs" "$new_pids" "$interval" "$new_per_s" \
-    "$cu" "$cs" "$ci" "$swap" "$free_kib" "$cli" "$parents")
+    "$cu" "$cs" "$ci" "$swap" "$free_kib" "$cli" "$parents" "$tokens" "$tokens_unreported")
   printf '%s\n' "$now" >> "$file" || {
     echo "fm-host-ledger: cannot write $file" >&2
     exit 1
@@ -242,10 +300,30 @@ cmd_report() {
   fi
   # shellcheck disable=SC2086
   awk -F '\t' -v cutoff="$cutoff" '
+    BEGIN {
+      split("claude=claude codex=codex grok=grok muse=muse droid=droid cursor=cursor-agent agy=agy kimi=kimi opencode-go=opencode", m, " ")
+      for (i in m) { split(m[i], kv, "="); cli_of[kv[1]] = kv[2] }
+    }
     $1 == "ts_epoch" { next }
-    $1 + 0 < cutoff { next }
+    $1 + 0 < cutoff { delete prev_tok; next }
     {
       rows++
+      delete workers
+      n = split($12, parts, ",")
+      for (i = 1; i <= n; i++)
+        if (split(parts[i], kv, "=") == 2 && split(kv[2], cr, ":") == 2) workers[kv[1]] = cr[1] + 0
+      delete cur_tok
+      n = split($14, parts, ",")
+      for (i = 1; i <= n; i++)
+        if (split(parts[i], kv, "=") == 2 && kv[2] ~ /^[0-9]+$/) cur_tok[kv[1]] = kv[2] + 0
+      for (p in cur_tok) {
+        if (!(p in prev_tok) || $5 !~ /^[0-9]+$/ || cur_tok[p] > prev_tok[p]) continue
+        paired[p] = 1
+        consumed[p] += prev_tok[p] - cur_tok[p]
+        agent_s[p] += workers[cli_of[p]] * $5
+      }
+      delete prev_tok
+      for (p in cur_tok) prev_tok[p] = cur_tok[p]
       if ($6 ~ /^[0-9.]+$/ && $6 + 0 > peak_rate) peak_rate = $6 + 0
       if ($2 ~ /^[0-9.]+$/ && $2 + 0 > peak_load) peak_load = $2 + 0
       if ($11 ~ /^[0-9]+$/ && (min_free == "" || $11 + 0 < min_free)) min_free = $11 + 0
@@ -262,6 +340,17 @@ cmd_report() {
       printf "host-ledger report: rows=%d peak_new_per_s=%.2f peak_load1=%.2f min_disk_free_kib=%s last_disk_free_kib=%s\n", \
         rows + 0, peak_rate + 0, peak_load + 0, (min_free == "" ? "unknown" : min_free), (last_free == "" ? "unknown" : last_free)
       for (name in peak_cnt) printf "host-ledger cli: %s peak_count=%d peak_rss_kib=%d\n", name, peak_cnt[name], peak_rss[name]
+      any = 0
+      for (p in paired) {
+        any = 1
+        if (agent_s[p] > 0)
+          printf "host-ledger tokens: %s tokens_consumed=%d active_agent_hours=%.2f tokens_per_active_agent_hour=%d\n", \
+            p, consumed[p], agent_s[p] / 3600, consumed[p] / (agent_s[p] / 3600)
+        else
+          printf "host-ledger tokens: %s tokens_consumed=%d active_agent_hours=0 tokens_per_active_agent_hour=unknown reason=no_active_workers\n", \
+            p, consumed[p]
+      }
+      if (!any) print "host-ledger tokens: unreported (no two consecutive rows carry a token reading for one provider, so tokens per active-agent-hour cannot be derived)"
     }' $files
 }
 
@@ -269,7 +358,8 @@ cmd_microbench() {
   local n=100
   if [ "${1:-}" = --n ]; then
     n=${2:-}
-    case "$n" in ''|*[!0-9]*) die_usage ;; esac
+    case "$n" in ''|0*|*[!0-9]*) die_usage ;; esac
+    [ $# -eq 2 ] || die_usage
   elif [ $# -ne 0 ]; then
     die_usage
   fi
@@ -300,7 +390,26 @@ cmd_microbench() {
     });
     bench("bash_c_true", sub { system("/bin/bash", "-c", "true") == 0 or die "bash failed" });
     unlink glob "$dir/*"; rmdir $dir;
-  '
+  ' || exit 1
+  local times
+  # shellcheck disable=SC2016
+  times=$(/bin/bash -c '
+    TIMEFORMAT=%R
+    n=$1 ext=$2
+    { time for ((i = 0; i < n; i++)); do true; done; } 2>&1
+    { time for ((i = 0; i < n; i++)); do "$ext"; done; } 2>&1
+  ' fm-microbench "$n" "$(if [ -x /usr/bin/true ]; then echo /usr/bin/true; else echo /bin/true; fi)") || {
+    echo "fm-host-ledger: builtin versus external bench failed" >&2
+    exit 1
+  }
+  printf '%s\n' "$times" | awk -v n="$n" '
+    NR == 1 { label = "builtin_true_in_one_bash" }
+    NR == 2 { label = "external_true_in_one_bash" }
+    NR <= 2 && $1 ~ /^[0-9.]+$/ { printf "host-microbench: %s ms_per_exec=%.3f n=%d\n", label, $1 / n * 1000, n; ok++ }
+    END { exit ok != 2 }' || {
+    echo "fm-host-ledger: builtin versus external bench printed no timing" >&2
+    exit 1
+  }
 }
 
 cmd_limits() {
@@ -316,8 +425,43 @@ cmd_limits() {
   printf 'ulimit -n: %s\n' "$(ulimit -n)"
 }
 
+xml_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+cmd_render_launchd() {
+  local sum key
+  read -r sum _ <<EOF
+$(printf '%s' "$HOME" | cksum)
+EOF
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.firstmate.host-ledger-$sum</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$(printf '%s' "$SCRIPT_DIR/fm-host-ledger.sh" | xml_escape)</string><string>sample</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+EOF
+  for key in HOME PATH FM_HOST_LEDGER_DIR FM_HOST_LEDGER_VOLUME FM_HOST_LEDGER_QUOTA_TIMEOUT FM_HOST_LEDGER_QUOTA_MAX_AGE; do
+    case "$key" in HOME|PATH) ;; *) [ -n "${!key:-}" ] || continue ;; esac
+    printf '    <key>%s</key><string>%s</string>\n' "$key" "$(printf '%s' "${!key:-}" | xml_escape)"
+  done
+  cat <<EOF
+  </dict>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>$(printf '%s' "$LEDGER_DIR/sample.err" | xml_escape)</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+</dict></plist>
+EOF
+}
+
 case "${1:-}" in
   sample) shift; [ $# -eq 0 ] || die_usage; cmd_sample ;;
+  render-launchd) shift; [ $# -eq 0 ] || die_usage; cmd_render_launchd ;;
   report) shift; cmd_report "$@" ;;
   microbench) shift; cmd_microbench "$@" ;;
   limits) shift; [ $# -eq 0 ] || die_usage; cmd_limits ;;
