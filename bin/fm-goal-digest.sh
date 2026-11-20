@@ -187,9 +187,21 @@ do_run() {
   mkdir -p "$output_dir/history" "$output_dir/.state" || return 1
   local lock_dir=$output_dir/.state/run.lock
   if ! mkdir "$lock_dir" 2>/dev/null; then
-    printf 'goal-digest: another run is in progress; skipping (lock %s)\n' "$lock_dir" >&2
-    return 1
+    local owner
+    owner=$(cat "$lock_dir/pid" 2>/dev/null || true)
+    if [ -n "$owner" ] && kill -0 "$owner" 2>/dev/null; then
+      printf 'goal-digest: another run is in progress; skipping (lock %s)\n' "$lock_dir" >&2
+      return 1
+    fi
+    rm -rf "$lock_dir"
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+      printf 'goal-digest: another run is in progress; skipping (lock %s)\n' "$lock_dir" >&2
+      return 1
+    fi
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '$lock_dir'" EXIT
+  printf '%s\n' "$$" > "$lock_dir/pid"
   local seen_file=$output_dir/.state/seen.tsv
   local hash_file=$output_dir/.state/content.hash
   local since_file=$output_dir/.state/since.tsv
@@ -198,7 +210,7 @@ do_run() {
   local work
   work=$(mktemp -d "${TMPDIR:-/tmp}/fm-goal-digest.XXXXXX") || return 1
   # shellcheck disable=SC2064
-  trap "rm -rf '$work'; rmdir '$lock_dir' 2>/dev/null || true" EXIT
+  trap "rm -rf '$work' '$lock_dir'" EXIT
   : > "$work/new_merges.tsv"
   : > "$work/seen-new.tsv"
   : > "$work/since-new.tsv"
@@ -451,8 +463,7 @@ PY
   fi
 
   trap - EXIT
-  rm -rf "$work"
-  rmdir "$lock_dir" 2>/dev/null || true
+  rm -rf "$work" "$lock_dir"
   printf 'goal-digest: changed=%s latest=%s generated=%s\n' "$changed" "$output_dir/latest.md" "$now_iso"
 }
 
