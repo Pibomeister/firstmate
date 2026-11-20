@@ -643,6 +643,61 @@ SH
   pass 'a hold arriving after snapshot validation refuses receipt publication'
 }
 
+test_claim_refusals_leave_no_staging_files() {
+  claim_fixture claim-stage-cleanup
+  local out token fakebin rc real_sha orphans
+  fakebin=$(fm_fakebin "$HOME_DIR/stage-fake")
+  real_sha=$(command -v shasum)
+  cat > "$fakebin/shasum" <<'SH'
+#!/usr/bin/env bash
+# Inject a standing hold after snapshot hashing, once staging is under way,
+# so publication refuses after the receipt temp file exists.
+if [ "$#" = 2 ] && [ "$1" = -a ] && [ "$2" = 256 ]; then
+  input=$(cat)
+  if [ -f "$FM_STAGE_TRIGGER" ] && printf '%s\n' "$input" | grep -Fq 'Ledger source: proposal:V12'; then
+    mv "$FM_STAGE_TRIGGER" "$FM_STAGE_TRIGGER.fired"
+    FM_HOME="$FM_STAGE_HOME" "$FM_STAGE_ROOT/bin/fm-order.sh" send --hold --from test -- 'stop this dispatch' >/dev/null || exit 1
+  fi
+  printf '%s\n' "$input" | "$FM_STAGE_REAL_SHA" "$@"
+else
+  exec "$FM_STAGE_REAL_SHA" "$@"
+fi
+SH
+  chmod +x "$fakebin/shasum"
+  touch "$HOME_DIR/inject-stage-hold"
+  out=$(PATH="$fakebin:$PATH" FM_STAGE_TRIGGER="$HOME_DIR/inject-stage-hold" FM_STAGE_HOME="$HOME_DIR" FM_STAGE_ROOT="$ROOT" FM_STAGE_REAL_SHA="$real_sha" ledger claim --project alpha 2>&1); rc=$?
+  expect_code 1 "$rc" "late hold refuses the fresh claim: $out"
+  [ -f "$HOME_DIR/inject-stage-hold.fired" ] || fail 'staging fixture did not reach the hashing boundary'
+  orphans=$(find "$HOME_DIR/state/ledger-claims" -maxdepth 1 -name '.receipt.*' -print)
+  [ -z "$orphans" ] || fail "refused fresh claim left staging files behind: $orphans"
+  claim_fixture claim-stage-cleanup-spawn
+  out=$(ledger claim --project alpha) || fail 'cannot reserve spawn staging fixture'
+  token=${out##*token=}
+  fakebin=$(fm_fakebin "$HOME_DIR/stage-spawn-fake")
+  cat > "$fakebin/shasum" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" = 2 ] && [ "$1" = -a ] && [ "$2" = 256 ]; then
+  input=$(cat)
+  if [ -f "$FM_STAGE_TRIGGER" ] && printf '%s\n' "$input" | grep -Fq 'Ledger source: proposal:V12'; then
+    mv "$FM_STAGE_TRIGGER" "$FM_STAGE_TRIGGER.fired"
+    FM_HOME="$FM_STAGE_HOME" "$FM_STAGE_ROOT/bin/fm-order.sh" send --hold --from test -- 'stop this dispatch' >/dev/null || exit 1
+  fi
+  printf '%s\n' "$input" | "$FM_STAGE_REAL_SHA" "$@"
+else
+  exec "$FM_STAGE_REAL_SHA" "$@"
+fi
+SH
+  chmod +x "$fakebin/shasum"
+  touch "$HOME_DIR/inject-stage-hold"
+  out=$(PATH="$fakebin:$PATH" FM_STAGE_TRIGGER="$HOME_DIR/inject-stage-hold" FM_STAGE_HOME="$HOME_DIR" FM_STAGE_ROOT="$ROOT" FM_STAGE_REAL_SHA="$real_sha" claim_transition_for_test "$token" begin 2>&1); rc=$?
+  expect_code 1 "$rc" "late hold refuses the dispatch transition: $out"
+  [ -f "$HOME_DIR/inject-stage-hold.fired" ] || fail 'spawn staging fixture did not reach the hashing boundary'
+  [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = reserved ] || fail 'refused transition published a dispatching receipt'
+  orphans=$(find "$HOME_DIR/state/ledger-claims" -maxdepth 1 -name '.receipt.*' -print)
+  [ -z "$orphans" ] || fail "refused claim transition left staging files behind: $orphans"
+  pass 'refused claim publications remove their receipt staging files'
+}
+
 test_claim_release_requires_proven_retirement() {
   claim_fixture claim-release-proof
   local out token rc fakebin dead_pid next_token
@@ -764,7 +819,7 @@ if [ "${FM_TEST_ONLY:-}" = claims ]; then
 fi
 
 if [ "${FM_TEST_ONLY:-}" = claim-recovery ]; then
-  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_release_requires_proven_retirement
+  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_refusals_leave_no_staging_files test_claim_release_requires_proven_retirement
   exit
 fi
 
@@ -776,6 +831,7 @@ fm_test_run \
   test_claim_parked_order_revokes_authority \
   test_claim_project_symlink_cannot_cross_home \
   test_claim_rechecks_hold_at_publication \
+  test_claim_refusals_leave_no_staging_files \
   test_claim_release_requires_proven_retirement \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_claim_spawn_waits_for_concurrent_claim_lock \
