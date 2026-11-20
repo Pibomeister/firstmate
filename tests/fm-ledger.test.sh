@@ -428,6 +428,9 @@ test_claim_reserves_once_and_resumes() {
   expect_code 3 "$rc" 'a reserved item is not claimable again'
   out=$(ledger claim --project alpha --resume claim-one) || fail "resume failed: $out"
   assert_contains "$out" "token=$token" 'lost claim response reuses the same token'
+  printf '# tuned\nmin-ready=5\nclaim-project=alpha\nclaim-project=beta\n' > "$HOME_DIR/config/mission-ledger"
+  out=$(ledger claim --project alpha --resume claim-one) || fail "unrelated mission-ledger edit stranded the claim: $out"
+  assert_contains "$out" "token=$token" 'unrelated mission-ledger edits keep the reservation'
   tasks hold claim-one --reason 'new decision' >/dev/null
   out=$(ledger claim --project alpha --resume claim-one 2>&1); rc=$?
   expect_code 1 "$rc" 'a changed hold refuses recovery'

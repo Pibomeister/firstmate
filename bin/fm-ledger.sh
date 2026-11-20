@@ -586,7 +586,7 @@ claim_snapshot() { # <id> <project>; prints the exact approval-input digest
   fi
   claim_holds_clear
   "$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" >&2 || die "claim budget refused"
-  { printf '%s\n' "$row" "$item"; cat "$brief" "$CONFIG/mission-ledger"; } | shasum -a 256 | awk '{print $1}'
+  { printf '%s\n' "$row" "$item"; cat "$brief"; } | shasum -a 256 | awk '{print $1}'
 }
 
 claim_read() {
