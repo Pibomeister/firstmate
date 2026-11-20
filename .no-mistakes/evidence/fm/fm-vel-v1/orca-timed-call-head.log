@@ -1,0 +1,6 @@
+## HEAD 14e848cb: tests/fm-orca-cli-cache.test.sh test_timed_call_keeps_the_rest_of_its_function
+1..1
+ok - fm_orca_cli: a timed call keeps the CLI body and the rest of its function, cache on or off
+FM_TEST_COMPLETE
+timeout 900 bash tests/fm-orca-cli-cache.test.sh   1.78s user 7.93s system 3% cpu 4:10.75 total
+exit=0

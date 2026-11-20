@@ -1,0 +1,5 @@
+## HEAD tree with base 6cf239b9 bin/fm-orca-cli-cache.sh: same test
+1..1
+not ok - a timed read lost the CLI body or the steps after it: cache=1 body missing;cache=1 after missing;cache=0 after missing;
+timeout 900 bash tests/fm-orca-cli-cache.test.sh   1.70s user 7.85s system 3% cpu 4:10.11 total
+exit=1
