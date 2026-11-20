@@ -320,14 +320,25 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|force.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|force.?push|a merge([^a-z]|$)|merge (the|this|pr|#|now))|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
 fm_wd_nm_awaiting_approval() {  # <text>
-  _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval'
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval' || return 1
+  # The token alone does not prove a pipeline step: a plain merge decision can
+  # mention it. Require a no-mistakes or named-step context, including the
+  # nm-<run>-<step> decision key a gate escalation carries.
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'no-mistakes|(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]-]*step|step[[:space:]]+awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
 }
 
 fm_wd_human_only() {  # <text>
-  _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE"
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
+  # Formatting alone must not change authority: shared_database and
+  # messages-to-people name the same categories as their spaced forms.
+  printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE"
 }
 
 fm_wd_known_unreachable_timing_flake() {  # <text>

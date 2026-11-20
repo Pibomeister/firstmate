@@ -1741,7 +1741,16 @@ council-seats=claude:haiku,agy:flash'
   printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve and send messages to people, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 70 council --task t1 --key nm-messages --record-file "$H/record.txt" 2>&1) || fail "messages council failed: $out"
   assert_contains "$out" "council=held answer=none" "a messages-to-people awaiting_approval stays the owner's: $out"
-  assert_equals 2 "$(seat_calls)" "no seat saw a force-push, publish, PII, shared-database, or messages record"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve shared_database writes so the PR can merge, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 80 council --task t1 --key nm-shared-db-underscore --record-file "$H/record.txt" 2>&1) || fail "shared_database council failed: $out"
+  assert_contains "$out" "council=held answer=none" "an underscore shared_database awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve and send messages-to-people, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 90 council --task t1 --key nm-messages-hyphen --record-file "$H/record.txt" 2>&1) || fail "messages-to-people council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a hyphenated messages-to-people awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 awaiting_approval. A merge the PR now, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 100 council --task t1 --key ship-it --record-file "$H/record.txt" 2>&1) || fail "plain merge council failed: $out"
+  assert_contains "$out" "council=held answer=none" "an actual merge decision stays held even when it mentions awaiting_approval without a pipeline step: $out"
+  assert_equals 2 "$(seat_calls)" "no seat saw a force-push, publish, PII, shared-database, messages, or plain merge record"
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
@@ -1780,6 +1789,11 @@ council-seats=claude:haiku,agy:flash'
   assert_equals 4 "$(seat_calls)" "the revisit convened both seats again"
   archived=$(grep -rl 'PROCEED B (unanimous' "$H/data/watchdog/revisits/" 2>/dev/null | head -n 1)
   [ -n "$archived" ] || fail "the superseded ruling was not archived under data/watchdog/revisits/"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  out=$(run_wd 30 council --task t1 --key nm-hold --record-file "$H/record2.txt" --revisit 2>&1) || fail "same-evidence revisit failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "repeating a revisit on identical evidence replays the ruling that evidence produced: $out"
+  assert_contains "$out" "prior=1" "the same-evidence revisit is a replay, not a new convening: $out"
+  assert_equals 4 "$(seat_calls)" "a same-evidence revisit calls no seat again"
   pass "council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling"
 }
 
@@ -1804,6 +1818,16 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 40 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "replay after refused revisit failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED B" "the prior ruling still replays after a refused revisit: $out"
   [ -z "$(ls -A "$H/data/watchdog/revisits" 2>/dev/null)" ] || fail "a revisit that published nothing archived the prior ruling: $(ls "$H/data/watchdog/revisits")"
+  sed -i.bak 's/^council-seats=.*/council-seats=claude:haiku,agy:flash/' "$H/config/watchdog"
+  fake_models "$H" ok:"PROCEED A" ok:"HOLD"
+  chmod a-w "$H/data/watchdog/rulings"
+  out=$(run_wd 50 council --task t1 --key nm-hold --record-file "$H/record2.txt" --revisit 2>&1) || fail "removal-blocked revisit errored: $out"
+  chmod u+w "$H/data/watchdog/rulings"
+  assert_contains "$out" "council=failed" "a revisit whose prior ruling cannot be removed fails instead of publishing a superseding record: $out"
+  out=$(run_wd 60 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "replay after removal-blocked revisit failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED B" "the prior ruling still replays after a removal-blocked revisit: $out"
+  council_record_path no-rulings t1 nm-hold >/dev/null 2>&1 && fail "a removal-blocked revisit left a superseding no-ruling record beside the prior ruling"
+  [ -z "$(ls -A "$H/data/watchdog/revisits" 2>/dev/null)" ] || fail "a removal-blocked revisit archived the prior ruling: $(ls "$H/data/watchdog/revisits")"
   pass "council: a failed or refused revisit leaves the prior ruling final, so no later pass re-rolls it"
 }
 
