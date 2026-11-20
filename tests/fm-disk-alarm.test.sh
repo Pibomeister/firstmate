@@ -718,7 +718,7 @@ test_retry_keeps_launch_flags_and_strips_every_routing_form() {
   retry_at_level "$home" "$volume" 9437184 record ship-g ship-g /p/g claude --mode no-mistakes --yolo off \
     --upstream-consent github.com/o/r --pr-branch fm/g --from-branch fm/f --traceparent 00-abc-def-01 \
     --budget-fresh-hard 9 --harness=claude --model=opus --effort=max \
-    --dispatch-override=why --hermes-profile=hp || fail "record ship-g"
+    --dispatch-override=why || fail "record ship-g"
   out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
   assert_equals "ship-g"$'\n'"/p/g"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--upstream-consent"$'\n'"github.com/o/r"$'\n'"--pr-branch"$'\n'"fm/g"$'\n'"--from-branch"$'\n'"fm/f"$'\n'"--traceparent"$'\n'"00-abc-def-01"$'\n'"--budget-fresh-hard"$'\n'"9$FRESH" "$(stub_calls "$home")" "every non-routing flag keeps its value and no recorded routing survives in either form"
   pass "a re-dispatch keeps each launch flag's value and drops the recorded routing in every form"
@@ -749,6 +749,28 @@ test_retry_keeps_the_account_only_on_the_same_harness() {
   assert_contains "$out" " ship-none (" "a fresh Claude route with no recorded account in a multi-account home is handed to the supervisor"
   assert_equals "" "$(recorded_ids "$home")" "each handled record is removed"
   pass "a recorded account is kept on the same harness, and a route it cannot satisfy is dispatched by hand"
+}
+
+test_retry_keeps_the_hermes_profile_only_on_the_same_harness() {
+  local home volume out
+  home="$TMP_ROOT/retry-hermes-home"
+  volume="$TMP_ROOT/retry-hermes-volume"
+  mkdir -p "$home/state" "$volume"
+  write_brief "$home" ship-hs ship-he ship-hm
+  printf 'hermes\n' > "$home/data/ship-hs/stub-harness"
+  printf 'hermes\n' > "$home/data/ship-he/stub-harness"
+  retry_at_level "$home" "$volume" 9437184 record ship-hs ship-hs /p --mode no-mistakes --yolo off --harness hermes --hermes-profile work || fail "record ship-hs"
+  retry_at_level "$home" "$volume" 9437184 record ship-he ship-he /p hermes --mode no-mistakes --yolo off --hermes-profile=home || fail "record ship-he"
+  retry_at_level "$home" "$volume" 9437184 record ship-hm ship-hm /p --mode no-mistakes --yolo off --harness hermes --hermes-profile work || fail "record ship-hm"
+  set_epoch "$home" ship-hs 100
+  set_epoch "$home" ship-he 200
+  set_epoch "$home" ship-hm 300
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "the scan must exit 0"$'\n'"$out"
+  assert_equals "ship-hs"$'\n'"/p"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--harness"$'\n'"hermes"$'\n'"--model"$'\n'"gpt-x"$'\n'"--effort"$'\n'"high"$'\n'"--hermes-profile"$'\n'"work"$'\n\n'"ship-he"$'\n'"/p"$'\n'"--mode"$'\n'"no-mistakes"$'\n'"--yolo"$'\n'"off"$'\n'"--harness"$'\n'"hermes"$'\n'"--model"$'\n'"gpt-x"$'\n'"--effort"$'\n'"high"$'\n'"--hermes-profile"$'\n'"home" "$(stub_calls "$home")" "a task whose fresh harness is its recorded Hermes launches again on its recorded profile"
+  assert_contains "$out" "re-dispatched by bin/fm-spawn.sh: ship-hs ship-he" "the same-harness Hermes tasks are re-dispatched"
+  assert_contains "$out" "dispatch by hand: ship-hm (clear on codex, but --hermes-profile was recorded for hermes)" "a harness change under a recorded Hermes profile is handed to the supervisor"
+  assert_equals "" "$(recorded_ids "$home")" "each handled record is removed"
+  pass "a recorded Hermes profile is kept on the same harness, and a harness change under it is dispatched by hand"
 }
 
 test_retry_hands_unclear_routing_to_the_supervisor() {
@@ -867,6 +889,7 @@ fm_test_run \
   test_watcher_reports_the_redispatch \
   test_retry_keeps_launch_flags_and_strips_every_routing_form \
   test_retry_keeps_the_account_only_on_the_same_harness \
+  test_retry_keeps_the_hermes_profile_only_on_the_same_harness \
   test_retry_hands_unclear_routing_to_the_supervisor \
   test_retry_skips_held_or_blocked_backlog_items \
   test_retry_report_is_renamed_into_place \

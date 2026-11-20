@@ -29,11 +29,12 @@
 #           record, launching nothing, and report the task for dispatch by hand.
 #           On clear, scan itself runs bin/fm-spawn.sh with the recorded
 #           arguments, minus --harness, --model, --effort, --dispatch-override,
-#           --hermes-profile, and --account (with a separate or `=` value) and
-#           any positional after the task id and project, plus the fresh
-#           profile. A recorded --account is passed again only when the fresh
-#           harness is the recorded one. When the harness changed under a
-#           recorded --account, or the fresh harness is claude,
+#           and the harness-scoped selectors --account and --hermes-profile
+#           (each with a separate or `=` value), and minus any positional after
+#           the task id and project, plus the fresh profile. The recorded
+#           harness-scoped selectors are passed again only when the fresh
+#           harness is the recorded one. When the harness changed under any
+#           recorded harness-scoped selector, or the fresh harness is claude,
 #           config/claude-accounts exists, and no --account was recorded, the
 #           record is handed over for dispatch by hand like an unclear
 #           resolution. Every spawn gate (disk alarm, capacity, backlog,
@@ -170,10 +171,11 @@ backlog_queued() {  # <task-id>
 
 # Resolve the task's routing again from its brief. On clear, set ROUTED to the
 # recorded arguments without their routing flags, followed by the fresh
-# profile and any recorded --account, and return 0. Otherwise set RESOLVED to the resolution status and
-# return 1.
+# profile and the recorded harness-scoped selectors, and return 0. Otherwise
+# set RESOLVED to the resolution status and return 1.
 resolve_routing() {  # <task-id> <spawn-arg>...
-  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was= account= account_set=0
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was= account_set=0
+  local -a scoped=()
   shift
   ROUTED=()
   RESOLVED=error
@@ -193,10 +195,17 @@ resolve_routing() {  # <task-id> <spawn-arg>...
     case "$1" in
       --harness) [ $# -lt 2 ] || was=$2; shift ;;
       --harness=*) was=${1#--harness=} ;;
-      --account) account_set=1; [ $# -lt 2 ] || account=$2; shift ;;
-      --account=*) account_set=1; account=${1#--account=} ;;
-      --model | --effort | --dispatch-override | --hermes-profile) shift ;;
-      --model=* | --effort=* | --dispatch-override=* | --hermes-profile=*) ;;
+      --account | --hermes-profile)
+        [ "$1" != --account ] || account_set=1
+        scoped+=("$1")
+        [ $# -lt 2 ] || { shift; scoped+=("$1"); }
+        ;;
+      --account=* | --hermes-profile=*)
+        case "$1" in --account=*) account_set=1 ;; esac
+        scoped+=("${1%%=*}" "${1#*=}")
+        ;;
+      --model | --effort | --dispatch-override) shift ;;
+      --model=* | --effort=* | --dispatch-override=*) ;;
       --mode | --yolo | --branch-prefix | --base-branch | --backend | --pr-branch | --from-branch | \
         --upstream-consent | --traceparent | --budget-inclusive-hard | --budget-inclusive-stop | \
         --budget-fresh-hard | --budget-fresh-stop)
@@ -215,8 +224,8 @@ resolve_routing() {  # <task-id> <spawn-arg>...
     esac
     [ $# -eq 0 ] || shift
   done
-  if [ "$account_set" -eq 1 ] && [ "$was" != "$harness" ]; then
-    RESOLVED="clear on $harness, but --account was recorded for ${was:-the default harness}"
+  if [ "${#scoped[@]}" -gt 0 ] && [ "$was" != "$harness" ]; then
+    RESOLVED="clear on $harness, but ${scoped[0]} was recorded for ${was:-the default harness}"
     return 1
   fi
   if [ "$account_set" -eq 0 ] && [ "$harness" = claude ] && { [ -e "$CONFIG/claude-accounts" ] || [ -L "$CONFIG/claude-accounts" ]; }; then
@@ -226,7 +235,7 @@ resolve_routing() {  # <task-id> <spawn-arg>...
   ROUTED+=(--harness "$harness")
   [ -z "$model" ] || ROUTED+=(--model "$model")
   [ -z "$effort" ] || ROUTED+=(--effort "$effort")
-  [ "$account_set" -eq 0 ] || ROUTED+=(--account "$account")
+  [ "${#scoped[@]}" -eq 0 ] || ROUTED+=("${scoped[@]}")
 }
 
 scan() {
