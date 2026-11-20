@@ -472,6 +472,93 @@ test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
   pass "inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry"
 }
 
+# Orca lifts the text on the cursor's prompt row out of `tail` into its
+# `draft` field (bin/backends/orca.sh, fm_backend_orca_draft_present), so a
+# wrapped doorbell whose Enter never landed reads back split: the tail holds
+# the earlier wrapped rows and `draft` holds the last one. The re-ring must
+# still prove the composer holds only our own doorbell and submit it, while
+# any other split text stays protected.
+make_orca_composer_stub() {  # <dir>
+  mkdir -p "$1/fakebin"
+  cat > "$1/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-} ${2:-}" in
+  "terminal read")
+    FM_FAKE_COMPOSER="$FM_FAKE_COMPOSER" python3 -c '
+import json, os, subprocess
+composer = ""
+try:
+    composer = open(os.environ["FM_FAKE_COMPOSER"]).read()
+except OSError:
+    pass
+chunks = subprocess.run(["fold", "-w", "56"], input=composer, capture_output=True, text=True).stdout.splitlines()
+if chunks:
+    draft = chunks[-1]
+    shown = chunks[:-1]
+else:
+    draft = ""
+    shown = []
+def row(text):
+    return "\u2502 " + text.ljust(58) + " \u2502"
+tail = ["\u25cf done", "\u256d" + "\u2500" * 60 + "\u256e"]
+if shown:
+    tail.append(row("\u276f " + shown[0]))
+    tail.extend(row("  " + c) for c in shown[1:])
+    tail.append(row(""))
+else:
+    tail.append(row("\u276f "))
+tail.append("\u2570" + "\u2500" * 60 + "\u256f")
+print(json.dumps({"ok": True, "result": {"terminal": {"tail": tail, "draft": draft}}}))
+' ;;
+  "terminal send")
+    enter=0
+    for a in "$@"; do [ "$a" = --enter ] && enter=1; done
+    if [ "$enter" = 1 ] && [ -s "$FM_FAKE_COMPOSER" ]; then
+      printf 'SUBMIT: %s\n' "$(cat "$FM_FAKE_COMPOSER")" >> "$FM_SEND_LOG"
+      : > "$FM_FAKE_COMPOSER"
+    fi
+    printf '{"ok":true,"result":{}}\n' ;;
+  "terminal list")
+    printf '{"ok":true,"result":{"terminals":[]}}\n' ;;
+  *) exit 1 ;;
+esac
+exit 0
+SH
+  chmod +x "$1/fakebin/orca"
+}
+
+test_ring_submits_own_doorbell_split_into_orca_draft() {
+  local dir state rec doorbell log composer rc other
+  dir="$TMP_ROOT/ring-orca-draft"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_orca_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1
+  }
+
+  : > "$log"; printf '%s' "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "an Orca composer holding our own doorbell split into draft should be submitted, got rc $rc"
+  [ "$(cat "$log")" = "SUBMIT: $doorbell" ] \
+    || fail "the split doorbell should be submitted exactly once, not retyped:"$'\n'"$(cat "$log")"
+  [ ! -s "$composer" ] || fail "the split doorbell was left in the composer"
+
+  for other in "$doorbell and a draft" 'a half-typed draft that is long enough to wrap onto the tail rows of the composer for sure'; do
+    : > "$log"; printf '%s' "$other" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "other pending text split into draft should skip the ring, got rc $rc for: $other"
+    [ ! -s "$log" ] || fail "other pending text split into draft was submitted:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$other" ] || fail "other pending text split into draft was changed: $(cat "$composer")"
+  done
+  pass "inbox: the ring submits its own doorbell split into Orca draft and protects other split text"
+}
+
 # A doorbell ring starts a Codex turn, and the ladder's .ring-state is deleted
 # once the worker files the message (whose mv keeps its enqueue time), so the
 # ring itself records the turn start the Codex busy classifier reads. Without
@@ -1751,6 +1838,7 @@ test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_ring_submits_repeated_own_doorbells_only
+test_ring_submits_own_doorbell_split_into_orca_draft
 test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_ring_records_a_codex_turn_start
 test_idempotent_write_dedups_exact_body
