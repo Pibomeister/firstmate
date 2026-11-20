@@ -594,6 +594,7 @@ For any runtime, the watcher also reads a refusal row the idle screen shows, exc
 On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
 It wakes firstmate with a check naming the switch, or why no runtime took over.
 A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
+The whole failover call, every relaunch included, ends strictly inside the watcher's stale grace, so a slow failover never makes the watcher itself look stopped.
 
 A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
 When the session holds the lock and the home has open work, the hook writes a handoff with `bin/fm-ledger.sh handoff` and starts a successor on the next eligible primary runtime through `bin/fm-handoff-launch.sh`.
@@ -605,6 +606,8 @@ Every switch is recorded in the dispatch log as a `failover` event with its time
 The optional local `config/failover-order` lists one runtime per line, in preference order; blank lines and lines that start with `#` are ignored.
 An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
 The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
+Accounts compare by their config directory, so `ordinary` and a declared `$HOME/.claude` are one account.
+An unpinned Claude worker counts as running on the account the supervisor inherits, which holds only when the worker was spawned under that same `CLAUDE_CONFIG_DIR`.
 A `host=` entry is accepted but skipped, because ordinary workers and successor captains launch on this host; run failover in that host's own home instead.
 The line `off` turns automatic failover off: detection still wakes firstmate, but nothing is relaunched.
 The line `min-5h <percent>` sets the preflight's five-hour floor, 30 by default.
@@ -621,6 +624,7 @@ min-5h 30
 
 `bin/fm-failover.sh preflight` makes one real one-line call through each runtime's own CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
 A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
+Only provider failover reads the night plan; ordinary dispatch does not consult it.
 An unreadable window is disclosed and does not exclude.
 The preflight sends one short prompt per runtime and per declared account, each a full non-interactive session of that CLI, so a Claude call costs its usual session context rather than one line, plus one `quota-axi` read each.
 It buys nothing.

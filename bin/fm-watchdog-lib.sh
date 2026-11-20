@@ -181,14 +181,17 @@ FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit
 # or account-hold refusal. The row may open with spaces or glyphs but not a
 # digit, `+`, or `-`, so a numbered diff row quoting one is not a match.
 # A 429 counts only as the first number after an `api error`, `stream error`,
-# or `unexpected status` prefix, so a token count, duration, or line number
-# holding those digits is not one, and rate-limit or billing words count only
-# on such an error row (OpenAI's insufficient_quota tokens on any error row).
+# or `unexpected status` prefix, set off by a space, `(`, `=`, `_`, or `:`
+# (`status=429`, `HTTP_STATUS_429`), so a token count, duration, or line number
+# holding those digits is not one. Rate-limit or billing words count only on
+# such an error row, except a bare `error:` row whose message opens with a
+# rate limit exceeded or reached (OpenAI's insufficient_quota tokens count on
+# any error row).
 # Usage-limit rows stay with FM_WD_USAGE_LIMIT_RE and, as a refusal, must also
 # name a reset, retry, upgrade, or purchase (FM_WD_PROVIDER_LIMIT_HINT_RE).
 # A row announcing an automatic retry (FM_WD_PROVIDER_RETRY_RE) is transient.
 # fm_wd_provider_error_class is the one reader that joins all of them.
-FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*(((api|stream) error|unexpected status)[^0-9]*(\(|[[:space:]])429([^0-9]|$)|(api|stream) error[[:space:]]*(:|\().*(rate[_ -]?limit|too many requests))'
+FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*(((api|stream) error|unexpected status)[^0-9]*(\(|[[:space:]]|[=_:])429([^0-9]|$)|(api|stream) error[[:space:]]*(:|\().*(rate[_ -]?limit|too many requests)|error[[:space:]]*:[[:space:]]*rate[_ -]?limit[_ -]?(exceeded|reached))'
 FM_WD_BILLING_ERROR_RE='^[^a-z0-9+-]*(credit balance (is )?too low[[:space:]]*([^a-z[:space:]]|$)|claude code can.t use your claude subscription|you( are|.{1,3}re) out of extra usage|your account is on hold|your org(anization)? is out of usage|((api|stream) )?error[[:space:]]*(:|\().*(insufficient_quota|exceeded your current quota)|((api|stream) error[[:space:]]*(:|\()|unexpected status).*(billing|credit balance|past due))'
 FM_WD_PROVIDER_LIMIT_HINT_RE='reset|try again|upgrade|purchase|more credits|extra.usage|rate-limit-options'
 FM_WD_PROVIDER_RETRY_RE='retrying in|\(attempt [0-9]+/[0-9]+\)'

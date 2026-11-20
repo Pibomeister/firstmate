@@ -192,6 +192,12 @@ rate_limit|⏺ API Error: Request rejected (429) · This request would exceed yo
 rate_limit|■ stream error: unexpected status 429 Too Many Requests: rate_limit_exceeded
 rate_limit|API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}
 rate_limit|API Error: Rate limit reached for requests
+rate_limit|API Error: status=429
+rate_limit|⏺ API Error: code=429 Too Many Requests
+rate_limit|API Error: HTTP_STATUS_429
+rate_limit|■ stream error: unexpected status:429
+rate_limit|Error: rate limit exceeded, retry later
+rate_limit|  ⎿  Error: rate_limit_exceeded
 billing|⏺ Credit balance is too low
 billing|  ⎿  Credit balance too low · Add funds: https://platform.claude.com/settings/billing
 billing|API Error: 402 {"error":{"message":"Your payment is past due"}}
@@ -216,7 +222,10 @@ none|• API Error: 500 {"type":"error"} at line 429
 none|     Error: Request failed with status code 429
 none|⏺ Error: rate limit test fixture now returns 429 as expected
 none|Error: too many requests to npm registry
-none|Error: rate limit exceeded, retry later
+none|API Error: HTTP_STATUS_4290
+none|API Error: code=14290
+none|Error: request failed, status=429 from the mock server
+none|Error: rate limit fixture exceeded its budget
 none|Error: billing tests failed after the past due fixture changed
 none|Usage limit reached for the GitHub API in my test, retrying later
 none|You have hit your limit on PRs today, so I stopped
@@ -538,16 +547,18 @@ watch_case() {  # <name> <screen> -> case dir with a claude ship and a fake fm-c
   cat > "$dir/fake-control" <<SH
 #!/usr/bin/env bash
 printf '%s %s %s %s %s %s\n' "\$1" "\$2" "\$3" "\$4" "\$5" "\$6" >> "$dir/control.calls"
+printf '%s %s\n' "\${FM_FAILOVER_RELAUNCH_TIMEOUT:-}" "\$(( \${FM_FAILOVER_DEADLINE:-0} - \$(date +%s) ))" >> "$dir/control.bounds"
 printf 'replacement is starting\n' > "$dir/pane.txt"
 SH
   chmod +x "$dir/fake-control"
   printf '%s\n' "$dir"
 }
 
-watch_once() {  # <dir>: run the watcher until it exits, at most 30 polls
+watch_once() {  # <dir> [env assignments...]: run the watcher until it exits, at most 30 polls
   local dir=$1 pid
+  shift
   FM_CONTROL_BIN="$dir/fake-control" FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
-    watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt"
+    watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" "$@"
   pid=$!
   wait_for_exit "$pid" 300 >/dev/null 2>&1 || true
 }
@@ -585,9 +596,82 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" fo idle --gen "$gen" --source claude-hook --event stop >/dev/null \
     || fail 'fixture: the ordinary Stop hook record was not applied'
   watch_once "$dir"
-  [ -e "$dir/state/.failover-judged-$key" ] || fail 'fixture: the watcher never judged the hook-stop screen'
+  [ -e "$dir/state/fo.failover-judged" ] || fail 'fixture: the watcher never judged the hook-stop screen'
   [ ! -e "$dir/control.calls" ] || fail "a Claude turn end its hook recorded as an ordinary stop must not relaunch from old screen rows: $(cat "$dir/control.calls")"
   pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose and a hook-recorded ordinary stop do not'
+}
+
+# Every stale grace, from the floor to well past the default, and explicit
+# timeouts above and below the cap: the whole call stays strictly inside the
+# grace and each relaunch inside fm-failover.sh's deadline.
+test_watch_bounds_stay_inside_the_stale_grace() {
+  local grace t r m
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$ROOT/bin/fm-wake-lib.sh"
+  assert_equals '240 220 15' "$(fm_failover_watch_bounds 300)" 'the default grace keeps the historical bounds'
+  assert_equals '240 220 15' "$(fm_failover_watch_bounds '')" 'an unset grace reads as the 300s default'
+  assert_equals '240 225 15' "$(fm_failover_watch_bounds 300 900 900)" 'explicit bounds past the grace are capped'
+  assert_equals '100 80 15' "$(fm_failover_watch_bounds 300 100)" 'an explicit timeout under the cap holds'
+  assert_equals '100 50 15' "$(fm_failover_watch_bounds 300 100 50)" 'an explicit relaunch bound under the deadline holds'
+  for grace in 2 3 10 30 59 60 61 100 119 120 121 180 300 600 3600; do
+    read -r t r m <<< "$(fm_failover_watch_bounds "$grace")"
+    [ "$t" -lt "$grace" ] || fail "grace $grace: the call timeout $t is not inside the grace"
+    [ "$t" -ge 1 ] || fail "grace $grace: the call timeout $t is not positive"
+    [ "$m" -le $((t / 4)) ] || fail "grace $grace: the deadline margin $m eats the call"
+    [ "$r" -ge 1 ] && [ "$r" -le $((t - m)) ] || fail "grace $grace: the relaunch bound $r does not fit inside the deadline (t=$t m=$m)"
+    read -r t r m <<< "$(fm_failover_watch_bounds "$grace" 99999 99999)"
+    [ "$t" -lt "$grace" ] || fail "grace $grace: an explicit timeout $t escapes the grace"
+    [ "$r" -le $((t - m)) ] || fail "grace $grace: an explicit relaunch bound $r escapes the deadline"
+  done
+
+  # A real watcher on a short grace hands fm-failover.sh a deadline and a
+  # relaunch bound inside it; the floor of the earlier clamp gave 45s and 40s.
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+  local dir
+  dir=$(watch_case watch-grace $'⏺ API Error: Request rejected (429) · This request would exceed your account\'s rate limit.\n\n❯ \n  ⏵⏵ auto mode on')
+  watch_once "$dir" FM_WATCHER_STALE_GRACE=30 FM_FAILOVER_MIN_RELAUNCH_SECS=1
+  [ -s "$dir/control.bounds" ] || fail "the short-grace watcher never relaunched: $(cat "$dir/watch.out")"
+  read -r r t < "$dir/control.bounds"
+  [ "$r" -lt 30 ] || fail "the relaunch bound $r is not inside a 30s grace"
+  [ "$t" -lt 30 ] || fail "the failover deadline is ${t}s away, not inside a 30s grace"
+  pass 'watch bounds: the failover call, its deadline, and each relaunch stay inside every stale grace'
+}
+
+# `ordinary` and $HOME/.claude name one Claude account, with or without a
+# trailing slash, so neither spelling hands a refused worker back to it.
+test_worker_account_identity_is_its_config_root() {
+  reset_lab
+  local me="$HOME/.claude" spelling
+  mkdir -p "$me" "$ACCTS/D"
+  touch "$me/signed-in" "$ACCTS/D/signed-in"
+  quota_fixture claude 70 70 > "$me/quota.json"
+  quota_fixture claude 70 70 > "$ACCTS/D/quota.json"
+  printf '%s\n' "$me" "$ACCTS/D" > "$LAB/config/claude-accounts"
+  printf 'claude@next\n' > "$LAB/config/failover-order"
+  for spelling in unset "$me" "$me/"; do
+    rm -f "$LAB/control.n"
+    make_worker w8 claude
+    if [ "$spelling" = unset ]; then
+      fo worker w8
+    else
+      CLAUDE_CONFIG_DIR=$spelling fo worker w8
+    fi
+    expect_code 0 "$RC" "the inherited account spelled $spelling: $OUT"
+    assert_not_contains "$OUT" 'runtime=claude@.claude ' "the refused account spelled $spelling is never a candidate"
+    assert_contains "$OUT" 'to=claude@D' "a worker refused on the account spelled $spelling moves to the other account"
+  done
+  make_worker w8p claude "$me/"
+  rm -f "$LAB/control.n"
+  fo worker w8p
+  assert_not_contains "$OUT" 'runtime=claude@.claude ' 'a pinned account with a trailing slash is the same account'
+  assert_contains "$OUT" 'to=claude@D' 'the pinned worker moves to the other account'
+  make_worker w8c codex
+  printf 'claude@next\n' > "$LAB/config/failover-order"
+  rm -f "$LAB/control.n"
+  fo worker w8c
+  assert_contains "$OUT" 'switched task=w8c from=codex to=claude@.claude' 'a codex worker has no Claude account to exclude'
+  pass 'account identity: ordinary, the home config root, and a trailing slash are one account'
 }
 
 fm_test_run \
@@ -601,4 +685,6 @@ fm_test_run \
   test_captain_429_and_billing_start_a_successor \
   test_captain_hook_429_and_billing_start_a_successor \
   test_preflight_night_plan \
-  test_watcher_moves_an_idle_refused_ship_in_one_poll
+  test_watcher_moves_an_idle_refused_ship_in_one_poll \
+  test_watch_bounds_stay_inside_the_stale_grace \
+  test_worker_account_identity_is_its_config_root

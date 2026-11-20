@@ -113,6 +113,9 @@
 # task state when that proof fails; otherwise it removes the task's check,
 # trust record, PR sidecar, and publication record with the rest of the
 # volatile state.
+# It refuses while a provider failover (bin/fm-failover.sh) holds the task's
+# failover lock, and retires that lock, the failover ledger, and the
+# watcher's failover screen markers with the task.
 # That volatile state includes the watcher's per-task .seen-* signature for
 # the task's turn-ended file, minted by bin/fm-wake-lib.sh (the .seen-*
 # signature for its status file and its .hb-surfaced- heartbeat marker are
@@ -619,6 +622,8 @@ if [ -f "$META" ] && [ ! -L "$META" ]; then
 fi
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 CONTROL_LOCK_HELD=0
+FAILOVER_LOCK=
+FAILOVER_LOCK_HELD=0
 SM_LIVENESS_LOCK=
 META_LOCK=
 META_LOCK_HELD=0
@@ -657,6 +662,10 @@ teardown_release_locks() {
     fm_lock_release "$SM_LIVENESS_LOCK" || true
     SM_LIVENESS_LOCK=
   fi
+  if [ "$FAILOVER_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$FAILOVER_LOCK" || true
+    FAILOVER_LOCK_HELD=0
+  fi
   if [ "$CONTROL_LOCK_HELD" = 1 ]; then
     fm_lock_release "$CONTROL_LOCK" || true
     CONTROL_LOCK_HELD=0
@@ -674,6 +683,14 @@ fm_lock_try_acquire "$CONTROL_LOCK" || {
   exit 1
 }
 CONTROL_LOCK_HELD=1
+# A provider failover (bin/fm-failover.sh) holds this lock while it relaunches
+# the task; a dead holder's lock is reclaimed here and removed on exit.
+FAILOVER_LOCK="$STATE/.failover-$ID.lock"
+fm_lock_try_acquire "$FAILOVER_LOCK" || {
+  echo "error: a provider failover is already running for task $ID; nothing was changed" >&2
+  exit 1
+}
+FAILOVER_LOCK_HELD=1
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never tear
 # down a worktree (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -4305,7 +4322,8 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" \
   "$STATE/.crew-relaunch-$ID" "$STATE/.crew-stopped-$ID" "$STATE/$ID.agent-exit" \
-  "$STATE/$ID.provider-error" "$STATE/.failover-$ID"
+  "$STATE/$ID.provider-error" "$STATE/.failover-$ID" \
+  "$STATE/$ID.failover-seen" "$STATE/$ID.failover-judged"
 # kiro's per-task home is a directory (its relocated KIRO_HOME holds the hook
 # agent config, the trust setting, and this task's sessions), so it needs a
 # recursive removal rather than the file rm above.

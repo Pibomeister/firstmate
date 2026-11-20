@@ -191,7 +191,7 @@ expand_entries() {
     if [ "$account" = next ]; then
       while IFS= read -r a; do
         [ -n "$a" ] || continue
-        [ "$all" = 1 ] || [ "$a" != "$current" ] || continue
+        [ "$all" = 1 ] || ! same_account "$a" "$current" || continue
         printf "%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s\n" "$harness" "$model" "$a" "$host" "$(fm_failover_label "$harness" "$model" "$a")"
       done <<< "$listed"
     else
@@ -213,6 +213,16 @@ claude_root() {  # <account-entry> -> config root for quota reads
     ''|ordinary) printf '%s\n' "${HOME:?HOME is required}/.claude" ;;
     *) printf '%s\n' "$1" ;;
   esac
+}
+
+# same_account <account-entry> <account-entry>: true when both name one Claude
+# config root (`ordinary` and $HOME/.claude are the same account); an empty
+# entry names no account and matches nothing.
+same_account() {
+  local x y
+  [ -n "$1" ] && [ -n "$2" ] || return 1
+  x=$(claude_root "$1") y=$(claude_root "$2")
+  [ "${x%/}" = "${y%/}" ]
 }
 
 claude_signed_in() {  # <account-entry>
@@ -243,7 +253,7 @@ evaluate() {
       printf 'candidate runtime=%s host=%s skip=cross_host_unsupported\n' "$label" "$(tok "$host")"
       continue
     fi
-    if [ "$h" = "$from_h" ] && { [ "$h" != claude ] || [ -z "$a" ] || [ "$a" = "$from_a" ]; }; then
+    if [ "$h" = "$from_h" ] && { [ "$h" != claude ] || [ -z "$a" ] || same_account "$a" "$from_a"; }; then
       printf 'candidate runtime=%s skip=same_runtime_as_current\n' "$label"
       continue
     fi
@@ -566,9 +576,11 @@ cmd_worker() {
     exit 3
   fi
   # fm-spawn records account= only for a pinned account; an unpinned Claude
-  # worker ran on the account this home inherits, so that one is excluded too.
-  run_a=$from_a
-  [ "$from_h" != claude ] || [ -n "$run_a" ] || run_a=${CLAUDE_CONFIG_DIR:-ordinary}
+  # worker is taken to run on the account this process inherits, which holds
+  # only while the worker was spawned under the same CLAUDE_CONFIG_DIR, so that
+  # one is excluded too. Only a Claude worker has a Claude account to exclude.
+  run_a=''
+  [ "$from_h" != claude ] || run_a=${from_a:-${CLAUDE_CONFIG_DIR:-ordinary}}
   evaluate worker "$from_h" "$run_a" "$backend"
   if [ "${#CAND[@]}" -eq 0 ]; then
     ledger_add "$ledger" none "$from" - "$reason"
