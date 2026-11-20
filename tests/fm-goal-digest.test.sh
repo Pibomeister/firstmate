@@ -202,24 +202,27 @@ test_ssh_quoting_lock_and_install_failure() {
   FM_GD_SSH_LOG="$TMP_ROOT/ssh.log" run_digest "$home" >/dev/null || fail "run with quoted ssh path failed"
   assert_contains "$(cat "$TMP_ROOT/ssh.log")" "it'\\''s status.txt" "ssh path is shell-quoted"
   assert_contains "$(cat "$home/data/goal-digest/latest.json")" "ssh progress line" "ssh source content recorded"
-  local lock=$home/data/goal-digest/.state/run.lock
-  mkdir -p "$lock"
-  printf '%s\n' "$$" > "$lock/pid"
+  local lock=$home/data/goal-digest/.state/run.flock ready=$TMP_ROOT/lock-held holder
+  python3 -c 'import fcntl, sys, time
+f = open(sys.argv[1], "a")
+fcntl.flock(f, fcntl.LOCK_EX)
+open(sys.argv[2], "w").close()
+time.sleep(300)' "$lock" "$ready" &
+  holder=$!
+  local i=0
+  while [ ! -f "$ready" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -f "$ready" ] || fail "lock holder never acquired the run lock"
   local rc=0
   run_digest "$home" >/dev/null 2>&1 || rc=$?
   [ "$rc" != 0 ] || fail "concurrent run was not refused by the lock"
-  local dead_pid
-  sh -c 'exit 0' &
-  dead_pid=$!
-  wait "$dead_pid" 2>/dev/null || true
-  printf '%s\n' "$dead_pid" > "$lock/pid"
-  run_digest "$home" >/dev/null 2>&1 || fail "stale lock left by a dead run was not reclaimed"
-  [ ! -e "$lock" ] || fail "run lock not released after a reclaimed run"
+  kill -9 "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  run_digest "$home" >/dev/null 2>&1 || fail "run lock held by a killed run was not released"
   rc=0
   FM_GD_LAUNCH_FAIL=1 FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
     FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" install >/dev/null 2>&1 || rc=$?
   [ "$rc" != 0 ] || fail "failed launchctl bootstrap reported install success"
-  pass "ssh quoting, concurrent-run lock, stale-lock reclaim and install failure"
+  pass "ssh quoting, concurrent-run lock, crashed-run lock release and install failure"
 }
 
 fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure
