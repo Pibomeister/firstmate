@@ -1,0 +1,8 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.KoU26x
+injected wake at t=71 epoch=1795205271
+watcher alive at end
+stall observe exit=0
+stall rows exit=0
+rm: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.KoU26x/state: Directory not empty
+rm: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.KoU26x: Directory not empty
+done

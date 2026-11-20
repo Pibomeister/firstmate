@@ -1,0 +1,6 @@
+ok - --write publishes every field atomically with a null failure on a clean run
+ok - no_mistakes_run reads the real status shape and refuses a sibling branch's run
+ok - fm_nm_select_run chooses the run, and an unusable choice reads as unknown
+ok - a hung run head check is bounded, unknown, and sets failure
+ok - a worktree off its recorded branch or with an unread branch reads as unknown
+killed=time-limit

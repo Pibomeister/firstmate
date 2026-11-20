@@ -1,0 +1,11 @@
+watcher pid=2662236 start=1795210841
+idle 1795210843 published_epoch=1795210842 stale_after=null
+idle 1795210855 published_epoch=1795210855 stale_after=null
+idle 1795210867 published_epoch=1795210867 stale_after=null
+idle 1795210879 published_epoch=1795210879 stale_after=null
+idle publications in 42 s: 4 (every-poll behavior would give about 21)
+signal at 1795210883
+after-signal 1795210883 published_epoch=1795210879 stale_after=null
+watcher stderr tail:
+watch stdout:
+signal: /tmp/fm-lab.x7Hcch/state/lab-task.status

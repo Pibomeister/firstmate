@@ -1,0 +1,12 @@
+1378
+ 22:39:33 up 73 days,  1:21,  7 users,  load average: 5.86, 4.60, 4.17
+stall_exit=0
+ok - quota, auto-wait, and a refused restart close only on later evidence
+ok - help, an unknown command, and an empty window exit as specified
+FM_TEST_COMPLETE
+0
+hb_exit=0
+ok - AC-14: the derived reading is unknown, with its reason, under a state or config directory override
+ok - heartbeat publishes weekly model allowance left and leaves a miss unknown
+ok - 42 tests passed
+0

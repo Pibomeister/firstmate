@@ -1,0 +1,37 @@
+1..35
+ok - local watchdog recovery uses the documented active state override
+ok - fresh heartbeat evidence preserves the verified completion epoch without duplication
+ok - identical task IDs in two watched homes retain independent episode identities
+ok - completed watchdog history cannot recover a still-stale heartbeat
+ok - an unavailable secondmate heartbeat requires affirmative recovery evidence
+ok - worker-prefixed quota rows recover only from their source home's task status
+ok - historical completion never closes a later ongoing episode
+ok - a window on the 600, 1200, and 1800 boundaries scores PASS
+ok - a human intervention inside the window fails and is cited
+ok - a stall longer than 1800 seconds fails stall-duration only
+ok - recovery latency over 1200 seconds fails stall-recovery only
+ok - an open stall whose detect is 100 seconds before until fails stall-open only
+ok - heartbeat age 601 fails and age 600 passes
+ok - heartbeat age 700 during a 400 second verified handoff passes
+ok - a verified handoff longer than 600 seconds does not exempt heartbeat age
+ok - a sample gap fails, and a missing primary heartbeat fails closed
+ok - rows and score ignore malformed ledger lines
+ok - a fresh heartbeat is one sample, and a symlink ledger is refused
+ok - a stale primary heartbeat opens one stall and a fresh one closes it as firstmate
+ok - the stall ledger honors the heartbeat's own stale bound with a 600 second floor
+ok - watchdog dry-run and held stay open until a restart done closes them
+ok - a secondmate progress stall closes as agentkit, and mate homes stay read-only
+ok - a stale wake opens a worker stall, and a covered secondmate is not opened twice
+ok - kickoff maps to the next 08:00 America/Chicago, including the spring change
+ok - orders, inbox notes, and verified handoffs record only the in-birth events
+ok - a human recoverer fails stall-recoverer and cites the close as an intervention
+ok - a parent score reads secondmate ledgers and still requires its own heartbeat
+ok - observe skips a second pass inside the minute and records the next one
+ok - a pre-window order stays in the ledger and does not make the close human
+ok - an already-open watchdog stall closes at the restart epoch
+ok - a 40 minute watchdog onset stays earlier than a later heartbeat
+ok - a progress onset is kept, and a two-field marker does not invent one
+ok - a progress marker keeps the onset of one wake episode
+ok - quota, auto-wait, and a refused restart close only on later evidence
+ok - help, an unknown command, and an empty window exit as specified
+FM_TEST_COMPLETE

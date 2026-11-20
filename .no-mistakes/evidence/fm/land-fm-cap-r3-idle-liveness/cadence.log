@@ -1,0 +1,6 @@
+target injected_wake_epoch=1795205493
+base injected_wake_epoch=1795205493
+base start=1795205438 launches=30 beat_refreshes=9 alive=yes
+base launch_offsets: 9 11 13 15 18 21 25 30 31 36 37 39 41 43 45 48 50 52 54 57 59 61 63 66 68 70 72 74 76 79 
+target start=1795205438 launches=6 beat_refreshes=9 alive=yes
+target launch_offsets: 8 25 39 54 59 73 

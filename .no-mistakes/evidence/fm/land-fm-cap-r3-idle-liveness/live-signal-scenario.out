@@ -1,0 +1,8 @@
+watcher pid=2811458 start=1795210946
+idle 1795210948 published_epoch=1795210948 stale_after=531
+idle publications in 42 s: 1 (idle interval 60: expect 1)
+signal at 1795210966
+after-signal 1795210966 published_epoch=1795210948 stale_after=531
+after-signal 1795210970 published_epoch=1795210970 stale_after=531
+watcher stderr tail:
+watch stdout:

@@ -1,0 +1,146 @@
+not ok - clean run ledger is wrong: {
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-10-30T12:00:00Z",
+  "generated_epoch": 1793361600,
+  "published_epoch": 1795208971,
+  "fm_home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-heartbeat.HKy9Nf/clean",
+  "stale_after_secs": null,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-10-30T12:00:00Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": {
+        "unknown": true,
+        "reason": "writer has no trusted session id"
+      }
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "hb-task",
+      "terminal": {
+        "backend": "tmux",
+        "target": "fmtest:hb",
+        "exists": false
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:hb"
+      },
+      "last_commit": {
+        "sha": "f13838a29db80f8486f31ce83c5885eb97d4bffd",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": null,
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": [],
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    }
+  ],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1793361600,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s",
+    "count": 2
+  }
+}
+exit=1
