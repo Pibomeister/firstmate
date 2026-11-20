@@ -9,11 +9,23 @@
 #       reclaim estimate, and the size of every directory directly under
 #       each worktree root. Deletes nothing.
 #   fm-host-cleanup.sh clean
-#       Dry run: print what clean --apply would delete. Deletes nothing.
+#       Dry run: print what clean --apply would delete and the same
+#       worktree size lines report prints. Deletes nothing.
 #   fm-host-cleanup.sh clean --apply
-#       Delete every old entry under the cache and log roots and append one
-#       before/after line to the log. This is the mode a launchd or cron job
-#       runs.
+#       Delete every old entry under the cache and log roots, print the
+#       worktree size lines, and append one before/after line to the log.
+#       This is the mode a launchd or cron job runs.
+#   fm-host-cleanup.sh render-launchd
+#       Print a home-scoped LaunchAgent plist that runs clean --apply every
+#       6 hours (21600 seconds) with RunAtLoad and no KeepAlive retry loop,
+#       capturing HOME, PATH, and any FM_CLEANUP_* overrides. Its stdout and
+#       stderr, the whole disk and worktree report of each run, go to
+#       cleanup-run.log beside the log below. It only renders XML and never
+#       installs, starts, or restarts a service. Create the log directory
+#       (mkdir -p), save the output as ~/Library/LaunchAgents/<Label>.plist,
+#       then explicitly activate:
+#         launchctl bootstrap gui/$(id -u) <absolute-plist-path>
+#       Rollback: launchctl bootout gui/$(id -u)/<Label>
 #   fm-host-cleanup.sh --help
 #
 # What may be deleted, and nothing else: whole entries. An entry is one
@@ -49,6 +61,7 @@
 # with a PATH stub; no other mode reads FM_CLEANUP_VOLUME.
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 STATE_DIR=${FM_CLEANUP_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/host-cleanup}
 AGE_DAYS=${FM_CLEANUP_AGE_DAYS:-7}
 LOG_AGE_DAYS=${FM_CLEANUP_LOG_AGE_DAYS:-14}
@@ -69,7 +82,7 @@ usage() {
 }
 
 die_usage() {
-  echo "usage: fm-host-cleanup.sh report|clean [--apply]|--help" >&2
+  echo "usage: fm-host-cleanup.sh report|clean [--apply]|render-launchd|--help" >&2
   exit 2
 }
 
@@ -119,6 +132,17 @@ each_root() {  # <colon-list>: print one existing-or-not root per line
   printf '%s\n' "$1" | tr ':' '\n'
 }
 
+worktree_report() {
+  local root child
+  each_root "$WORKTREE_ROOTS" | while IFS= read -r root; do
+    [ -d "$root" ] || continue
+    for child in "$root"/*; do
+      [ -d "$child" ] || continue
+      printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$child" "$(root_size_kib "$child")"
+    done
+  done
+}
+
 cmd_report() {
   local free root stats
   free=$(free_kib_read)
@@ -140,14 +164,7 @@ cmd_report() {
       "$(printf '%s' "$stats" | awk '{ print $1 }')" \
       "$(printf '%s' "$stats" | awk '{ print $2 }')" "$LOG_AGE_DAYS"
   done
-  each_root "$WORKTREE_ROOTS" | while IFS= read -r root; do
-    [ -d "$root" ] || continue
-    local child
-    for child in "$root"/*; do
-      [ -d "$child" ] || continue
-      printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$child" "$(root_size_kib "$child")"
-    done
-  done
+  worktree_report
   if under_target "$free"; then
     echo "host-cleanup: free space is under the ${TARGET_GIB} GiB target" >&2
     exit 3
@@ -192,6 +209,7 @@ cmd_clean() {
       "$(printf '%s' "$result" | awk '{ print $2 }')" \
       "$(printf '%s' "$result" | awk '{ print $3 }')"
   done
+  worktree_report
   free_after=$(free_kib_read)
   printf 'host-cleanup clean: mode=%s free_after_kib=%s free_after_gib=%s target_gib=%s\n' \
     "$mode_word" "${free_after:-unknown}" "$(gib_of "${free_after:-}")" "$TARGET_GIB"
@@ -207,8 +225,44 @@ cmd_clean() {
   fi
 }
 
+xml_escape() {
+  sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' \
+    -e 's/"/\&quot;/g' -e "s/'/\&apos;/g"
+}
+
+cmd_render_launchd() {
+  local sum key
+  read -r sum _ <<EOF
+$(printf '%s' "$HOME" | cksum)
+EOF
+  cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.firstmate.host-cleanup-$sum</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$(printf '%s' "$SCRIPT_DIR/fm-host-cleanup.sh" | xml_escape)</string><string>clean</string><string>--apply</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+EOF
+  for key in HOME PATH FM_CLEANUP_DIR FM_CLEANUP_AGE_DAYS FM_CLEANUP_LOG_AGE_DAYS FM_CLEANUP_TARGET_GIB \
+    FM_CLEANUP_CACHE_ROOTS FM_CLEANUP_LOG_ROOTS FM_CLEANUP_WORKTREE_ROOTS; do
+    case "$key" in HOME|PATH) ;; *) [ -n "${!key:-}" ] || continue ;; esac
+    printf '    <key>%s</key><string>%s</string>\n' "$key" "$(printf '%s' "${!key:-}" | xml_escape)"
+  done
+  cat <<EOF
+  </dict>
+  <key>StandardOutPath</key><string>$(printf '%s' "$STATE_DIR/cleanup-run.log" | xml_escape)</string>
+  <key>StandardErrorPath</key><string>$(printf '%s' "$STATE_DIR/cleanup-run.log" | xml_escape)</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+</dict></plist>
+EOF
+}
+
 case "${1:-}" in
   report) shift; [ $# -eq 0 ] || die_usage; cmd_report ;;
+  render-launchd) shift; [ $# -eq 0 ] || die_usage; cmd_render_launchd ;;
   clean) shift; cmd_clean "$@" ;;
   --help|-h) usage ;;
   *) die_usage ;;

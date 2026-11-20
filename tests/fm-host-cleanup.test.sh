@@ -2,8 +2,9 @@
 # Behavioral coverage for bin/fm-host-cleanup.sh: report measures without
 # deleting, clean without --apply is a dry run, clean --apply removes only
 # whole entries whose newest content is past the age limit under the
-# configured roots (never a partly fresh entry, never worktree files), and a
-# free-space reading under the target exits 3.
+# configured roots (never a partly fresh entry, never worktree files) and
+# prints the worktree size report, render-launchd emits a runnable 6-hour
+# LaunchAgent, and a free-space reading under the target exits 3.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -94,6 +95,7 @@ test_clean_dry_run_deletes_nothing() {
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=2" "dry run leaves the old entries counted"
   assert_present "$WORLD/cache/stale/a/b.bin" "dry run keeps the fully old entry"
   assert_present "$WORLD/cache/old.bin" "dry run keeps the old cache file"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "dry run prints the worktree size report"
   assert_present "$WORLD/logs/old.log" "dry run keeps the old log file"
   pass "clean without --apply deletes nothing"
 }
@@ -110,6 +112,7 @@ test_clean_apply_deletes_only_old_cache_and_logs() {
   assert_present "$WORLD/cache/pre-commit/db.db" "the fresh index of that entry survives"
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=0" "apply leaves no old cache entry behind"
   assert_present "$WORLD/workspaces/proj/tracked.txt" "an old worktree file is never in scope"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "the scheduled apply run prints the worktree size report"
   assert_grep "clean free_before_kib=209715200 free_after_kib=209715200" "$WORLD/state/cleanup.log" "apply appends the before/after line"
   pass "clean --apply removes only whole old cache and log entries and logs the run"
 }
@@ -153,6 +156,32 @@ test_npm_cacache_is_one_entry_under_default_roots() {
   pass "npm's _cacache is judged and removed as one whole entry under the default roots"
 }
 
+test_render_launchd_runs_clean_apply_every_six_hours() {
+  local plist="$TMP_ROOT/cleanup.plist" home="$TMP_ROOT/launchd-home"
+  mkdir -p "$home/vol" "$home/orca/workspaces/proj" "$home/state"
+  HOME="$home" FM_CLEANUP_DIR="$home/state" PATH="$FAKE:$BASE_PATH" bash "$CLEANUP" render-launchd > "$plist" \
+    || fail "render-launchd failed"
+  FM_TEST_SEAM=1 FM_CLEANUP_VOLUME="$home/vol" FM_FAKE_VOLUME="$home/vol" FM_FAKE_DF_AVAIL=209715200 \
+    python3 - "$plist" "$CLEANUP" "$home" <<'PY' || fail "rendered cleanup plist must run clean --apply every 6 h, logged"
+import os, plistlib, subprocess, sys
+with open(sys.argv[1], 'rb') as f:
+    p = plistlib.load(f)
+home = sys.argv[3]
+assert p['Label'].startswith('dev.firstmate.host-cleanup-'), p['Label']
+assert p['ProgramArguments'] == ['/bin/bash', sys.argv[2], 'clean', '--apply'], p['ProgramArguments']
+assert p['StartInterval'] == 21600 and p['RunAtLoad'] is True, p
+assert 'KeepAlive' not in p
+log = os.path.join(home, 'state', 'cleanup-run.log')
+assert p['StandardOutPath'] == log and p['StandardErrorPath'] == log, p
+env = dict(os.environ, **p['EnvironmentVariables'])
+assert env['HOME'] == home
+out = subprocess.run(p['ProgramArguments'], env=env, cwd='/', capture_output=True, text=True, timeout=60)
+assert out.returncode == 0, out
+assert 'host-cleanup worktrees: root=%s/orca/workspaces/proj ' % home in out.stdout, out.stdout
+PY
+  pass "render-launchd emits a 6-hour LaunchAgent whose logged run carries the worktree report"
+}
+
 test_usage_errors_exit_2() {
   run_cleanup 209715200 frobnicate
   assert_equals "2" "$RC" "an unknown mode is a usage error"
@@ -170,4 +199,5 @@ fm_test_run \
   test_clean_dry_run_deletes_nothing \
   test_clean_apply_deletes_only_old_cache_and_logs \
   test_npm_cacache_is_one_entry_under_default_roots \
+  test_render_launchd_runs_clean_apply_every_six_hours \
   test_usage_errors_exit_2
