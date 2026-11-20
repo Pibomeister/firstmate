@@ -2259,9 +2259,8 @@ export CLAUDECODE=1 CLAUDE_CODE_SESSION_ID=sess-claude-mode CLAUDE_PID=$$
 printf '%s\n' "$$" > "$FM_HOME/state/.lock"
 printf '%s\n' "$CLAUDE_CODE_SESSION_ID" > "$FM_HOME/state/.lock-session"
 # This test covers the attended-alarm episode, not the stop policy's rolling
-# six-per-hour continuation cap (tests/fm-stop-policy.test.sh owns that). Its
-# seven Stops would otherwise exhaust the cap before a slow machine commits the
-# alarm, deferring the seventh auto-arm for up to an hour.
+# continuation cap (tests/fm-stop-policy.test.sh owns that). The ledger is
+# cleared so these Stops do not spend that session's reservations.
 rm -f "$FM_HOME/state/.stop-hook.$CLAUDE_CODE_SESSION_ID.json"
 transcript="$FM_HOME/stop-transcript.jsonl"
 printf '{"type":"assistant","message":{"content":"recovery turn %s"}}\n' "$i" >> "$transcript"
@@ -2848,7 +2847,7 @@ test_codex_reblocks_open_checkpoint_after_its_own_block() {
   dir=$(make_primary_dir "$TMP_ROOT/codex-own-checkpoint-reblock")
   : > "$dir/state/task1.meta"
   now=$(date +%s)
-  jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.s1.json"
+  jq -nc --argjson now "$now" --argjson n 12 '{times:[range($n)|$now],streak:0}' > "$dir/state/.stop-hook.s1.json"
   checkpoint=$(make_codex_checkpoint "$dir")
   run_codex_hook "$dir" "$(codex_payload s1 t1 true)" "$checkpoint"
   stop_codex_checkpoint "$dir"
