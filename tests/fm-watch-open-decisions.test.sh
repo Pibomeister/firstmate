@@ -584,6 +584,10 @@ test_gate_council_hold_lookup_failure_counts_as_held() {
 
 test_gate_council_held_task_does_not_block_other_task() {
   local claims="$STATE/.away-gate-council-claims"
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    pass 'held task with an older gate check skipped (tasks-axi is not installed)'
+    return 0
+  fi
   gate_council_setup
   FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
   mkdir -p "$FM_HOME/data/held"
