@@ -363,6 +363,25 @@ test_drain_presents_every_distinct_check_payload() {
   pass "drain presents every distinct payload from one check and collapses identical repeats"
 }
 
+test_drain_preserves_p0_alarm_before_later_stale() {
+  local dir state out reason win=test:fm-p0
+  dir=$(make_case p0-alarm-dedupe); state="$dir/state"; out="$dir/drain.out"
+  fm_write_meta "$state/p0.meta" "window=$win" "priority=0" "kind=ship"
+  printf 'blocked [at=1000]: need deployment key\n' > "$state/p0.status"
+  reason=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"; FM_WATCH_NOW=1600 p0_blocker_alarm "$2" p0; printf "%s\n" "$P0_BLOCKER_ALARMS"
+  ' _ "$ROOT/bin/fm-watch.sh" "$win") || fail "watcher alarm mint failed"
+  [ -n "$reason" ] || fail "watcher did not mint a P0 alarm"
+  append_wake "$state" stale "$win" "stale: $win (idle 240s, possible wedge, escalation 1)" || fail "later stale append failed"
+  append_wake "$state" stale "$win" "$reason" || fail "identical alarm append failed"
+  append_wake "$state" stale "$win" "stale: $win (idle 480s, possible wedge, escalation 2)" || fail "latest stale append failed"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "P0 drain failed"
+  [ "$(grep -cF "$reason" "$out")" = 1 ] || fail "drain hid or repeated the once-only P0 alarm"
+  grep -F 'idle 480s, possible wedge, escalation 2' "$out" >/dev/null || fail "drain hid the latest ordinary stale"
+  grep -F 'idle 240s, possible wedge, escalation 1' "$out" >/dev/null && fail "ordinary stale rows stopped deduplicating"
+  pass "drain preserves P0 alarm text independently of later same-window stale rows"
+}
+
 # Run one watcher leg of the foreign-stall case at fake time <now>. Each leg
 # waits on what the watcher observably did, never on a wall-clock budget: a
 # loaded machine can take seconds to reach the first poll, and a leg cut off
@@ -3779,6 +3798,11 @@ SH
   pass "watch liveness: an unreachable remote secondmate is probed, preserved, and never failed over"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_branch_grant_requires_lock_acquisition
 test_self_held_lock_reclaims_instead_of_deadlocking
 test_lock_wait_returns_when_its_directory_is_removed
@@ -3813,6 +3837,7 @@ test_multiline_check_output_wakes_as_one_line
 test_atomic_double_drain
 test_drain_dedupes_obvious_duplicates
 test_drain_presents_every_distinct_check_payload
+test_drain_preserves_p0_alarm_before_later_stale
 test_drain_asserts_watcher_liveness
 test_structural_signal_enrichment_preserves_raw_rows
 test_enrichment_preserves_all_unread_lines_and_status_file_failures

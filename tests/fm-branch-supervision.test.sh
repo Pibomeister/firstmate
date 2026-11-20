@@ -16,7 +16,7 @@ set -u
 if [ "${FM_TEST_LEASE_HARNESS:-0}" != 1 ]; then
   harness_dir=$(fm_test_tmproot fm-branch-supervision-harness)
   ln -s /bin/bash "$harness_dir/pi"
-  FM_TEST_LEASE_HARNESS=1 "$harness_dir/pi" "$ROOT/tests/fm-branch-supervision.test.sh"
+  FM_TEST_LEASE_HARNESS=1 "$harness_dir/pi" "$ROOT/tests/fm-branch-supervision.test.sh" "$@"
   exit $?
 fi
 
@@ -162,6 +162,40 @@ test_branch_prompt_routes_completed_scouts_through_guarded_cleanup() {
       "branch prompt does not include the complete $skill policy"
   done
   pass "emitted branch prompt routes completed scouts through existing policies and leased cleanup, preserving unfinished work"
+}
+
+test_branch_prompt_delivers_priority_supervision() {
+  local prompt
+  prompt=$(FM_HOME="$TMP_ROOT/priority-prompt-home" bash "$ROOT/bin/fm-branch-prompt.sh") \
+    || fail "branch prompt generator failed"
+
+  # The generated system prompt is the delivered interface shared by Pi and
+  # the supervision host. This checks delivery, not model interpretation.
+  assert_contains "$prompt" \
+    "Inspect every prioritized worker on every supervision cycle until it is terminal, even when the wake concerns another task." \
+    "headless supervision omits every-cycle priority inspection"
+  assert_contains "$prompt" \
+    "Resolve questions from the order, code, or evidence already in hand instead of letting that worker park on a self-servable question; apply the existing lease and approval boundaries before acting." \
+    "priority inspection lost self-servable recovery or its authority boundaries"
+  assert_contains "$prompt" \
+    "Handle each P0 blocker alarm in that cycle while other lanes continue." \
+    "headless supervision omits handling the P0 alarm"
+  assert_contains "$prompt" \
+    "Give an already-authorized P0 or other prioritized order a dedicated worker immediately without stopping an existing lane." \
+    "priority dispatch can still wait behind ordinary work"
+  assert_contains "$prompt" \
+    "Pass its intake priority to \`fm-spawn.sh --priority\`; that script owns backlog-row verification and the explicit caller authority used when automatic backlog enforcement does not apply, including a manual backend." \
+    "headless priority dispatch lost the supported flag or truthful verification boundary"
+  assert_contains "$prompt" \
+    "Ordinary dispatch stays within the record's spend cap; prioritized dispatch uses only the existing narrow admission exception and preserves all other budget, approval, security, disk, backend, and isolation gates." \
+    "priority dispatch lost the ordinary cap or independent safety gates"
+  assert_contains "$prompt" \
+    "work the words explicitly call for is dispatched from a queued backlog item" \
+    "priority dispatch broadened the away mandate"
+  assert_contains "$prompt" \
+    "spawn new tasks or workers (\`bin/fm-spawn.sh\` refuses your actor)" \
+    "priority dispatch removed attended branch limits"
+  pass "emitted branch prompt delivers priority dispatch and inspection within existing authority"
 }
 
 # --- append-only outcome store ------------------------------------------------
@@ -1709,9 +1743,15 @@ WRAPPER
   pass "the away spend cap is rechecked under the task-set lock so concurrent spawns cannot both publish"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_branch_prompt_is_byte_stable_and_above_cache_floor
 test_branch_prompt_home_include_is_appended_last
 test_branch_prompt_routes_completed_scouts_through_guarded_cleanup
+test_branch_prompt_delivers_priority_supervision
 test_outcome_store_is_append_only_with_cursor_reads
 test_outcome_append_keeps_a_bounded_display_tail
 test_outcome_tail_keeps_whole_newest_rows_within_its_byte_budget

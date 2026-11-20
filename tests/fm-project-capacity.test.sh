@@ -270,6 +270,28 @@ test_exhausted_capacity_defers_without_leaving_anything_behind() {
   pass "a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists"
 }
 
+test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes() {
+  local case_dir home pane out rc=0
+  case_dir=$(make_case priority-preemption task-p0)
+  home="$case_dir/home"
+  declare_capacity "$home" "project 2"
+  write_live "$home" live-a "$case_dir/project"
+  write_live "$home" live-b "$case_dir/project"
+  if [ "$HAVE_TASKS_AXI" = 1 ]; then
+    tasks-axi update task-p0 --priority 0 --file "$home/data/backlog.md" >/dev/null
+  fi
+  pane=$(new_worktree "$case_dir" task-p0)
+  out=$(run_spawn "$case_dir" "$home" "$pane" task-p0 "$case_dir/project" \
+    --mode no-mistakes --yolo off --priority 0) || rc=$?
+  expect_code 0 "$rc" "a P0 spawn waited behind full ordinary lanes: $out"
+  assert_contains "$out" "spawned task-p0" "the P0 did not receive its dedicated worker"
+  assert_equals 0 "$(sed -n 's/^priority=//p' "$home/state/task-p0.meta")" \
+    "the dedicated worker did not retain its P0 identity for supervision"
+  assert_present "$home/state/live-a.meta" "priority preemption stopped the first existing lane"
+  assert_present "$home/state/live-b.meta" "priority preemption stopped the second existing lane"
+  pass "a prioritized order gets a dedicated worker immediately while full ordinary lanes keep running"
+}
+
 # The capacity is the last field, so a project whose clone directory name holds
 # spaces can be declared. An indented '#' line is still a comment.
 test_spaced_project_name_is_declared() {
@@ -729,12 +751,68 @@ test_max_load1_raises_spawn_ceiling_over_cores() {
   pass "max-load1 40 on 16 cores admits a spawn at load 24 and defers one at load 41"
 }
 
+# An explicit priority is admitted past the lane-cap and host-load deferral
+# that holds ordinary work in the same home, without stopping the live lane.
+test_prioritized_spawn_passes_lane_and_load_deferral() {
+  local case_dir home pane out rc=0 before worktrees
+  case_dir=$(make_case priority-lane task-c task-p0)
+  home="$case_dir/home"
+  printf '1\nmax-load1 20\n' > "$home/config/lane-capacity"
+  stub_load "$case_dir" 200.00
+  write_live "$home" live-a "$case_dir/project"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an ordinary spawn past the lane cap under load 200 was not deferred: $out"
+  assert_contains "$out" "deferred: lane capacity" "the ordinary deferral did not name lane capacity"
+  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
+  if [ "$HAVE_TASKS_AXI" = 1 ]; then
+    tasks-axi update task-p0 --priority 0 --file "$home/data/backlog.md" >/dev/null
+  fi
+  pane=$(new_worktree "$case_dir" task-p0)
+  rc=0
+  out=$(run_spawn "$case_dir" "$home" "$pane" task-p0 "$case_dir/project" \
+    --mode no-mistakes --yolo off --priority 0) || rc=$?
+  expect_code 0 "$rc" "a P0 spawn waited behind the lane cap and host load: $out"
+  assert_contains "$out" "spawned task-p0" "the P0 did not receive its dedicated worker"
+  case "$out" in
+    *deferred:*) fail "the admitted P0 spawn still printed a deferral line: $out" ;;
+  esac
+  assert_equals 0 "$(sed -n 's/^priority=//p' "$home/state/task-p0.meta")" \
+    "the dedicated worker did not retain its P0 identity"
+  assert_present "$home/state/live-a.meta" "priority admission stopped the existing lane"
+  pass "an explicit priority is admitted past the lane cap and load ceiling that defer ordinary work"
+}
+
+# An unreadable lane-capacity file is an unknown limit, not permission: a
+# prioritized spawn still refuses with exit 1 and creates nothing.
+test_prioritized_spawn_still_refuses_unreadable_lane_config() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case priority-lane-bad task-p0)
+  home="$case_dir/home"
+  printf '1\nbogus 1\n' > "$home/config/lane-capacity"
+  if [ "$HAVE_TASKS_AXI" = 1 ]; then
+    tasks-axi update task-p0 --priority 0 --file "$home/data/backlog.md" >/dev/null
+  fi
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" task-p0 "$case_dir/project" \
+    --mode no-mistakes --yolo off --priority 0) || rc=$?
+  expect_code 1 "$rc" "a P0 spawn under an unreadable lane-capacity file was not refused: $out"
+  assert_contains "$out" "lane capacity admission failed" "the refusal did not name the lane admission failure"
+  assert_nothing_created "$case_dir" "$home" task-p0 "$before" "$worktrees"
+  pass "a prioritized spawn still refuses when the lane-capacity file cannot be read"
+}
+
 test_undeclared_capacity_keeps_dispatch_uncapped
 test_available_capacity_admits_the_worker
 test_lane_capacity_defers_spawn_past_home_cap
 test_lane_load_ceiling_defers_spawn_with_stubbed_load
 test_max_load1_raises_spawn_ceiling_over_cores
 test_exhausted_capacity_defers_without_leaving_anything_behind
+test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes
+test_prioritized_spawn_passes_lane_and_load_deferral
+test_prioritized_spawn_still_refuses_unreadable_lane_config
 test_spaced_project_name_is_declared
 test_hash_prefixed_project_name_is_declared
 test_symlinked_home_counts_each_worker_once
