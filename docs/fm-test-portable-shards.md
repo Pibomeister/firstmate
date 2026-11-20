@@ -36,6 +36,8 @@ The five serial hints added on 2026-11-13 (`fm-auto-away`, `fm-blip-read-budget`
 The provisional `tests/fm-orca-cli-cache.test.sh` hint is 32339 ms from a successful macOS arm64 run on 2026-11-14 UTC with Bash 5.3.9, using `bash bin/fm-test-run.sh --json <timing-json> tests/fm-orca-cli-cache.test.sh` against the identical code committed as `b9b83a724dbf7836cefb73abaf343edd88869f57`; all 30 cases passed without a capability skip.
 The provisional `tests/fm-memory-guard.test.sh` hint is 12464 ms from a successful macOS arm64 run on 2026-11-17 UTC with Bash 3.2.57, using `bash bin/fm-test-run.sh --json <timing-json> tests/fm-memory-guard.test.sh` against the test as committed in `a550c1a5c9163ae9fd40d05ae53c3978fb0f1357`; all 13 cases passed, and later revisions changed its fixtures and expected counts but not its case count.
 The provisional `tests/fm-handoff-launch-runtime.test.sh` and `tests/fm-supervisor-failover.test.sh` hints are 82167 ms and 39563 ms from one successful macOS arm64 run on 2026-11-15 UTC with Bash 3.2.57, using `bash bin/fm-test-run.sh --json <timing-json>` on both scripts; every case passed without a capability skip.
+The provisional `tests/fm-afk-preallow.test.sh`, `tests/fm-tmux-relaunch-input.test.sh`, and `tests/fm-unpushed-reconcile.test.sh` hints are 2487700 ms, 8356 ms, and 1043032 ms from successful macOS arm64 runs on 2026-11-20 UTC with Bash 3.2.57 at a one-minute load average between about 70 and 180, using `bash bin/fm-test-run.sh --json <timing-json>` on the scripts as committed in `c72af946bc693dd13b5ca690a43791d5835ee7f0`; every case passed without a capability skip.
+That load inflates these samples well above Ubuntu CI time, so the two large hints each take a whole shard and over-reserve rather than under-reserve; replace all three with CI timing-artifact maxima at the next refresh.
 Former provisional local hints for polytoken, approval-failover, Kimi live-guard skip, tap-verify, read-repetition, Antigravity primary, worktree-cleanup, order, and watchdog-live now use Ubuntu timing-artifact maxima from the 2026-11-03 refresh.
 `tests/fm-watchdog.test.sh` is 527813 ms from that refresh.
 The `tests/fm-merge-review.test.sh` hint is a provisional 8500 ms: on 2026-11-12 it ran locally in the same time as `tests/fm-merge-local.test.sh` (58 s against 61 s and 78 s on a loaded host), so it takes that script's Ubuntu weight class until a CI timing artifact replaces it.
@@ -58,7 +60,7 @@ Its fifteen serial jobs took 16m56s to 19m50s, its parallel jobs took 16m58s and
 Herdr took 12m02s and stock macOS Bash took 9m21s.
 These are observed job durations, not queue delay or a percentile estimate.
 
-The serial layout now packs twenty-five separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
+The serial layout now packs twenty-seven separate runners against a thirteen-minute script budget, leaving two minutes below the fifteen-minute healthy-job target for setup and variance.
 The former 29-case host suite took 896663 ms in that green run.
 Its five dialog-mirror cases now live in `tests/fm-supervision-host-mirror.test.sh`; every case and assertion is retained.
 The per-case log timestamps attribute about 414 seconds to those cases and 483 seconds to the remainder, including final cleanup.
@@ -171,7 +173,7 @@ No fast mode, path skips, or paid runner provisioning is part of this layout.
 
 The longer-term performance objective remains a complete green run under fifteen minutes including start delay, but the three watch-triage members still sum to about 32 minutes of CI test time.
 The immediate packing target is the runner's modeled script budget, not a claim that more shards alone can make an indivisible script faster.
-The layout uses thirty-four long-lived Linux jobs (twenty-five serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
+The layout uses thirty-six long-lived Linux jobs (twenty-seven serial, two parallel, Herdr, six lint), plus short checks and macOS; insufficient shared account capacity can erase the packing gain.
 Compare complete before/after runs, preserve cancelled and partial-run evidence, and measure a representative normal-run sample before claiming a P95 improvement.
 The workflow retains per-PR supersession and keeps only the newest of close main pushes' runs, without changing the compliance workflow's event semantics.
 
