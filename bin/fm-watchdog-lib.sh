@@ -79,9 +79,12 @@
 #   fm_wd_human_step <screen>
 #       Prints `captcha`, `otp`, `verification-code`, `approval`, or `sign-in`
 #       when the last 14 non-blank rows show that human-only step, else nothing
-#       (exit 1). Only the rows below the last composer prompt row count, or
-#       every one of those rows when no prompt row shows, as on a full-screen
-#       sign-in view. Conversation above a prompt row does not count, except a
+#       (exit 1). On a dialog, whose cursor row is a numbered option, only the
+#       paragraph just above the options counts. Otherwise only the rows below
+#       the last composer prompt row count, down to the composer's bottom border
+#       or first blank row, so the footer and status line never do; with no
+#       prompt row either, as on a full-screen sign-in view, every one of those
+#       rows counts. Conversation above a prompt row does not count, except a
 #       row among the 4 just above it that opens by stating a sign-in error
 #       such as `Not logged in` or `Please run /login`.
 #   fm_wd_dialog_options <screen>
@@ -502,12 +505,26 @@ fm_wd_human_step() {  # <screen>
       esac
       printf '%s' "$row" | LC_ALL=C grep -Eq "$re" && { printf '%s\n' "$kind"; return 0; }
     done
-  done < <(_fm_wd_tail_rows "$1" 14 | awk -v glyph="$FM_WD_PROMPT_RE" '
-    { row[NR] = $0; if ($0 ~ glyph) g = NR }
+  done < <(printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v glyph="$FM_WD_PROMPT_RE" '
+    function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
+    { row[NR] = $0 }
     END {
-      if (!g) { for (i = 1; i <= NR; i++) print "rows\t" row[i]; exit }
-      for (i = g - 4; i < g; i++) if (i > 0) print "above\t" row[i]
-      for (i = g + 1; i <= NR; i++) print "below\t" row[i]
+      last = NR
+      while (last > 0 && row[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (row[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      for (i = last; i >= floor; i--) if (row[i] ~ /(❯|›|>)[ \t]*[0-9]+[.)][ \t]/) { opt = i; break }
+      if (opt) {
+        for (i = opt; i >= floor; i--) if (row[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { opt = i; break }
+        i = opt - 1
+        while (i >= floor && blank(row[i])) i--
+        for (; i >= floor && !blank(row[i]); i--) print "rows\t" row[i]
+        exit
+      }
+      for (i = last; i >= floor; i--) if (row[i] ~ glyph) { g = i; break }
+      if (!g) { for (i = floor; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]; exit }
+      for (i = g - 1; i >= floor && n < 4; i--) if (row[i] ~ /[^ \t]/) { print "above\t" row[i]; n++ }
+      for (i = g + 1; i <= last && !blank(row[i]); i++) print "below\t" row[i]
     }')
   return 1
 }

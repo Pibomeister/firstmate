@@ -55,9 +55,10 @@
 #                                captain, rewritten each pass and by pickup.
 #   <watched home>/state/watchdog/human-steps.tsv  append-only escalation record of
 #                                human-only steps: epoch subject kind since channel, where
-#                                channel is page, morning-handoff, or cleared.
+#                                channel is page, morning-handoff, briefed, or cleared.
 #                                A morning-handoff row stays open until a later cleared row;
-#                                bin/fm-afk-return.sh lists the open ones.
+#                                bin/fm-afk-return.sh lists the open ones and writes a briefed
+#                                row for each one it showed.
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
 #
@@ -2028,7 +2029,9 @@ wd_handle_captain_autowait() {
 # Nothing is typed into that pane, so the prompt is never answered or held by the
 # watchdog. Once it has shown on every pass for human-step-secs, it is escalated
 # once per episode: paged by day, or written to the home's human-steps.tsv for
-# the morning handoff overnight, never paged then. A page no channel delivered
+# the morning handoff overnight, never paged then. A handed-off step still
+# showing by day is paged once, unless the away return brief already showed it
+# (a `briefed` row). A page no channel delivered
 # is recorded there too and stays pending, retried once per nudge-secs while the
 # step still shows. O_REC_SUBJECT names a worker.
 
@@ -2076,7 +2079,7 @@ wd_human_step_clear() {
 }
 
 wd_handle_human_step() {  # <kind>
-  local kind=$1 f since='' prev_kind now age secs who subject last id summary out rc
+  local kind=$1 f since='' prev_kind now age secs who subject last id summary out rc overnight=0
   subject=${O_REC_SUBJECT:-$O_TAG}
   who=$O_TAG
   [ -z "${O_REC_SUBJECT:-}" ] || who="$O_TAG worker ${O_REC_SUBJECT#worker:}"
@@ -2093,7 +2096,13 @@ wd_handle_human_step() {  # <kind>
     wd_gap "human-only $kind step on $who for $((age / 60))m; nothing is typed into it, and it is escalated after $((secs / 60))m"
     return 0
   fi
-  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step '*' '^done$' "$subject")
+  wd_human_step_overnight && overnight=1
+  # By day a morning handoff counts only once the away return brief showed it;
+  # otherwise the step that is still showing is paged once.
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step page '^done$' "$subject")
+  if { [ -z "$last" ] || [ "$last" -lt "$since" ]; } && { [ "$overnight" = 1 ] || wd_human_step_recorded "$since" briefed; }; then
+    last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step handoff '^done$' "$subject")
+  fi
   if [ -n "$last" ] && [ "$last" -ge "$since" ]; then
     wd_gap "human-only $kind step on $who for $((age / 60))m; escalated, nothing is typed into it"
     return 0
@@ -2104,7 +2113,7 @@ wd_handle_human_step() {  # <kind>
     return 0
   fi
   id=$(wd_id)
-  if wd_human_step_overnight; then
+  if [ "$overnight" = 1 ]; then
     wd_gap "human-only $kind step on $who for $((age / 60))m; recorded for the morning handoff, not paged"
     if [ "$(wd_mode)" != act ]; then wd_rec "$id" human-step handoff dry-run "would record a $kind step for the morning handoff"; return 0; fi
     wd_rec "$id" human-step handoff pending "$kind step since $(fm_wd_iso "$since")"
@@ -2648,7 +2657,7 @@ wd_worker_metas() {  # <home>
 # other key. mode=print reports the read and does not act. A gone endpoint is
 # not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target harness screen dialog mismatch prompt step
+  local mode=$1 id meta backend target harness screen dialog mismatch prompt step workers f
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
   local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
@@ -2662,8 +2671,10 @@ wd_visit_worker_dialogs() {
   saved_composer_text=${O_COMPOSER_TEXT:-}
   saved_composer_above=${O_COMPOSER_ABOVE:-}
   saved_draft=${O_DRAFT:-}
+  workers=' '
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
+    workers="$workers$id "
     # A stop reason belongs to one worker's pass, including its page, never
     # to the next pane.
     WD_PP_REASON=
@@ -2786,6 +2797,16 @@ wd_visit_worker_dialogs() {
         ;;
     esac
   done < <(wd_worker_metas "$O_HOME")
+  # A worker no longer recorded in the home cannot show its step again: end its episode.
+  if [ "$mode" != print ]; then
+    for f in "$WD/human-step/$O_KEY-worker_"*; do
+      [ -f "$f" ] || continue
+      id=${f##*/}
+      id=${id#"$O_KEY"-worker_}
+      case "$workers" in *" $id "*) continue ;; esac
+      O_REC_SUBJECT="worker:$id" wd_human_step_clear
+    done
+  fi
   O_PANE=$saved_pane
   O_DIALOG_PANE=$saved_dialog_pane
   O_BACKEND=$saved_backend
