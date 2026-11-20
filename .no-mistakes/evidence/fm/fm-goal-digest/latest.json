@@ -1,0 +1,334 @@
+{
+  "generated_at": "2026-11-20T03:56:44Z",
+  "generated_at_cst": "2026-11-19T21:56:44-0600",
+  "changed": false,
+  "new_merges": [],
+  "waiting_on_captain": [
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 227,
+      "title": "feat(bin): forbid worker changes to shared git config and databases, and flag drift at session start",
+      "url": "https://github.com/Pibomeister/firstmate/pull/227",
+      "created_at": "2026-11-11T22:12:06Z",
+      "age_hours": 197,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 231,
+      "title": "fix(bin): resume idle primaries after a managed-hold wedge or an idle compaction",
+      "url": "https://github.com/Pibomeister/firstmate/pull/231",
+      "created_at": "2026-11-12T02:00:29Z",
+      "age_hours": 193,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 250,
+      "title": "feat(bin): prioritize dedicated workers and alarm on stalled P0 blockers",
+      "url": "https://github.com/Pibomeister/firstmate/pull/250",
+      "created_at": "2026-11-14T18:03:18Z",
+      "age_hours": 129,
+      "author": "eduardopicazo-abaco",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 273,
+      "title": "feat(bin): add opt-in atomic claims for approved local queue items",
+      "url": "https://github.com/Pibomeister/firstmate/pull/273",
+      "created_at": "2026-11-17T19:22:54Z",
+      "age_hours": 56,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 274,
+      "title": "fix(bin): speed up the home summary refresh and name the slow stage when it fails",
+      "url": "https://github.com/Pibomeister/firstmate/pull/274",
+      "created_at": "2026-11-17T20:00:56Z",
+      "age_hours": 55,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 276,
+      "title": "Revert tmux relaunch guard from #275 pending a corrected fix",
+      "url": "https://github.com/Pibomeister/firstmate/pull/276",
+      "created_at": "2026-11-17T21:41:30Z",
+      "age_hours": 54,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 277,
+      "title": "feat(bin): add guarded self-landing wrapper for allowlisted repositories",
+      "url": "https://github.com/Pibomeister/firstmate/pull/277",
+      "created_at": "2026-11-17T21:56:22Z",
+      "age_hours": 54,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 279,
+      "title": "feat(bin): carry merge-review findings across rounds and settle round-three blockers",
+      "url": "https://github.com/Pibomeister/firstmate/pull/279",
+      "created_at": "2026-11-17T22:35:56Z",
+      "age_hours": 53,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 281,
+      "title": "Prevent tmux relaunch input from reaching foreground children",
+      "url": "https://github.com/Pibomeister/firstmate/pull/281",
+      "created_at": "2026-11-18T02:52:32Z",
+      "age_hours": 49,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 282,
+      "title": "fix(bin): make a second mate's handoff relaunch a durable request and serialize its recovery",
+      "url": "https://github.com/Pibomeister/firstmate/pull/282",
+      "created_at": "2026-11-18T03:58:25Z",
+      "age_hours": 47,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 283,
+      "title": "feat(bin): add supervision events, steering receipts, task snapshot, and a dry-run unblocker",
+      "url": "https://github.com/Pibomeister/firstmate/pull/283",
+      "created_at": "2026-11-18T04:42:19Z",
+      "age_hours": 47,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 289,
+      "title": "fix(bin): end the startup unpublished-branch scan inside the stage deadline",
+      "url": "https://github.com/Pibomeister/firstmate/pull/289",
+      "created_at": "2026-11-18T22:53:33Z",
+      "age_hours": 29,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 291,
+      "title": "feat(fmd): scaffold the opt-in Rust supervision sidecar",
+      "url": "https://github.com/Pibomeister/firstmate/pull/291",
+      "created_at": "2026-11-19T21:35:29Z",
+      "age_hours": 6,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 292,
+      "title": "feat(bin): add host load ledger and periodic disk cleanup scripts",
+      "url": "https://github.com/Pibomeister/firstmate/pull/292",
+      "created_at": "2026-11-19T22:19:40Z",
+      "age_hours": 5,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 293,
+      "title": "feat(watch): send away ask-user gates open past an hour to ak council run",
+      "url": "https://github.com/Pibomeister/firstmate/pull/293",
+      "created_at": "2026-11-19T23:07:53Z",
+      "age_hours": 4,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 294,
+      "title": "fix(bin): run timed commands in a subshell so Bash 3.2 cannot exec over them",
+      "url": "https://github.com/Pibomeister/firstmate/pull/294",
+      "created_at": "2026-11-19T23:35:06Z",
+      "age_hours": 4,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 295,
+      "title": "feat(bin): record merge-review rounds and tokens and add a read-only metrics command",
+      "url": "https://github.com/Pibomeister/firstmate/pull/295",
+      "created_at": "2026-11-20T00:16:23Z",
+      "age_hours": 3,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 296,
+      "title": "perf(bin): fold each status log once per snapshot and batch row parsing",
+      "url": "https://github.com/Pibomeister/firstmate/pull/296",
+      "created_at": "2026-11-20T00:40:33Z",
+      "age_hours": 3,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 297,
+      "title": "feat(bin): add merge-review verify-finding to run a reviewer's reproduction at the head and merge base",
+      "url": "https://github.com/Pibomeister/firstmate/pull/297",
+      "created_at": "2026-11-20T01:18:35Z",
+      "age_hours": 2,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 298,
+      "title": "feat(bin): add recurring read-only goal digest job",
+      "url": "https://github.com/Pibomeister/firstmate/pull/298",
+      "created_at": "2026-11-20T01:25:27Z",
+      "age_hours": 2,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 299,
+      "title": "fix(bin): keep Orca CLI output under Bash 3.2 and make main's test suite green",
+      "url": "https://github.com/Pibomeister/firstmate/pull/299",
+      "created_at": "2026-11-20T01:44:24Z",
+      "age_hours": 2,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 300,
+      "title": "feat(bin): dispatch disk-refused launches again when the disk alarm clears",
+      "url": "https://github.com/Pibomeister/firstmate/pull/300",
+      "created_at": "2026-11-20T01:45:28Z",
+      "age_hours": 2,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/firstmate",
+      "number": 301,
+      "title": "feat(bin): admit broad test selections through the machine-wide queue",
+      "url": "https://github.com/Pibomeister/firstmate/pull/301",
+      "created_at": "2026-11-20T03:25:00Z",
+      "age_hours": 0,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 256,
+      "title": "docs(research): add the Hermes 3-day shadow plan",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/256",
+      "created_at": "2026-11-12T06:49:39Z",
+      "age_hours": 189,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 266,
+      "title": "feat(lifecycle): bind unattended ship to a declared run supervisor",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/266",
+      "created_at": "2026-11-16T23:04:28Z",
+      "age_hours": 76,
+      "author": "Pibomeister",
+      "draft": true
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 274,
+      "title": "fix(runner): verdict git calls ignore worker diff config and pin the git layout",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/274",
+      "created_at": "2026-11-18T21:48:01Z",
+      "age_hours": 30,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 275,
+      "title": "fix(publish): create a missing release tag on the push to main",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/275",
+      "created_at": "2026-11-19T19:52:36Z",
+      "age_hours": 8,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 276,
+      "title": "fix(learn): retry a judge availability failure when no fallback is configured",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/276",
+      "created_at": "2026-11-19T21:31:34Z",
+      "age_hours": 6,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 277,
+      "title": "feat(review): add the review convergence ledger and its verdict engine (ADR-0018)",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/277",
+      "created_at": "2026-11-19T22:30:06Z",
+      "age_hours": 5,
+      "author": "Pibomeister",
+      "draft": false
+    },
+    {
+      "repo": "Pibomeister/agent-kit",
+      "number": 279,
+      "title": "fix(lifecycle): fail closed when a must-print git call exits 0 with no output",
+      "url": "https://github.com/Pibomeister/agent-kit/pull/279",
+      "created_at": "2026-11-20T03:25:29Z",
+      "age_hours": 0,
+      "author": "Pibomeister",
+      "draft": true
+    }
+  ],
+  "missed_etas": [
+    {
+      "source": "M4",
+      "eta": "2026-01-05",
+      "line": "eta: 2026-01-05 ship digest"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "M4",
+      "age_hours": 7749
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "T7",
+      "last_line": "AgentKit ledger: 4/6 closed"
+    }
+  ],
+  "unreachable_sources": [
+    {
+      "kind": "status",
+      "source": "dev01",
+      "detail": "ssh:fm-nonexistent-host.invalid:/tmp/x.md"
+    }
+  ]
+}

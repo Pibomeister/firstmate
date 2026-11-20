@@ -1,0 +1,8 @@
+1..6
+ok - new merge detection, changed flag and changed-only summarizer
+ok - missed ETA, stall, unreachable source and review record
+ok - missing config writes an empty digest in the default directory
+ok - launchagent install and uninstall
+ok - ssh quoting, concurrent-run lock, crashed-run lock release and install failure
+ok - summarizer background helper does not hold the run lock
+FM_TEST_COMPLETE

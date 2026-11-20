@@ -1,0 +1,8 @@
+api repos/Pibomeister/firstmate/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=1 
+api repos/Pibomeister/firstmate/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=2 
+api repos/Pibomeister/firstmate/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=3 
+api repos/Pibomeister/firstmate/pulls\?state=open\&sort=created\&direction=asc\&per_page=100\&page=1 
+api repos/Pibomeister/agent-kit/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=1 
+api repos/Pibomeister/agent-kit/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=2 
+api repos/Pibomeister/agent-kit/pulls\?state=closed\&sort=updated\&direction=desc\&per_page=100\&page=3 
+api repos/Pibomeister/agent-kit/pulls\?state=open\&sort=created\&direction=asc\&per_page=100\&page=1 
