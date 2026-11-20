@@ -110,11 +110,11 @@
 # RELEASE. claim-release is supervisor-only (no FM_TASK_ID and main actor),
 # binds the exact current token, and takes the claim, spawn and metadata locks.
 # It refuses while dispatch/lifecycle work, a task record or a backlog close
-# remains. Version-2 reserved/dispatching receipts prove no worker delivery was
+# remains. Reserved/dispatching receipts prove no worker delivery was
 # attempted and may be released after a pre-metadata crash. After delivery, the
 # saved endpoint must be proven gone by fm-control's existing backend classifier,
 # and no process may retain the recorded worktree as cwd. Unknown/unsupported
-# absence proof and legacy uncertain receipts refuse; there is no override.
+# absence proof refuses; there is no override.
 # Release never destroys an endpoint, worktree or backlog item. It archives the
 # receipt under released/<id>-<token>.json; claiming again rechecks current
 # authority and issues a different token, so stale spawn calls remain fenced.
@@ -475,8 +475,7 @@ EOF
 
 # --- claims --------------------------------------------------------------------
 
-claim_init() { # [try|wait]
-  local mode=${1:-try}
+claim_init() {
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   # shellcheck source=bin/fm-classify-lib.sh
@@ -491,11 +490,7 @@ claim_init() { # [try|wait]
   [ ! -L "$CLAIM_DIR" ] || die "claim directory is a symlink"
   mkdir -p "$CLAIM_DIR" || die "cannot create claim directory"
   CLAIM_LOCK="$STATE/.ledger-claim.lock"
-  if [ "$mode" = wait ]; then
-    fm_lock_acquire_wait "$CLAIM_LOCK" || die "cannot acquire claim lock"
-  else
-    fm_lock_try_acquire "$CLAIM_LOCK" || die "another claim operation is in progress"
-  fi
+  fm_lock_acquire_wait "$CLAIM_LOCK" || die "cannot acquire claim lock"
   trap 'if [ -n "$CLAIM_RELEASE_TMP" ]; then rm -f "$CLAIM_RELEASE_TMP"; fi; if [ -n "$CLAIM_STAGE_TMP" ]; then rm -f "$CLAIM_STAGE_TMP" "$CLAIM_STAGE_TMP.next"; fi; if [ -n "$CLAIM_META_LOCK" ]; then fm_lock_release "$CLAIM_META_LOCK"; fi; if [ -n "$CLAIM_TASK_LOCK" ]; then fm_lock_release "$CLAIM_TASK_LOCK"; fi; fm_lock_release "$CLAIM_LOCK"' EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -588,15 +583,13 @@ claim_read() {
   local file="$CLAIM_DIR/$1.json"
   [ -f "$file" ] && [ -r "$file" ] && [ ! -L "$file" ] || die "missing or unsafe claim receipt for $1"
   jq -e --arg id "$1" --arg home "$FM_HOME" '
-    (.version == 1 or .version == 2) and .id == $id and .home == $home and
+    .version == 2 and .id == $id and .home == $home and
     (.token | type == "string" and test("^[a-f0-9]{32}$")) and
     (.snapshot | type == "string" and test("^[a-f0-9]{64}$")) and
     (.project | type == "string") and (.path | type == "string") and
     (.phase == "reserved" or .phase == "dispatching" or .phase == "launching" or .phase == "launched") and
-    (if .version == 2 then
-       if .phase == "reserved" or .phase == "dispatching" then .launch_attempted == false
-       else .launch_attempted == true and (.endpoint_meta | type == "string" and length > 0) end
-     else true end)
+    (if .phase == "reserved" or .phase == "dispatching" then .launch_attempted == false
+     else .launch_attempted == true and (.endpoint_meta | type == "string" and length > 0) end)
   ' "$file" >/dev/null || die "invalid claim receipt for $1"
   CLAIM_PROJECT=$(jq -r .project "$file")
   CLAIM_TOKEN=$(jq -r .token "$file")
@@ -685,7 +678,7 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
   local action=$1 id=$2 token=$3 path=$4 tmp
   claim_slug "$id"
   [ "$(cat "$STATE/.spawn-$id.lock/pid" 2>/dev/null)" = "$PPID" ] || die "claim transition requires the caller's spawn lock"
-  claim_init wait
+  claim_init
   if [ ! -e "$CLAIM_DIR/$id.json" ] && [ ! -L "$CLAIM_DIR/$id.json" ]; then
     [ -z "$token" ] && [ "$action" = check ] && return 0
     die "no claim receipt for $id"
@@ -713,11 +706,8 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
   tmp=$(mktemp "$CLAIM_DIR/.receipt.XXXXXX") || die "cannot stage claim transition"
   CLAIM_STAGE_TMP=$tmp
   jq --arg phase "$CLAIM_PHASE" '.phase=$phase' "$CLAIM_DIR/$id.json" > "$tmp" || die "cannot stage claim transition"
-  if [ "$action" = begin ]; then
-    jq '.version=2 | .launch_attempted=false' "$tmp" > "$tmp.next" || die "cannot stage dispatch fence"
-    mv "$tmp.next" "$tmp" || die "cannot publish dispatch fence stage"
-  elif [ "$action" = launch ]; then
-    jq --rawfile endpoint "$STATE/$id.meta" '.version=2 | .launch_attempted=true | .endpoint_meta=$endpoint' "$tmp" > "$tmp.next" || die "cannot stage launch fence"
+  if [ "$action" = launch ]; then
+    jq --rawfile endpoint "$STATE/$id.meta" '.launch_attempted=true | .endpoint_meta=$endpoint' "$tmp" > "$tmp.next" || die "cannot stage launch fence"
     mv "$tmp.next" "$tmp" || die "cannot publish launch fence stage"
   fi
   if [ "$action" != finish ]; then claim_publication_authorized "$id" "$CLAIM_PROJECT" || return 1; fi
@@ -727,7 +717,7 @@ cmd_claim_spawn() { # <check|begin|launch|finish> <id> <token> <project-path>
 
 cmd_claim_release() { # <id> --token <nonce>
   [ "$#" = 3 ] && [ "$2" = --token ] || usage_die "claim-release <id> --token <nonce>"
-  local id=$1 token=$3 version attempted saved backend target wt absence pids archive
+  local id=$1 token=$3 attempted saved backend target wt absence pids archive
   [ -z "${FM_TASK_ID:-}" ] && [ "${FM_SUPERVISION_ACTOR:-main}" = main ] || die "claim-release is supervisor-only"
   claim_slug "$id"
   claim_init
@@ -739,12 +729,10 @@ cmd_claim_release() { # <id> --token <nonce>
   [ "$token" = "$CLAIM_TOKEN" ] || die "claim-release token does not match the current reservation"
   [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || die "claim $id still has a task record; use normal task recovery or teardown"
   [ ! -e "$STATE/$id.backlog-close" ] && [ ! -L "$STATE/$id.backlog-close" ] || die "claim $id has a pending backlog close"
-  version=$(jq -r .version "$CLAIM_DIR/$id.json")
   attempted=$(jq -r .launch_attempted "$CLAIM_DIR/$id.json")
-  if [ "$CLAIM_PHASE" != reserved ] && { [ "$version" != 2 ] || [ "$attempted" != false ]; }; then
+  if [ "$attempted" != false ]; then
     # Preserve uncertain delivery. Only the existing backend absence proof plus
     # the worktree-process check can retire a receipt after worker delivery.
-    [ "$version" = 2 ] || die "legacy dispatch receipt has no launch evidence; owner reconciliation required"
     saved=$(mktemp "$CLAIM_DIR/.release-$id.XXXXXX") || die "cannot stage endpoint proof"
     CLAIM_RELEASE_TMP=$saved
     jq -er '.endpoint_meta | select(type == "string" and length > 0)' "$CLAIM_DIR/$id.json" > "$saved" || die "claim has no endpoint evidence"

@@ -813,8 +813,25 @@ test_claim_spawn_waits_for_concurrent_claim_lock() {
   pass 'spawn claim transitions wait for concurrent claim lock without losing launch completion'
 }
 
+test_claim_waits_for_concurrent_claim_scan() {
+  claim_fixture claim-wait-scan
+  local out holder
+  FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.ledger-claim.lock" || exit 1
+    sleep 1
+    fm_lock_release "$FM_HOME/state/.ledger-claim.lock"
+  ' _ "$ROOT" &
+  holder=$!
+  sleep 0.2
+  out=$(ledger claim --project alpha 2>&1) || fail "claim did not wait for a concurrent claim scan: $out"
+  wait "$holder" || fail 'lock holder helper failed'
+  assert_contains "$out" 'CLAIM claim-one project=alpha phase=reserved token=' 'a waiting claimant still reserves ready work'
+  pass 'a claimant waits for a concurrent claim scan instead of refusing'
+}
+
 if [ "${FM_TEST_ONLY:-}" = claims ]; then
-  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance test_claim_spawn_waits_for_concurrent_claim_lock
+  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance test_claim_spawn_waits_for_concurrent_claim_lock test_claim_waits_for_concurrent_claim_scan
   exit
 fi
 
@@ -835,6 +852,7 @@ fm_test_run \
   test_claim_release_requires_proven_retirement \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_claim_spawn_waits_for_concurrent_claim_lock \
+  test_claim_waits_for_concurrent_claim_scan \
   test_intake_files_one_item_per_ask_and_replays \
   test_intake_replay_key_and_existing_ids \
   test_public_followups_are_not_ready_work \
