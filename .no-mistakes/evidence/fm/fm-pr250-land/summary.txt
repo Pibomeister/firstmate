@@ -1,0 +1,4 @@
+fm-watch-triage exit=1
+fm-wake-queue exit=1
+fm-watch-open-decisions exit=0
+fm-branch-supervision exit=0

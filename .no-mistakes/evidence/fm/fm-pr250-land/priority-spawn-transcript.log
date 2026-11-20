@@ -1,0 +1,33 @@
+fm-test-queue: ticket 2302, position 1: load 116.04 is not below 96
+fm-test-queue: ticket 2302, position 1: load 118.62 is not below 96
+fm-test-queue: ticket 2302, position 1: load 117.37 is not below 96
+fm-test-queue: ticket 2302, position 1: load 119.18 is not below 96
+fm-test-queue: ticket 2302, position 1: load 121.01 is not below 96
+fm-test-queue: ticket 2302, position 1: load 114.52 is not below 96
+fm-test-queue: ticket 2302, position 1: load 107.91 is not below 96
+fm-test-queue: ticket 2302, position 1: load 102.94 is not below 96
+fm-test-queue: ticket 2302, position 1: load 101.02 is not below 96
+fm-test-queue: ticket 2302 served
+=== ordinary spawn task-c (lane cap 1, live-a running, load 200) ===
+deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-project-capacity.DWpZ8g/tr-lane/home/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 200.00 at or over its ceiling 20 (max-load1)
+exit=75
+=== explicit --priority 0 spawn task-p0 (same conditions) ===
+note: explicit --priority 0 admitted past the lane capacity deferral
+warning: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-project-capacity.DWpZ8g/tr-lane/home/data/task-p0/launch-brief.md records no ship branch; defaulting to legacy branch fm/task-p0
+warning: the tmux server identity for firstmate:fm-task-p0 could not be read; the record omits it, so a later loss of that server cannot be proven
+spawned task-p0 harness=codex kind=ship mode=no-mistakes yolo=off window=firstmate:fm-task-p0 worktree=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-project-capacity.DWpZ8g/tr-lane/wt-task-p0
+exit=0
+deferred-lines: 0
+task-p0.meta priority=0
+live-a.meta still present: yes
+=== explicit --priority 0 with unreadable lane-capacity ('bogus 1') ===
+fm-capacity: config/lane-capacity: line 2: unknown key 'bogus'
+error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited 1); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known
+exit=1
+task-p0.meta created: no
+launch-brief created: no
+worktrees: 1
+ok - an explicit priority is admitted past the lane cap and load ceiling that defer ordinary work
+ok - a prioritized spawn still refuses when the lane-capacity file cannot be read
+ok - a prioritized order gets a dedicated worker immediately while full ordinary lanes keep running
+rc=0

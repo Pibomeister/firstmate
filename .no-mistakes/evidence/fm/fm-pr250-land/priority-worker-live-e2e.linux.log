@@ -1,0 +1,12 @@
+debconf: delaying package configuration, since apt-utils is not installed
+5:  PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+7:  PATH="/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+9:export PATH
+Linux
+tmux 3.3a
+WARNING: watcher still down (same stale episode; last beat: 2s ago, grace 300s; down 0s) - full banner already printed this episode.
+ok - dedicated worker processes its order and resolves a self-servable question under continued supervision
+ok - prioritized worker is replaced with priority, endpoint, worktree and In-flight ownership intact
+rc=0
+repo-root sockets: 0
+docker_rc=0

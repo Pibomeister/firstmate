@@ -1,0 +1,6 @@
+ok - a project with no declared capacity keeps today's uncapped dispatch
+ok - a spawn is admitted while its project still has a free place
+ok - a spawn past the home lane cap is deferred with exit 75 and creates nothing
+ok - a spawn under a stubbed load over max-load1 is deferred with exit 75 and creates nothing
+ok - max-load1 40 on 16 cores admits a spawn at load 24 and defers one at load 41
+ok - a spawn beyond capacity is deferred before any record, brief, endpoint, worktree, or backlog move exists

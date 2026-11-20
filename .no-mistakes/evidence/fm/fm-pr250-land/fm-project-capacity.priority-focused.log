@@ -1,0 +1,37 @@
+fm-test-queue: ticket 2301, position 1: load 104.60 is not below 96
+fm-test-queue: ticket 2301, position 1: load 99.58 is not below 96
+fm-test-queue: ticket 2301, position 1: load 109.08 is not below 96
+fm-test-queue: ticket 2301, position 1: load 110.43 is not below 96
+fm-test-queue: ticket 2301, position 1: load 112.16 is not below 96
+fm-test-queue: ticket 2301, position 1: load 114.39 is not below 96
+fm-test-queue: ticket 2301, position 1: load 115.05 is not below 96
+fm-test-queue: ticket 2301, position 1: load 121.29 is not below 96
+fm-test-queue: ticket 2301, position 1: load 123.67 is not below 96
+fm-test-queue: ticket 2301, position 1: load 126.02 is not below 96
+fm-test-queue: ticket 2301, position 1: load 139.37 is not below 96
+fm-test-queue: ticket 2301, position 1: load 142.30 is not below 96
+fm-test-queue: ticket 2301, position 1: load 144.60 is not below 96
+fm-test-queue: ticket 2301, position 1: load 145.60 is not below 96
+fm-test-queue: ticket 2301, position 1: load 152.83 is not below 96
+fm-test-queue: ticket 2301, position 1: load 156.18 is not below 96
+fm-test-queue: ticket 2301, position 1: load 157.76 is not below 96
+fm-test-queue: ticket 2301, position 1: load 156.50 is not below 96
+fm-test-queue: ticket 2301, position 1: load 150.30 is not below 96
+fm-test-queue: ticket 2301, position 1: load 149.90 is not below 96
+fm-test-queue: ticket 2301, position 1: load 153.03 is not below 96
+fm-test-queue: ticket 2301, position 1: load 147.11 is not below 96
+fm-test-queue: ticket 2301, position 1: load 141.57 is not below 96
+fm-test-queue: ticket 2301, position 1: load 125.89 is not below 96
+fm-test-queue: ticket 2301, position 1: load 122.14 is not below 96
+fm-test-queue: ticket 2301, position 1: load 122.28 is not below 96
+fm-test-queue: ticket 2301, position 1: load 116.26 is not below 96
+fm-test-queue: ticket 2301, position 1: load 117.34 is not below 96
+fm-test-queue: ticket 2301, position 1: load 116.67 is not below 96
+fm-test-queue: ticket 2301, position 1: load 111.97 is not below 96
+fm-test-queue: ticket 2301, position 1: load 103.88 is not below 96
+fm-test-queue: ticket 2301, position 1: load 97.09 is not below 96
+fm-test-queue: ticket 2301 served
+ok - an explicit priority is admitted past the lane cap and load ceiling that defer ordinary work
+ok - a prioritized spawn still refuses when the lane-capacity file cannot be read
+ok - a prioritized order gets a dedicated worker immediately while full ordinary lanes keep running
+rc=0

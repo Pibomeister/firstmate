@@ -1,0 +1,2 @@
+not ok - a P0 spawn waited behind the lane cap and host load: deferred: lane capacity of this home (/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-project-capacity.MUGlOj/priority-lane/home/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 200.00 at or over its ceiling 20 (max-load1): expected exit 0, got 75
+exit=1
