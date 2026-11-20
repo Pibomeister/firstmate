@@ -6711,6 +6711,14 @@ test_captured_axi_status_shapes() {
       assert_contains "$out" 'parked at test: 1 finding(s)' 'the captured gate retains its actual step and finding count'
       assert_contains "$out" ' · ask-user: authority decision' \
         'the captured gate mints the human-decision component from the real column layout'
+      assert_contains "$out" ' · pr: #3998' \
+        'the parked question names its PR by number on the visible status line'
+      assert_contains "$out" ' · findings: test-1' \
+        'the parked question names the failing finding on the visible status line'
+      assert_contains "$out" ' · parked: 2d14h' \
+        'the parked question names how long it has waited on the visible status line'
+      assert_contains "$out" ' · options: approve or hold' \
+        'the parked question names its options on the visible status line'
       toolbin=$(make_no_python_toolbin "$d")
       out=$(PATH="$d/fakebin:$toolbin" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" competing)
       assert_contains "$out" 'parked at test: 1 finding(s)' 'a complete captured gate remains readable without Python'

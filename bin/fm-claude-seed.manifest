@@ -2,7 +2,7 @@ fm-claude-seed.v1
 a577f193c567d232a26c1031598b6fc3d14cff65	.agents/skills/afk/SKILL.md
 00918a4bb074b1304218bd57902563d21871e659	.agents/skills/agent-skill-trigger-index/SKILL.md
 0d9bd0c86ca74d8e430f0f1d132c8f4d307d69ea	.agents/skills/ahoy/SKILL.md
-088ab88b867a328a4e9083f72758706d42b78643	.agents/skills/ask-user-authority/SKILL.md
+0e175c6c6d9d5d453baf8f50a219c0510a78d776	.agents/skills/ask-user-authority/SKILL.md
 b9f72a3460c61bdc6c509396f032fd2214087258	.agents/skills/away-quiet-supervision/SKILL.md
 b11f1256bb420df81868e88ac6ee1b51fbc3380e	.agents/skills/bearings/SKILL.md
 987db2d8c03d822f333e30b6176bcbd0049acf82	.agents/skills/bearings/assets/board-template.html

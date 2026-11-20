@@ -15,6 +15,21 @@
 #       Returns 0 when the text names an owner-reserved category (merge, release,
 #       deploy, spend, money, sign-in, credential, secret, security, production
 #       data, PII, delete, destroy, force-push). Those holds stay held.
+#   fm_wd_nm_awaiting_approval <text>
+#       Returns 0 when the text names a no-mistakes `awaiting_approval` step.
+#       Such a step is a council or captain decision by default; the merge or
+#       release it would unblock does not by itself make it the owner's.
+#   fm_wd_human_only <text>
+#       Returns 0 when the text names a human-only category for an
+#       awaiting_approval decision (deploy, spend, secrets or credentials,
+#       sign-in, security, production or shared-database writes, messages to
+#       people, deletion, or a failure in the PR's own changed behavior).
+#   fm_wd_known_unreachable_timing_flake <text>
+#       Returns 0 when the text describes a known timing flake in a test the
+#       PR cannot reach: a timing word, a flake word, and an unreachable word.
+#   fm_wd_pr_label <text>
+#       Prints `PR #<n>` for the first PR the text names, by `/pull/<n>` URL,
+#       `PR #<n>`, or `#<n>`; prints nothing when it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -300,6 +315,33 @@ _fm_wd_guard_view() {  # <text>
 
 fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
+}
+
+FM_WD_HUMAN_ONLY_RE='(^|[^a-z])(deploy|spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|shared (db|database)|e-?mail|sms|message to|delet|destroy|wipe|changed behavio)'
+
+fm_wd_nm_awaiting_approval() {  # <text>
+  _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval'
+}
+
+fm_wd_human_only() {  # <text>
+  _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE"
+}
+
+fm_wd_known_unreachable_timing_flake() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load-sensitive|load shaped' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'flake|flaky' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable'
+}
+
+fm_wd_pr_label() {  # <text>
+  local hit n
+  hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+|PR #[0-9]+|#[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || return 0
+  n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')
+  [ -n "$n" ] && printf 'PR #%s\n' "$n"
+  return 0
 }
 
 fm_wd_text_allowed() {  # <text>

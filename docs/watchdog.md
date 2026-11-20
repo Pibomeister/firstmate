@@ -265,11 +265,15 @@ Each decision gets one council, for its task and key.
 - A council in which no seat answered records nothing final, so a later pass may convene it again after `council-secs`.
 
 A valid ruling or no-ruling record is final: no later pass and no repeated command convenes that task and key again.
-Removing the record file is the only way to allow a new council, and that is the owner's or the supervisor's act.
+Apart from the revisit below, removing the record file is the only way to allow a new council, and that is the owner's or the supervisor's act.
+The one documented exception is that revisit: `fm-watchdog.sh council --revisit` with a `--record-file` carrying a later standing order or supervisor nudge that contradicts the recorded outcome archives that outcome under `data/watchdog/revisits/` and convenes once more on the new record.
+Re-asking on contradicting evidence is a revisit, never a silent re-roll, and an automatic pass never revisits on its own.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
+A record that describes a known unreachable timing flake - a timing word, a flake word, and an unreachable word - is put to the seats with a default: approve the park, labeled approved, not clean, when that is option A.
+[`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when that default applies to a parked test step.
 
 `fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.
-It applies the same holds, the same seats, the same spend cap and call log, and the same one-council rule.
+It applies the same holds, the same seats, the same spend cap and call log, and the same one-council rule, with `--revisit` as the one documented exception above.
 In active decision mode, a repeated call returns the recorded outcome and reaches no seat.
 It types nothing into any pane.
 [`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when a supervisor calls it for a repeated review finding.
@@ -280,6 +284,10 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
 
 - No typed text or pressed Enter can carry a merge, deploy, release, publish, or force-push word. A letter before the word does not change this, so `redeploy`, `automerge`, `prerelease`, and `republish` are refused; `emerge` and `submerge` are not merge words. Text with `push` followed later, on one row or across joined rows, by `--force`, `--force-with-lease`, a `-f` flag, or a `+` refspec such as `+main` is a force-push. The guard also reads a multi-row text joined with spaces and joined with nothing, so a continued command, a soft wrap, or a split word is refused; a handoff keeps the original rows.
 - A decision keyed `captain-hold-*` or `human-step-*`, listed in `reserved-keys`, or naming money, merges, releases, deploys, credentials, security, production data, or deletion in its task, key, or summary is never nudged, put to council, or answered; it appears as a held gap. The `council` command holds it the same way.
+  One carve-out: a decision naming a no-mistakes `awaiting_approval` step reaches the council despite the merge or release it would unblock, because that step is a council or captain decision by default.
+  It stays held only when it also names a human-only category - a deploy, spend, secrets or credentials, a sign-in, security, production or shared-database writes, messages to people, deletion, or a failure in the PR's own changed behavior - or it looks like a secret, or its key is reserved above.
+  A plain merge decision that names no `awaiting_approval` step stays held exactly as before.
+- The rolled-up decision nudge and the ruling nudge name a decision's PR by number when its record carries one, so work is never identified only by a goal alias.
 - A decision whose task, key, or summary looks like a secret is held the same way, with no council and no ruling file. The gap omits a task or key name that looks like a secret.
 - A nudge whose text names a merge, deploy, or release word is not sent and appears as a held gap.
 - A nudge goes out only onto a composer read as empty. An unknown composer, an Orca draft, or a failed draft read holds the nudge as a gap. A held nudge counts toward `max-nudges`, so a frozen session still reaches the restart proof with nothing typed. A stable clean draft gets Enter once before that ladder.
