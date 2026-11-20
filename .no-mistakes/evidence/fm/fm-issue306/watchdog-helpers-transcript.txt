@@ -1,0 +1,12 @@
+per Firstmate issue #306, PR #562 test step awaiting_approval -> [PR #562]
+G3 Casco #562 awaiting_approval                              -> [PR #562]
+see https://github.com/x/y/pull/577 and PR #578              -> [PR #577]
+G7 no number here                                            -> []
+PR #562 test awaiting_approval: known load-sensitive timing flake T33 the PR cannot reach
+  awaiting=yes human_only=no flake=yes legacy_reserved=no
+deploy step awaiting_approval: deploy to production
+  awaiting=yes human_only=yes flake=no legacy_reserved=yes
+push awaiting_approval: force-push rebased branch
+  awaiting=yes human_only=yes flake=no legacy_reserved=yes
+test awaiting_approval: approve so PR can merge
+  awaiting=yes human_only=no flake=no legacy_reserved=yes
