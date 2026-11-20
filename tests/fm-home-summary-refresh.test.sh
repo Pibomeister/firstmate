@@ -484,10 +484,128 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "repeated lock timeout changed the best-effort caller result"
 [ "$(grep -c 'refresh exceeded its 1-second deadline' "$HOME_DIR/state/.home-summary-refresh.log" 2>/dev/null || true)" -ge 2 ] \
   || fail "repeated publication lock timeouts vanished from failure reporting"
+# A deadline hit while queued behind another refresh must name the lock wait.
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+  || fail "a lock-wait timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the lock wait was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 kill "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 LOCK_HOLDER_PID=
 pass "best-effort refresh bounds publication lock acquisition"
+
+# A refresh that blows its deadline inside a slow stage must name that stage in
+# the failure log, and must leave the last good summary untouched so it keeps its
+# own generated timestamp rather than the time of the failed attempt.
+STAGE_MARKER="$TMP_ROOT/stage-no-mistakes.pid"
+rm -f "$STAGE_MARKER"
+run_writer "$NOW_TWO" "$EPOCH_TWO" || fail "could not settle a good ledger before the slow-stage check"
+cp "$HOME_DIR/state/home-summary.json" "$TMP_ROOT/stage-prior-ledger.json"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_TEST_NM_MARKER="$STAGE_MARKER" FM_TEST_NM_SLEEP=30 \
+  FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+  || fail "a slow-stage timeout changed the best-effort caller result"
+stage_nm_pid=$(cat "$STAGE_MARKER" 2>/dev/null || true)
+[ -z "$stage_nm_pid" ] || kill -KILL "$stage_nm_pid" >/dev/null 2>&1 || true
+grep -F 'refresh exceeded its 3-second deadline in stage task-observation' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the slow stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -E 'stages: lock-wait@[0-9]+ producer@[0-9]+ backlog@[0-9]+ task-observation@[0-9]+' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the failure log did not list the stage offsets: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+cmp -s "$TMP_ROOT/stage-prior-ledger.json" "$HOME_DIR/state/home-summary.json" \
+  || fail "a failed refresh replaced the last good ledger"
+[ "$(jq -r '.generated' "$HOME_DIR/state/home-summary.json")" = "$NOW_TWO" ] \
+  || fail "the last good ledger lost its true generated timestamp"
+[ "$(jq -r '.generated_epoch' "$HOME_DIR/state/home-summary.json")" = "$EPOCH_TWO" ] \
+  || fail "the last good ledger lost its true generated epoch"
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  && fail "the failed refresh leaked its stage file"
+pass "a deadline failure names the slow stage and keeps the last good summary"
+
+# Signalling the parent while its worker is still running must not leak the
+# per-attempt stage file in state/.
+SIGNAL_MARKER="$TMP_ROOT/signal-no-mistakes.pid"
+rm -f "$SIGNAL_MARKER"
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_TEST_NM_MARKER="$SIGNAL_MARKER" FM_TEST_NM_SLEEP=30 \
+  "$WRITER" --best-effort > /dev/null 2>&1 &
+SLOW_WRITER_PID=$!
+i=0
+while [ ! -s "$SIGNAL_MARKER" ] && [ "$i" -lt 200 ]; do
+  kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+  sleep 0.05
+  i=$((i + 1))
+done
+[ -s "$SIGNAL_MARKER" ] || fail "the signalled-parent refresh never reached its slow worker"
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  || fail "the parent did not create a stage file to clean up"
+kill -TERM "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
+wait "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
+SLOW_WRITER_PID=
+signal_nm_pid=$(cat "$SIGNAL_MARKER" 2>/dev/null || true)
+[ -z "$signal_nm_pid" ] || kill -KILL "$signal_nm_pid" >/dev/null 2>&1 || true
+ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1 \
+  && fail "a signalled parent leaked its stage file"
+pass "a signalled parent removes its stage file"
+
+# The producer reports stages only through a descriptor its caller opened, never
+# by path: a stage file the caller already removed (a signalled parent cleaned it
+# up) is not recreated, and a descriptor that is not open is ignored.
+GONE_LOG="$TMP_ROOT/gone-stage.log"
+: > "$GONE_LOG"
+exec 9>>"$GONE_LOG"
+rm -f "$GONE_LOG"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_FD=9 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a removed stage file"
+exec 9>&-
+[ ! -e "$GONE_LOG" ] || fail "the producer recreated a removed stage file"
+LIVE_LOG="$TMP_ROOT/live-stage.log"
+: > "$LIVE_LOG"
+exec 9>>"$LIVE_LOG"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_FD=9 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a live stage descriptor"
+exec 9>&-
+grep -E '^summary	[0-9]+$' "$LIVE_LOG" >/dev/null \
+  || fail "the producer did not report its stages to the open descriptor"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  FM_SNAPSHOT_STAGE_FD=7 "$SNAPSHOT" --secondmate-home-summary >/dev/null 2>&1 \
+  || fail "the producer failed with a stage descriptor that is not open"
+pass "the producer never recreates a deleted stage log"
+
+# Opening the stage file is bounded by the refresh deadline: the worker, not the
+# parent, creates and opens it. A stage path that blocks on open (a named pipe
+# with no reader) stands in for a stalled filesystem, and only a refresh whose
+# parent never touches that path inside its own process returns in time.
+STALL_PATH="$HOME_DIR/state/.home-summary-stage.stalled"
+rm -f "$STALL_PATH"
+mkfifo "$STALL_PATH"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+started=$(date +%s)
+PATH="$FAKEBIN:$PATH" FM_HOME_SUMMARY_STAGE_PATH="$STALL_PATH" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=2 \
+  "$WRITER" --best-effort \
+  || fail "a stalled stage-file open changed the best-effort caller result"
+elapsed=$(( $(date +%s) - started ))
+[ "$elapsed" -lt 20 ] || fail "a stalled stage-file open held the refresh for $elapsed seconds"
+grep -F 'refresh exceeded its 2-second deadline before its first stage' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a stalled stage-file open was not logged: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ ! -e "$STALL_PATH" ] || fail "a stalled stage-file open left its stage path behind"
+pass "stage-file open is bounded by the refresh deadline"
 
 HANGBIN="$TMP_ROOT/hangbin"
 REAL_JQ=$(command -v jq)
@@ -513,6 +631,438 @@ grep -F 'refresh exceeded its 1-second deadline' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "publication validation timeout was not logged"
 pass "best-effort refresh bounds validation and publication"
+
+# A worker killed at the deadline right after it created the stage file must not
+# leave that file behind: the parent removes the name it handed out.
+ORPHAN_PATH="$HOME_DIR/state/.home-summary-stage.orphan"
+rm -f "$ORPHAN_PATH"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_HOME_SUMMARY_STAGE_PATH="$ORPHAN_PATH" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a deadline hit after stage-file creation changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the worker did not write to the stage file the parent named: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ ! -e "$ORPHAN_PATH" ] || fail "a worker killed after creating the stage file left it behind"
+pass "a stage file created before a deadline kill is removed"
+
+# After the worker ends, the parent reads the stage file and removes it under its
+# own short limit, so a state filesystem that stalls on those operations cannot
+# hold the caller past the deadline. The shims stall tail and rm on the stage
+# path only; a FIFO could not show this, because stat and unlink never block on one.
+STALLFS="$TMP_ROOT/stall-fs-bin"
+REAL_RM=$(command -v rm)
+mkdir -p "$STALLFS"
+for shim in tail rm; do
+  real=$(command -v "$shim")
+  cat > "$STALLFS/$shim" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    */.home-summary-stage.*) sleep 30 ;;
+  esac
+done
+exec "$real" "\$@"
+SH
+  chmod +x "$STALLFS/$shim"
+done
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+started=$(date +%s)
+PATH="$STALLFS:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a stalled stage-file read changed the best-effort caller result"
+elapsed=$(( $(date +%s) - started ))
+[ "$elapsed" -lt 20 ] || fail "stalled parent-side stage-file operations held the refresh for $elapsed seconds"
+grep -F 'refresh exceeded its 3-second deadline' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the deadline was not logged when parent-side stage operations stalled: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "an unreadable stage file was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
+  fail "an unreadable stage file was reported as a deadline before the first stage"
+fi
+"$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
+pass "parent-side stage-file reads and removals are bounded"
+
+# A stage file that cannot be read at all (not stalled, failing at once) is
+# reported as unreadable, never as a worker that recorded no stage.
+FAILTAIL="$TMP_ROOT/fail-tail-bin"
+mkdir -p "$FAILTAIL"
+cat > "$FAILTAIL/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-stage.*) echo "tail: read error" >&2; exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+chmod +x "$FAILTAIL/tail"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$(command -v tail)" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "an unreadable stage file changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "an immediately failing stage read was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
+  fail "an immediately failing stage read was reported as a deadline before the first stage"
+fi
+pass "an unreadable stage file is reported as unreadable"
+
+# A worker whose parent is killed right before the worker opens the stage file
+# creates it after the parent's cleanup ran. The worker removes its own file when
+# its parent is gone. mkdir stalls once inside the worker, before the open, so the
+# kill lands in that window, and a slow validation keeps the worker alive long
+# enough to see the file exist before it must vanish.
+SLOWBIN="$TMP_ROOT/slow-orphan-bin"
+REAL_MKDIR=$(command -v mkdir)
+mkdir -p "$SLOWBIN"
+cat > "$SLOWBIN/mkdir" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] && [ -n "${FM_TEST_MKDIR_MARK:-}" ] \
+    && [ ! -e "$FM_TEST_MKDIR_MARK" ]; then
+  : > "$FM_TEST_MKDIR_MARK"
+  sleep 3
+fi
+exec "$FM_TEST_REAL_MKDIR" "$@"
+SH
+cat > "$SLOWBIN/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*) sleep 4 ;;
+  esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$SLOWBIN/mkdir" "$SLOWBIN/jq"
+ORPHAN_MARK="$TMP_ROOT/orphan-mkdir.mark"
+rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.*
+printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$SLOWBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_TEST_MKDIR_MARK="$ORPHAN_MARK" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort > /dev/null 2>&1 &
+ORPHAN_PARENT=$!
+i=0
+while [ ! -e "$ORPHAN_MARK" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$ORPHAN_MARK" ] || fail "the worker never reached its state-directory step"
+kill -KILL "$ORPHAN_PARENT" >/dev/null 2>&1 || true
+wait "$ORPHAN_PARENT" >/dev/null 2>&1 || true
+i=0
+until ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
+  [ "$i" -lt 150 ] || fail "the worker never created its stage file after its parent was killed"
+  sleep 0.1
+  i=$((i + 1))
+done
+i=0
+while ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
+  [ "$i" -lt 300 ] || fail "a worker outliving its parent left its stage file behind"
+  sleep 0.1
+  i=$((i + 1))
+done
+pass "a worker whose parent is gone removes its own stage file"
+
+# A fresh home has no state directory when the refresh starts. The wake library
+# creates it in the worker before the stage file is opened, so a deadline hit on a
+# first refresh still names its stage rather than claiming it never started.
+FRESH_HOME="$TMP_ROOT/fresh-home"
+rm -rf "${FRESH_HOME:?}"
+cp -R "$HOME_DIR" "$FRESH_HOME"
+rm -rf "${FRESH_HOME:?}/state"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$FRESH_HOME" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a first refresh on a home without a state directory changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$FRESH_HOME/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a first refresh with no state directory did not name its stage: $(cat "$FRESH_HOME/state/.home-summary-refresh.log" 2>&1)"
+pass "a first refresh on a home without a state directory names its stage"
+
+# The stage path override is honored only for a path under the state directory
+# named like the default. A stray value pointing elsewhere must not make the
+# refresh append to or delete an unrelated file.
+DECOY="$TMP_ROOT/decoy-not-a-stage-file"
+printf 'keep me\n' > "$DECOY"
+PATH="$FAKEBIN:$PATH" FM_HOME_SUMMARY_STAGE_PATH="$DECOY" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" || fail "a stray stage path override broke a normal refresh"
+[ "$(cat "$DECOY")" = "keep me" ] || fail "a stray stage path override let the refresh modify or delete an unrelated file"
+printf 'working: status change\n' >> "$HOME_DIR/state/ledger-task.status"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_HOME_SUMMARY_STAGE_PATH="$DECOY" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort || fail "a stray stage path override changed a failing best-effort refresh"
+[ "$(cat "$DECOY")" = "keep me" ] || fail "a failing refresh touched an unrelated file named by a stray override"
+pass "a stray stage path override never touches an unrelated file"
+
+# A deadline hit while validating, or while publishing, must name that stage
+# rather than blaming the producer's last stage, and the offsets must share one
+# timeline that includes the worker's own stages.
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a validation stage timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the validate stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+grep -E 'stages: lock-wait@[0-9]+ producer@[0-9]+ backlog@[0-9]+ .*summary@[0-9]+ validate@[0-9]+' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the stage list did not run lock-wait, producer, the producer's stages, then validate: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+PUBBIN="$TMP_ROOT/pub-hangbin"
+REAL_MV=$(command -v mv)
+mkdir -p "$PUBBIN"
+cat > "$PUBBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */home-summary.json) sleep 30 ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+chmod +x "$PUBBIN/mv"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$PUBBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  "$WRITER" --best-effort \
+  || fail "a publish stage timeout changed the best-effort caller result"
+grep -F 'refresh exceeded its 3-second deadline in stage publish' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "the publish stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+pass "a deadline names the lock-wait, validate and publish stages"
+
+# A failure the worker handles itself, with no deadline involved, must name its
+# stage too: a malformed document in validate, a refused replacement in publish.
+JQFAILBIN="$TMP_ROOT/jq-fail-bin"
+mkdir -p "$JQFAILBIN"
+cat > "$JQFAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*) exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$JQFAILBIN/jq"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$JQFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort \
+  || fail "a worker-handled validation failure changed the best-effort caller result"
+grep -F 'summary producer returned a malformed ledger document in stage validate (stages: lock-wait@' \
+  "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
+  || fail "a worker-handled validation failure did not name its stage: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+MVFAILBIN="$TMP_ROOT/mv-fail-bin"
+mkdir -p "$MVFAILBIN"
+cat > "$MVFAILBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */home-summary.json) exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+chmod +x "$MVFAILBIN/mv"
+: > "$HOME_DIR/state/.home-summary-refresh.log"
+PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" --best-effort \
+  || fail "a worker-handled publish failure changed the best-effort caller result"
+grep -F 'atomic ledger replacement failed' "$HOME_DIR/state/.home-summary-refresh.log" \
+  | grep -F ' in stage publish (stages: lock-wait@' >/dev/null \
+  || fail "a worker-handled publish failure did not name its stage: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+# Without --best-effort the direct caller sees the same stage on stderr.
+PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  "$WRITER" 2> "$TMP_ROOT/direct-failure.err" \
+  && fail "a refused replacement did not fail the direct caller"
+grep -F ' in stage publish (stages: ' "$TMP_ROOT/direct-failure.err" >/dev/null \
+  || fail "the direct caller did not see the failing stage: $(cat "$TMP_ROOT/direct-failure.err")"
+pass "a failure the worker handles itself names its stage"
+
+# The producer reads current state for every task through a sliding window, not
+# in barriers. Five tasks run behind two slots: the first task's read cannot end
+# until the other four have, so it only finishes if the window refills a slot the
+# moment a fast task ends. A barrier, or serial reads, strand that read until the
+# fake gives up, and the event order below fails. The assertion counts reads and
+# their overlap, never elapsed time, so host load cannot change the verdict.
+SLIDE_HOME="$TMP_ROOT/slide-home"
+mkdir -p "$SLIDE_HOME/state" "$SLIDE_HOME/data" "$SLIDE_HOME/config" "$SLIDE_HOME/projects"
+SLIDE_HOME=$(cd "$SLIDE_HOME" && pwd -P)
+printf '# Seeded Firstmate home\n' > "$SLIDE_HOME/AGENTS.md"
+printf 'mate\n' > "$SLIDE_HOME/.fm-secondmate-home"
+{
+  printf '## In flight\n'
+  n=1
+  while [ "$n" -le 5 ]; do
+    printf -- '- [ ] slide-%s - Window task %s (repo: firstmate) (kind: ship) (since 2026-08-28)\n' "$n" "$n"
+    fm_git_init_commit "$SLIDE_HOME/projects/slide-$n"
+    git -C "$SLIDE_HOME/projects/slide-$n" checkout -q -b "fm/slide-$n"
+    fm_write_meta "$SLIDE_HOME/state/slide-$n.meta" \
+      "window=fmtest:fm-slide-$n" "worktree=$SLIDE_HOME/projects/slide-$n" \
+      "project=firstmate" "harness=claude" "kind=ship" "mode=no-mistakes" \
+      "spawn_gen=fm.slide$n"
+    printf 'working: window fixture\n' > "$SLIDE_HOME/state/slide-$n.status"
+    n=$((n + 1))
+  done
+  printf '\n## Queued\n\n## Done\n'
+} > "$SLIDE_HOME/data/backlog.md"
+SLIDEBIN="$TMP_ROOT/slide-bin"
+mkdir -p "$SLIDEBIN"
+cat > "$SLIDEBIN/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ -n "${FM_TEST_SLIDE_LOG:-}" ] && [ "$*" = "axi status" ] || exit 0
+id=$(basename "$PWD")
+case "$id" in slide-*) ;; *) exit 0 ;; esac
+printf 'start %s\n' "$id" >> "$FM_TEST_SLIDE_LOG"
+if [ "$id" = slide-1 ]; then
+  n=0
+  while [ "$(grep -c '^end ' "$FM_TEST_SLIDE_LOG")" -lt 4 ] && [ "$n" -lt 600 ]; do
+    sleep 0.05
+    n=$((n + 1))
+  done
+fi
+printf 'end %s\n' "$id" >> "$FM_TEST_SLIDE_LOG"
+exit 0
+SH
+chmod +x "$SLIDEBIN/no-mistakes"
+run_slide() {  # <concurrency> [log]
+  PATH="$SLIDEBIN:$FAKEBIN:$PATH" FM_TEST_SLIDE_LOG="${2:-}" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    "$SNAPSHOT" --secondmate-home-summary
+}
+SLIDE_LOG="$TMP_ROOT/slide-events.log"
+: > "$SLIDE_LOG"
+run_slide 2 "$SLIDE_LOG" > "$TMP_ROOT/slide-window.json" \
+  || fail "the sliding-window producer run failed"
+[ "$(grep -c '^start ' "$SLIDE_LOG")" -eq 5 ] \
+  || fail "the window did not read all five tasks once: $(tr '\n' ' ' < "$SLIDE_LOG")"
+[ "$(tail -n 1 "$SLIDE_LOG")" = "end slide-1" ] \
+  || fail "a free slot was not refilled while the slow read ran (barrier or serial reads): $(tr '\n' ' ' < "$SLIDE_LOG")"
+max_inflight=$(awk '/^start /{n++; if (n>m) m=n} /^end /{n--} END{print m+0}' "$SLIDE_LOG")
+[ "$max_inflight" -eq 2 ] \
+  || fail "the window ran $max_inflight reads at once instead of its limit of 2: $(tr '\n' ' ' < "$SLIDE_LOG")"
+# The composed summary must not depend on how many reads overlapped.
+run_slide 1 > "$TMP_ROOT/slide-serial.json" || fail "the serial producer run failed"
+run_slide 16 > "$TMP_ROOT/slide-wide.json" || fail "the wide producer run failed"
+jq -S . "$TMP_ROOT/slide-serial.json" > "$TMP_ROOT/slide-serial.norm"
+jq -S . "$TMP_ROOT/slide-window.json" > "$TMP_ROOT/slide-window.norm"
+jq -S . "$TMP_ROOT/slide-wide.json" > "$TMP_ROOT/slide-wide.norm"
+cmp -s "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-window.norm" \
+  || fail "overlapping reads changed the summary: $(diff "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-window.norm" | head -5)"
+cmp -s "$TMP_ROOT/slide-serial.norm" "$TMP_ROOT/slide-wide.norm" \
+  || fail "a wide window changed the summary"
+jq -e '(.invalidity.ids | sort) == ["slide-1","slide-2","slide-3","slide-4","slide-5"] and .counts.endpoints == 5' \
+  "$TMP_ROOT/slide-window.json" >/dev/null \
+  || fail "the window summary lost a task row: $(jq -c '[.invalidity, .counts]' "$TMP_ROOT/slide-window.json")"
+pass "current-state reads refill a free slot and never change the summary"
+
+# Row composition goes through the same window. The fake jq stands in for the
+# row builder's final compose step (the only jq call that carries both the task
+# id and the observation time): slide-1's compose cannot end until the other four
+# composes have, so a serial row builder strands it and the event order fails.
+# Reads here are instant, so only row composition can overlap. The comparison is
+# on complete task rows from --json, because the summary projection drops fields.
+ROWBIN="$TMP_ROOT/row-bin"
+mkdir -p "$ROWBIN"
+cat > "$ROWBIN/jq" <<'SH'
+#!/usr/bin/env bash
+id=
+saw_observed=0
+prev=
+for arg in "$@"; do
+  [ "$prev" = id ] && [ -z "$id" ] && id=$arg
+  [ "$arg" = observed_at ] && saw_observed=1
+  prev=$arg
+done
+case "$id" in slide-*) ;; *) id= ;; esac
+if [ -n "${FM_TEST_ROW_LOG:-}" ] && [ -n "$id" ] && [ "$saw_observed" -eq 1 ]; then
+  printf 'start %s\n' "$id" >> "$FM_TEST_ROW_LOG"
+  if [ "$id" = slide-1 ]; then
+    n=0
+    while [ "$(grep -c '^end ' "$FM_TEST_ROW_LOG")" -lt 4 ] && [ "$n" -lt 600 ]; do
+      sleep 0.05
+      n=$((n + 1))
+    done
+  fi
+  "$FM_TEST_REAL_JQ" "$@"
+  rc=$?
+  printf 'end %s\n' "$id" >> "$FM_TEST_ROW_LOG"
+  exit "$rc"
+fi
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+chmod +x "$ROWBIN/jq"
+run_rows() {  # <concurrency> [log]
+  PATH="$ROWBIN:$SLIDEBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_ROW_LOG="${2:-}" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    "$SNAPSHOT" --json
+}
+ROW_LOG="$TMP_ROOT/row-events.log"
+: > "$ROW_LOG"
+run_rows 2 "$ROW_LOG" > "$TMP_ROOT/rows-window.json" \
+  || fail "the windowed row-composition run failed"
+[ "$(grep -c '^start ' "$ROW_LOG")" -eq 5 ] \
+  || fail "row composition did not run once per task: $(tr '\n' ' ' < "$ROW_LOG")"
+[ "$(tail -n 1 "$ROW_LOG")" = "end slide-1" ] \
+  || fail "row composition did not overlap behind the window (serial rows): $(tr '\n' ' ' < "$ROW_LOG")"
+max_rows=$(awk '/^start /{n++; if (n>m) m=n} /^end /{n--} END{print m+0}' "$ROW_LOG")
+[ "$max_rows" -eq 2 ] \
+  || fail "row composition ran $max_rows at once instead of the window limit of 2: $(tr '\n' ' ' < "$ROW_LOG")"
+run_rows 1 > "$TMP_ROOT/rows-serial.json" || fail "the serial row run failed"
+run_rows 16 > "$TMP_ROOT/rows-wide.json" || fail "the wide row run failed"
+jq -S '.tasks' "$TMP_ROOT/rows-serial.json" > "$TMP_ROOT/rows-serial.norm"
+jq -S '.tasks' "$TMP_ROOT/rows-window.json" > "$TMP_ROOT/rows-window.norm"
+jq -S '.tasks' "$TMP_ROOT/rows-wide.json" > "$TMP_ROOT/rows-wide.norm"
+[ "$(jq 'length' "$TMP_ROOT/rows-serial.norm")" -eq 5 ] \
+  || fail "the serial run did not produce five task rows"
+cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" \
+  || fail "overlapping row composition changed a task row: $(diff "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" | head -5)"
+cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" \
+  || fail "a wide window changed a task row"
+pass "row composition overlaps behind the window and keeps every task row identical"
+
+# Task ids may contain dots, so a task named like another task's row file ("ship"
+# and "ship.row") must not share files with it: both rows survive the snapshot.
+DOT_HOME="$TMP_ROOT/dot-home"
+mkdir -p "$DOT_HOME/state" "$DOT_HOME/data" "$DOT_HOME/config" "$DOT_HOME/projects"
+DOT_HOME=$(cd "$DOT_HOME" && pwd -P)
+printf '# Seeded Firstmate home\n' > "$DOT_HOME/AGENTS.md"
+printf 'mate\n' > "$DOT_HOME/.fm-secondmate-home"
+{
+  printf '## In flight\n'
+  for dot_id in ship ship.row; do
+    printf -- '- [ ] %s - Dotted task %s (repo: firstmate) (kind: ship) (since 2026-08-28)\n' "$dot_id" "$dot_id"
+    fm_git_init_commit "$DOT_HOME/projects/$dot_id"
+    git -C "$DOT_HOME/projects/$dot_id" checkout -q -b "fm/$dot_id"
+    fm_write_meta "$DOT_HOME/state/$dot_id.meta" \
+      "window=fmtest:fm-$dot_id" "worktree=$DOT_HOME/projects/$dot_id" \
+      "project=firstmate" "harness=claude" "kind=ship" "mode=no-mistakes" \
+      "spawn_gen=fm.dot$dot_id"
+    printf 'working: dotted fixture\n' > "$DOT_HOME/state/$dot_id.status"
+  done
+  printf '\n## Queued\n\n## Done\n'
+} > "$DOT_HOME/data/backlog.md"
+for dot_conc in 1 16; do
+  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$DOT_HOME" \
+    FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+    FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$dot_conc" \
+    "$SNAPSHOT" --json > "$TMP_ROOT/dot-snapshot-$dot_conc.json" 2> "$TMP_ROOT/dot-snapshot-$dot_conc.err" \
+    || fail "a snapshot of tasks named ship and ship.row failed at concurrency $dot_conc: $(cat "$TMP_ROOT/dot-snapshot-$dot_conc.err")"
+  jq -e '([.tasks[].id] | sort) == ["ship","ship.row"]' "$TMP_ROOT/dot-snapshot-$dot_conc.json" >/dev/null \
+    || fail "a dotted task id lost or swapped its row at concurrency $dot_conc: $(jq -c '[.tasks[].id]' "$TMP_ROOT/dot-snapshot-$dot_conc.json")"
+done
+pass "task ids that extend another task's row file name keep separate rows"
 
 MKBIN="$TMP_ROOT/mkdir-hangbin"
 REAL_MKDIR=$(command -v mkdir)
