@@ -79,8 +79,9 @@
 #   fm_wd_human_step <screen>
 #       Prints `captcha`, `otp`, `verification-code`, `approval`, or `sign-in`
 #       when the last 14 non-blank rows show that human-only step, else nothing
-#       (exit 1). On a dialog, whose cursor row is a numbered option, only the
-#       paragraph just above the options counts. Otherwise only the rows below
+#       (exit 1). On a proven dialog, whose cursor row is a numbered option
+#       and whose last non-blank row is the picker footer (`Esc to cancel` and
+#       the like), only the paragraph just above the options counts. Otherwise only the rows below
 #       the last composer prompt row count, down to the composer's bottom border
 #       or first blank row, so the footer and status line never do; with no
 #       prompt row either, as on a full-screen sign-in view, every one of those
@@ -413,6 +414,8 @@ fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
   printf '%s\n' "${spec#*$'\t'}"
 }
 
+FM_WD_PICKER_FOOTER_RE='(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑/↓ to (navigate|select)|Tab:next answer)'
+
 fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
@@ -424,10 +427,10 @@ fm_wd_pane_dialog() {  # <screen> [<harness>]
   # A picker: its last non-blank row is the recorded footer and a selected
   # row sits above it. Claude Code 2.1.316's folder-trust picker has no
   # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
-  printf '%s\n' "$tail" | awk '
+  printf '%s\n' "$tail" | awk -v footer="$FM_WD_PICKER_FOOTER_RE" '
     /(❯|›)[ \t]*[^ \t]/ || />[ \t]*[0-9]+[.)][ \t]/ { selected = 1 }
     NF { last = $0 }
-    END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
+    END { exit !(selected && last ~ footer) }
   ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
@@ -505,7 +508,7 @@ fm_wd_human_step() {  # <screen>
       esac
       printf '%s' "$row" | LC_ALL=C grep -Eq "$re" && { printf '%s\n' "$kind"; return 0; }
     done
-  done < <(printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v glyph="$FM_WD_PROMPT_RE" '
+  done < <(printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v glyph="$FM_WD_PROMPT_RE" -v footer="$FM_WD_PICKER_FOOTER_RE" '
     function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
     { row[NR] = $0 }
     END {
@@ -513,7 +516,7 @@ fm_wd_human_step() {  # <screen>
       while (last > 0 && row[last] !~ /[^ \t]/) last--
       seen = 0; floor = 1
       for (i = last; i > 0; i--) if (row[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
-      for (i = last; i >= floor; i--) if (row[i] ~ /(❯|›|>)[ \t]*[0-9]+[.)][ \t]/) { opt = i; break }
+      if (row[last] ~ footer) for (i = last; i >= floor; i--) if (row[i] ~ /(❯|›|>)[ \t]*[0-9]+[.)][ \t]/) { opt = i; break }
       if (opt) {
         for (i = opt; i >= floor; i--) if (row[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { opt = i; break }
         i = opt - 1

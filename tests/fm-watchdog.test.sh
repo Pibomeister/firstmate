@@ -6451,6 +6451,8 @@ test_human_step_detection() {
   assert_equals "" "$(lib fm_wd_human_step $'Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel')" "a permission dialog is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Bash command\n\n  npm test -- auth/mfa.test.ts\n  Run the 2FA tests\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. Yes, and don\'t ask again for npm test commands in /w/fm-2fa-flow\n   3. No\n\nEsc to cancel')" "a permission dialog for an MFA command is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Working on the MFA enrolment.\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  fm/fm-mfa-enroll · ~/w/fm-2fa-flow · ? for shortcuts')" "a branch name in the status line is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'GitHub needs you to sign in to continue before the push.\n> 1. merge the PR\n  2. then clean up')" "an echoed numbered prompt under a sign-in reply is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'The 2FA and otp checks pass now.\n> 1. merge it')" "a numbered composer draft under a 2FA reply is not a step"
   pass "human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not"
 }
 
