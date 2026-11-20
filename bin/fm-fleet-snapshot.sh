@@ -368,7 +368,6 @@ if [ "$OUTPUT_MODE" != contribution-input ]; then
     echo "fm-fleet-snapshot: another snapshot is already running in this home (pid ${FM_LOCK_HELD_PID:-unknown}); not starting a second" >&2
     exit 75
   fi
-  trap 'fm_lock_release "$SNAPSHOT_LOCK"' EXIT
 fi
 
 bool_json() {
@@ -1652,6 +1651,7 @@ snapshot_cleanup() {
   snapshot_task_cleanup
   snapshot_collection_cleanup
   cleanup_json_files
+  [ -z "${SNAPSHOT_LOCK:-}" ] || fm_lock_release "$SNAPSHOT_LOCK"
 }
 trap snapshot_cleanup EXIT
 

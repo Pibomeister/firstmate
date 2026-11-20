@@ -109,6 +109,16 @@ test_snapshot_single_flight() {
   pass "a second fleet snapshot never starts while one holds the home lock"
 }
 
+test_snapshot_releases_lock_on_normal_exit() {
+  local home rc
+  home=$(make_home single-flight-release)
+  FM_HOME="$home" "$SNAPSHOT" --json >/dev/null; rc=$?
+  expect_code 0 "$rc" "the snapshot did not finish normally"
+  [ ! -e "$home/state/.fleet-snapshot.lock" ] && [ ! -L "$home/state/.fleet-snapshot.lock" ] \
+    || fail "a normal snapshot exit left the home lock behind"
+  pass "a fleet snapshot releases the home lock when it exits normally"
+}
+
 test_snapshot_waits_for_holder_to_finish() {
   local home out rc
   home=$(make_home single-flight-wait)
@@ -158,8 +168,9 @@ EOF
   chmod +x "$SNAP_SCRIPT"
 }
 
-seed_ledger() {  # <home> <published_epoch>
-  jq -n --argjson p "$2" '{schema:"fm-heartbeat.v1",published_epoch:$p}' > "$1/state/heartbeat.json"
+seed_ledger() {  # <home> <generated_epoch> [<published_epoch>]
+  jq -n --argjson g "$2" --argjson p "${3:-$2}" \
+    '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$p}' > "$1/state/heartbeat.json"
 }
 
 run_heartbeat() {  # <home>
@@ -178,7 +189,7 @@ test_heartbeat_skips_inside_throttled_interval() {
   run_heartbeat "$HB_HOME"
   assert_equals 0 "$(cat "$COUNT_FILE")" \
     "the heartbeat republished inside the throttled interval"
-  assert_equals $((NOW_EPOCH - 10)) "$(jq -r .published_epoch "$HB_HOME/state/heartbeat.json")" \
+  assert_equals $((NOW_EPOCH - 10)) "$(jq -r .generated_epoch "$HB_HOME/state/heartbeat.json")" \
     "the skipped heartbeat rewrote the ledger"
   pass "heartbeat skips a publication inside the throttled interval"
 }
@@ -196,6 +207,12 @@ test_heartbeat_publishes_when_calm_or_due() {
   run_heartbeat "$HB_HOME"
   assert_equals 1 "$(cat "$COUNT_FILE")" \
     "a throttled heartbeat never published again once its interval elapsed"
+  heartbeat_fixture hb-paced
+  seed_ledger "$HB_HOME" $((NOW_EPOCH - 400)) $((NOW_EPOCH - 390))
+  set_load 300.00
+  run_heartbeat "$HB_HOME"
+  assert_equals 1 "$(cat "$COUNT_FILE")" \
+    "a launch one throttled interval after the prior launch skipped because the prior run published late"
   pass "heartbeat publishes on the ordinary cadence when calm and again once a throttled interval elapses"
 }
 
@@ -218,6 +235,7 @@ fm_test_run \
   test_interval_math \
   test_interval_threshold_override \
   test_snapshot_single_flight \
+  test_snapshot_releases_lock_on_normal_exit \
   test_snapshot_waits_for_holder_to_finish \
   test_snapshot_contribution_input_not_single_flight \
   test_heartbeat_skips_inside_throttled_interval \
