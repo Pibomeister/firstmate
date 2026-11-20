@@ -630,7 +630,8 @@ scan_landed_awaiting_cleanup() {  # -> <task>\t<url> rows
 
 # A morning-handoff row from bin/fm-watchdog.sh stays open, however old, until
 # a later `cleared` row names the same subject. Each open row shown here gets a
-# `briefed` row once, so the watchdog does not page it again by day.
+# `briefed` row once, queued in $HUMAN_STEPS_BRIEFED and appended only after the
+# brief is published, so the watchdog does not page it again by day.
 open_human_steps() {  # <human-steps.tsv>
   [ -r "$1" ] || return 0
   awk -F '\t' '
@@ -648,7 +649,7 @@ open_human_steps() {  # <human-steps.tsv>
     }' "$1" | while IFS="$(printf '\t')" read -r subject kind since briefed; do
       printf '    - %s: %s step waiting since %s; only a person can complete it\n' \
         "$subject" "$kind" "$(epoch_to_iso "$since")"
-      [ "$briefed" = 1 ] || printf '%s\t%s\t%s\t%s\tbriefed\n' "$(date +%s)" "$subject" "$kind" "$since" >> "$1" 2>/dev/null || :
+      [ "$briefed" = 1 ] || [ -z "${HUMAN_STEPS_BRIEFED:-}" ] || printf '%s\t%s\t%s\t%s\tbriefed\n' "$(date +%s)" "$subject" "$kind" "$since" >> "$HUMAN_STEPS_BRIEFED" 2>/dev/null || :
     done
 }
 
@@ -985,12 +986,17 @@ EOF
   # Render to a file before publishing: failed stdout writes can leave Bash's
   # buffered output in later command substitutions and corrupt numeric fields.
   brief=$(mktemp "$STATE/.afk-return-brief.XXXXXX") || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
+  HUMAN_STEPS_BRIEFED=$brief.briefed
+  : > "$HUMAN_STEPS_BRIEFED" 2>/dev/null || HUMAN_STEPS_BRIEFED=
   if ! render_return_brief "$evidence" "$blockers" "$since" "$drain_ok" > "$brief" \
      || ! cat "$brief"; then
     append_evidence lifecycle 'recovery evidence publication failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
+  elif [ -s "$HUMAN_STEPS_BRIEFED" ]; then
+    cat "$HUMAN_STEPS_BRIEFED" >> "$STATE/watchdog/human-steps.tsv" 2>/dev/null || :
   fi
-  rm -f "$brief"
+  rm -f "$brief" "$brief.briefed"
+  HUMAN_STEPS_BRIEFED=
   if [ "$HELD_READ_FAILED" -eq 1 ]; then
     append_evidence lifecycle "held set unreadable: $HELD_READ_PATH; catch-up stays gated" "$evidence"
     lifecycle_ok=0
