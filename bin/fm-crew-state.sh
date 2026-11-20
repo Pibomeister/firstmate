@@ -33,6 +33,10 @@
 # `earlier run: <id>`, and a verdict taken from the ledger's own row carries no
 # run id at all, because there the id belongs to a run the verdict did not come
 # from (rule 2b).
+# A parked reading carries the parked question's structured parts before that
+# run field, each only when the run itself proves it: `pr: #<n>`, `findings:
+# <ids>`, `parked: <duration>`, and for an awaiting_approval step `options:
+# approve or hold`.
 #
 # Logic, numbered for reference; rules 2b and 3 each record that rule 3's
 # status-log reconciliation is applied before rule 2b:
@@ -700,6 +704,38 @@ nm_gate_findings_count() {
   rest=${rest%%|*}
   case "$rest" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' "$rest"
+}
+# The parked question's structured parts for the visible status line: the PR
+# number from the run's own PR URL, the failing findings' ids from the gate
+# table's `id` column, and the parked duration the run itself reports. Only
+# short validated scalars are printed, never a finding's free text, so nothing
+# the run reports can mint another component or leak prose into the line.
+nm_parked_pr_number() {
+  local url num
+  url=$(strip_quotes "$(nm_field pr)")
+  case "$url" in */pull/*|*/pulls/*|*/merge_requests/*|*/pull-requests/*) ;; *) return 0 ;; esac
+  num=${url##*/}
+  case "$num" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "$num"
+}
+nm_gate_finding_ids() {
+  local ids id out=''
+  ids=$(fm_nm_table_column "$RUN_OUT" findings id)
+  while IFS= read -r id; do
+    id=$(trim "$id")
+    case "$id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+    out="$out${out:+,}$id"
+  done <<EOF
+$ids
+EOF
+  printf '%s' "$out"
+}
+nm_parked_duration() {
+  local line dur
+  line=$(printf '%s\n' "$RUN_OUT" | grep -E "$FM_NM_AWAITING_AGENT_RE" | head -1 || true)
+  dur=$(printf '%s' "$line" | sed -n 's/.*parked[[:space:]][[:space:]]*\([0-9][0-9A-Za-z]*\).*/\1/p')
+  case "$dur" in ''|*[!0-9A-Za-z]*) return 0 ;; esac
+  printf '%s' "$dur"
 }
 # 0 when the gate's own findings table holds at least one row whose `action`
 # column is exactly `ask-user` - the pipeline's own record that this gate's
@@ -1396,6 +1432,20 @@ if [ "$HAVE_RUN" = 1 ]; then
       # later note happens to contain can mint it.
       if nm_gate_awaits_human_decision; then
         RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_HUMAN_DECISION"
+      fi
+      # The exact parked question, in structured parts, on this visible line:
+      # its PR by number, the failing finding ids, how long it has waited,
+      # and (for an awaiting_approval step) its options. The run id already
+      # closes the line below, so a supervisor never has to open a handoff
+      # file to learn what is being asked.
+      parked_pr=$(nm_parked_pr_number)
+      [ -z "$parked_pr" ] || RUN_DETAIL="$RUN_DETAIL${SEP}pr: #$parked_pr"
+      parked_ids=$(nm_gate_finding_ids)
+      [ -z "$parked_ids" ] || RUN_DETAIL="$RUN_DETAIL${SEP}findings: $parked_ids"
+      parked_dur=$(nm_parked_duration)
+      [ -z "$parked_dur" ] || RUN_DETAIL="$RUN_DETAIL${SEP}parked: $parked_dur"
+      if [ "$gate_status" = awaiting_approval ] || [ "$status" = awaiting_approval ]; then
+        RUN_DETAIL="$RUN_DETAIL${SEP}options: approve or hold"
       fi
     else
       case "$status" in

@@ -1628,6 +1628,72 @@ council-seats=claude:haiku,agy:flash'
   pass "council: one convening of a decision at a time; a dead owner's lock is cleared"
 }
 
+test_awaiting_approval_reaches_council_despite_merge_word() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval after the once-rerun. A (recommended) approve the step so the PR can merge when gate-green, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key nm-test-awaiting --record-file "$H/record.txt" 2>&1) || fail "awaiting_approval council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "an awaiting_approval step is a council decision even when the record names the merge it unblocks: $out"
+  assert_equals 2 "$(seat_calls)" "both seats saw the awaiting_approval record"
+  printf '%s\n' 'PR #9 no-mistakes deploy step awaiting_approval. A deploy to production, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key nm-deploy --record-file "$H/record.txt" 2>&1) || fail "human-only council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a deploy awaiting_approval stays the owner's: $out"
+  assert_equals 2 "$(seat_calls)" "no seat saw the human-only record"
+  pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
+}
+
+test_known_unreachable_timing_flake_defaults_approve_not_clean() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-sensitive timing flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key nm-flake --record-file "$H/record.txt" 2>&1) || fail "flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "the flake council rules: $out"
+  assert_grep "known unreachable timing flake: default to PROCEED A" "$H/prompt.log" "the seat prompt defaults a known unreachable timing flake to approve, labeled not clean"
+  assert_grep "approved, not clean" "$H/prompt.log" "the seat prompt labels the flake approval not clean"
+  : > "$H/prompt.log"
+  printf '%s\n' 'A (recommended) flat keys, or B nested keys?' > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key plain-layout --record-file "$H/record.txt" 2>&1) || fail "plain council failed: $out"
+  assert_no_grep "known unreachable timing flake: default to PROCEED A" "$H/prompt.log" "an ordinary record gets no flake default"
+  pass "council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean"
+}
+
+test_council_revisit_on_contradicting_record() {
+  local out archived
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "first council failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "the first council holds: $out"
+  out=$(run_wd 10 council --task t1 --key nm-hold --record-file "$H/record.txt" 2>&1) || fail "replay failed: $out"
+  assert_contains "$out" "answer=PROCEED B" "without a revisit the recorded outcome replays: $out"
+  assert_equals 2 "$(seat_calls)" "a plain repeat reaches no seat"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf '%s\n' 'Later standing order contradicting the hold on PR #562: merge gate-green PRs with no per-PR OK and accept the known flake risk. PR #562 no-mistakes test awaiting_approval. A approve the park, or B hold for the owner?' > "$H/record2.txt"
+  out=$(run_wd 20 council --task t1 --key nm-hold --record-file "$H/record2.txt" --revisit 2>&1) || fail "revisit council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a contradicting later order gets a fresh ruling, not a fishing refusal: $out"
+  assert_equals 4 "$(seat_calls)" "the revisit convened both seats again"
+  archived=$(grep -rl 'PROCEED B (unanimous' "$H/data/watchdog/revisits/" 2>/dev/null | head -n 1)
+  [ -n "$archived" ] || fail "the superseded ruling was not archived under data/watchdog/revisits/"
+  pass "council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling"
+}
+
+test_decision_nudge_names_pr_by_number() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 no-mistakes test awaiting_approval for PR #562. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "decision pass failed"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the aged decision gets its nudge: $(ledger | cut -f5-8)"
+  grep -rqs 'PR #562' "$H/state/operational-inbox" || fail "the decision nudge does not name the PR by number: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  pass "decisions: the nudge names work by PR number from the record, not by a goal alias alone"
+}
+
 test_judge_fallback_and_spend_cap() {
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 daily-max-usd=0.01'
@@ -6464,6 +6530,10 @@ fm_test_run \
   test_automatic_decisions_refuse_oversized_recorded_context \
   test_council_command_honours_the_dry_run_switch \
   test_council_runs_one_at_a_time_per_decision \
+  test_awaiting_approval_reaches_council_despite_merge_word \
+  test_known_unreachable_timing_flake_defaults_approve_not_clean \
+  test_council_revisit_on_contradicting_record \
+  test_decision_nudge_names_pr_by_number \
   test_judge_fallback_and_spend_cap \
   test_no_model_still_acts_and_reports_gap \
   test_timer_loop_needs_owed_input \
