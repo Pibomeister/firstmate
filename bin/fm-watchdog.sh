@@ -1070,7 +1070,15 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   } > "$record.tmp" && [ ! -d "$record" ] &&
     { [ -z "$prior" ] || { mkdir -p "$(dirname "$archive")" && cp -p "$prior" "$archive"; }; } &&
     mv "$record.tmp" "$record"; then
-    [ -z "$prior" ] || [ "$prior" = "$record" ] || rm -f "$prior"
+    if [ -n "$prior" ] && [ "$prior" != "$record" ] && ! rm -f "$prior"; then
+      # The superseded record is still final if it cannot be removed, and
+      # wd_council_record searches rulings first, so leaving the new record
+      # beside it would replay the old outcome. Roll the publication back.
+      rm -f "$record" "$archive" 2>/dev/null
+      fm_lock_release "$lock"
+      printf 'failed\t\t\t%s\n' "$answers"
+      return 0
+    fi
     fm_lock_release "$lock"
   else
     [ -z "$prior" ] || rm -f "$archive" 2>/dev/null
@@ -1101,11 +1109,20 @@ wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
   printf 'council=%s answer=%s record=%s prior=%s seats=%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}"
 }
 
+wd_council_normalize_evidence() {  # <text>
+  printf '%s' "$1" | tr '\t\r\n' '   ' | tr -s ' ' | sed 's/^ //;s/ $//'
+}
+
+wd_council_prior_evidence() {  # <record-path>
+  [ -f "$1" ] || return 0
+  awk 'f { print } /^Record:$/ { f = 1 }' "$1"
+}
+
 # cmd_council: one convening on demand, for a supervisor that needs a ruling now.
 # Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
 # It types nothing and nudges nobody; the caller applies the result.
 cmd_council() {
-  local task='' key='' home='' file='' summary res id rec revisit=0 prior_path='' archive='' detail
+  local task='' key='' home='' file='' summary res id rec revisit=0 prior_path='' archive='' detail prior_evidence
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --task) task=${2:?--task needs a task id}; shift ;;
@@ -1153,17 +1170,21 @@ cmd_council() {
     return 0
   fi
   rec=$(wd_council_record "$task" "$key")
-  if [ -n "$rec" ] && [ "$revisit" != 1 ]; then
-    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
-    return 0
-  fi
   detail="$task $key (on demand)"
   if [ -n "$rec" ]; then
+    prior_path=$(printf '%s' "$rec" | cut -f3)
+    prior_evidence=$(wd_council_normalize_evidence "$(wd_council_prior_evidence "$prior_path")")
+    if [ "$revisit" != 1 ] || { [ -n "$prior_evidence" ] && [ "$(wd_council_normalize_evidence "$summary")" = "$prior_evidence" ]; }; then
+      # A repeat call, and a revisit carrying the very evidence the recorded
+      # outcome already decided, both replay that outcome; only different
+      # evidence can convene the seats again.
+      wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$prior_path" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
+      return 0
+    fi
     # A documented revisit: a later standing order or supervisor nudge in the
     # new record file contradicts the recorded outcome. Convene once more on
     # the new record; the prior outcome moves to data/watchdog/revisits/ only
     # when the new council publishes, so a failed revisit erases nothing.
-    prior_path=$(printf '%s' "$rec" | cut -f3)
     archive="$OUT/revisits/$(basename "${prior_path%.md}")-$(wd_now)-$id.md"
     detail="$task $key (revisit of $prior_path)"
   fi
