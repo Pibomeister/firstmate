@@ -1,0 +1,9 @@
+$ ak delegation --project ak.project.json --stage merge --base 467c1bd9 --head d235175e   (real AgentKit, disposable clone)
+Usage: ak doctor [--json] [--lessons <dir>] | ak update | ak delegation <ticket> --project <path> [--stage merge --base <rev> [--head <rev>] [--evidence <file>]] | ak learn … | ak guard hook <event> … | ak kb … | ak runner serve|call … | ak council run … | ak semantic-lint hook [--host codex]
+exit=
+
+$ ak review decide --help
+exit=
+
+$ jq validity of ak.project.json
+true

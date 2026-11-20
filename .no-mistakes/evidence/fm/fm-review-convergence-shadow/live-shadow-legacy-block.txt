@@ -1,0 +1,6 @@
+=== S3 fresh store, agy reviewer returns BLOCK, convergence=shadow, real ak ~/.local/bin/ak
+run exit=1
+merge-review: blocked head=2a6aa27a66d2e82489de8fe42725d9aacc60c4ee approvals=anthropic.claude.claude-test-1:APPROVE blocks=google.agy.gemini-test-high url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="ak review ledger add exited 2; the installed AgentKit has no usable review engine"
+merge-review: blocked head=2a6aa27a66d2e82489de8fe42725d9aacc60c4ee approvals=anthropic.claude.claude-test-1:APPROVE blocks=google.agy.gemini-test-high url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="no shadow verdict is recorded for this review batch"
+check exit=1
+lab removed: yes

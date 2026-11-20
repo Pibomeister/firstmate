@@ -1,0 +1,9 @@
+1..5
+ok - convergence=off and an absent key keep the legacy line byte for byte and never call ak
+ok - convergence=on and unknown values refuse before any reviewer or ak call
+ok - shadow with an AgentKit that has no review engine appends converge=unavailable and records nothing
+ok - shadow appends the engine's verdict and tier while the legacy rule keeps the state word and exit status
+ok - shadow shows no verdict for a malformed engine answer or a record from another review batch
+FM_TEST_COMPLETE
+bash $f  8.66s user 36.85s system 3% cpu 24:38.76 total
+rc=0

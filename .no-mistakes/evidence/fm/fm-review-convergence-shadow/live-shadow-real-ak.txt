@@ -1,0 +1,40 @@
+lab: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Sg7YXg
+ak on PATH (real AgentKit, not stubbed): ~/.local/bin/ak
+=== S1 off  [config: convergence=off]  $ fm-merge-review.sh run
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7
+exit=0
+=== S1 off  [config: convergence=off]  $ fm-merge-review.sh check
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7
+exit=0
+=== S1 absent  [config: <no convergence key>]  $ fm-merge-review.sh check
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7
+exit=0
+ledger file? no  converge.record? no
+=== S2 shadow real-ak  [config: convergence=shadow]  $ fm-merge-review.sh run
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="ak review ledger add exited 2; the installed AgentKit has no usable review engine"
+exit=0
+=== S2 shadow real-ak  [config: convergence=shadow]  $ fm-merge-review.sh check
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="no shadow verdict is recorded for this review batch"
+exit=0
+ledger file? no  converge.record? no
+=== S3 shadow + legacy BLOCK  [config: convergence=shadow]  $ fm-merge-review.sh run
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="ak review ledger add exited 2; the installed AgentKit has no usable review engine"
+exit=0
+=== S3 shadow + legacy BLOCK  [config: convergence=shadow]  $ fm-merge-review.sh check
+merge-review: approved head=1534af21d6fb7515a69b1bb0dd4ad70ee752e16a approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="no shadow verdict is recorded for this review batch"
+exit=0
+ledger file? no  converge.record? no
+=== S4 on refused  [config: convergence=on]  $ fm-merge-review.sh run
+exit=2
+stderr: error: config/merge-review line 3: convergence=on is not available; enforcement turns on only after the 7-day shadow report and an explicit approval, so use off or shadow
+=== S4 on refused  [config: convergence=on]  $ fm-merge-review.sh check
+exit=2
+stderr: error: config/merge-review line 3: convergence=on is not available; enforcement turns on only after the 7-day shadow report and an explicit approval, so use off or shadow
+=== S4 bogus refused  [config: convergence=maybe]  $ fm-merge-review.sh check
+exit=2
+stderr: error: config/merge-review line 3: convergence must be off or shadow
+reviewer calls during refusals: 0
+lab removed: yes
+driver rc=0
+
+NOTE: the S3 section above reused the approvals already recorded for that head, so it did not exercise a block. See live-shadow-legacy-block.txt for S3 against a fresh review store.
