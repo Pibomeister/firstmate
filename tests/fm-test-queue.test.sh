@@ -1083,17 +1083,24 @@ offload_fixture_repo() {  # <dir> <origin-url>
   git -C "$1" remote add origin "$2"
 }
 
-fake_remote_ssh() {  # <path>: runs remote commands locally; FAIL_EXTRACT fails the upload
+fake_remote_ssh() {  # <path>: runs SSH and rsync against an isolated local mirror
   cat > "$1" <<'SH'
 #!/usr/bin/env bash
 while [ "${1:-}" = -o ]; do shift 2; done
 host=$1; shift
 printf '%s\n' "$host" >> "$SSH_LOG"
 [ "$host" != unreachable ] || exit 255
-case "$*" in *"tar -xzf"*) [ "${FAIL_EXTRACT:-}" != 1 ] || { cat >/dev/null; exit 1; } ;; esac
+case "$*" in
+  *"exec env FM_HOME="*)
+    printf '%s\n' "$*" >> "$SSH_LOG.executions"
+    [ "${FAIL_EXEC:-}" != 1 ] || exit 255 ;;
+esac
+export HOME="${SSH_LOG%/*}/remote-home"
+mkdir -p "$HOME"
 export FM_TEST_QUEUE_DIR="${SSH_LOG%/*}/remote-spool"
 export FM_TEST_QUEUE_LOAD_FILE="${SSH_LOG%/*}/remote-load"
 unset FM_TEST_QUEUE_HELD
+if [ -n "${REMOTE_UMASK:-}" ]; then umask "$REMOTE_UMASK"; fi
 # Like sshd, start the remote command as the leader of a new session.
 exec python3 -c 'import os, sys
 try:
@@ -1103,6 +1110,46 @@ except OSError:
 os.execvp("bash", ["bash", "-c", sys.argv[1]])' "$*"
 SH
   chmod +x "$1"
+  cat > "${1%/*}/rsync" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != --server ] || exec "$REAL_RSYNC" "$@"
+[ "${FAIL_EXTRACT:-}" != 1 ] || exit 1
+args=()
+while [ "$#" -gt 1 ]; do
+  if [ "$1" = -e ]; then shift 2; else args+=("$1"); shift; fi
+done
+dest=${1#*:}
+if [ "${MIRROR_SAME_STAMP:-}" = 1 ] && [ -f "$dest/manifest" ] && [ -f "${args[${#args[@]}-1]}/manifest" ]; then
+  # The mirror's stale manifest carries the new one's size and second, as when
+  # two runs stage within one second; a quick check alone would skip it.
+  touch -r "${args[${#args[@]}-1]}/manifest" "$dest/manifest"
+fi
+"$REAL_RSYNC" "${args[@]}" --stats "$dest" >> "$SSH_LOG.rsync" || exit
+if [ "${CORRUPT_SNAPSHOT:-}" = 1 ] && [ -d "$dest/repo" ]; then printf stale > "$dest/repo/source"; fi
+if [ -f "$dest/manifest" ] && [ "${STEAL_LOCK:-}" = 1 ]; then
+  printf 'host=successor\npid=1\nepoch=%s\n' "$(date +%s)" > "${dest%/}/../lock/owner"
+fi
+if [ -f "$dest/manifest" ] && [ "${FOREIGN_SNAPSHOT:-}" = 1 ]; then
+  # Another worktree's consistent files and manifest land in the shared mirror.
+  python3 - "$dest" <<'PYFOREIGN'
+import hashlib, json, os, sys
+snap = sys.argv[1]
+with open(os.path.join(snap, "repo", "source"), "w") as fh:
+    fh.write("foreign\n")
+lines = []
+for line in open(os.path.join(snap, "manifest")):
+    item = json.loads(line)
+    if item[0] == "repo/source":
+        item[3] = hashlib.sha256(b"foreign\n").hexdigest()
+    lines.append(json.dumps(item, ensure_ascii=True))
+with open(os.path.join(snap, "manifest"), "w") as fh:
+    fh.write("\n".join(lines) + "\n")
+PYFOREIGN
+fi
+SH
+  chmod +x "${1%/*}/rsync"
+  export REAL_RSYNC
+  REAL_RSYNC=$(command -v rsync)
 }
 
 test_unlisted_project_runs_locally_and_failed_upload_falls_back() {
@@ -1126,7 +1173,7 @@ test_unlisted_project_runs_locally_and_failed_upload_falls_back() {
   expect_code 5 "$rc" 'failed upload must run the suite locally, not report a failure'
   assert_equals "$(cd "$CASE/listed" && pwd -P)" "$(cd "$out" && pwd -P)" 'failed upload did not fall back to the local checkout'
   assert_grep 'no remote prepared; using local admission' "$CASE/listed.err" 'failed upload was not reported as a preparation failure'
-  assert_equals 3 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'failed upload must mint, upload, and remove the scratch exactly once'
+  assert_absent "$SSH_LOG.executions" 'failed upload started a remote command'
   line_is_empty || fail 'fallback run leaked local ticket'
   pass 'fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally'
 }
@@ -1156,7 +1203,11 @@ test_remote_offload_snapshot_and_failure() {
   assert_equals "changed|untracked|quote' and spaces|true" "$out" 'remote shallow snapshot and argv'
   assert_grep 'offloading to m3' "$CASE/stderr" 'load above eight must prefer reachable remote even below local ceiling'
   assert_grep unreachable "$SSH_LOG" 'the first configured host was not attempted'
-  assert_equals 5 "$(wc -l < "$SSH_LOG" | tr -d ' ')" 'test command failed remotely and was retried or cleanup was missed'
+  assert_equals 1 "$(wc -l < "$SSH_LOG.executions" | tr -d ' ')" 'failed remote command was retried'
+  python3 - "$SSH_LOG.executions" <<'PYTEST' || fail 'normal remote scratch was not cleaned'
+import os, shlex, sys
+assert not os.path.exists(shlex.split(open(sys.argv[1]).read())[1])
+PYTEST
   line_is_empty || fail 'remote command leaked local ticket'
   pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
 }
@@ -1218,6 +1269,181 @@ test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
   pass 'fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable'
 }
 
+test_remote_incremental_manifest_and_uncertain_run() {
+  local saved_path=$PATH out rc started elapsed mirror warm prepared
+  new_case offload-incremental
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf original > "$CASE/repo/source"
+  printf removed > "$CASE/repo/deleted"
+  printf 'ignored\n' > "$CASE/repo/.gitignore"
+  # An unchanged, incompressible payload makes full retransfers observable.
+  dd if=/dev/urandom of="$CASE/repo/large" bs=1048576 count=4 2>/dev/null
+  git -C "$CASE/repo" add .
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm fixture
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  ( cd "$CASE/repo" && q run -- sh -c 'echo poison > source; echo junk > leaked' ) 2>"$CASE/cold.err" || fail 'cold offload'
+  printf committed > "$CASE/repo/committed"
+  git -C "$CASE/repo" add committed
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm advance
+  printf changed > "$CASE/repo/source"
+  rm "$CASE/repo/deleted"
+  printf extra > "$CASE/repo/extra space"
+  printf secret > "$CASE/repo/ignored"
+  ln -s source "$CASE/repo/link"
+  chmod 755 "$CASE/repo/source"
+  : > "$SSH_LOG.rsync"
+  started=$(date +%s)
+  ( cd "$CASE/repo" && REMOTE_UMASK=077 q run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"' ) >"$CASE/warm.out" 2>"$CASE/warm.err" &
+  warm=$!
+  track_pids "$warm"
+  # The 30s budget covers warm prepare only: it ends when the queue announces
+  # the verified snapshot, before the remote command itself runs.
+  prepared=""
+  while kill -0 "$warm" 2>/dev/null; do
+    if grep -Fq 'offloading to m3' "$CASE/warm.err"; then prepared=$(date +%s); break; fi
+    sleep 0.2
+  done
+  wait "$warm" || fail 'warm offload'
+  [ -n "$prepared" ] || prepared=$(date +%s)
+  elapsed=$(( prepared - started ))
+  out=$(cat "$CASE/warm.out")
+  assert_equals 'changed|extra' "$out" 'warm manifest snapshot'
+  assert_grep 'offloading to m3' "$CASE/warm.err" 'warm prepare fell back locally'
+  [ "$elapsed" -lt 30 ] || fail "warm prepare took ${elapsed}s (limit 30s)"
+  python3 - "$SSH_LOG.rsync" <<'PYTEST' || fail 'warm upload retransferred unchanged payload'
+import re, sys
+text = open(sys.argv[1]).read()
+amounts = re.findall(r'(?:Literal|Unmatched) data: ([0-9,]+) (?:bytes|B)', text)
+assert amounts, text
+assert sum(int(n.replace(',', '')) for n in amounts) < 100000, text
+PYTEST
+  mirror=$(printf '%s\n' "$CASE/remote-home/.cache/firstmate/test-mirrors/"*)
+  mkdir "$mirror/lock"
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/busy.err") || fail 'busy mirror fallback'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'busy mirror did not run locally'
+  [ -d "$mirror/lock" ] || fail 'busy fallback removed another preparation lock'
+  rmdir "$mirror/lock"
+  out=$( ( cd "$CASE/repo" && CORRUPT_SNAPSHOT=1 q run -- pwd ) 2>"$CASE/mismatch.err") || fail 'manifest mismatch fallback'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'manifest mismatch did not run locally'
+  assert_grep 'no remote prepared' "$CASE/mismatch.err" 'manifest mismatch was accepted'
+  ( cd "$CASE/repo" && FAIL_EXEC=1 q run -- sh -c 'touch "$1/ran"' _ "$CASE" ) 2>"$CASE/uncertain.err"; rc=$?
+  expect_code 255 "$rc" 'uncertain SSH result'
+  assert_absent "$CASE/ran" 'uncertain remote execution retried locally'
+  assert_grep 'execution uncertain' "$CASE/uncertain.err" 'uncertain scratch was not preserved'
+  python3 - "$SSH_LOG.executions" <<'PYTEST' || fail 'uncertain scratch was removed'
+import os, shlex, shutil, sys
+path = shlex.split(open(sys.argv[1]).read().splitlines()[-1])[1]
+assert os.path.isdir(path), path
+# Only the fixture knows that this injected connection failure ran nothing.
+shutil.rmtree(os.path.dirname(path))
+PYTEST
+  PATH=$saved_path
+  pass "fm-test-queue.sh: warm delta prepared in ${elapsed}s; mismatch falls back and uncertain execution does not"
+}
+
+test_remote_offload_hardening() {
+  local saved_path=$PATH out mirror old_epoch sha
+  new_case offload-hardening
+  mkdir -p "$CASE/fakebin"
+  offload_fixture_repo "$CASE/repo" https://example.invalid/owner/firstmate.git
+  printf 'original-content\n' > "$CASE/repo/source"
+  git -C "$CASE/repo" add .
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm fixture
+  printf 'slots=1\nload_ceiling=150\nremote_hosts=m3\n' > "$FM_TEST_QUEUE_DIR/config"
+  echo 9 > "$CASE/load"
+  echo 1 > "$CASE/remote-load"
+  fake_remote_ssh "$CASE/fakebin/ssh"
+  export SSH_LOG="$CASE/ssh.log"
+  PATH="$CASE/fakebin:$PATH"
+  ( cd "$CASE/repo" && q run -- true ) 2>"$CASE/cold.err" || fail 'hardening cold offload'
+  assert_grep 'offloading to m3' "$CASE/cold.err" 'hardening cold run was not offloaded (rsync path semantics)'
+  printf advance > "$CASE/repo/committed"
+  git -C "$CASE/repo" add committed
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm advance
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'git rev-list --all >/dev/null || exit 9; echo revlist-ok' ) 2>"$CASE/delta.err") || fail 'hardening delta offload'
+  assert_equals revlist-ok "$out" 'delta shallow history does not traverse (rev-list --all)'
+  assert_grep 'offloading to m3' "$CASE/delta.err" 'hardening delta run was not offloaded'
+  mkdir -p "$CASE/repo/nested"
+  git -C "$CASE/repo/nested" init -q 2>/dev/null || fail 'nested fixture init'
+  printf 'inner\n' > "$CASE/repo/nested/inner.txt"
+  sha=$(git -C "$CASE/repo" rev-parse HEAD)
+  mkdir -p "$CASE/repo/sub"
+  printf 'gitlink-content\n' > "$CASE/repo/sub/file.txt"
+  git -C "$CASE/repo" update-index --add --cacheinfo "160000,$sha,sub" || fail 'gitlink fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'printf "%s|%s" "$(cat nested/inner.txt)" "$([ -e sub/file.txt ] && echo present || echo absent)"' ) 2>"$CASE/nested.err") || fail 'nested repo offload'
+  assert_equals 'inner|present' "$out" 'nested repo or submodule working tree was not staged'
+  assert_grep 'offloading to m3' "$CASE/nested.err" 'nested repo disabled offload instead of staging recursively'
+  git -C "$CASE/repo" rm -q --cached sub 2>/dev/null || true
+  rm -rf "$CASE/repo/sub" "$CASE/repo/nested"
+  mirror=$(printf '%s\n' "$CASE/remote-home/.cache/firstmate/test-mirrors/"*)
+  mkdir -p "$mirror/lock"
+  old_epoch=$(python3 -c 'import time; print(int(time.time()) - 7200)')
+  printf 'host=old\npid=1\nepoch=%s\n' "$old_epoch" > "$mirror/lock/owner"
+  out=$( ( cd "$CASE/repo" && q run -- echo stale-ok ) 2>"$CASE/stale.err") || fail 'stale lock reclaim run'
+  assert_equals stale-ok "$out" 'stale lock was not reclaimed'
+  assert_grep 'reclaimed stale test-mirror lock' "$CASE/stale.err" 'stale lock reclaim printed no diagnostic'
+  assert_grep 'offloading to m3' "$CASE/stale.err" 'run after stale lock reclaim was not offloaded'
+  out=$( ( cd "$CASE/repo" && FOREIGN_SNAPSHOT=1 q run -- cat source ) 2>"$CASE/foreign.err") || fail 'foreign snapshot run'
+  assert_equals 'original-content' "$out" 'run admitted another worktree snapshot instead of falling back locally'
+  assert_grep 'no remote prepared' "$CASE/foreign.err" 'foreign manifest was accepted'
+  out=$( ( cd "$CASE/repo" && MIRROR_SAME_STAMP=1 STEAL_LOCK=1 q run -- echo stolen-ok ) 2>"$CASE/steal.err") || fail 'reclaimed lock run'
+  assert_equals stolen-ok "$out" 'run whose lock was reclaimed did not complete'
+  assert_grep 'offloading to m3' "$CASE/steal.err" 'same-size, same-second stale mirror manifest was not replaced'
+  assert_grep 'host=successor' "$mirror/lock/owner" 'a run released the lock its successor reclaimed'
+  rm -f "$mirror/lock/owner"
+  rmdir "$mirror/lock"
+  git -C "$mirror/snapshot/repo" rm -q --cached source || fail 'stale index fixture'
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/index1.err") || fail 'stale index run'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'stale mirror index was admitted'
+  out=$( ( cd "$CASE/repo" && q run -- cat source ) 2>"$CASE/index2.err") || fail 'stale index repair run'
+  assert_equals 'original-content' "$out" 'stale index repair run output'
+  assert_grep 'offloading to m3' "$CASE/index2.err" 'stale mirror index was not rebuilt after a failed verification'
+  touch -t 202001010000 "$CASE/repo/source"
+  printf 'XXXXXXXX-content\n' > "$mirror/snapshot/repo/source"
+  touch -r "$CASE/repo/source" "$mirror/snapshot/repo/source"
+  out=$( ( cd "$CASE/repo" && q run -- pwd ) 2>"$CASE/heal1.err") || fail 'quick-check mismatch run'
+  assert_equals "$(cd "$CASE/repo" && pwd -P)" "$out" 'quick-check mismatch did not fall back locally first'
+  out=$( ( cd "$CASE/repo" && q run -- cat source ) 2>"$CASE/heal2.err") || fail 'quick-check self-heal run'
+  assert_equals 'original-content' "$out" 'quick-check self-heal did not repair the mirror'
+  assert_grep 'offloading to m3' "$CASE/heal2.err" 'self-heal run was not offloaded'
+  mkdir -p "$CASE/repo/empty-sub"
+  git -C "$CASE/repo" update-index --add --cacheinfo "160000,$sha,empty-sub" || fail 'empty gitlink fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c '[ -d empty-sub ] && echo dir-ok' ) 2>"$CASE/empty-sub.err") || fail 'empty gitlink run'
+  assert_equals dir-ok "$out" 'empty gitlink directory missing from snapshot'
+  assert_grep 'offloading to m3' "$CASE/empty-sub.err" 'empty gitlink directory was not offloaded'
+  git -C "$CASE/repo" rm -q --cached empty-sub 2>/dev/null || true
+  rmdir "$CASE/repo/empty-sub"
+  mkdir -p "$CASE/repo/nested"
+  git -C "$CASE/repo/nested" init -q 2>/dev/null || fail 'nested ignore fixture init'
+  printf 'inner\n' > "$CASE/repo/nested/inner.txt"
+  printf 'ignored.txt\npipe\n' > "$CASE/repo/nested/.gitignore"
+  printf 'must-not-stage\n' > "$CASE/repo/nested/ignored.txt"
+  mkfifo "$CASE/repo/nested/pipe" || fail 'nested fifo fixture'
+  out=$( ( cd "$CASE/repo" && q run -- sh -c 'printf "%s|%s" "$(cat nested/inner.txt)" "$([ -e nested/ignored.txt ] && echo present || echo absent)"' ) 2>"$CASE/nested-ignore.err") || fail 'nested ignore run'
+  assert_equals 'inner|absent' "$out" 'ignored file inside nested repo was staged'
+  assert_grep 'offloading to m3' "$CASE/nested-ignore.err" 'ignored special file inside nested repo aborted staging'
+  rm -rf "$CASE/repo/nested"
+  mkdir -p "$CASE/repo/repl"
+  printf 'inside\n' > "$CASE/repo/repl/file"
+  git -C "$CASE/repo" add repl/file
+  git -C "$CASE/repo" -c user.name=Tests -c user.email=tests@example.invalid commit -qm repl-fixture
+  rm -rf "$CASE/repo/repl"
+  printf 'now-a-file' > "$CASE/repo/repl"
+  out=$( ( cd "$CASE/repo" && q run -- cat repl ) 2>"$CASE/repl.err") || fail 'directory replaced by file run'
+  assert_equals 'now-a-file' "$out" 'directory replaced by file output'
+  assert_grep 'offloading to m3' "$CASE/repl.err" 'directory replaced by file crashed staging instead of offloading'
+  PATH=$saved_path
+  pass 'fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold'
+}
+
+test_remote_incremental_manifest_and_uncertain_run
+test_remote_offload_hardening
 test_help_and_usage
 test_remote_offload_snapshot_and_failure
 test_unreachable_remote_waits_locally_and_threshold_is_configurable
