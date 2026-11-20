@@ -174,7 +174,7 @@ backlog_queued() {  # <task-id>
 # profile and the recorded harness-scoped selectors, and return 0. Otherwise
 # set RESOLVED to the resolution status and return 1.
 resolve_routing() {  # <task-id> <spawn-arg>...
-  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was= account_set=0
+  local id=$1 rec="$DATA/$1/dispatch-resolution.json" harness model effort pos was='' account_set=0
   local -a scoped=()
   shift
   ROUTED=()
@@ -339,7 +339,7 @@ case "${1:-}" in
     usage
     ;;
   record)
-    [ $# -ge 3 ] && valid_id "$2" || usage_error
+    { [ $# -ge 3 ] && valid_id "$2"; } || usage_error
     id=$2
     shift 2
     write_record "$id" "$(date +%s)" "$@" || {
@@ -348,7 +348,7 @@ case "${1:-}" in
     }
     ;;
   clear)
-    [ $# -eq 2 ] && valid_id "$2" || usage_error
+    { [ $# -eq 2 ] && valid_id "$2"; } || usage_error
     rm -f -- "$DIR/$2" "$DIR/.skipped.$2" || exit 1
     ;;
   scan)
