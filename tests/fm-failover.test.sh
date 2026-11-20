@@ -1,0 +1,509 @@
+#!/usr/bin/env bash
+# tests/fm-failover.test.sh - provider failover (bin/fm-failover.sh): the
+# order file, the refusal detector, the Claude StopFailure record, a worker
+# and a captain moved off a 429 or billing refusal with no lost work, the
+# bounds and skips, the preflight night plan, and the watcher moving an idle
+# ship within one poll. The runtimes, quota-axi, fm-control, the handoff
+# launcher, and the ledger are stand-ins; every decision and record is the
+# real script's.
+set -u
+# shellcheck source=tests/watch-triage-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
+TMP_ROOT=$(fm_test_tmproot fm-failover)
+trap 'fm_test_cleanup' EXIT
+FO="$ROOT/bin/fm-failover.sh"
+LAB="$TMP_ROOT/home"
+FAKEBIN="$TMP_ROOT/fakebin"
+DELEGATES="$TMP_ROOT/delegates"
+QUOTA="$TMP_ROOT/quota"
+ACCTS="$TMP_ROOT/accounts"
+mkdir -p "$FAKEBIN" "$DELEGATES" "$QUOTA" "$TMP_ROOT/user" "$ACCTS"
+
+# A runtime stand-in answers a one-line call with OK, or with the refusal
+# row its probe-reply file holds. `claude auth status` passes when the
+# account root holds a signed-in marker.
+for h in codex droid claude; do
+  cat > "$FAKEBIN/$h" <<'SH'
+#!/usr/bin/env bash
+name=$(basename "$0")
+if [ "$name" = claude ] && [ "${1:-}" = auth ]; then
+  [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -e "$CLAUDE_CONFIG_DIR/signed-in" ]
+  exit
+fi
+reply="$FM_TEST_QUOTA/$name.probe"
+[ "$name" != claude ] || reply="${CLAUDE_CONFIG_DIR:-/nonexistent}/probe"
+if [ -f "$reply" ]; then cat "$reply"; exit 1; fi
+echo OK
+SH
+done
+cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+provider='' profile=0
+while [ $# -gt 0 ]; do
+  case "$1" in --provider) provider=$2; shift 2 ;; --profile-only) profile=1; shift ;; *) shift ;; esac
+done
+if [ "$profile" = 1 ]; then cat "$CLAUDE_CONFIG_DIR/quota.json" 2>/dev/null || exit 1; exit 0; fi
+cat "$FM_TEST_QUOTA/$provider.json" 2>/dev/null || exit 1
+SH
+cat > "$DELEGATES/fm-control.sh" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_HOME/control.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_HOME/control.n"
+printf '%s\n' "$@" > "$FM_HOME/control.argv.$n"
+printf '%s\n' "${FM_CONTROL_EXPECTED_SPAWN_GEN-unset}" > "$FM_HOME/control.gen.$n"
+rc=$(printf '%s' "${FM_TEST_CONTROL_RCS:-0}" | cut -d, -f"$n")
+[ "${rc:-0}" = 0 ] || { echo "error: ${FM_TEST_CONTROL_MSG:-relaunch refused for the test}" >&2; exit "$rc"; }
+echo "relaunched $1"
+SH
+cat > "$DELEGATES/fm-handoff-launch.sh" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_HOME/handoff.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_HOME/handoff.n"
+printf '%s\n' "$@" > "$FM_HOME/handoff.argv.$n"
+exit "${FM_TEST_HANDOFF_RC:-0}"
+SH
+cat > "$DELEGATES/fm-ledger.sh" <<'SH'
+#!/usr/bin/env bash
+doc='' note=''
+while [ $# -gt 0 ]; do
+  case "$1" in --doc) doc=$2; shift 2 ;; --note) note=$2; shift 2 ;; *) shift ;; esac
+done
+mkdir -p "$(dirname "$doc")"
+printf '# handoff\n%s\n' "$note" > "$doc"
+SH
+chmod +x "$FAKEBIN"/* "$DELEGATES"/*
+
+export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
+export FM_FAILOVER_TEST_BIN="$DELEGATES" FM_TEST_QUOTA="$QUOTA" HOME="$TMP_ROOT/user"
+export PATH="$FAKEBIN:$PATH"
+unset FM_BACKEND QUOTA_AXI_SNAPSHOT CLAUDE_CONFIG_DIR FM_CONTROL_BIN FM_TEST_CONTROL_RCS FM_TEST_CONTROL_MSG
+unset FM_TEST_HANDOFF_RC FM_FAILOVER_TEST_HARNESS FM_FAILOVER_TEST_LOCK_OWNER
+
+# quota_fixture <provider> <five-hour-left> <weekly-left> [runway]: one
+# snapshot both readers accept, the verdict reader and the preflight's
+# five-hour and weekly window reader.
+quota_fixture() {
+  jq -n --arg p "$1" --argjson fh "$2" --argjson wk "$3" --arg r "${4:-through_reset}" '
+    {schemaVersion: 5, providers: [{provider: $p,
+      windows: [{id: "five_hour", kind: "session", percentRemaining: $fh},
+                {id: "seven_day", kind: "weekly", percentRemaining: $wk}],
+      quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known",
+        effectivePercentRemaining: ([$fh, $wk] | min), runway: {status: $r}}]}}]}'
+}
+
+reset_lab() {
+  rm -rf "$LAB"
+  mkdir -p "$LAB/state" "$LAB/config" "$LAB/data"
+  printf 'tmux\n' > "$LAB/config/backend"
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+}
+
+OUT='' RC=0
+fo() {  # <args...>: run the entry point, keeping its output and exit code
+  RC=0
+  OUT=$(bash "$FO" "$@" 2>&1) || RC=$?
+}
+
+control_calls() { cat "$LAB/control.n" 2>/dev/null || echo 0; }
+control_arg() {  # <call> <index from 0>
+  awk -v i="$2" 'NR == i + 1' "$LAB/control.argv.$1"
+}
+
+# make_worker <id> <harness> [account]: a ship with a real branch, a commit,
+# and uncommitted work in its local copy.
+make_worker() {
+  local id=$1 wt="$TMP_ROOT/wt-$1"
+  rm -rf "$wt" "$wt.repo" "$wt.repo.origin.git"
+  fm_git_worktree "$wt.repo" "$wt" "fm/$id" >/dev/null 2>&1 || fail "fixture: no worktree for $id"
+  printf 'half-done edit\n' > "$wt/work-in-progress.txt"
+  fm_write_meta "$LAB/state/$id.meta" "window=fm:fm-$id" kind=ship "harness=$2" "worktree=$wt" \
+    backend=tmux "spawn_gen=s1.$id" "branch=fm/$id" ${3:+"account=$3"}
+  printf 'working: wiring the parser [at=1]\n' > "$LAB/state/$id.status"
+}
+
+payload() {  # <error> [last-assistant-message] [extra-json]
+  local extra='{}'
+  [ -z "${3:-}" ] || extra=$3
+  jq -cn --arg e "$1" --arg m "${2:-}" --argjson x "$extra" \
+    '{session_id: "s", transcript_path: "/tmp/s.jsonl", cwd: "/tmp", hook_event_name: "StopFailure", error: $e, last_assistant_message: $m} + $x'
+}
+
+GEN=''
+# stop_failure_turn <id> <payload>: one busy turn ending on StopFailure, with
+# both Claude hooks fm-spawn installs: the busy writer and the failover record.
+stop_failure_turn() {
+  GEN=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" "$1") || fail "fixture: arm failed"
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" "$1" busy --gen "$GEN" --source claude-hook --event user-prompt-submit >/dev/null
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" "$1" idle --gen "$GEN" --source claude-hook --event stop-failure >/dev/null
+  printf '%s' "$2" | bash "$FO" hook "$1" --gen "$GEN" --state "$LAB/state" || fail "the hook must always exit 0"
+}
+
+lab_dispatch() {  # <goal> <task>: the goal that dispatched <task>
+  bash "$ROOT/bin/fm-dispatch-log.sh" received "$1" --summary 'parser work' >/dev/null
+  bash "$ROOT/bin/fm-dispatch-log.sh" dispatched "$1" --task "$2" >/dev/null
+}
+
+no_lost_work() {  # <id> <label>
+  local wt="$TMP_ROOT/wt-$1"
+  [ "$(cat "$wt/work-in-progress.txt" 2>/dev/null)" = 'half-done edit' ] || fail "$2: the uncommitted work changed"
+  [ "$(git -C "$wt" rev-parse --abbrev-ref HEAD)" = "fm/$1" ] || fail "$2: the branch changed"
+  [ "$(git -C "$wt" log --oneline | wc -l | tr -d ' ')" = 1 ] || fail "$2: the commits changed"
+}
+
+test_order_file() {
+  reset_lab
+  fo order
+  expect_code 0 "$RC" "the default order"
+  assert_contains "$OUT" $'entry=1 runtime=codex\nentry=2 runtime=droid\nentry=3 runtime=claude@next\nmin_5h=30 off=0 source=default' \
+    'without config/failover-order the order is codex, droid, then another Claude account'
+  printf '# night order\ncodex host=hz1\n\n  codex:gpt-5.5  \nclaude:opus@ordinary\nclaude@%s/acct\nmin-5h 45\n' "$ACCTS" > "$LAB/config/failover-order"
+  fo order
+  expect_code 0 "$RC" "a configured order"
+  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nmin_5h=45 off=0' \
+    'every entry form parses in file order, comments and blanks ignored'
+  printf 'codex\noff\n' > "$LAB/config/failover-order"
+  fo order
+  assert_contains "$OUT" 'off=1' 'the off line turns failover off'
+  local bad
+  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 101' 'min-5h 30 40' 'codex host=a b'; do
+    printf '%s\n' "$bad" > "$LAB/config/failover-order"
+    fo order
+    expect_code 2 "$RC" "a malformed line '$bad'"
+    assert_contains "$OUT" 'error: config/failover-order line 1' "the refusal of '$bad' names its line"
+  done
+  pass 'order: the default, every entry form, off, min-5h, and each malformed line'
+}
+
+test_refusal_detector() {
+  local row want got
+  # shellcheck source=bin/fm-watchdog-lib.sh
+  . "$ROOT/bin/fm-watchdog-lib.sh"
+  while IFS='|' read -r want row; do
+    got=$(fm_wd_provider_error_class "$row") || got=none
+    [ "$got" = "$want" ] || fail "row '$row' classed $got, expected $want"
+  done <<'ROWS'
+rate_limit|⏺ API Error: Request rejected (429) · This request would exceed your account's rate limit.
+rate_limit|■ stream error: unexpected status 429 Too Many Requests: rate_limit_exceeded
+rate_limit|Error: rate limit exceeded, retry later
+billing|⏺ Credit balance is too low
+billing|  ⎿  Credit balance too low · Add funds: https://platform.claude.com/settings/billing
+billing|API Error: 402 {"error":{"message":"Your payment is past due"}}
+billing|Claude Code can't use your Claude subscription right now
+billing|Claude Code can't use your Claude subscription, usually because a payment is past due · Pay or renew at https://claude.ai/settings/billing
+billing|You're out of extra usage · resets 5pm
+billing|■ error: insufficient_quota - You exceeded your current quota
+usage_limit|You've hit your limit · resets 3pm (Europe/Madrid)
+usage_limit|⎿ Usage limit reached ∙ resets 9pm
+none|API Error: 529 overloaded
+none|I fixed the rate limit handling and the 429 path in the API error code
+none|12 + API Error: Request rejected (429)
+none|- Credit balance is too low
+none|The credit balance too low path now returns 402
+none|+ API Error: Request rejected (429)
+ROWS
+  got=$(fm_wd_provider_error_screen "$(printf 'API Error: Request rejected (429)\n'; for row in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'later output %s\n' "$row"; done)") || got=none
+  [ "$got" = none ] || fail "a refusal above the last 12 rows must not count, got $got"
+  got=$(fm_wd_provider_error_screen "$(printf 'older\n\n⏺ Credit balance is too low\n\n❯ \n')") || got=none
+  [ "$got" = billing ] || fail "an idle screen ending on a billing refusal must class billing, got $got"
+  pass 'detector: 429, rate-limit, usage-limit, billing, past-due, subscription, and quota rows class; prose, diff rows, and old rows do not'
+}
+
+test_stop_failure_record() {
+  reset_lab
+  make_worker w1 claude
+  stop_failure_turn w1 "$(payload rate_limit 'API Error: Request rejected (429)')"
+  fo detect w1
+  expect_code 0 "$RC" "a recorded 429"
+  assert_contains "$OUT" 'class=rate_limit source=record' 'the StopFailure 429 is recorded for this turn end'
+  stop_failure_turn w1 "$(payload rate_limit "You've hit your limit · resets 3pm")"
+  fo detect w1
+  assert_contains "$OUT" 'class=usage_limit source=record' 'a rate_limit payload stating a usage limit records usage_limit'
+  stop_failure_turn w1 "$(payload billing_error 'Credit balance is too low')"
+  fo detect w1
+  assert_contains "$OUT" 'class=billing source=record' 'a billing_error payload records billing'
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" w1 busy --gen "$GEN" --source claude-hook --event user-prompt-submit >/dev/null
+  fo detect w1
+  expect_code 1 "$RC" "a record after the worker started a new turn"
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" w1 idle --gen "$GEN" --source claude-hook --event stop-failure >/dev/null
+  bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" w1 >/dev/null
+  fo detect w1
+  expect_code 1 "$RC" "a record from a replaced incarnation"
+  rm -f "$LAB/state/w1.provider-error"
+  local p
+  for p in "$(payload server_error 'API Error: 500')" "$(payload authentication_failed)" \
+    "$(payload rate_limit '' '{"cursor_version":"1.0"}')" "$(payload rate_limit '' '{"transcript_path":"/h/.pi/x.jsonl"}')" 'not json'; do
+    stop_failure_turn w1 "$p"
+    [ ! -e "$LAB/state/w1.provider-error" ] || fail "payload '$p' must record nothing"
+  done
+  printf 'API Error: Request rejected (429)\n❯ \n' > "$TMP_ROOT/screen.txt"
+  fo detect w1 --screen-file "$TMP_ROOT/screen.txt"
+  assert_contains "$OUT" 'class=rate_limit source=pane' 'with no record the idle screen still classes the refusal'
+  printf '%s' "$(payload rate_limit)" | bash "$FO" hook captain
+  [ ! -e "$LAB/state/captain.provider-error" ] || fail 'the captain hook outside a primary checkout must record nothing'
+  pass 'record: the StopFailure hook records 429, usage-limit, and billing for the current turn end only, and nothing else'
+}
+
+test_worker_429_moves_to_the_next_runtime() {
+  reset_lab
+  make_worker w1 claude
+  lab_dispatch g-parser w1
+  stop_failure_turn w1 "$(payload rate_limit 'API Error: Request rejected (429)')"
+  fo worker w1
+  expect_code 0 "$RC" "worker failover after a 429: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex eligible verdict=ok' 'codex is measured and eligible'
+  assert_contains "$OUT" 'switched task=w1 from=claude to=codex reason=rate_limit' 'the switch names both runtimes and the reason'
+  expect_code 1 "$(control_calls)" "one relaunch"
+  assert_equals "w1 relaunch --harness codex --note" "$(control_arg 1 0) $(control_arg 1 1) $(control_arg 1 2) $(control_arg 1 3) $(control_arg 1 4)" 'the relaunch goes through fm-control in place'
+  assert_equals s1.w1 "$(cat "$LAB/control.gen.1")" 'the relaunch is bound to the refused incarnation'
+  local note
+  note=$(sed -n '6,$p' "$LAB/control.argv.1")
+  assert_contains "$note" 'rate_limit refusal' 'the note names the refusal'
+  assert_contains "$note" 'its branch fm/w1' 'the note carries the branch'
+  assert_contains "$note" 'working: wiring the parser' 'the note carries the task status'
+  assert_contains "$note" 'no-mistakes axi status' 'the note carries the gates'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" $'\tfailover\tg-parser\ttask=w1 from=claude to=codex reason=rate_limit' \
+    'the dispatch log records the switch under the goal that dispatched the task'
+  assert_contains "$(bash "$ROOT/bin/fm-dispatch-log.sh" show g-parser)" 'STATE g-parser event=dispatched' 'the switch does not change the goal state'
+  [ ! -e "$LAB/state/w1.provider-error" ] || fail 'the record must be cleared after the switch'
+  assert_contains "$(cat "$LAB/state/.failover-w1")" $'attempt\tclaude\tcodex\trate_limit' 'the attempt is in the ledger'
+  no_lost_work w1 'a 429 failover'
+  pass 'worker 429: relaunched on codex in the same local copy, branch, and gates, recorded, nothing lost'
+}
+
+test_worker_billing_moves_past_its_own_runtime() {
+  reset_lab
+  make_worker w2 codex
+  printf '■ error: insufficient_quota - You exceeded your current quota\n› \n' > "$TMP_ROOT/screen.txt"
+  fo detect w2 --screen-file "$TMP_ROOT/screen.txt"
+  assert_contains "$OUT" 'class=billing source=pane' 'the codex billing screen classes billing'
+  fo worker w2 --reason billing
+  expect_code 0 "$RC" "worker failover after a billing error: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex skip=same_runtime_as_current' 'the refused runtime is never the target'
+  assert_contains "$OUT" 'switched task=w2 from=codex to=droid reason=billing' 'billing moves the worker to droid'
+  assert_equals droid "$(control_arg 1 3)" 'fm-control relaunches on droid'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" $'\tfailover\tw2\ttask=w2 from=codex to=droid reason=billing' \
+    'an undispatched task is logged under its own id'
+  no_lost_work w2 'a billing failover'
+  pass 'worker billing: relaunched on the next runtime after its own, recorded, nothing lost'
+}
+
+test_worker_walks_the_order() {
+  reset_lab
+  make_worker w3 claude
+  FM_TEST_CONTROL_RCS=1,0 fo worker w3
+  expect_code 0 "$RC" "a failed first relaunch: $OUT"
+  assert_contains "$OUT" 'failed task=w3 to=codex rc=1' 'the failed relaunch is reported'
+  assert_contains "$OUT" 'switched task=w3 from=claude to=droid' 'the next runtime takes over'
+  reset_lab
+  make_worker w3 claude
+  FM_TEST_CONTROL_RCS=7,0 fo worker w3
+  expect_code 1 "$RC" "a pre-stop refusal"
+  expect_code 1 "$(control_calls)" "relaunches after a pre-stop refusal"
+  reset_lab
+  make_worker w3 claude
+  FM_TEST_CONTROL_RCS=1,0 FM_TEST_CONTROL_MSG='task w3 is at a usage-limit screen that is not live-verified' fo worker w3
+  expect_code 1 "$RC" "an unverified usage-limit picker"
+  expect_code 1 "$(control_calls)" "relaunches at an unverified usage-limit picker"
+  assert_contains "$OUT" 'none task=w3 from=claude reason=rate_limit why=every_relaunch_failed' 'no runtime took over'
+  pass 'walk: a failed relaunch moves on, a pre-stop refusal or an unverified usage-limit picker stops'
+}
+
+test_worker_candidates_and_skips() {
+  reset_lab
+  local a
+  for a in A B C; do mkdir -p "$ACCTS/$a"; quota_fixture claude 70 70 > "$ACCTS/$a/quota.json"; done
+  touch "$ACCTS/A/signed-in" "$ACCTS/B/signed-in"
+  printf '%s\n' "$ACCTS/A" "$ACCTS/C" "$ACCTS/B" > "$LAB/config/claude-accounts"
+  make_worker w4 claude "$ACCTS/A"
+  quota_fixture codex 0 0 exhausted_now > "$QUOTA/codex.json"
+  printf '%s\tdroid\texcluded\tfail:rate_limit\tunknown\tunknown\tcall_rate_limit\n' "$(date +%s)" > "$LAB/state/failover-preflight.tsv"
+  fo worker w4
+  expect_code 0 "$RC" "claude account failover: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex skip=quota_exhausted' 'an exhausted runtime is skipped'
+  assert_contains "$OUT" 'candidate runtime=droid skip=preflight_excluded why=call_rate_limit' 'a runtime the night plan excludes is skipped'
+  assert_contains "$OUT" 'candidate runtime=claude@C skip=not_signed_in' 'a signed-out account is skipped, never signed in'
+  assert_not_contains "$OUT" 'runtime=claude@A' 'the refused account is never a candidate'
+  assert_contains "$OUT" 'switched task=w4 from=claude@A to=claude@B' 'another signed-in account takes over'
+  assert_equals "--account $ACCTS/B" "$(control_arg 1 4) $(control_arg 1 5)" 'the account goes to fm-control'
+
+  reset_lab
+  make_worker w5 claude
+  printf 'off\n' > "$LAB/config/failover-order"
+  fo worker w5
+  expect_code 4 "$RC" "failover off"
+  printf 'done: PR https://example.test/pr/1\n' >> "$LAB/state/w5.status"
+  rm "$LAB/config/failover-order"
+  fo worker w5
+  expect_code 6 "$RC" "a finished task"
+  make_worker w5 claude
+  touch "$LAB/state/.crew-stopped-w5"
+  fo worker w5
+  expect_code 6 "$RC" "a task stopped on purpose"
+  make_worker w6 claude
+  printf 'remote_host=hz1\n' >> "$LAB/state/w6.meta"
+  fo worker w6
+  expect_code 6 "$RC" "a remote task"
+  fm_write_secondmate_meta "$LAB/state/mate.meta" "$LAB"
+  fo worker mate
+  expect_code 6 "$RC" "a secondmate"
+  expect_code 0 "$(control_calls)" "relaunches for skipped targets"
+  make_worker w7 claude
+  now=$(date +%s)
+  printf '%s\tattempt\tclaude\tcodex\trate_limit\n' "$now" "$now" "$now" > "$LAB/state/.failover-w7"
+  fo worker w7
+  expect_code 3 "$RC" "the attempt bound"
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" && touch "$3"; sleep 30' _ "$ROOT" "$LAB/state/.failover-w6x.lock" "$TMP_ROOT/held" &
+  local holder=$!
+  make_worker w6x claude
+  local i=0
+  while [ ! -e "$TMP_ROOT/held" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$TMP_ROOT/held" ] || fail 'fixture: the lock holder never took the lock'
+  fo worker w6x
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  expect_code 5 "$RC" "a failover already holding the lock"
+  expect_code 0 "$(control_calls)" "relaunches under a bound or a held lock"
+  pass 'candidates and skips: quota, night plan, sign-in, accounts, off, finished, stopped, remote, secondmate, bound, lock'
+}
+
+captain_world() {
+  reset_lab
+  fm_write_meta "$LAB/state/live.meta" window=fm:fm-live kind=ship harness=codex
+  export FM_FAILOVER_TEST_LOCK_OWNER=1 FM_FAILOVER_TEST_HARNESS=claude
+}
+
+test_captain_429_and_billing_start_a_successor() {
+  captain_world
+  bash "$FO" record captain --class rate_limit --source claude-hook >/dev/null
+  lab_dispatch g-night captain
+  fo captain
+  expect_code 0 "$RC" "captain failover after a 429: $OUT"
+  assert_contains "$OUT" 'candidate runtime=droid skip=refused' 'droid is not a primary runtime'
+  assert_contains "$OUT" 'switched task=captain from=claude@ordinary to=codex reason=rate_limit' 'a codex successor takes over'
+  local doc
+  doc=$(sed -n 's/^handoff doc=//p' <<< "$OUT")
+  [ -f "$doc" ] || fail "the handoff document was not written: $OUT"
+  assert_contains "$(cat "$doc")" 'rate_limit refusal' 'the handoff says why the successor started'
+  assert_equals "--harness codex --reason failover_rate_limit $doc" "$(tr '\n' ' ' < "$LAB/handoff.argv.1" | sed 's/ $//')" \
+    'the successor starts through the verified handoff launcher with the handoff'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=captain from=claude@ordinary to=codex reason=rate_limit' 'the dispatch log records the captain switch'
+  [ ! -e "$LAB/state/captain.provider-error" ] || fail 'the captain record must be cleared after the switch'
+
+  captain_world
+  fo captain --reason billing
+  expect_code 0 "$RC" "captain failover after a billing error: $OUT"
+  assert_contains "$OUT" 'switched task=captain from=claude@ordinary to=codex reason=billing' 'billing starts a successor too'
+  assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=provider_failover_result scope=primary from=claude@ordinary to=codex result=replaced' \
+    'the supervisor failover log records the replacement'
+
+  captain_world
+  FM_TEST_HANDOFF_RC=4 fo captain --reason billing
+  expect_code 1 "$RC" "a handoff missing an open captain order"
+  expect_code 1 "$(cat "$LAB/handoff.n")" "successor attempts after a missing order"
+  captain_world
+  rm "$LAB/state/live.meta"
+  fo captain
+  expect_code 6 "$RC" "a captain with no open work"
+  captain_world
+  unset FM_FAILOVER_TEST_LOCK_OWNER
+  fo captain
+  expect_code 6 "$RC" "a session that does not hold the lock"
+  [ ! -e "$LAB/handoff.n" ] || fail 'no successor may start without work or the lock'
+  unset FM_FAILOVER_TEST_HARNESS
+  pass 'captain 429 and billing: a handoff and a verified successor on the next runtime, recorded; refused without the lock, work, or every order'
+}
+
+test_preflight_night_plan() {
+  reset_lab
+  local a
+  for a in A B; do mkdir -p "$ACCTS/p$a"; touch "$ACCTS/p$a/signed-in"; done
+  quota_fixture claude 20 80 > "$ACCTS/pA/quota.json"
+  quota_fixture claude 75 50 > "$ACCTS/pB/quota.json"
+  printf '%s\n' "$ACCTS/pA" "$ACCTS/pB" > "$LAB/config/claude-accounts"
+  printf 'API Error: Request rejected (429)\n' > "$QUOTA/droid.probe"
+  fo preflight
+  expect_code 0 "$RC" "the preflight: $OUT"
+  assert_contains "$OUT" 'preflight runtime=codex verdict=eligible call=ok five_hour=80 weekly=60' 'a working runtime with headroom is eligible'
+  assert_contains "$OUT" 'preflight runtime=droid verdict=excluded call=fail:rate_limit' 'a runtime whose real call is refused is excluded'
+  assert_contains "$OUT" 'preflight runtime=claude@pA verdict=excluded call=ok five_hour=20 weekly=80 why=five_hour_below_30' 'an account under the five-hour floor is excluded'
+  assert_contains "$OUT" 'preflight runtime=claude@pB verdict=eligible call=ok five_hour=75 weekly=50' 'an account above it is eligible'
+  fo plan
+  assert_contains "$OUT" 'plan runtime=droid verdict=excluded why=call_rate_limit' 'the plan carries the exclusion'
+  assert_contains "$OUT" 'plan runtime=claude@pB verdict=eligible' 'the plan carries the eligible account'
+  quota_fixture codex 80 0 > "$QUOTA/codex.json"
+  printf 'min-5h 10\n' > "$LAB/config/failover-order"
+  printf 'codex\nclaude@next\nmin-5h 10\n' > "$LAB/config/failover-order"
+  fo preflight --no-call
+  assert_contains "$OUT" 'preflight runtime=codex verdict=excluded call=skipped five_hour=80 weekly=0 why=weekly_exhausted' 'a spent weekly window excludes'
+  assert_contains "$OUT" 'preflight runtime=claude@pA verdict=eligible' 'the configured floor applies'
+  pass 'preflight: a real call and the 5h and weekly windows per runtime and account set the night plan'
+}
+
+# --- the watcher moves an idle refused ship within one poll ---
+watch_case() {  # <name> <screen> -> case dir with a claude ship and a fake fm-control
+  local dir
+  dir=$(make_case "$1")
+  printf '%s\n' "$2" > "$dir/pane.txt"
+  mkdir -p "$dir/config" "$dir/home"
+  fm_git_worktree "$dir/repo" "$dir/wt" fm/fo >/dev/null 2>&1 || fail 'fixture: no worktree'
+  fm_write_meta "$dir/state/fo.meta" window=test:fm-fo kind=ship harness=claude "worktree=$dir/wt" spawn_gen=s1.fo
+  printf 'working: wiring the parser\n' > "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  cat > "$dir/fake-control" <<SH
+#!/usr/bin/env bash
+printf '%s %s %s %s %s\n' "\$1" "\$2" "\$3" "\$4" "\$5" >> "$dir/control.calls"
+printf 'replacement is starting\n' > "$dir/pane.txt"
+SH
+  chmod +x "$dir/fake-control"
+  printf '%s\n' "$dir"
+}
+
+watch_once() {  # <dir>: run the watcher until it exits, at most 30 polls
+  local dir=$1 pid
+  FM_CONTROL_BIN="$dir/fake-control" FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+    watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt"
+  pid=$!
+  wait_for_exit "$pid" 300 >/dev/null 2>&1 || true
+}
+
+test_watcher_moves_an_idle_refused_ship_in_one_poll() {
+  local dir key
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+  dir=$(watch_case watch-429 $'⏺ API Error: Request rejected (429) · This request would exceed your account\'s rate limit.\n\n❯ Resend your message to try again\n  ⏵⏵ auto mode on')
+  key=$(watch_window_key test:fm-fo)
+  [ ! -e "$dir/state/.hash-$key" ] || fail 'fixture: the pane must be unseen'
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a rate_limit refusal from its provider (task=fo from=claude to=codex reason=rate_limit)' \
+    'the first idle poll of a 429 screen moves the ship and wakes with the switch'
+  assert_equals 'fo relaunch --harness codex --note' "$(cat "$dir/control.calls")" 'one relaunch on codex'
+  assert_contains "$(cat "$dir/state/dispatch-log.tsv")" 'task=fo from=claude to=codex reason=rate_limit' 'the watcher switch is in the dispatch log'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$dir/state/.wake-queue")" 'failover-fo-' 'the check wake is queued'
+
+  dir=$(watch_case watch-billing $'All done for now.\n\n❯ \n  ⏵⏵ auto mode on')
+  local gen
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$dir/state" fo)
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" fo idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null
+  printf '%s' "$(payload billing_error 'Credit balance is too low')" | bash "$FO" hook fo --gen "$gen" --state "$dir/state"
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a billing refusal' \
+    'a billing record from the StopFailure hook moves the ship on its first idle poll'
+
+  dir=$(watch_case watch-prose $'I fixed the API error path that returned 429 for rate limits.\n\n❯ \n  ⏵⏵ auto mode on')
+  watch_once "$dir"
+  [ ! -e "$dir/control.calls" ] || fail "prose about a 429 must not relaunch: $(cat "$dir/control.calls")"
+  assert_not_contains "$(cat "$dir/watch.out")" 'moved to the next runtime' 'prose is not a refusal'
+  pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose does not'
+}
+
+fm_test_run \
+  test_order_file \
+  test_refusal_detector \
+  test_stop_failure_record \
+  test_worker_429_moves_to_the_next_runtime \
+  test_worker_billing_moves_past_its_own_runtime \
+  test_worker_walks_the_order \
+  test_worker_candidates_and_skips \
+  test_captain_429_and_billing_start_a_successor \
+  test_preflight_night_plan \
+  test_watcher_moves_an_idle_refused_ship_in_one_poll

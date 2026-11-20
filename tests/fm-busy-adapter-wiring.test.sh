@@ -397,6 +397,37 @@ test_claude_hooks_stale_incarnation_harmless() {
   pass "claude hook events from a superseded incarnation are rejected without breaking the hook"
 }
 
+# Every StopFailure hook a Claude ship carries, in order, with one payload.
+run_claude_stopfailure() {  # <settings.json> <payload>
+  local cmd
+  while IFS= read -r cmd; do
+    printf '%s' "$2" | sh -c "$cmd" || return 1
+  done < <(jq -r '.hooks.StopFailure[0].hooks[].command' "$1")
+}
+
+test_claude_ship_stopfailure_records_a_provider_refusal() {
+  local rec id=busy-cl-3 out state settings
+  rec=$(make_spawn_case claude-refusal claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "claude spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  settings="$WT_DIR/.claude/settings.local.json"
+  run_claude_hook "$settings" UserPromptSubmit
+  run_claude_stopfailure "$settings" '{"hook_event_name":"StopFailure","error":"server_error","last_assistant_message":"API Error: 500"}' \
+    || fail "StopFailure hooks must exit 0 on a server error"
+  out=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-failover.sh" detect "$id" 2>&1) \
+    && fail "a server error must record no provider refusal, got '$out'"
+  run_claude_hook "$settings" UserPromptSubmit
+  run_claude_stopfailure "$settings" '{"hook_event_name":"StopFailure","error":"rate_limit","last_assistant_message":"API Error: Request rejected (429)"}' \
+    || fail "StopFailure hooks must exit 0 on a 429"
+  out=$(classify claude "$id" "$state")
+  [ "$out" = "idle claude-hook" ] || fail "a 429 StopFailure must still close the turn, got '$out'"
+  out=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-failover.sh" detect "$id" 2>&1)
+  [ "$out" = 'class=rate_limit source=record' ] || fail "a claude ship's StopFailure must record the 429 for failover, got '$out'"
+  pass "a claude ship's StopFailure hooks close the turn and record a 429 refusal for provider failover, and a server error records nothing"
+}
+
 test_codex_unverified_until_a_semantic_source_exists() {
   local rec id=busy-cx-1 out state
   rec=$(make_spawn_case codex-unverified codex "$id")
@@ -962,6 +993,7 @@ test_opencode_plugin_semantic_lifecycle
 test_opencode_plugin_v2_execution_lifecycle
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
+test_claude_ship_stopfailure_records_a_provider_refusal
 test_gemini_hooks_semantic_lifecycle
 test_gemini_hooks_stale_incarnation_harmless
 test_raw_gemini_launch_has_no_semantic_wiring

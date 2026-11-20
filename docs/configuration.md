@@ -15,6 +15,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Hung workers whose agent is still alive | [Hung-worker ladder](#hung-worker-ladder-confighung-ladder) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
+| Moving a worker or the captain off a provider that refused it | [Provider failover](#provider-failover-configfailover-order) |
 | Host memory and swap alarms | [Host memory guard](#host-memory-guard-configmemory-guard) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
@@ -580,6 +581,52 @@ Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supe
 The comparable models come from `--candidate` or from `config/supervisor-failover-candidates`, which is local to each home and not inherited.
 Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
 List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
+A provider refusal (429, rate, usage, or billing limit) instead moves the agent automatically under [provider failover](#provider-failover-configfailover-order).
+
+## Provider failover (config/failover-order)
+
+When a provider refuses a worker or the captain with an HTTP 429, a rate or usage limit, or a billing, credit, past-due, subscription, or account-hold error, Firstmate moves that agent to the next runtime in this home's failover order instead of letting it sit at an idle prompt.
+`bin/fm-failover.sh` is the one entry point; its `--help` owns the subcommands, output, exit codes, and bounds, and [`tests/fm-failover.test.sh`](../tests/fm-failover.test.sh) covers them.
+
+A ship or scout is detected two ways.
+A Claude worker's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
+For any runtime, the watcher also reads a refusal row the idle screen shows.
+On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
+It wakes firstmate with a check naming the switch, or why no runtime took over.
+A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
+
+A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
+When the session holds the lock and the home has open work, the hook writes a handoff with `bin/fm-ledger.sh handoff` and starts a successor on the next eligible primary runtime through `bin/fm-handoff-launch.sh`.
+The successor takes the lock after its verified acknowledgement, and the old session is never killed and never holds the lock against it.
+A second mate's home leaves its own captain failover to its parent, which uses [supervisor failover](#supervisor-failover).
+
+Every switch is recorded in the dispatch log as a `failover` event with its time, task, from, to, and reason (`bin/fm-dispatch-log.sh`).
+
+The optional local `config/failover-order` lists one runtime per line, in preference order; blank lines and lines that start with `#` are ignored.
+An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
+The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
+A `host=` entry is accepted but skipped, because ordinary workers and successor captains launch on this host; run failover in that host's own home instead.
+The line `off` turns automatic failover off: detection still wakes firstmate, but nothing is relaunched.
+The line `min-5h <percent>` sets the preflight's five-hour floor, 30 by default.
+Without the file the order is `codex`, then `droid`, then `claude@next`.
+Example:
+
+```text
+# Preferred order when a provider refuses an agent
+codex
+droid
+claude@next
+min-5h 30
+```
+
+`bin/fm-failover.sh preflight` makes one real one-line call through each runtime's own CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
+A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
+An unreadable window is disclosed and does not exclude.
+The preflight spends one tiny call per runtime and nothing else.
+
+Failover never signs in, adds funds, buys extra usage, or edits an account pin.
+A usage-limit picker that `bin/fm-control.sh` cannot verify is refused rather than closed, so that worker waits for its reset or a manual relaunch.
+The Claude refusal signals are live-verified in [Runtime backend verification](verification/runtime-backends.md#provider-failover-refusal-signals).
 
 ## Context reading (config/context-reading)
 

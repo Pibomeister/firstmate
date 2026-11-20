@@ -56,6 +56,16 @@
 #       Returns 0 when <text> opens by stating a provider weekly, session, usage,
 #       rate, or credits limit. Conversation that only mentions those words later
 #       in the row is not a match.
+#   fm_wd_provider_error_class <text>
+#       Prints `billing`, `usage_limit`, or `rate_limit` when a row of <text>
+#       opens by stating that provider refusal, checked in that order, else
+#       exit 1. Billing covers a credit balance, past-due payment, subscription,
+#       extra-usage, or account-hold refusal; rate_limit covers an error row
+#       naming HTTP 429, a rate limit, or too many requests.
+#   fm_wd_provider_error_screen <screen>
+#       The same verdict for the last FM_WD_PROVIDER_ERROR_ROWS (default 12)
+#       non-blank rows of an ANSI screen. bin/fm-failover.sh and the watcher
+#       read it only on an idle screen.
 #   fm_wd_quota_status_line <line>
 #       Returns 0 when a paused or blocked status line names a quota floor or
 #       the same provider-limit phrases fm_wd_usage_limit_text accepts.
@@ -158,11 +168,20 @@ FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])f
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
-# A row that opens by stating the limit. Used by the pane picker and by paused
-# or blocked status lines. Do not add a fourth detector for these phrases.
+# A row that opens by stating the limit. Used by the pane picker, by paused or
+# blocked status lines, and by fm_wd_provider_error_class. Do not add another
+# detector for these phrases.
 FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
 FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
+# Rows that open by reporting a provider refusal the agent cannot work through:
+# an HTTP 429 or rate-limit error, or a billing, credit, past-due, subscription,
+# or account-hold refusal. The row may open with spaces or glyphs but not a
+# digit, `+`, or `-`, so a numbered diff row quoting one is not a match.
+# Usage-limit rows stay with FM_WD_USAGE_LIMIT_RE;
+# fm_wd_provider_error_class is the one reader that joins all three.
+FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*((((api|stream) )?error[[:space:]]*(:|\()|unexpected status).*(429|rate[_ -]?limit|too many requests))'
+FM_WD_BILLING_ERROR_RE='^[^a-z0-9+-]*(credit balance (is )?too low|claude code can.t use your claude subscription|you( are|.{1,3}re) out of extra usage|your account is on hold|your org(anization)? is out of usage|(((api|stream) )?error[[:space:]]*(:|\()|unexpected status).*(billing|insufficient_quota|exceeded your current quota|credit balance|past due))'
 
 fm_wd_user_bin_path() {  # <path> <home>
   local rest=$1 user_bin dir out='' sep='' placed=0 more=1
@@ -320,6 +339,32 @@ fm_wd_strip_ansi() {
 
 fm_wd_usage_limit_text() {  # <text>
   printf '%s' "$(fm_wd_lower "$1")" | LC_ALL=C grep -Eq "$FM_WD_USAGE_LIMIT_RE"
+}
+
+# Prints billing, usage_limit, or rate_limit for the first class any row of
+# <text> states, in that order, and returns 1 when no row states one.
+fm_wd_provider_error_class() {  # <text>
+  local t
+  t=$(fm_wd_lower "$1")
+  if printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_BILLING_ERROR_RE"; then
+    printf 'billing\n'
+  elif printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_USAGE_LIMIT_RE"; then
+    printf 'usage_limit\n'
+  elif printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_RATE_LIMIT_ERROR_RE"; then
+    printf 'rate_limit\n'
+  else
+    return 1
+  fi
+}
+
+# The provider-error class stated in the last FM_WD_PROVIDER_ERROR_ROWS (12)
+# non-blank rows of a screen, where a harness leaves the error that ended its
+# turn above its prompt. Callers judge only an idle screen.
+fm_wd_provider_error_screen() {  # <screen>
+  local n=${FM_WD_PROVIDER_ERROR_ROWS:-12}
+  [ -n "${1-}" ] || return 1
+  case "$n" in ''|0|*[!0-9]*) n=12 ;; esac
+  fm_wd_provider_error_class "$(_fm_wd_tail_rows "$1" "$n")"
 }
 
 fm_wd_usage_limit_autowait() {  # <screen>

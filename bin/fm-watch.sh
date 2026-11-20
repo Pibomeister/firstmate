@@ -383,6 +383,8 @@ esac
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-failover-lib.sh
+. "$SCRIPT_DIR/fm-failover-lib.sh"
 # shellcheck source=bin/fm-health-lib.sh
 . "$SCRIPT_DIR/fm-health-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
@@ -615,6 +617,13 @@ CREW_RELAUNCH_WINDOW_SECS=${FM_CREW_RELAUNCH_WINDOW_SECS:-}
 case "$CREW_RELAUNCH_WINDOW_SECS" in ''|*[!0-9]*|0) CREW_RELAUNCH_WINDOW_SECS=3600 ;; esac
 CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
 case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
+# Provider failover of an idle ship or scout (provider_failover_check): the
+# wall-clock bound on one whole bin/fm-failover.sh worker call, every runtime
+# it tries included, and on each relaunch inside it.
+FAILOVER_WATCH_TIMEOUT=${FM_FAILOVER_WATCH_TIMEOUT:-}
+case "$FAILOVER_WATCH_TIMEOUT" in ''|*[!0-9]*|0) FAILOVER_WATCH_TIMEOUT=600 ;; esac
+FAILOVER_WATCH_RELAUNCH_TIMEOUT=${FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT:-}
+case "$FAILOVER_WATCH_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) FAILOVER_WATCH_RELAUNCH_TIMEOUT=240 ;; esac
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held crew whose agent has confidently exited uses the same
@@ -2341,6 +2350,58 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   fm_lock_release "$lock" 2>/dev/null || true
   return 0
 }
+# Provider failover of an idle ship or scout whose last turn ended on a provider
+# refusal (HTTP 429, rate, usage, or billing limit). The verdict comes from the
+# task's provider-error record, which its Claude StopFailure hook writes and
+# which counts only for the agent's current turn end, or else from the refusal
+# row the idle screen shows (fm_wd_provider_error_screen). It runs
+# bin/fm-failover.sh worker once per distinct idle screen, remembered in
+# state/.failover-seen-<key>, on the first idle poll that shows it, so a
+# refused worker moves within one cycle; that script owns the order, the
+# attempt bound, the per-task lock, and the dispatch-log record. A captain-held
+# or remote task is left to the ordinary stale path. Returns 0 when it ran and
+# queued a check wake, 1 when the window is out of scope or nothing ran.
+provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen class src out rc=0 line key now reason
+  case "$kind" in ship|scout) ;; *) return 1 ;; esac
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  seen="$STATE/.failover-seen-$(window_key "$w")"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
+  if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
+    src=record
+  elif class=$(fm_wd_provider_error_screen "$screen"); then
+    src=screen
+  else
+    return 1
+  fi
+  [ -z "$(fm_meta_get "$STATE/$task.meta" remote_host 2>/dev/null || true)" ] || return 1
+  if status_is_captain_held "$(status_declared_wait_line "$STATE/$task.status")" || task_captain_call_open "$task"; then
+    return 1
+  fi
+  printf '%s' "$h" > "$seen" 2>/dev/null || return 1
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  out=$(FM_HOME=$FM_HOME FM_FAILOVER_RELAUNCH_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" worker "$task" \
+    --reason "$class" --state "$STATE" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|off|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  triage_log "provider failover ($class from $src) rc=$rc: $task ${line:-no result line}"
+  fm_watch_now now
+  key="failover-$task-$now"
+  case "$rc" in
+    0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - its local copy, branch, and gates were kept; reconcile its current state rather than relaunching it again" ;;
+    1) reason="check: $task stopped on a $class refusal from its provider and no runtime in the failover order took over (${line:-no result line}) - relaunch it by hand on an available runtime, or queue it until the limit resets" ;;
+    3) reason="check: $task stopped on a $class refusal from its provider again, and automatic failover paused at its attempt bound (${line:-no result line}) - recover it by hand" ;;
+    4) reason="check: $task stopped on a $class refusal from its provider; automatic failover is off in config/failover-order - relaunch it on another runtime, or queue it until the limit resets" ;;
+    5) rm -f "$seen"; return 1 ;;
+    6) return 1 ;;
+    *) reason="check: $task stopped on a $class refusal from its provider and its automatic failover failed (exit $rc): $(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { l = $0 } END { print substr(l, 1, 240) }') - recover it by hand, and check for unlanded work before any cleanup" ;;
+  esac
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
+  return 0
+}
+
 # The question the wedge timer never asked before it alarmed: is there still an
 # agent here to BE wedged? A wedge is something stuck that might recover, so
 # re-alarming it earns its cost; an agent that is gone never moves again, its pane
@@ -5959,6 +6020,12 @@ EOF
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
+      continue
+    fi
+    if [ "$busy_now" -ne 0 ] && provider_failover_check "$w" "$task" "$kind" "$tail40" "$h"; then
+      echo "$h" > "$hf"
+      echo 1 > "$cf"
+      printf '%s' "$h" > "$sf"
       continue
     fi
     if [ "$h" = "$prev" ]; then

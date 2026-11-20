@@ -6,6 +6,7 @@
 #   fm-dispatch-log.sh dispatched <goal-id> --task <task-id> [--note <text>]
 #   fm-dispatch-log.sh queued     <goal-id> --reason <text>
 #   fm-dispatch-log.sh blocked    <goal-id> --reason <text>
+#   fm-dispatch-log.sh failover   --task <task-id|captain> --from <runtime> --to <runtime> --reason <token>
 #   fm-dispatch-log.sh overdue
 #   fm-dispatch-log.sh open
 #   fm-dispatch-log.sh show       [<goal-id>]
@@ -34,6 +35,16 @@
 # never add a late mark. A trailing ` late=<m>m` in the free text of a
 # `dispatched`, `queued`, or `blocked` line is dropped, so only the script can
 # write the mark.
+#
+# `failover` records one provider switch of a running task, or of the captain
+# session (`--task captain`), as written by bin/fm-failover.sh: its goal-id
+# column is the goal whose `dispatched` line names that task (the newest one),
+# else the task id itself, and its detail is
+# `task=<task-id> from=<runtime> to=<runtime> reason=<token>`. It needs no
+# `received` line, never changes a goal's state, SLA, or late mark, and is
+# skipped by `overdue`, `open`, and the `show` state line; `show` still
+# lists it among the goal's lines. --from, --to, and --reason are single tokens
+# of letters, digits, and _ . : / @ -.
 #
 # A goal is overdue when its newest line is `received` or `queued` and the SLA
 # has passed since its clock start: `received` if it has never had a final line
@@ -120,7 +131,7 @@ sla_seconds() {
 
 latest_event() {  # <goal-id> -> newest event name, empty when absent
   [ -f "$LOG" ] || return 0
-  awk -F '\t' -v g="$1" '$4 == g { e = $3 } END { if (e != "") print e }' "$LOG"
+  awk -F '\t' -v g="$1" '$4 == g && $3 != "failover" { e = $3 } END { if (e != "") print e }' "$LOG"
 }
 
 append() {  # <epoch> <event> <goal-id> <detail>
@@ -147,7 +158,7 @@ resolve() {  # <event> <goal-id> <detail>: append a resolution, marking lateness
 
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
-  received|dispatched|queued|blocked|overdue|open|show) cmd=$1; shift ;;
+  received|dispatched|queued|blocked|failover|overdue|open|show) cmd=$1; shift ;;
   *) usage >&2; exit 2 ;;
 esac
 
@@ -163,7 +174,7 @@ case "$cmd" in
     ;;
 esac
 
-summary='' project='' task='' note='' reason=''
+summary='' project='' task='' note='' reason='' from='' to=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --summary)
@@ -188,6 +199,12 @@ while [ "$#" -gt 0 ]; do
       [ $# -ge 2 ] || fail "--note needs a value"
       case "$2" in -*) fail "--note value looks like a flag: $2" ;; esac
       note=$2
+      shift 2
+      ;;
+    --from|--to)
+      [ $# -ge 2 ] || fail "$1 needs a value"
+      case "$2" in -*) fail "$1 value looks like a flag: $2" ;; esac
+      if [ "$1" = --from ]; then from=$2; else to=$2; fi
       shift 2
       ;;
     --reason)
@@ -217,6 +234,18 @@ case "$cmd" in
     [ -z "$note" ] || detail="$detail note=$note"
     resolve dispatched "$goal" "$detail"
     ;;
+  failover)
+    valid_id "$task" || fail "failover needs --task <task-id|captain> matching [A-Za-z0-9._-]+"
+    for v in "$from" "$to" "$reason"; do
+      case "$v" in ''|*[!A-Za-z0-9._:/@-]*) fail "failover needs --from, --to, and --reason, each one token of letters, digits, and _ . : / @ -" ;; esac
+    done
+    goal=''
+    if [ -f "$LOG" ]; then
+      goal=$(awk -F '\t' -v t="$task" '$3 == "dispatched" { split($5, w, " "); if (w[1] == "task=" t) g = $4 } END { print g }' "$LOG")
+    fi
+    [ -n "$goal" ] || goal=$task
+    append "$(now_epoch)" failover "$goal" "task=$task from=$from to=$to reason=$reason"
+    ;;
   queued|blocked)
     has_text "$(strip_late "$reason")" || fail "$cmd needs --reason"
     resolve "$cmd" "$goal" "reason=$reason"
@@ -227,6 +256,7 @@ case "$cmd" in
     now=$(now_epoch)
     rc=0
     out=$(awk -F '\t' -v now="$now" -v sla="$sla" '
+      $3 == "failover" { next }
       ($3 == "dispatched" || $3 == "blocked") && !($4 in final) {
         final[$4] = $2
         if (match($5, / late=[0-9]+m$/)) { late[$4] = substr($5, RSTART + 6, RLENGTH - 6); lev[$4] = $3 }
@@ -254,6 +284,7 @@ case "$cmd" in
   open)
     [ -f "$LOG" ] || exit 0
     awk -F '\t' '
+      $3 == "failover" { next }
       $3 == "received" { iso[$4] = $1; det[$4] = $5; order[++n] = $4 }
       { ev[$4] = $3; at[$4] = $1; last[$4] = $5 }
       END {
@@ -272,7 +303,7 @@ case "$cmd" in
     fi
     [ -f "$LOG" ] || fail "goal $goal is not in the ledger"
     state=$(awk -F '\t' -v g="$goal" '
-      $4 == g { e = $3; iso = $1; det = $5; found = 1 }
+      $4 == g && $3 != "failover" { e = $3; iso = $1; det = $5; found = 1 }
       END { if (found) printf "STATE %s event=%s at=%s %s\n", g, e, iso, det }
     ' "$LOG")
     [ -n "$state" ] || fail "goal $goal is not in the ledger"

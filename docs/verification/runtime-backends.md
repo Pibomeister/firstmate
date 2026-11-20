@@ -200,6 +200,30 @@ ok - exhausted veto: with every pool exhausted nothing launches
 ok - secondmate: relaunched onto codex through fm-control in its own home
 ```
 
+### Provider failover refusal signals
+
+Verified on 2026-11-20 UTC on macOS arm64 with Claude Code 2.1.329, Bash 3.2.57, and tmux 3.6a.
+The live guard starts the real installed Claude in an isolated config directory and tmux server, pointed at a local stand-in endpoint, so it spends no model tokens and touches no account.
+It registers the ship StopFailure hooks `bin/fm-spawn.sh` installs, the busy writer and then `bin/fm-failover.sh hook`, and reads both signals provider failover uses.
+A 429 `rate_limit_error` response ended the turn with a StopFailure payload whose `error` is `rate_limit`, and the idle pane showed `API Error: Request rejected (429)`.
+A credit-balance response ended the turn with `error` `billing_error`, and the idle pane showed `Credit balance too low · Add funds`, a row without the word "is" that the portable detector had not matched until this guard ran.
+A real `bin/fm-failover.sh preflight` on the same host reached a Claude login whose subscription payment was past due; its one-line `claude -p` call printed `Claude Code can't use your Claude subscription, usually because a payment is past due`, and the preflight excluded that account with `call=fail:billing`.
+Usage-limit screens were not reproduced live; their rows stay covered only by the portable detector regression.
+The captain hook uses the same payload with `"async": true`; a separate probe on the same version showed the async hook running as a child of the `claude` process, which is what the captain lock-owner check walks.
+
+Refresh the live guard and the portable regression with:
+
+```sh
+FM_FAILOVER_LIVE_E2E=1 bash tests/fm-failover-live-e2e.test.sh
+bash tests/fm-failover.test.sh
+```
+
+Selected output:
+
+```text
+ok - Claude 2.1.329 (Claude Code): a 429 refusal fires StopFailure into a rate_limit record in 1s, and the idle pane classes rate_limit
+ok - Claude 2.1.329 (Claude Code): a credit-balance refusal fires StopFailure into a billing record in 2s, and the idle pane classes billing
+```
 ## Codex model catalog max validation
 
 Verified on 2026-10-27 with codex-cli 0.162.1 on macOS arm64.
