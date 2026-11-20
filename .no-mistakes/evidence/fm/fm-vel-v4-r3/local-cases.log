@@ -1,0 +1,12 @@
+=== test_help_and_usage
+ok - fm-test-queue.sh: help prints the header and malformed calls are usage errors
+=== test_help_and_usage rc=0
+=== test_run_passes_status_and_output_through
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+=== test_run_passes_status_and_output_through rc=0
+=== test_shared_configuration_and_validation
+ok - fm-test-queue.sh: all callers use shared configuration and reject bad shared values
+=== test_shared_configuration_and_validation rc=0
+=== test_terminal_execution_modes
+ok - fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work
+=== test_terminal_execution_modes rc=0

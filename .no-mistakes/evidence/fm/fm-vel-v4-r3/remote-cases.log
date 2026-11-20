@@ -1,0 +1,18 @@
+=== test_remote_incremental_manifest_and_uncertain_run
+ok - fm-test-queue.sh: warm delta prepared in 7s; mismatch falls back and uncertain execution does not
+=== test_remote_incremental_manifest_and_uncertain_run rc=0 52s
+=== test_remote_offload_hardening
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+=== test_remote_offload_hardening rc=0 132s
+=== test_remote_offload_snapshot_and_failure
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+=== test_remote_offload_snapshot_and_failure rc=0 47s
+=== test_unreachable_remote_waits_locally_and_threshold_is_configurable
+ok - fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable
+=== test_unreachable_remote_waits_locally_and_threshold_is_configurable rc=0 7s
+=== test_unlisted_project_runs_locally_and_failed_upload_falls_back
+ok - fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally
+=== test_unlisted_project_runs_locally_and_failed_upload_falls_back rc=0 27s
+=== test_remote_straggler_cannot_hold_the_ssh_output
+ok - fm-test-queue.sh: a remote straggler is reaped and cannot hold the SSH output open
+=== test_remote_straggler_cannot_hold_the_ssh_output rc=0 25s
