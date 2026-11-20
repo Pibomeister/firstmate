@@ -1,0 +1,2 @@
+bash on PATH: /bin/bash 3.2.57(1)-release
+## TARGET e1f8a492

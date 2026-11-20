@@ -1,0 +1,12 @@
+## union of 27 shards vs portable-serial lane
+serial lane:      380 union:      380 unique:      380
+UNION == LANE
+## shard 1 and 2 contents
+tests/fm-afk-preallow.test.sh
+tests/fm-unpushed-reconcile.test.sh
+## old 25-shard name (adversarial)
+fm-test-run: lane 'portable-serial-1of25' asks for 25 portable serial shards but this runner is configured for 27 (see --list-lanes)
+rc=2
+## 28of27 (adversarial)
+fm-test-run: lane 'portable-serial-28of27' shard index is outside 1..27 (see --list-lanes)
+rc=2

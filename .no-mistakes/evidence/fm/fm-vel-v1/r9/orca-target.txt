@@ -1,0 +1,7 @@
+## Fri Nov 20 02:51:13 CST 2026 load: { 87.83 116.39 130.97 }
+## dir={run-worktree} commit=e1f8a492 shell=/bin/bash GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25) TMPDIR=fresh-empty
+1..1
+ok - fm_orca_cli: a timed call keeps the CLI body and the rest of its function, cache on or off
+FM_TEST_COMPLETE
+exit=0
+## end Fri Nov 20 02:51:19 CST 2026

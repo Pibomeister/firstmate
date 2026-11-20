@@ -1,0 +1,4 @@
+1..1
+ok - fm_orca_cli: a timed call keeps the CLI body and the rest of its function, cache on or off
+FM_TEST_COMPLETE
+exit=0

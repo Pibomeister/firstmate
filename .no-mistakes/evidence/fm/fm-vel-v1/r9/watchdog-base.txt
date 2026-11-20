@@ -1,0 +1,8 @@
+## Fri Nov 20 02:51:13 CST 2026 load: { 87.83 116.39 130.97 }
+## dir=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//r9base.hNXlxl commit=467c1bd9-archive shell=/bin/bash GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25) TMPDIR=fresh-empty
+1..2
+ok - primary endpoint: another session's heartbeat is never typed into, and a match restores it
+ok - primary identity: an absent lock id never authenticates a heartbeat, and a recorded match restores delivery
+FM_TEST_COMPLETE
+exit=0
+## end Fri Nov 20 02:53:56 CST 2026

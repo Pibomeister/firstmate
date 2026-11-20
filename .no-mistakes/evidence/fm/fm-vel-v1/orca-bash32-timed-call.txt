@@ -1,0 +1,31 @@
+== target-c72af946 cache=1 bash=3.2.57(1)-release cmd='orca status --json' (read-only)
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin]
+after
+rc=0
+== target-c72af946 cache=0 bash=3.2.57(1)-release cmd='orca status --json' (read-only)
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin]
+after
+rc=0
+== base-467c1bd9 cache=1 bash=3.2.57(1)-release cmd='orca status --json' (read-only)
+body_bytes=0 body_head=[]
+after
+rc=0
+== base-467c1bd9 cache=0 bash=3.2.57(1)-release cmd='orca status --json' (read-only)
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "target": {
+      "kin]
+after
+rc=0

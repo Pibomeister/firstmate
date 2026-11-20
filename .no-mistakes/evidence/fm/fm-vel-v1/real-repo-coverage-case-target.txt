@@ -1,0 +1,2 @@
+not ok - real repository portable-serial lane must have 0 unhinted scripts, got 3
+exit=1

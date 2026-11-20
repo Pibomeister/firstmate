@@ -1,0 +1,16 @@
+1..168
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback claim: competing stale recovery preserves the fresh owner
+ok - feedback claim: legacy owners are recovered only after they exit
+ok - feedback claim: release preserves another live owner
+ok - watchdog: primary and worker absence observations rearm uncertain dialogs with capture and do-not-touch guards
+ok - feedback dismiss: a later clear observation rearms an uncertain dismissal
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not
+ok - mtime: native and available GNU stat give numeric ages through scan
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - feedback dismiss: a statusline percentage tick does not send another key
+ok - loop verdicts: loop, rapid, near, and work-between
+ok - stall proof needs two signals and no veto; merge and deploy text is refused
+ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
+STOPPED by test agent at turn budget (not completed)

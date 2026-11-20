@@ -1,0 +1,8 @@
+## Fri Nov 20 02:53:59 CST 2026 load: { 94.36 106.18 124.04 }
+## dir={run-worktree} commit=e1f8a492 shell=/bin/bash GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25) TMPDIR=fresh-empty
+fm-test-run: coverage guard: portable serial shard 1 holds only tests/fm-afk-preallow.test.sh at 2487700ms, above the 780000ms target; only splitting that script shrinks it
+fm-test-run: coverage guard: portable serial shard 2 holds only tests/fm-unpushed-reconcile.test.sh at 1043032ms, above the 780000ms target; only splitting that script shrinks it
+ok - real repository passes coverage guard and maps live-e2e guards to live-harness-optin
+R9_CASE_DONE
+exit=0
+## end Fri Nov 20 02:55:47 CST 2026

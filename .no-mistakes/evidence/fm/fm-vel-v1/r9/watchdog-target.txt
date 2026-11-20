@@ -1,0 +1,8 @@
+## Fri Nov 20 02:51:13 CST 2026 load: { 87.83 116.39 130.97 }
+## dir={run-worktree} commit=e1f8a492 shell=/bin/bash GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25) TMPDIR=fresh-empty
+1..2
+ok - primary endpoint: another session's heartbeat is never typed into, and a match restores it
+ok - primary identity: an absent lock id never authenticates a heartbeat, and a recorded match restores delivery
+FM_TEST_COMPLETE
+exit=0
+## end Fri Nov 20 02:53:59 CST 2026

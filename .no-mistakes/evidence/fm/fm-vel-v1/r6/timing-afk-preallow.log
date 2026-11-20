@@ -1,0 +1,29 @@
+FM_TEST_BEGIN 2026-11-20T04:41:07Z tests/fm-afk-preallow.test.sh family=unclassified expected_gate_skip=none
+ok - derive keeps exact Bash commands and reports every left-off dialog with its reason
+ok - the reader prints entries only for a valid list whose checksum the approval record names
+ok - an empty candidate cannot be approved and its page asks for no decision
+ok - the page shows each entry with its count and source, and the checksum approval binds to
+ok - fm-spawn pre-allows only an approved, unchanged list, and only for a worker launched while away
+all fm-afk-preallow tests passed
+FM_TEST_END 2026-11-20T05:22:35Z tests/fm-afk-preallow.test.sh exit=0 duration_ms=2487700 gate_skip=false
+FM_TEST_BEGIN 2026-11-20T05:22:35Z tests/fm-tmux-relaunch-input.test.sh family=unclassified expected_gate_skip=none
+ok - relaunch waits for zsh and clears the old input and notice
+ok - relaunch preparation waits for foreground exit
+FM_TEST_END 2026-11-20T05:22:43Z tests/fm-tmux-relaunch-input.test.sh exit=0 duration_ms=8356 gate_skip=false
+FM_TEST_BEGIN 2026-11-20T05:22:44Z tests/fm-unpushed-reconcile.test.sh family=session-bootstrap expected_gate_skip=none
+bin/fm-test-run.sh: child setpgid (20830 to 20830): Operation not permitted
+ok - inventory survives a delayed first content proof before comparison starts
+not ok - the checkout root lost its recorded owner (missing: 'task=home-task owner=recorded')
+--- output ---
+UNPUSHED: project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-unpushed-reconcile.R72Wsp/nested-directory/projects/demo branch=fm/task head=dcbddf2a3ea6870e551ac8af4573cc6e3412a897 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-unpushed-reconcile.R72Wsp/nested-directory branch=fm/home-task head=97ab4180db8203490bf87e3a295a959eaf2a0904; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 20s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+FM_TEST_END 2026-11-20T05:38:00Z tests/fm-unpushed-reconcile.test.sh exit=1 duration_ms=916500 gate_skip=false
+FM_TEST_SUMMARY total=3 failed=1 skipped_gate=0 duration_ms=3414010
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=916500 failed=1
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=2496056 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-afk-preallow.test.sh duration_ms=2487700
+FM_TEST_SLOWEST rank=2 script=tests/fm-unpushed-reconcile.test.sh duration_ms=916500
+FM_TEST_SLOWEST rank=3 script=tests/fm-tmux-relaunch-input.test.sh duration_ms=8356
+fm-test-run: wrote timing artifact: /tmp/fm-hint.zDNk/t.json
+exit=1

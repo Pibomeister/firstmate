@@ -1,0 +1,28 @@
+1..36
+ok - Orca cache locks keep a live owner regardless of age
+ok - Orca cache lock release preserves a replacement owner
+ok - Orca cache locks recover a provably dead owner
+ok - Orca cache locks leave malformed ownership unclaimed
+ok - a displaced Orca cache fill cannot overwrite a newer owner's result
+ok - action-time capture proofs read current frames despite cached observations
+ok - fm_orca_cli: pending invalidation bypasses snapshots and successful recovery restores reuse
+ok - fm_orca_cli: a failed generation publication cannot make an old in-flight result reusable
+ok - fm_orca_cli: a failed generation publication cannot make an old in-flight result reusable
+ok - Orca session proofs read current terminal and process facts despite cached observations
+ok - fm_backend_orca_draft_present: live input and read failures hold despite an empty cached snapshot
+ok - fm_orca_cli: zero TTL bypasses stored results on every read
+ok - fm_orca_cli: a repeated read reuses one CLI result
+ok - fm_orca_cli: a read past the TTL boots the CLI again
+ok - fm_orca_cli: a mutating command drops cached reads
+ok - fm_orca_cli: a read taken during a mutation is dropped when it finishes
+ok - fm_orca_cli_mutation: a cached read is dropped before the command runs
+ok - fm_orca_cli: two fills in one shell keep their own bodies
+ok - fm_orca_cli: an unreadable cached stdout is a miss
+ok - fm_orca_cli: a cache hit replays stdout and stderr
+ok - fm_orca_cli: an unreadable cached stderr emits nothing and is a miss
+ok - fm_orca_cli: a missing cached stderr is a miss
+ok - fm_orca_cli: a symlinked cache directory is not used
+ok - fm_orca_cli: the cache key includes the arguments
+ok - fm_orca_cli: a failed read is not reused
+ok - fm_orca_cli: ok:false JSON is not reused
+not ok - terminal wait was cached or dropped the cached read (expected '2', got '3')
