@@ -540,6 +540,26 @@ test_once_ladder_does_not_ack_its_own_wake() {
   pass "fm-captain-nudge: the ladder never reads the pane's echo of its own wake as the captain's ack"
 }
 
+test_once_settle_keeps_last_reading_when_a_reread_fails() {
+  local home cap echoed now=2000000000
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c --arg s "$echoed" --argjson at "$now" \
+      '.fixture.after_send = [{}, {screen:$s, last_activity_epoch:$at}, {read_failed:true}]')
+  home=$(write_home ladder-reread-fail "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at | .fixture.after_send = []')
+  write_home ladder-reread-fail "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "a failed reread after the echo was seen must not drop back to the pre-send reading"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "the settled echo reading survives a failed reread"
+  pass "fm-captain-nudge: a failed reread during the settle keeps the last good reading"
+}
+
 write_ready_bin() {  # <dir> -> fake fm-ready-pr-discovery reading $FAKE_READY_JSON
   mkdir -p "$1"
   cat > "$1/ready" <<'SH'
@@ -760,6 +780,7 @@ fm_test_run \
   test_once_submits_own_unsent_prompt_only \
   test_once_ladder_wakes_escalates_councils_and_records_ack \
   test_once_ladder_does_not_ack_its_own_wake \
+  test_once_settle_keeps_last_reading_when_a_reread_fails \
   test_once_merge_ready_nudges_once_after_15_minutes \
   test_once_records_the_captain_home_stall_ledger \
   test_once_stalled_lane_wakes_with_the_lane_table \

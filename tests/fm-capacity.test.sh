@@ -645,37 +645,38 @@ write_lane() {
   fm_touch_epoch "$((now - status_age))" "$home/state/$id.status"
 }
 
-# A cap counts live lanes, not task records: a record idle for two hours or
-# whose terminal is gone holds no place, so stale records never freeze spawning.
+# A cap counts live lanes, not task records: only a record idle for two hours
+# whose terminal is gone holds no place, so stale records never freeze
+# spawning while a live worker idle on a decision keeps its place.
 test_idle_and_gone_lanes_hold_no_place() {
   local home fakebin out rc
   home=$(make_home livelanes 0 0)
   fakebin=$(make_probes "$TMP_ROOT/p-livelanes" 0.50 60 8 20971520)
-  make_tmux "$fakebin" %1 %3
-  write_lane "$home" ship-idle 10800 10800 'window=%1'
-  write_lane "$home" ship-gone 1800 60 'window=%2'
-  write_lane "$home" ship-alive 1800 60 'window=%3'
+  make_tmux "$fakebin" %1
+  write_lane "$home" ship-stale 10800 10800 'window=%2'
+  write_lane "$home" ship-idle-live 10800 10800 'window=%1'
+  write_lane "$home" ship-active-gone 1800 60 'window=%4'
   printf '2\n' > "$home/config/lane-capacity"
   out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
-  expect_code 0 "$rc" "one live lane under a cap of 2 must admit a spawn: $out"
-  out=$(run_capacity_jq "$home" "$fakebin")
-  assert_contains "$out" 'capacity: free_lanes=1 reason=ok lanes=3 target=2 ' "every record still counts as a lane, but only the live one holds a place"
-  assert_contains "$out" ' not_live=2' "the report line must count the lanes that hold no place"
-  assert_contains "$out" 'holding no place: ship-idle idle, ship-gone gone.' "the summary must name each lane that holds no place and why"
-  assert_equals '2|ship-gone:gone,ship-idle:idle|1' \
-    "$(run_capacity_jq "$home" "$fakebin" --json 2>/dev/null | jq -r '[.lanes.not_live, ([.lanes.not_live_ids[] | "\(.id):\(.why)"] | sort | join(",")), .verdict.free_lanes] | map(tostring) | join("|")')" \
-    "the document must carry the lanes that hold no place"
-  printf '1\n' > "$home/config/lane-capacity"
+  expect_code 75 "$rc" "a lane idle 2h with a live terminal and a recently active lane must fill a cap of 2: $out"
+  assert_contains "$out" 'full: 2 of 2 lanes hold a place' "the deferral must count the idle live lane and the active lane"
+  printf '3\n' > "$home/config/lane-capacity"
   out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
-  expect_code 75 "$rc" "the live lane must still fill a cap of 1"
-  assert_contains "$out" 'full: 1 of 1 lanes hold a place' "the deferral must count only the live lane"
+  expect_code 0 "$rc" "the stale record with a gone terminal must free its place under a cap of 3: $out"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" 'capacity: free_lanes=1 reason=ok lanes=3 target=3 ' "every record still counts as a lane, but the stale one holds no place"
+  assert_contains "$out" ' not_live=1' "the report line must count the lane that holds no place"
+  assert_contains "$out" 'holding no place: ship-stale gone.' "the summary must name the lane that holds no place and why"
+  assert_equals '1|ship-stale:gone|1' \
+    "$(run_capacity_jq "$home" "$fakebin" --json 2>/dev/null | jq -r '[.lanes.not_live, ([.lanes.not_live_ids[] | "\(.id):\(.why)"] | sort | join(",")), .verdict.free_lanes] | map(tostring) | join("|")')" \
+    "the document must carry the lane that holds no place"
+  make_tmux "$fakebin"
+  out=$(run_capacity_jq "$home" "$fakebin")
+  assert_contains "$out" ' not_live=2' "once its terminal is gone the idle lane frees its place too"
   fm_touch_epoch "$(($(date +%s) - 60))" "$home/state/.hash-%1"
   out=$(run_capacity_jq "$home" "$fakebin")
-  assert_contains "$out" ' not_live=1' "terminal output the watcher saw within two hours must keep a lane live"
-  make_tmux "$fakebin"
-  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
-  expect_code 0 "$rc" "with every terminal gone no lane holds a place: $out"
-  pass "a lane idle for two hours or with a gone terminal holds no place under the cap"
+  assert_contains "$out" ' not_live=1' "terminal output the watcher saw within two hours must keep a lane's place"
+  pass "only a lane idle for two hours with a gone terminal holds no place under the cap"
 }
 
 # A lane is freed only on evidence: a just-written record, a remote endpoint,
@@ -690,11 +691,11 @@ test_new_remote_or_unanswered_lanes_keep_their_place() {
   out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
   expect_code 75 "$rc" "a record written minutes ago must hold its place before its terminal is recorded"
   rm "$home/state/ship-new.meta" "$home/state/ship-new.status"
-  write_lane "$home" ship-remote 1800 60 'window=%6' 'remote_host=builder'
+  write_lane "$home" ship-remote 10800 10800 'window=%6' 'remote_host=builder'
   out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
   expect_code 75 "$rc" "a remote lane must keep its place, since its terminal is not probed here"
   rm "$home/state/ship-remote.meta" "$home/state/ship-remote.status"
-  write_lane "$home" ship-hung 1800 60 'window=%7'
+  write_lane "$home" ship-hung 10800 10800 'window=%7'
   start=$(date +%s)
   out=$(FAKE_TMUX_HANG=1 run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
   elapsed=$(($(date +%s) - start))

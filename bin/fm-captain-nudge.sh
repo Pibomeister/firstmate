@@ -479,6 +479,7 @@ observe_fixture() {  # <captain-json> [after-send-read-index] -> observation fie
   if [ -n "${2:-}" ]; then
     cap=$(printf '%s' "$cap" | jq -c --argjson i "$2" \
       '.fixture += ((.fixture.after_send // []) as $r | if ($r | length) == 0 then {} else $r[[$i, ($r | length) - 1] | min] end)')
+    fm_nudge_json_bool "$cap" '.fixture.read_failed' && return 1
   fi
   OBS_SCREEN=$(fm_nudge_json_get "$cap" '.fixture.screen // ""' '') || true
   OBS_LAST_AT=$(fm_nudge_json_get "$cap" '.fixture.last_activity_epoch // ""' '') || true
@@ -556,9 +557,12 @@ store_post_send_fingerprint() {  # <id> <captain-json>
     if [ "$backend" = fixture ]; then
       observe_fixture "$cap" "$reads"
     else
-      observe_live "$cap" || return 0
-      [ -n "${OBS_SCREEN:-}" ] || return 0
-    fi
+      observe_live "$cap" && [ -n "${OBS_SCREEN:-}" ]
+    fi || {
+      [ "$reads" -gt 0 ] || return 0
+      cur=$prev
+      break
+    }
     reads=$((reads + 1))
     cur=$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")
     [ "$cur" != "$prev" ] && [ "$reads" -lt "$limit" ] || break
