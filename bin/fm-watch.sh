@@ -171,7 +171,9 @@
 #                          the disk alarm refused these fresh launches and now
 #                          admits a launch; bin/fm-disk-retry.sh dispatched
 #                          them again, dropped stale ones, or names a failed
-#                          re-dispatch, and reports each result once
+#                          re-dispatch, a task to dispatch by hand, or a held
+#                          or blocked item it skipped; bin/fm-disk-retry.sh's
+#                          header owns the result parts
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
