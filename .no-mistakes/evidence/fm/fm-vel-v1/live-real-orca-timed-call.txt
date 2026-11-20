@@ -1,0 +1,29 @@
+shell: GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25); orca: /opt/homebrew/bin/orca
+### base cache=0: fm_run_timed_fn 15 { body=$(fm_orca_cli status --json); echo after }
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "t]
+after
+rc=0
+### base cache=1: fm_run_timed_fn 15 { body=$(fm_orca_cli status --json); echo after }
+body_bytes=0 body_head=[]
+after
+rc=0
+### target cache=0: fm_run_timed_fn 15 { body=$(fm_orca_cli status --json); echo after }
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "t]
+after
+rc=0
+### target cache=1: fm_run_timed_fn 15 { body=$(fm_orca_cli status --json); echo after }
+body_bytes=14291 body_head=[{
+  "id": "local-status",
+  "ok": true,
+  "result": {
+    "t]
+after
+rc=0
