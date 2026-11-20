@@ -134,6 +134,15 @@ test_missed_eta_stall_and_unreachable() {
   pass "missed ETA, stall, unreachable source and review record"
 }
 
+test_missing_config_uses_default_output_dir() {
+  local home="$TMP_ROOT/home-noconfig" out
+  mkdir -p "$home"
+  out=$(run_digest "$home") || fail "run without config failed: $out"
+  assert_contains "$out" "latest=$home/data/goal-digest/latest.md" "run without config reports the default digest path"
+  [ -f "$home/data/goal-digest/latest.json" ] || fail "run without config did not write the default digest"
+  pass "missing config writes an empty digest in the default directory"
+}
+
 test_install_launchagent() {
   write_fixtures 0
   local home other
@@ -176,4 +185,4 @@ print("\0".join(d["ProgramArguments"]))
   pass "launchagent install and uninstall"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_install_launchagent
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent
