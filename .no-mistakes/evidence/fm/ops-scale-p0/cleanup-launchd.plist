@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.firstmate.host-cleanup-4238566180</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>{run-worktree}/bin/fm-host-cleanup.sh</string><string>clean</string><string>--apply</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>~</string>
+    <key>PATH</key><string>~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:~/go/bin:~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:~/.grok/bin:~/.kimi-code/bin:~/Library/pnpm:~/.bun/bin:~/Library/Python/3.9/bin:/opt/homebrew/opt/node@24/bin:~/.antigravity/antigravity/bin:~/.cargo/bin:~/bin:/opt/homebrew/sbin:/usr/local/sbin:~/.orbstack/bin:~/.lmstudio/bin:~/.orbstack/bin</string>
+    <key>FM_CLEANUP_DIR</key><string>/tmp/fmledg.HjzLRy/c</string>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/fmledg.HjzLRy/c/cleanup-run.log</string>
+  <key>StandardErrorPath</key><string>/tmp/fmledg.HjzLRy/c/cleanup-run.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+</dict></plist>

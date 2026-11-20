@@ -1,0 +1,60 @@
+$ fm-host-cleanup.sh report
+host-cleanup report: free_kib=68279568 free_gib=65.1 target_gib=100 volume=/System/Volumes/Data
+host-cleanup cache: root=/tmp/fmclean.a9jbBk/caches size_kib=16 old_entries=1 old_kib=4 age_days=7
+host-cleanup kept: root=/tmp/fmclean.a9jbBk/caches entry=ms-playwright size_kib=4 reason=not-allowlisted
+host-cleanup logs: root=/tmp/fmclean.a9jbBk/logs size_kib=8 old_entries=1 old_kib=4 age_days=14
+host-cleanup worktrees: root=/tmp/fmclean.a9jbBk/wt/proj-a size_kib=3072
+host-cleanup: free space is under the 100 GiB target
+exit=3
+
+$ fm-host-cleanup.sh clean (dry run)
+host-cleanup clean: mode=dry-run free_before_kib=68279876 free_before_gib=65.1
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/caches old_entries=1 old_kib=4 remaining_old_entries=1
+host-cleanup kept: root=/tmp/fmclean.a9jbBk/caches entry=ms-playwright size_kib=4 reason=not-allowlisted
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/logs old_entries=1 old_kib=4 remaining_old_entries=1
+host-cleanup worktrees: root=/tmp/fmclean.a9jbBk/wt/proj-a size_kib=3072
+host-cleanup clean: mode=dry-run free_after_kib=68276312 free_after_gib=65.1 target_gib=100
+host-cleanup: free space is still under the 100 GiB target after clean
+exit=3
+after dry run:
+/tmp/fmclean.a9jbBk/caches:
+ms-playwright
+pip
+uv
+
+/tmp/fmclean.a9jbBk/logs:
+newapp
+oldapp
+
+$ fm-host-cleanup.sh clean --apply
+host-cleanup clean: mode=apply free_before_kib=68277648 free_before_gib=65.1
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/caches old_entries=1 old_kib=4 remaining_old_entries=0
+host-cleanup kept: root=/tmp/fmclean.a9jbBk/caches entry=ms-playwright size_kib=4 reason=not-allowlisted
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/logs old_entries=1 old_kib=4 remaining_old_entries=0
+host-cleanup worktrees: root=/tmp/fmclean.a9jbBk/wt/proj-a size_kib=3072
+host-cleanup clean: mode=apply free_after_kib=68289364 free_after_gib=65.1 target_gib=100
+host-cleanup: free space is still under the 100 GiB target after clean
+exit=3
+after apply:
+/tmp/fmclean.a9jbBk/caches:
+ms-playwright
+uv
+
+/tmp/fmclean.a9jbBk/logs:
+newapp
+index
+old
+log:
+2026-11-19T23:48:06-0600 clean free_before_kib=68277648 free_after_kib=68289364 target_gib=100 volume=/System/Volumes/Data
+
+$ FM_CLEANUP_TARGET_GIB=1 clean --apply
+host-cleanup clean: mode=apply free_before_kib=68290200 free_before_gib=65.1
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/caches old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup kept: root=/tmp/fmclean.a9jbBk/caches entry=ms-playwright size_kib=4 reason=not-allowlisted
+host-cleanup clean: root=/tmp/fmclean.a9jbBk/logs old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup worktrees: root=/tmp/fmclean.a9jbBk/wt/proj-a size_kib=3072
+host-cleanup clean: mode=apply free_after_kib=68288776 free_after_gib=65.1 target_gib=1
+exit=0
+$ bad arg
+usage: fm-host-cleanup.sh report|clean [--apply]|render-launchd|--help
+exit=2

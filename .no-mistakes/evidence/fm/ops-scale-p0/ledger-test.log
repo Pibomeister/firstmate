@@ -1,0 +1,11 @@
+1..8
+ok - sample appends rows, counts new pids by parent, and report summarizes peaks
+ok - account-wide quota is recorded as reported and never divided by local worker-hours
+ok - a sample gap past 300 s is unknown and credits no worker-hours
+ok - a failed or unparsable quota-axi read degrades to unreported and still appends the row
+ok - render-launchd emits a 60-second LaunchAgent whose command appends a ledger row
+ok - report on an empty ledger says so
+ok - microbench and limits produce their readings
+ok - usage errors exit 2 and --help prints the contract
+FM_TEST_COMPLETE
+bash tests/fm-host-ledger.test.sh  1.98s user 7.30s system 2% cpu 5:26.60 total

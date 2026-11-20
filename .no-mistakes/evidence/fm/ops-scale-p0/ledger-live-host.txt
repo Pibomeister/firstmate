@@ -1,0 +1,58 @@
+$ sample #1
+host-ledger: 1795153726	145.42	1982	unknown	unknown	unknown	29.17	26.30	44.52	1095.19	68251868	codex=9:1342544,grok=11:1933632,droid=8:7579712,cursor-agent=12:2742080,agy=6:1664144,opencode=1:134528,claude=46:29152688	unknown	claude/all_models=26/ahead,claude/model:fable=26/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=45/ahead,cursor/pool:auto=26/ahead,cursor/pool:api=0/ahead,grok/all_products=72/ahead,grok/product:grok_build=72/ahead,grok/product:chat=72/mixed,agy/gemini=37/mixed,agy/claude_gpt=47/ahead,droid/droid_core=22/behind,droid/other_models=56/behind	3 file=/tmp/fmledg.HjzLRy/ledger-2026-11-19.tsv
+exit=0
+$ sample #2
+host-ledger: 1795153753	119.73	2098	243	27	9.00	40.62	50.72	8.64	1095.19	68058812	codex=9:1342512,grok=11:1937008,droid=8:7581536,cursor-agent=12:2730400,agy=5:1512240,opencode=1:134544,claude=47:29449376	bash=117,(bash)=72,launchd=16,timeout=10,zsh=6	unreported	9 file=/tmp/fmledg.HjzLRy/ledger-2026-11-19.tsv
+exit=0
+$ backdate prev-pids 2h, sample #3 (gap)
+host-ledger: 1795153783	119.07	2051	192	unknown	unknown	31.69	29.56	38.74	1095.19	68015776	codex=9:1342528,grok=11:1938016,droid=8:7581648,cursor-agent=11:2495584,agy=5:1512256,opencode=1:134656,claude=48:29891024	bash=94,(zsh)=25,(bash)=17,cursor-agent=12,pid76727=8	claude/all_models=26/ahead,claude/model:fable=26/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=45/ahead,cursor/pool:auto=26/ahead,cursor/pool:api=0/ahead,grok/all_products=72/ahead,grok/product:grok_build=72/ahead,grok/product:chat=72/mixed,agy/gemini=37/mixed,agy/claude_gpt=47/ahead,droid/droid_core=22/behind,droid/other_models=56/behind	3 file=/tmp/fmledg.HjzLRy/ledger-2026-11-19.tsv
+exit=0
+$ report --hours 1
+host-ledger report: rows=3 peak_new_per_s=9.00 peak_load1=145.42 min_disk_free_kib=68015776 last_disk_free_kib=68015776
+host-ledger cli: cursor-agent peak_count=12 peak_rss_kib=2742080 local_worker_hours=0.09
+host-ledger cli: droid peak_count=8 peak_rss_kib=7581648 local_worker_hours=0.06
+host-ledger cli: opencode peak_count=1 peak_rss_kib=134656 local_worker_hours=0.01
+host-ledger cli: grok peak_count=11 peak_rss_kib=1938016 local_worker_hours=0.08
+host-ledger cli: agy peak_count=6 peak_rss_kib=1664144 local_worker_hours=0.04
+host-ledger cli: codex peak_count=9 peak_rss_kib=1342544 local_worker_hours=0.07
+host-ledger cli: claude peak_count=48 peak_rss_kib=29891024 local_worker_hours=0.35
+host-ledger quota account-wide: codex/all_models last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: grok/product:chat last_pct_remaining=72 min_pct_remaining=72 last_pace=mixed
+host-ledger quota account-wide: agy/claude_gpt last_pct_remaining=47 min_pct_remaining=47 last_pace=ahead
+host-ledger quota account-wide: grok/all_products last_pct_remaining=72 min_pct_remaining=72 last_pace=ahead
+host-ledger quota account-wide: cursor/pool:auto last_pct_remaining=26 min_pct_remaining=26 last_pace=ahead
+host-ledger quota account-wide: agy/gemini last_pct_remaining=37 min_pct_remaining=37 last_pace=mixed
+host-ledger quota account-wide: claude/model:fable last_pct_remaining=26 min_pct_remaining=26 last_pace=mixed
+host-ledger quota account-wide: droid/droid_core last_pct_remaining=22 min_pct_remaining=22 last_pace=behind
+host-ledger quota account-wide: droid/other_models last_pct_remaining=56 min_pct_remaining=56 last_pace=behind
+host-ledger quota account-wide: cursor/pool:api last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: grok/product:grok_build last_pct_remaining=72 min_pct_remaining=72 last_pace=ahead
+host-ledger quota account-wide: cursor/grok_bot last_pct_remaining=45 min_pct_remaining=45 last_pace=ahead
+host-ledger quota account-wide: cursor/all_models last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: claude/all_models last_pct_remaining=26 min_pct_remaining=26 last_pace=ahead
+host-ledger tokens_per_active_agent_hour: unreported: no per-host token source
+exit=0
+$ limits
+kern.maxproc: 16000
+kern.maxprocperuid: 10666
+kern.maxfiles: 491520
+kern.num_taskthreads: 16384
+launchctl 	maxproc     10666          16000          
+launchctl 	maxfiles    256            unlimited      
+ulimit -u: 10666
+ulimit -n: 1048576
+exit=0
+$ microbench --n 20
+host-microbench: load1=115.38 n=20 (run at a quiet time for gate numbers)
+host-microbench: cached_binary ms_per_exec=14.251 n=20
+host-microbench: cached_script ms_per_exec=37.995 n=20
+host-microbench: fresh_script_with_write ms_per_exec=269.550 n=20
+host-microbench: bash_c_true ms_per_exec=41.185 n=20
+host-microbench: builtin_true_in_one_bash ms_per_exec=0.300 n=20
+host-microbench: external_true_in_one_bash ms_per_exec=40.850 n=20
+exit=0
+$ ledger file
+ts_epoch	load1	procs	new_pids	interval_s	new_per_s	cpu_user	cpu_sys	cpu_idle	swap_used_mib	disk_free_kib	quota_account_wide	quota_account_wide_unreported
+1795153726	145.42	1982	unknown	unknown	unknown	29.17	26.30	44.52	1095.19	68251868	claude/all_models=26/ahead,claude/model:fable=26/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=45/ahead,cursor/pool:auto=26/ahead,cursor/pool:api=0/ahead,grok/all_products=72/ahead,grok/product:grok_build=72/ahead,grok/product:chat=72/mixed,agy/gemini=37/mixed,agy/claude_gpt=47/ahead,droid/droid_core=22/behind,droid/other_models=56/behind	3
+1795153753	119.73	2098	243	27	9.00	40.62	50.72	8.64	1095.19	68058812	unreported	9
+1795153783	119.07	2051	192	unknown	unknown	31.69	29.56	38.74	1095.19	68015776	claude/all_models=26/ahead,claude/model:fable=26/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=45/ahead,cursor/pool:auto=26/ahead,cursor/pool:api=0/ahead,grok/all_products=72/ahead,grok/product:grok_build=72/ahead,grok/product:chat=72/mixed,agy/gemini=37/mixed,agy/claude_gpt=47/ahead,droid/droid_core=22/behind,droid/other_models=56/behind	3
