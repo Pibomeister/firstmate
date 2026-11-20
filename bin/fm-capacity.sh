@@ -39,7 +39,7 @@
 # ready PR, waits on review or merge, and frees its place exactly as the
 # project-capacity gate releases one (bin/fm-project-capacity-lib.sh). It is
 # still counted in lanes and in lanes.pr_ready. A lane that is not live
-# (idle two hours, or its terminal gone; the lanes section below owns the
+# (idle two hours and its terminal gone; the lanes section below owns the
 # rule) also frees its place and is counted in not_live. That holds unless a
 # constraint holds, in which case free_lanes=0 and reason names every
 # constraint, comma-separated, in this order:
@@ -83,7 +83,7 @@
 #   .fm-secondmate-home), machine (the first readable beat's host, else the
 #   short host name),
 #   lanes {count, pr_ready (records with a pr= line), ids, not_live,
-#     not_live_ids[{id, why idle|gone}]},
+#     not_live_ids[{id, why gone}]},
 #   cap {target (number or null), status ok|none|invalid},
 #   projects (clone directory names under projects/),
 #   pressure {level ok|warn|critical|unknown, why[], basis beat|probe|none,
@@ -218,18 +218,16 @@ if [ "$have_jq" -eq 0 ]; then
 fi
 
 # --- lanes ------------------------------------------------------------------
-# A lane holds a place only while it is live: active within the last two hours
-# and its terminal not gone. A record a finished or abandoned worker left
-# behind must not hold a place, or a cap freezes every spawn until someone
-# archives it. Activity is any change within LIVE_LANE_MIN to the task's
-# record, status, busy state, steering inbox, or the watcher's terminal marker.
-# A record changed within LIVE_LANE_GRACE_MIN keeps its place without a probe,
-# so a spawn that has not recorded its terminal yet still counts. Otherwise the
-# recorded endpoint is probed through fm_backend_target_exists, every lane in
-# one pass bounded to LIVE_LANE_PROBE_SECS; a record with no endpoint, a remote
-# one, or a lane the pass did not answer for keeps its place.
+# A lane frees its place only when it is both idle and dead: nothing changed
+# within LIVE_LANE_MIN to the task's record, status, busy state, steering
+# inbox, or the watcher's terminal marker, and its recorded endpoint is gone.
+# A record a finished or abandoned worker left behind must not hold a place, or
+# a cap freezes every spawn until someone archives it; a live worker idle on a
+# decision or a long validation keeps its place. An idle lane's endpoint is
+# probed through fm_backend_target_exists, every lane in one pass bounded to
+# LIVE_LANE_PROBE_SECS; a record with no endpoint, a remote one, or a lane the
+# pass did not answer for keeps its place.
 LIVE_LANE_MIN=120
-LIVE_LANE_GRACE_MIN=10
 LIVE_LANE_PROBE_SECS=20
 
 # lane_read_meta <meta>: one fork-free pass over a task record, setting
@@ -295,9 +293,6 @@ recent_files() {  # <minutes>
 recent_active="
 $(recent_files "$LIVE_LANE_MIN")
 "
-recent_grace="
-$(recent_files "$LIVE_LANE_GRACE_MIN")
-"
 is_listed() {  # <list> <path>
   case "$1" in *"
 $2
@@ -336,13 +331,7 @@ for meta in "$STATE"/*.meta; do
     ${LM_TARGET:+"$STATE/.hash-$(window_key "$LM_TARGET")"}; do
     is_listed "$recent_active" "$f" && { active=1; break; }
   done
-  if [ "$active" = 0 ]; then
-    not_live=$((not_live + 1))
-    not_live_ids="$not_live_ids$id idle
-"
-    continue
-  fi
-  is_listed "$recent_grace" "$meta" && continue
+  [ "$active" = 0 ] || continue
   [ -z "$LM_REMOTE" ] || continue
   case "$LM_TARGET" in ''|*[[:space:]]*) continue ;; esac
   probe_rows="$probe_rows$id $LM_BACKEND $LM_TARGET
@@ -755,7 +744,7 @@ if [ "$mode" = report ]; then
     invalid) echo "Lanes: $lanes running, target unreadable ($target_error)." ;;
     *) echo "Lanes: $lanes running of $target target$([ "$pr_ready" -eq 0 ] || printf ' (%s with a ready PR, holding no place)' "$pr_ready"), $free_lanes open." ;;
   esac
-  [ "$not_live" -eq 0 ] || echo "Not live: $not_live lane record(s) idle for 2h or with a gone terminal, holding no place: $(printf '%s' "$not_live_ids" | paste -sd ',' - | sed 's/,/, /g')."
+  [ "$not_live" -eq 0 ] || echo "Not live: $not_live lane record(s) idle for 2h with a gone terminal, holding no place: $(printf '%s' "$not_live_ids" | paste -sd ',' - | sed 's/,/, /g')."
   [ "$secondmates" -eq 0 ] || echo "Secondmates: $secondmates (hold no lane)."
   mem_text="${mem_free_pct}%"; [ "$mem_free_pct" != unknown ] || mem_text=unknown
   disk_text="$disk_free_mb MB"; [ "$disk_free_mb" != unknown ] || disk_text=unknown
