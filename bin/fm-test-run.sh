@@ -916,8 +916,8 @@ tests/fm-herdr-session-cleanup.test.sh 10131
 tests/fm-herdr-submit-confirm-live-e2e.test.sh 84
 tests/fm-herdr-version-floor-live-e2e.test.sh 74
 tests/fm-home-summary-refresh.test.sh 48737
-tests/fm-host-cleanup.test.sh 5000
-tests/fm-host-ledger.test.sh 5000
+tests/fm-host-cleanup.test.sh 2500
+tests/fm-host-ledger.test.sh 2500
 tests/fm-host-mirror-live-e2e.test.sh 70
 tests/fm-host-mirror.test.sh 14895
 tests/fm-hung-ladder.test.sh 45000
