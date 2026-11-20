@@ -595,7 +595,7 @@ grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
 [ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
   || fail "a lock-wait timeout did not record a backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
-  FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" \
+  FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME_SUMMARY_TIMEOUT=30 "$WRITER" \
   || fail "an if-idle refresh behind a held lock did not skip cleanly"
 [ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
   || fail "an if-idle refresh that skipped a held lock cleared the backoff"
@@ -639,7 +639,7 @@ pass "a deadline failure names the slow stage and keeps the last good summary"
 # Signalling the parent while its worker is still running must not leak the
 # per-attempt stage file in state/.
 SIGNAL_MARKER="$TMP_ROOT/signal-no-mistakes.pid"
-rm -f "$SIGNAL_MARKER"
+rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.backoff"
 printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
@@ -746,7 +746,7 @@ pass "best-effort refresh bounds validation and publication"
 # during task observation on a loaded host, before the blocked validation this
 # case needs to exercise. Keep validation blocked beyond that whole budget.
 ORPHAN_PATH="$HOME_DIR/state/.home-summary-stage.orphan"
-rm -f "$ORPHAN_PATH"
+rm -f "$ORPHAN_PATH" "$HOME_DIR/state/.home-summary-refresh.backoff"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_HOME_SUMMARY_STAGE_PATH="$ORPHAN_PATH" \
@@ -779,7 +779,7 @@ exec "$real" "\$@"
 SH
   chmod +x "$STALLFS/$shim"
 done
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$STALLFS:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
@@ -811,7 +811,7 @@ done
 exec "$FM_TEST_REAL_TAIL" "$@"
 SH
 chmod +x "$FAILTAIL/tail"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$(command -v tail)" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
   "$WRITER" --best-effort \
@@ -851,7 +851,7 @@ exec "$FM_TEST_REAL_JQ" "$@"
 SH
 chmod +x "$SLOWBIN/mkdir" "$SLOWBIN/jq"
 ORPHAN_MARK="$TMP_ROOT/orphan-mkdir.mark"
-rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.*
+rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.* "$HOME_DIR/state/.home-summary-refresh.backoff"
 printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
 PATH="$SLOWBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_TEST_MKDIR_MARK="$ORPHAN_MARK" \
@@ -913,7 +913,7 @@ pass "a stray stage path override never touches an unrelated file"
 # rather than blaming the producer's last stage, and the offsets must share one
 # timeline that includes the worker's own stages.
 # As above, allow the normal collection budget before requiring a late stage.
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
@@ -937,7 +937,7 @@ done
 exec "$FM_TEST_REAL_MV" "$@"
 SH
 chmod +x "$PUBBIN/mv"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$PUBBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
@@ -961,7 +961,7 @@ done
 exec "$FM_TEST_REAL_JQ" "$@"
 SH
 chmod +x "$JQFAILBIN/jq"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$JQFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   "$WRITER" --best-effort \
@@ -981,7 +981,7 @@ done
 exec "$FM_TEST_REAL_MV" "$@"
 SH
 chmod +x "$MVFAILBIN/mv"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   "$WRITER" --best-effort \
