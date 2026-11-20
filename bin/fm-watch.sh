@@ -3841,7 +3841,7 @@ away_gate_council_tick() {  # [now-epoch]
   local now=${1:-} config="$CONFIG/gate-council" roster projects after ak
   local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
   local claim_file="$STATE/.away-gate-council-claims" claim_lock meta project findings
-  local due_task='' due_key='' due_opened='' due_findings='' dir id intent='' record_error
+  local due_task='' due_key='' due_opened='' due_findings='' dir id intent='' record_error held
   GATE_COUNCIL_WAKE=
   [ -e "$config" ] || [ -L "$config" ] || return 0
   [ -f "$config" ] && [ -r "$config" ] && [ ! -L "$config" ] \
@@ -3882,7 +3882,7 @@ away_gate_council_tick() {  # [now-epoch]
     project=$(sed -n 's/^project=//p' "$meta" | head -n 1)
     gate_council_project_allowed "$projects" "$project" || continue
     status_is_paused_or_captain_held "$(status_declared_wait_line "$f")" && continue
-    gate_council_task_held "$task" && continue
+    held=
     open=$(status_open_decisions_incremental "$f" '' timed) || return 1
     while IFS=$'\t' read -r key verb opened _ note; do
       [ "$verb" = needs-decision ] || continue
@@ -3893,6 +3893,11 @@ away_gate_council_tick() {  # [now-epoch]
       [ -z "$(gate_council_claim_state "$claim_file" "$task" "$key" "$opened")" ] || continue
       findings=$(gate_council_findings_path "$task" "$note") || continue
       if [ -z "$due_opened" ] || [ "$opened" -lt "$due_opened" ]; then
+        if [ -z "$held" ]; then
+          held=no
+          gate_council_task_held "$task" && held=yes
+        fi
+        [ "$held" = no ] || continue
         due_task=$task; due_key=$key; due_opened=$opened; due_findings=$findings
       fi
     done <<EOT

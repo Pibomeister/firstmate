@@ -582,6 +582,25 @@ test_gate_council_hold_lookup_failure_counts_as_held() {
   pass 'a failed captain-hold lookup counts as held and skips the council'
 }
 
+test_gate_council_held_task_does_not_block_other_task() {
+  local claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir -p "$FM_HOME/data/held"
+  printf 'x\n' > "$FM_HOME/data/held/nm-r1-findings.txt"
+  printf 'project=/somewhere/projects/allowed-proj\nkind=ship\n' > "$STATE/held.meta"
+  printf 'needs-decision [at=500] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' \
+    "$FM_HOME/data/held/nm-r1-findings.txt" > "$STATE/held.status"
+  "$ROOT/bin/fm-captain-hold.sh" hold held --title 'Held work' --reason 'captain call' >/dev/null \
+    || fail 'could not place the test task on a captain hold'
+  away_gate_council_tick 4600
+  ! grep -q '^held'$'\t' "$claims" 2>/dev/null || fail 'a captain-held task started a council'
+  grep -q '^worker'$'\t''nm-r1-review'$'\t''1000'$'\t''running' "$claims" \
+    || fail 'an older gate on a held task blocked the council for an unheld task'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'a held task with an older gate does not block the council for another task'
+}
+
 test_gate_council_unreadable_status_keeps_ruling() {
   local dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000" claims="$STATE/.away-gate-council-claims"
   gate_council_setup
@@ -653,5 +672,6 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_gate_council_off_and_filters test_gate_council_runs_once_and_surfaces \
   test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config \
   test_gate_council_refuses_findings_outside_task_data test_gate_council_hold_lookup_failure_counts_as_held \
+  test_gate_council_held_task_does_not_block_other_task \
   test_gate_council_unreadable_status_keeps_ruling test_gate_council_status_read_failure_keeps_ruling \
   test_invalid_gate_council_config_keeps_watcher_running
