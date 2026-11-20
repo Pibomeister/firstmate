@@ -1,0 +1,7 @@
+fm-test-queue: ticket 2277, position 3: waiting behind 2 earlier ticket(s)
+fm-test-queue: ticket 2277, position 1: all 2 slot(s) busy
+fm-test-queue: syncing snapshot delta to hetzner-test
+fm-test-queue: offloading to hetzner-test (verified snapshot of {run-worktree})
+fm-test-queue: ticket 2277 served
+bash: ~/.no-mistakes/evidence/01M7VAANBDDGP6J0WF62558E4S/six-cases-r4.test.sh: No such file or directory
+QUEUE_RC=127

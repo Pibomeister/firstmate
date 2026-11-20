@@ -1,0 +1,2 @@
+ELAPSED=28
+ok - fm-test-queue.sh: warm delta verified in 28s; mismatch falls back and uncertain execution does not

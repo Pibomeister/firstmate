@@ -1,0 +1,2019 @@
++0:fm-test-queue.sh:147 set -u
++0:fm-test-queue.sh:148 set +m
++0:fm-test-queue.sh:149 CALLER_LC_ALL_SET=
++0:fm-test-queue.sh:150 CALLER_LC_ALL=
++0:fm-test-queue.sh:151 export LC_ALL=C
++0:fm-test-queue.sh:151 LC_ALL=C
++0:fm-test-queue.sh:172 SPOOL=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool
++0:fm-test-queue.sh:173 case "$SPOOL" in
++0:fm-test-queue.sh:174 CONFIG_FILE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/config
++0:fm-test-queue.sh:175 TICKETS=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets
++0:fm-test-queue.sh:176 LOCK=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++++0:fm-test-queue.sh:177 dirname {run-worktree}/bin/fm-test-queue.sh
+++0:fm-test-queue.sh:177 CDPATH=
+++0:fm-test-queue.sh:177 cd {run-worktree}/bin
+++0:fm-test-queue.sh:177 pwd -P
++0:fm-test-queue.sh:177 SCRIPT_DIR={run-worktree}/bin
++0:fm-test-queue.sh:179 . {run-worktree}/bin/fm-test-queue-remote.sh
+++0:fm-test-queue-remote.sh:5 REMOTE_HOST=
+++0:fm-test-queue-remote.sh:5 REMOTE_DIR=
+++0:fm-test-queue-remote.sh:5 REMOTE_ROOT=
+++0:fm-test-queue-remote.sh:5 REMOTE_CWD=
+++0:fm-test-queue-remote.sh:5 REMOTE_LOCAL=
+++0:fm-test-queue-remote.sh:5 REMOTE_CACHE=
+++0:fm-test-queue-remote.sh:6 REMOTE_LOCK_HOST=
+++0:fm-test-queue-remote.sh:7 SSH_OPTIONS=(-o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2)
++0:fm-test-queue.sh:272 LOCK_TOKEN=
++0:fm-test-queue.sh:273 LOCK_GENERATION=
++0:fm-test-queue.sh:274 LOCK_CANDIDATE=
++0:fm-test-queue.sh:275 HAVE_LOCK=0
++0:fm-test-queue.sh:341 T_PID=
++0:fm-test-queue.sh:341 T_START=
++0:fm-test-queue.sh:341 T_CHILD_PID=
++0:fm-test-queue.sh:341 T_CHILD_START=
++0:fm-test-queue.sh:341 T_PGID=
++0:fm-test-queue.sh:341 T_CALLER=
++0:fm-test-queue.sh:341 T_HOLDER_PID=
++0:fm-test-queue.sh:341 T_HOLDER_START=
++0:fm-test-queue.sh:341 T_SIBLINGS=
++0:fm-test-queue.sh:341 T_ENQUEUED=
++0:fm-test-queue.sh:341 T_SERVED=
++0:fm-test-queue.sh:341 T_TASK=
++0:fm-test-queue.sh:341 T_LABEL=
++0:fm-test-queue.sh:605 MY_TICKET=
++0:fm-test-queue.sh:606 HOLDER_PID=
++0:fm-test-queue.sh:606 HOLDER_START=
++0:fm-test-queue.sh:633 MY_NUMBER=
++0:fm-test-queue.sh:679 WAIT_REASON=
++0:fm-test-queue.sh:679 POSITION=0
++0:fm-test-queue.sh:679 WANT_REMOTE=0
++0:fm-test-queue.sh:679 OFFLOAD_LISTED=0
++0:fm-test-queue.sh:848 case "${1:-}" in
++0:fm-test-queue.sh:850 shift
++0:fm-test-queue.sh:850 cmd_run -- sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++0:fm-test-queue.sh:725 local label= n last= remote_retry=0 now
++0:fm-test-queue.sh:726 '[' 4 -gt 0 ']'
++0:fm-test-queue.sh:727 case "$1" in
++0:fm-test-queue.sh:729 shift
++0:fm-test-queue.sh:729 break
++0:fm-test-queue.sh:733 '[' 3 -gt 0 ']'
++0:fm-test-queue.sh:734 load_config
++0:fm-test-queue.sh:183 local key value line
++0:fm-test-queue.sh:184 SLOTS=2
++0:fm-test-queue.sh:185 LOAD_CEILING=16
++0:fm-test-queue.sh:186 REMOTE_HOSTS=
++0:fm-test-queue.sh:187 OFFLOAD_THRESHOLD=8
++0:fm-test-queue.sh:188 OFFLOAD_PROJECTS=firstmate
++0:fm-test-queue.sh:189 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/config ']'
++0:fm-test-queue.sh:190 IFS=
++0:fm-test-queue.sh:190 read -r line
++0:fm-test-queue.sh:191 line=slots=1
+++0:fm-test-queue.sh:192 printf %s slots=1
+++0:fm-test-queue.sh:192 tr -d '[:space:]'
++0:fm-test-queue.sh:192 line=slots=1
++0:fm-test-queue.sh:193 '[' -n slots=1 ']'
++0:fm-test-queue.sh:194 key=slots
++0:fm-test-queue.sh:195 value=1
++0:fm-test-queue.sh:196 '[' slots '!=' slots=1 ']'
++0:fm-test-queue.sh:197 case "$key" in
++0:fm-test-queue.sh:198 SLOTS=1
++0:fm-test-queue.sh:190 IFS=
++0:fm-test-queue.sh:190 read -r line
++0:fm-test-queue.sh:191 line=load_ceiling=150
+++0:fm-test-queue.sh:192 printf %s load_ceiling=150
+++0:fm-test-queue.sh:192 tr -d '[:space:]'
++0:fm-test-queue.sh:192 line=load_ceiling=150
++0:fm-test-queue.sh:193 '[' -n load_ceiling=150 ']'
++0:fm-test-queue.sh:194 key=load_ceiling
++0:fm-test-queue.sh:195 value=150
++0:fm-test-queue.sh:196 '[' load_ceiling '!=' load_ceiling=150 ']'
++0:fm-test-queue.sh:197 case "$key" in
++0:fm-test-queue.sh:199 LOAD_CEILING=150
++0:fm-test-queue.sh:190 IFS=
++0:fm-test-queue.sh:190 read -r line
++0:fm-test-queue.sh:191 line=remote_hosts=m3
+++0:fm-test-queue.sh:192 tr -d '[:space:]'
+++0:fm-test-queue.sh:192 printf %s remote_hosts=m3
++0:fm-test-queue.sh:192 line=remote_hosts=m3
++0:fm-test-queue.sh:193 '[' -n remote_hosts=m3 ']'
++0:fm-test-queue.sh:194 key=remote_hosts
++0:fm-test-queue.sh:195 value=m3
++0:fm-test-queue.sh:196 '[' remote_hosts '!=' remote_hosts=m3 ']'
++0:fm-test-queue.sh:197 case "$key" in
++0:fm-test-queue.sh:200 REMOTE_HOSTS=m3
++0:fm-test-queue.sh:190 IFS=
++0:fm-test-queue.sh:190 read -r line
++0:fm-test-queue.sh:190 '[' -n '' ']'
++0:fm-test-queue.sh:207 POLL=0.1
++0:fm-test-queue.sh:208 is_uint 1
++0:fm-test-queue.sh:164 case "$1" in
++0:fm-test-queue.sh:208 '[' 1 -gt 0 ']'
++0:fm-test-queue.sh:209 is_positive_number 150
++0:fm-test-queue.sh:168 case "$1" in
++0:fm-test-queue.sh:169 awk -v v=150 'BEGIN { exit !(v + 0 > 0) }'
++0:fm-test-queue.sh:210 is_positive_number 8
++0:fm-test-queue.sh:168 case "$1" in
++0:fm-test-queue.sh:169 awk -v v=8 'BEGIN { exit !(v + 0 > 0) }'
++0:fm-test-queue.sh:211 case "$REMOTE_HOSTS" in
++0:fm-test-queue.sh:212 case "$OFFLOAD_PROJECTS" in
++0:fm-test-queue.sh:213 is_positive_number 0.1
++0:fm-test-queue.sh:168 case "$1" in
++0:fm-test-queue.sh:169 awk -v v=0.1 'BEGIN { exit !(v + 0 > 0) }'
++0:fm-test-queue.sh:737 '[' -n '' ']'
++0:fm-test-queue.sh:742 '[' -n '' ']'
++0:fm-test-queue.sh:742 label='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
+++0:fm-test-queue.sh:743 printf %s 'sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
+++0:fm-test-queue.sh:743 tr '\n\r' '  '
++0:fm-test-queue.sh:743 label='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++0:fm-test-queue.sh:745 trap cleanup EXIT
++0:fm-test-queue.sh:746 trap 'exit 130' INT
++0:fm-test-queue.sh:747 trap 'exit 143' TERM
++0:fm-test-queue.sh:748 trap 'exit 129' HUP
++0:fm-test-queue.sh:749 trap 'exit 131' QUIT
++0:fm-test-queue.sh:751 '[' -n m3 ']'
++0:fm-test-queue.sh:751 '[' '' '!=' 1 ']'
++0:fm-test-queue.sh:751 remote_project_listed
++0:fm-test-queue-remote.sh:43 local url name
+++0:fm-test-queue-remote.sh:44 git config --get remote.origin.url
++0:fm-test-queue-remote.sh:44 url=https://example.invalid/owner/firstmate.git
++0:fm-test-queue-remote.sh:45 url=https://example.invalid/owner/firstmate.git
++0:fm-test-queue-remote.sh:46 url=https://example.invalid/owner/firstmate
++0:fm-test-queue-remote.sh:47 name=firstmate
++0:fm-test-queue-remote.sh:48 '[' -n firstmate ']'
++0:fm-test-queue-remote.sh:49 case ",$OFFLOAD_PROJECTS," in
++0:fm-test-queue-remote.sh:49 return 0
++0:fm-test-queue.sh:752 OFFLOAD_LISTED=1
++0:fm-test-queue.sh:755 take_ticket 'sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++0:fm-test-queue.sh:635 local n f last=
++0:fm-test-queue.sh:637 chmod 700 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets
++0:fm-test-queue.sh:638 '[' -w /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool ']'
++0:fm-test-queue.sh:638 '[' -w /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets ']'
++0:fm-test-queue.sh:639 lock_acquire
++0:fm-test-queue.sh:282 local tries=0 pid start age m generation owner lock_pid=70062
+++0:fm-test-queue.sh:283 pid_start 70062
+++0:fm-test-queue.sh:233 TZ=UTC
+++0:fm-test-queue.sh:233 LC_ALL=C
+++0:fm-test-queue.sh:233 ps -p 70062 -o lstart=
+++0:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++0:fm-test-queue.sh:283 LOCK_TOKEN='70062 Fri Nov 20 03:35:51 2026'
+++0:fm-test-queue.sh:284 mktemp -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.XXXXXXXX
++1:fm-test-queue.sh:284 LOCK_CANDIDATE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.LIovPNej
++1:fm-test-queue.sh:285 mkdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.LIovPNej/lock
++1:fm-test-queue.sh:286 umask 077
++1:fm-test-queue.sh:286 printf '%s\n' '70062 Fri Nov 20 03:35:51 2026'
++1:fm-test-queue.sh:287 :
++1:fm-test-queue.sh:288 '[' '!' -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock ']'
++1:fm-test-queue.sh:288 mv /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.LIovPNej/lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/
+++1:fm-test-queue.sh:289 path_identity /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++1:fm-test-queue.sh:278 stat -c %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++1:fm-test-queue.sh:278 stat -f %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++1:fm-test-queue.sh:289 LOCK_GENERATION=16777232:1375523479
++1:fm-test-queue.sh:290 HAVE_LOCK=1
++1:fm-test-queue.sh:291 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.LIovPNej
++1:fm-test-queue.sh:292 LOCK_CANDIDATE=
++1:fm-test-queue.sh:293 return 0
++1:fm-test-queue.sh:640 reclaim_dead
++1:fm-test-queue.sh:592 local f
+++1:fm-test-queue.sh:591 ticket_files
+++1:fm-test-queue.sh:376 local f
++1:fm-test-queue.sh:593 IFS=
++1:fm-test-queue.sh:593 read -r f
+++1:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++1:fm-test-queue.sh:378 case "$f" in
+++1:fm-test-queue.sh:379 '[' -f '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/[0-9]*' ']'
++1:fm-test-queue.sh:641 n=
++1:fm-test-queue.sh:642 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/next ']'
++1:fm-test-queue.sh:642 read -r n
++1:fm-test-queue.sh:643 is_uint 2
++1:fm-test-queue.sh:164 case "$1" in
++1:fm-test-queue.sh:644 n=2
++1:fm-test-queue.sh:645 IFS=
++1:fm-test-queue.sh:645 read -r f
+++1:fm-test-queue.sh:634 ticket_files
+++1:fm-test-queue.sh:376 local f
+++1:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++1:fm-test-queue.sh:378 case "$f" in
+++1:fm-test-queue.sh:379 '[' -f '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/[0-9]*' ']'
++1:fm-test-queue.sh:646 '[' -n '' ']'
++1:fm-test-queue.sh:649 T_PID=70062
+++1:fm-test-queue.sh:650 pid_start 70062
+++1:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+++1:fm-test-queue.sh:233 TZ=UTC
+++1:fm-test-queue.sh:233 LC_ALL=C
+++1:fm-test-queue.sh:233 ps -p 70062 -o lstart=
++1:fm-test-queue.sh:650 T_START='Fri Nov 20 03:35:51 2026'
++1:fm-test-queue.sh:651 T_CHILD_PID=
++1:fm-test-queue.sh:652 T_CHILD_START=
++1:fm-test-queue.sh:653 T_HOLDER_PID=
++1:fm-test-queue.sh:653 T_HOLDER_START=
++1:fm-test-queue.sh:653 T_SIBLINGS=
+++1:fm-test-queue.sh:654 tr -d '[:space:]'
+++1:fm-test-queue.sh:654 ps -p 70062 -o pgid=
++1:fm-test-queue.sh:654 T_PGID=69935
++1:fm-test-queue.sh:655 T_CALLER=70058
++1:fm-test-queue.sh:658 '[' 69935 '!=' 70062 ']'
++1:fm-test-queue.sh:659 T_PGID=
++1:fm-test-queue.sh:659 T_CALLER=
+++1:fm-test-queue.sh:661 date +%s
++1:fm-test-queue.sh:661 T_ENQUEUED=1795145752
++1:fm-test-queue.sh:662 T_SERVED=
++1:fm-test-queue.sh:663 T_TASK=
++1:fm-test-queue.sh:664 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++1:fm-test-queue.sh:665 :
+++1:fm-test-queue.sh:666 printf %s/%010d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets 2
++1:fm-test-queue.sh:666 f=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++1:fm-test-queue.sh:667 '[' -e /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++1:fm-test-queue.sh:667 break
++1:fm-test-queue.sh:670 ticket_write /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++1:fm-test-queue.sh:369 local tmp=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062
++1:fm-test-queue.sh:370 umask 077
++1:fm-test-queue.sh:370 printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nholder_pid=%s\nholder_start=%s\nsiblings=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' 70062 'Fri Nov 20 03:35:51 2026' '' '' '' '' '' '' '' 1795145752 '' '' 'sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++1:fm-test-queue.sh:372 mv -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++1:fm-test-queue.sh:671 MY_TICKET=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++1:fm-test-queue.sh:672 MY_NUMBER=2
++1:fm-test-queue.sh:673 umask 077
++1:fm-test-queue.sh:673 printf '%s\n' 3
++1:fm-test-queue.sh:674 lock_release
++1:fm-test-queue.sh:330 '[' 1 = 1 ']'
++1:fm-test-queue.sh:331 HAVE_LOCK=0
++1:fm-test-queue.sh:332 lock_break 16777232:1375523479 '70062 Fri Nov 20 03:35:51 2026'
++1:fm-test-queue.sh:319 local owner=
++1:fm-test-queue.sh:320 '[' -n 16777232:1375523479 ']'
++1:fm-test-queue.sh:321 cd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++1:fm-test-queue.sh:322 path_identity .
+++1:fm-test-queue.sh:278 stat -c %d:%i .
+++1:fm-test-queue.sh:278 stat -f %d:%i .
++1:fm-test-queue.sh:322 '[' 16777232:1375523479 = 16777232:1375523479 ']'
+++1:fm-test-queue.sh:323 cat owner
++1:fm-test-queue.sh:323 owner='70062 Fri Nov 20 03:35:51 2026'
++1:fm-test-queue.sh:324 '[' '70062 Fri Nov 20 03:35:51 2026' = '70062 Fri Nov 20 03:35:51 2026' ']'
++1:fm-test-queue.sh:325 rm -f owner
++1:fm-test-queue.sh:326 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++1:fm-test-queue.sh:756 n=2
++1:fm-test-queue.sh:758 :
++1:fm-test-queue.sh:759 lock_acquire
++1:fm-test-queue.sh:282 local tries=0 pid start age m generation owner lock_pid=70062
+++1:fm-test-queue.sh:283 pid_start 70062
+++1:fm-test-queue.sh:233 TZ=UTC
+++1:fm-test-queue.sh:233 LC_ALL=C
+++1:fm-test-queue.sh:233 ps -p 70062 -o lstart=
+++1:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++2:fm-test-queue.sh:283 LOCK_TOKEN='70062 Fri Nov 20 03:35:51 2026'
+++2:fm-test-queue.sh:284 mktemp -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.XXXXXXXX
++2:fm-test-queue.sh:284 LOCK_CANDIDATE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.quNsLXcM
++2:fm-test-queue.sh:285 mkdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.quNsLXcM/lock
++2:fm-test-queue.sh:286 umask 077
++2:fm-test-queue.sh:286 printf '%s\n' '70062 Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:287 :
++2:fm-test-queue.sh:288 '[' '!' -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock ']'
++2:fm-test-queue.sh:288 mv /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.quNsLXcM/lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/
+++2:fm-test-queue.sh:289 path_identity /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++2:fm-test-queue.sh:278 stat -c %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++2:fm-test-queue.sh:278 stat -f %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++2:fm-test-queue.sh:289 LOCK_GENERATION=16777232:1375524061
++2:fm-test-queue.sh:290 HAVE_LOCK=1
++2:fm-test-queue.sh:291 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.quNsLXcM
++2:fm-test-queue.sh:292 LOCK_CANDIDATE=
++2:fm-test-queue.sh:293 return 0
++2:fm-test-queue.sh:760 reclaim_dead
++2:fm-test-queue.sh:592 local f
++2:fm-test-queue.sh:593 IFS=
++2:fm-test-queue.sh:593 read -r f
+++2:fm-test-queue.sh:591 ticket_files
+++2:fm-test-queue.sh:376 local f
+++2:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++2:fm-test-queue.sh:378 case "$f" in
+++2:fm-test-queue.sh:379 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
+++2:fm-test-queue.sh:379 printf '%s\n' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++2:fm-test-queue.sh:594 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++2:fm-test-queue.sh:344 local line k v
++2:fm-test-queue.sh:345 T_PID=
++2:fm-test-queue.sh:345 T_START=
++2:fm-test-queue.sh:345 T_CHILD_PID=
++2:fm-test-queue.sh:345 T_CHILD_START=
++2:fm-test-queue.sh:345 T_PGID=
++2:fm-test-queue.sh:345 T_CALLER=
++2:fm-test-queue.sh:345 T_HOLDER_PID=
++2:fm-test-queue.sh:345 T_HOLDER_START=
++2:fm-test-queue.sh:345 T_SIBLINGS=
++2:fm-test-queue.sh:345 T_ENQUEUED=
++2:fm-test-queue.sh:345 T_SERVED=
++2:fm-test-queue.sh:345 T_TASK=
++2:fm-test-queue.sh:345 T_LABEL=
++2:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=pid
++2:fm-test-queue.sh:349 v=70062
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:351 T_PID=70062
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=start
++2:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=child_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:353 T_CHILD_PID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=child_start
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:354 T_CHILD_START=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=pgid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:355 T_PGID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=caller_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:356 T_CALLER=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=holder_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:357 T_HOLDER_PID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=holder_start
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:358 T_HOLDER_START=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=siblings
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:359 T_SIBLINGS=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=enqueued
++2:fm-test-queue.sh:349 v=1795145752
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=served
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:361 T_SERVED=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=task
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:362 T_TASK=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=label
++2:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:597 ticket_group_reapable stale
++2:fm-test-queue.sh:475 local caller_group
++2:fm-test-queue.sh:476 is_uint ''
++2:fm-test-queue.sh:164 case "$1" in
++2:fm-test-queue.sh:164 return 1
++2:fm-test-queue.sh:476 return 1
++2:fm-test-queue.sh:600 ticket_alive
++2:fm-test-queue.sh:399 owner_alive 70062 'Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:247 local now_start
++2:fm-test-queue.sh:248 is_uint 70062
++2:fm-test-queue.sh:164 case "$1" in
++2:fm-test-queue.sh:249 kill -0 70062
++2:fm-test-queue.sh:250 '[' -n 'Fri Nov 20 03:35:51 2026' ']'
+++2:fm-test-queue.sh:251 pid_start 70062
+++2:fm-test-queue.sh:233 TZ=UTC
+++2:fm-test-queue.sh:233 LC_ALL=C
+++2:fm-test-queue.sh:233 ps -p 70062 -o lstart=
+++2:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++2:fm-test-queue.sh:251 now_start='Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:252 '[' -z 'Fri Nov 20 03:35:51 2026' ']'
++2:fm-test-queue.sh:252 '[' 'Fri Nov 20 03:35:51 2026' = 'Fri Nov 20 03:35:51 2026' ']'
++2:fm-test-queue.sh:593 IFS=
++2:fm-test-queue.sh:593 read -r f
++2:fm-test-queue.sh:761 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++2:fm-test-queue.sh:762 admission_check
++2:fm-test-queue.sh:681 local f serving=0 head= pos=0 load=
++2:fm-test-queue.sh:682 POSITION=0
++2:fm-test-queue.sh:683 WANT_REMOTE=0
++2:fm-test-queue.sh:684 IFS=
++2:fm-test-queue.sh:684 read -r f
+++2:fm-test-queue.sh:680 ticket_files
+++2:fm-test-queue.sh:376 local f
+++2:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++2:fm-test-queue.sh:378 case "$f" in
+++2:fm-test-queue.sh:379 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
+++2:fm-test-queue.sh:379 printf '%s\n' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++2:fm-test-queue.sh:685 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++2:fm-test-queue.sh:344 local line k v
++2:fm-test-queue.sh:345 T_PID=
++2:fm-test-queue.sh:345 T_START=
++2:fm-test-queue.sh:345 T_CHILD_PID=
++2:fm-test-queue.sh:345 T_CHILD_START=
++2:fm-test-queue.sh:345 T_PGID=
++2:fm-test-queue.sh:345 T_CALLER=
++2:fm-test-queue.sh:345 T_HOLDER_PID=
++2:fm-test-queue.sh:345 T_HOLDER_START=
++2:fm-test-queue.sh:345 T_SIBLINGS=
++2:fm-test-queue.sh:345 T_ENQUEUED=
++2:fm-test-queue.sh:345 T_SERVED=
++2:fm-test-queue.sh:345 T_TASK=
++2:fm-test-queue.sh:345 T_LABEL=
++2:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=pid
++2:fm-test-queue.sh:349 v=70062
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:351 T_PID=70062
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=start
++2:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=child_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:353 T_CHILD_PID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=child_start
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:354 T_CHILD_START=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=pgid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:355 T_PGID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=caller_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:356 T_CALLER=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=holder_pid
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:357 T_HOLDER_PID=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=holder_start
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:358 T_HOLDER_START=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=siblings
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:359 T_SIBLINGS=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=enqueued
++2:fm-test-queue.sh:349 v=1795145752
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=served
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:361 T_SERVED=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=task
++2:fm-test-queue.sh:349 v=
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:362 T_TASK=
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:348 k=label
++2:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++2:fm-test-queue.sh:350 case "$k" in
++2:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++2:fm-test-queue.sh:347 IFS=
++2:fm-test-queue.sh:347 read -r line
++2:fm-test-queue.sh:686 '[' -n '' ']'
++2:fm-test-queue.sh:689 pos=1
++2:fm-test-queue.sh:690 '[' -n '' ']'
++2:fm-test-queue.sh:690 head=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++2:fm-test-queue.sh:691 '[' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 = /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++2:fm-test-queue.sh:691 POSITION=1
++2:fm-test-queue.sh:684 IFS=
++2:fm-test-queue.sh:684 read -r f
++2:fm-test-queue.sh:694 '[' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 '!=' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++2:fm-test-queue.sh:696 '[' 0 -ge 1 ']'
+++2:fm-test-queue.sh:699 load1
+++2:fm-test-queue.sh:218 local v=
+++2:fm-test-queue.sh:219 '[' 1 = 1 ']'
+++2:fm-test-queue.sh:219 '[' -n /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/load ']'
+++2:fm-test-queue.sh:220 read -r v _
+++2:fm-test-queue.sh:226 case "$v" in
+++2:fm-test-queue.sh:227 printf '%s\n' 9
++2:fm-test-queue.sh:699 load=9
++2:fm-test-queue.sh:700 '[' -z '' ']'
++2:fm-test-queue.sh:700 '[' 1 = 1 ']'
++2:fm-test-queue.sh:701 '[' -n 9 ']'
++2:fm-test-queue.sh:701 awk -v l=9 -v c=8 'BEGIN { exit !(l + 0 > c + 0) }'
++2:fm-test-queue.sh:702 WANT_REMOTE=1
++2:fm-test-queue.sh:704 '[' -z '' ']'
++2:fm-test-queue.sh:704 '[' -n 9 ']'
++2:fm-test-queue.sh:704 awk -v l=9 -v c=150 'BEGIN { exit !(l + 0 < c + 0) }'
++2:fm-test-queue.sh:708 '[' -z 9 ']'
++2:fm-test-queue.sh:711 WAIT_REASON=
+++2:fm-test-queue.sh:763 date +%s
++2:fm-test-queue.sh:763 now=1795145753
++2:fm-test-queue.sh:764 '[' 1 = 1 ']'
++2:fm-test-queue.sh:764 '[' 1795145753 -ge 0 ']'
++2:fm-test-queue.sh:765 lock_release
++2:fm-test-queue.sh:330 '[' 1 = 1 ']'
++2:fm-test-queue.sh:331 HAVE_LOCK=0
++2:fm-test-queue.sh:332 lock_break 16777232:1375524061 '70062 Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:319 local owner=
++2:fm-test-queue.sh:320 '[' -n 16777232:1375524061 ']'
++2:fm-test-queue.sh:321 cd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++2:fm-test-queue.sh:322 path_identity .
+++2:fm-test-queue.sh:278 stat -c %d:%i .
+++2:fm-test-queue.sh:278 stat -f %d:%i .
++2:fm-test-queue.sh:322 '[' 16777232:1375524061 = 16777232:1375524061 ']'
+++2:fm-test-queue.sh:323 cat owner
++2:fm-test-queue.sh:323 owner='70062 Fri Nov 20 03:35:51 2026'
++2:fm-test-queue.sh:324 '[' '70062 Fri Nov 20 03:35:51 2026' = '70062 Fri Nov 20 03:35:51 2026' ']'
++2:fm-test-queue.sh:325 rm -f owner
++2:fm-test-queue.sh:326 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++2:fm-test-queue.sh:766 remote_prepare
++2:fm-test-queue-remote.sh:283 local root host rel hosts key reply dir cache rhead transport note valid
++2:fm-test-queue-remote.sh:284 local local_head local_tree manifest_sha git_mode finalize heal_marker heal_c=
++2:fm-test-queue-remote.sh:285 command -v ssh
++2:fm-test-queue-remote.sh:285 command -v git
++2:fm-test-queue-remote.sh:286 command -v rsync
++2:fm-test-queue-remote.sh:286 command -v python3
+++2:fm-test-queue-remote.sh:287 mktemp -d /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.XXXXXXXX
++2:fm-test-queue-remote.sh:287 REMOTE_LOCAL=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4
++2:fm-test-queue-remote.sh:288 remote_stage_local /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4 {run-worktree}/bin /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool
++2:fm-test-queue-remote.sh:56 python3 - /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4 {run-worktree}/bin /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool
++5:fm-test-queue-remote.sh:294 IFS=
++5:fm-test-queue-remote.sh:294 read -r root
++5:fm-test-queue-remote.sh:295 IFS=
++5:fm-test-queue-remote.sh:295 read -r rel
++5:fm-test-queue-remote.sh:296 IFS=
++5:fm-test-queue-remote.sh:296 read -r key
++5:fm-test-queue-remote.sh:297 IFS=
++5:fm-test-queue-remote.sh:297 read -r local_head
++5:fm-test-queue-remote.sh:298 IFS=
++5:fm-test-queue-remote.sh:298 read -r local_tree
++5:fm-test-queue-remote.sh:299 IFS=
++5:fm-test-queue-remote.sh:299 read -r manifest_sha
+++5:fm-test-queue-remote.sh:301 hostname
++5:fm-test-queue-remote.sh:301 REMOTE_LOCK_HOST=Eduardos-MacBook-Pro-2.local
++5:fm-test-queue-remote.sh:302 '[' -n Eduardos-MacBook-Pro-2.local ']'
++5:fm-test-queue-remote.sh:303 heal_marker=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/offload-checksum-91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
++5:fm-test-queue-remote.sh:304 '[' '!' -e /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/offload-checksum-91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873 ']'
++5:fm-test-queue-remote.sh:305 hosts=m3
++5:fm-test-queue-remote.sh:306 hosts=m3
++5:fm-test-queue-remote.sh:307 transport='ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2'
+++5:fm-test-queue-remote.sh:456 cat
++5:fm-test-queue-remote.sh:456 finalize='import concurrent.futures
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+
+cache, rdir, git_mode, lhead, ltree, mhash = sys.argv[1:7]
+snap = os.path.join(cache, "snapshot")
+repo = os.path.join(snap, "repo")
+expected_files = set()
+expected_dirs = {repo}
+with open(os.path.join(snap, "manifest"), "r", encoding="utf-8") as fh:
+    for line in fh:
+        item = json.loads(line)
+        rel = item[0]
+        if rel == "repo" or rel.startswith("repo/"):
+            p = os.path.join(snap, rel)
+            if item[1] == "dir":
+                expected_dirs.add(p)
+            else:
+                expected_files.add(p)
+for cur, dirs, files in os.walk(repo, topdown=False):
+    if cur == os.path.join(repo, ".git") or cur.startswith(os.path.join(repo, ".git") + os.sep):
+        continue
+    for f in files:
+        p = os.path.join(cur, f)
+        if p not in expected_files:
+            os.unlink(p)
+    for d in dirs:
+        p = os.path.join(cur, d)
+        if d == ".git" and cur == repo:
+            continue
+        if os.path.islink(p):
+            if p not in expected_files:
+                os.unlink(p)
+        elif p in expected_files or p not in expected_dirs:
+            shutil.rmtree(p)
+
+delta_pack = os.path.join(snap, "delta.pack")
+cold_git = os.path.join(snap, "cold.git")
+repo_git = os.path.join(repo, ".git")
+if git_mode == "cold":
+    if os.path.exists(repo_git):
+        shutil.rmtree(repo_git)
+    shutil.move(cold_git, repo_git)
+elif git_mode == "delta":
+    pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
+    shutil.move(delta_pack, pack_dst)
+    subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
+    shallow_path = os.path.join(repo_git, "shallow")
+    shallow = []
+    if os.path.isfile(shallow_path):
+        with open(shallow_path, "r", encoding="utf-8") as fh:
+            shallow = [line.strip() for line in fh if line.strip()]
+    if lhead not in shallow:
+        shallow.append(lhead)
+    with open(shallow_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(shallow) + "\n")
+    subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
+    subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
+if os.path.exists(delta_pack):
+    os.unlink(delta_pack)
+if os.path.exists(cold_git):
+    shutil.rmtree(cold_git)
+
+def clean_dir(target):
+    for n in os.listdir(target):
+        p = os.path.join(target, n)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.unlink(p)
+
+src_dot = os.path.join(snap, ".")
+if subprocess.call(["cp", "-RcPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+    clean_dir(rdir)
+    if subprocess.call(["cp", "--reflink=auto", "-RPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+        clean_dir(rdir)
+        subprocess.check_call(["cp", "-RPp", src_dot, rdir + "/"])
+os.chmod(rdir, 0o700)
+
+rdir_b = os.fsencode(rdir)
+entries = []
+def walk(path, relative=b""):
+    for name in sorted(os.listdir(path)):
+        if not relative and name == b"manifest":
+            continue
+        if relative == b"repo" and name == b".git":
+            continue
+        entry = os.path.join(path, name)
+        rel_p = os.path.join(relative, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode):
+            entries.append((rel_p, "link", os.fsdecode(os.readlink(entry)), None))
+        elif stat.S_ISREG(mode):
+            entries.append((rel_p, "file", mode & 0o777, entry))
+        elif stat.S_ISDIR(mode):
+            entries.append((rel_p, "dir", None, None))
+            walk(entry, rel_p)
+        else:
+            sys.exit(1)
+
+def hash_file(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            d.update(block)
+    return d.hexdigest()
+
+walk(rdir_b)
+file_paths = [item[3] for item in entries if item[1] == "file"]
+hashes = []
+if file_paths:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        hashes = list(pool.map(hash_file, file_paths))
+hi = 0
+verified_lines = []
+for rel_p, kind, meta, _ in entries:
+    if kind == "link":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "link", meta], ensure_ascii=True))
+    elif kind == "file":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "file", meta, hashes[hi]], ensure_ascii=True))
+        hi += 1
+    else:
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
+
+with open(os.path.join(rdir, "manifest"), "rb") as fh:
+    expected_bytes = fh.read()
+if hashlib.sha256(expected_bytes).hexdigest() != mhash:
+    sys.exit(1)
+actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
+if expected_bytes != actual_text.encode("utf-8"):
+    sys.exit(1)
+
+rrepo = os.path.join(rdir, "repo")
+rev = subprocess.check_output(
+    ["git", "-C", rrepo, "rev-parse", "--is-shallow-repository", "HEAD", "HEAD^{tree}"]
+).decode().splitlines()
+if rev != ["true", lhead, ltree]:
+    sys.exit(1)
+wtree = subprocess.check_output(["git", "-C", rrepo, "write-tree"]).decode().strip()
+if wtree != ltree:
+    sys.exit(1)'
++5:fm-test-queue-remote.sh:457 for host in '$hosts'
++++5:fm-test-queue-remote.sh:501 remote_quote Eduardos-MacBook-Pro-2.local
++++5:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
++++5:fm-test-queue-remote.sh:11 printf ''\''%s'\''' Eduardos-MacBook-Pro-2.local
+++5:fm-test-queue-remote.sh:501 remote_ssh m3 'bash -s -- 91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873 '\''Eduardos-MacBook-Pro-2.local'\'' 70062'
++6:fm-test-queue-remote.sh:501 reply='/tmp/fm-test-offload.ilcQPfPJ
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
+9d051f97bb808642574352765af11907255bc5bf
+none'
++6:fm-test-queue-remote.sh:502 dir=/tmp/fm-test-offload.ilcQPfPJ
++6:fm-test-queue-remote.sh:503 reply='/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
+9d051f97bb808642574352765af11907255bc5bf
+none'
++6:fm-test-queue-remote.sh:504 cache=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
++6:fm-test-queue-remote.sh:505 reply='9d051f97bb808642574352765af11907255bc5bf
+none'
++6:fm-test-queue-remote.sh:506 rhead=9d051f97bb808642574352765af11907255bc5bf
++6:fm-test-queue-remote.sh:507 note=none
++6:fm-test-queue-remote.sh:508 '[' none '!=' 9d051f97bb808642574352765af11907255bc5bf ']'
++6:fm-test-queue-remote.sh:509 '[' 9d051f97bb808642574352765af11907255bc5bf '!=' none ']'
++6:fm-test-queue-remote.sh:510 '[' -z '' ']'
++6:fm-test-queue-remote.sh:511 case "$note" in
++6:fm-test-queue-remote.sh:512 '[' none = none ']'
++6:fm-test-queue-remote.sh:516 valid=1
++6:fm-test-queue-remote.sh:517 case "$dir" in
++6:fm-test-queue-remote.sh:518 case "$cache" in
++6:fm-test-queue-remote.sh:519 case "$dir$cache" in
++6:fm-test-queue-remote.sh:520 '[' 1 = 0 ']'
++6:fm-test-queue-remote.sh:524 REMOTE_HOST=m3
++6:fm-test-queue-remote.sh:524 REMOTE_DIR=/tmp/fm-test-offload.ilcQPfPJ
++6:fm-test-queue-remote.sh:524 REMOTE_CACHE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
++6:fm-test-queue-remote.sh:525 rm -rf /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/delta.pack /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/cold.git /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/cold-repo
++6:fm-test-queue-remote.sh:526 git_mode=
++6:fm-test-queue-remote.sh:527 '[' 9d051f97bb808642574352765af11907255bc5bf = 5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8 ']'
++6:fm-test-queue-remote.sh:529 '[' -n 9d051f97bb808642574352765af11907255bc5bf ']'
++6:fm-test-queue-remote.sh:529 remote_stage_git_delta /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo 9d051f97bb808642574352765af11907255bc5bf 5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/delta.pack
++6:fm-test-queue-remote.sh:244 local root=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo remote_head=9d051f97bb808642574352765af11907255bc5bf local_head=5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8 out=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/delta.pack
++6:fm-test-queue-remote.sh:245 python3 - /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo 9d051f97bb808642574352765af11907255bc5bf 5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/delta.pack
++8:fm-test-queue-remote.sh:530 git_mode=delta
++8:fm-test-queue-remote.sh:541 echo 'fm-test-queue: syncing snapshot delta to m3'
+fm-test-queue: syncing snapshot delta to m3
++8:fm-test-queue-remote.sh:542 '[' '!' -s /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/files ']'
++8:fm-test-queue-remote.sh:542 rsync -a --force --files-from=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/files --from0 --no-whole-file -z -e 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo/ m3:/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873/snapshot/repo/
++8:fm-test-queue-remote.sh:543 '[' '!' -s /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/recent_files ']'
++8:fm-test-queue-remote.sh:543 rsync -ac --force --files-from=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/recent_files --from0 --no-whole-file -z -e 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo/ m3:/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873/snapshot/repo/
++9:fm-test-queue-remote.sh:544 rsync -a --no-whole-file -z -e 'ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2' /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/stage/ m3:/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873/snapshot/
+++9:fm-test-queue-remote.sh:545 remote_quote 'import concurrent.futures
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+
+cache, rdir, git_mode, lhead, ltree, mhash = sys.argv[1:7]
+snap = os.path.join(cache, "snapshot")
+repo = os.path.join(snap, "repo")
+expected_files = set()
+expected_dirs = {repo}
+with open(os.path.join(snap, "manifest"), "r", encoding="utf-8") as fh:
+    for line in fh:
+        item = json.loads(line)
+        rel = item[0]
+        if rel == "repo" or rel.startswith("repo/"):
+            p = os.path.join(snap, rel)
+            if item[1] == "dir":
+                expected_dirs.add(p)
+            else:
+                expected_files.add(p)
+for cur, dirs, files in os.walk(repo, topdown=False):
+    if cur == os.path.join(repo, ".git") or cur.startswith(os.path.join(repo, ".git") + os.sep):
+        continue
+    for f in files:
+        p = os.path.join(cur, f)
+        if p not in expected_files:
+            os.unlink(p)
+    for d in dirs:
+        p = os.path.join(cur, d)
+        if d == ".git" and cur == repo:
+            continue
+        if os.path.islink(p):
+            if p not in expected_files:
+                os.unlink(p)
+        elif p in expected_files or p not in expected_dirs:
+            shutil.rmtree(p)
+
+delta_pack = os.path.join(snap, "delta.pack")
+cold_git = os.path.join(snap, "cold.git")
+repo_git = os.path.join(repo, ".git")
+if git_mode == "cold":
+    if os.path.exists(repo_git):
+        shutil.rmtree(repo_git)
+    shutil.move(cold_git, repo_git)
+elif git_mode == "delta":
+    pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
+    shutil.move(delta_pack, pack_dst)
+    subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
+    shallow_path = os.path.join(repo_git, "shallow")
+    shallow = []
+    if os.path.isfile(shallow_path):
+        with open(shallow_path, "r", encoding="utf-8") as fh:
+            shallow = [line.strip() for line in fh if line.strip()]
+    if lhead not in shallow:
+        shallow.append(lhead)
+    with open(shallow_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(shallow) + "\n")
+    subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
+    subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
+if os.path.exists(delta_pack):
+    os.unlink(delta_pack)
+if os.path.exists(cold_git):
+    shutil.rmtree(cold_git)
+
+def clean_dir(target):
+    for n in os.listdir(target):
+        p = os.path.join(target, n)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.unlink(p)
+
+src_dot = os.path.join(snap, ".")
+if subprocess.call(["cp", "-RcPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+    clean_dir(rdir)
+    if subprocess.call(["cp", "--reflink=auto", "-RPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+        clean_dir(rdir)
+        subprocess.check_call(["cp", "-RPp", src_dot, rdir + "/"])
+os.chmod(rdir, 0o700)
+
+rdir_b = os.fsencode(rdir)
+entries = []
+def walk(path, relative=b""):
+    for name in sorted(os.listdir(path)):
+        if not relative and name == b"manifest":
+            continue
+        if relative == b"repo" and name == b".git":
+            continue
+        entry = os.path.join(path, name)
+        rel_p = os.path.join(relative, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode):
+            entries.append((rel_p, "link", os.fsdecode(os.readlink(entry)), None))
+        elif stat.S_ISREG(mode):
+            entries.append((rel_p, "file", mode & 0o777, entry))
+        elif stat.S_ISDIR(mode):
+            entries.append((rel_p, "dir", None, None))
+            walk(entry, rel_p)
+        else:
+            sys.exit(1)
+
+def hash_file(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            d.update(block)
+    return d.hexdigest()
+
+walk(rdir_b)
+file_paths = [item[3] for item in entries if item[1] == "file"]
+hashes = []
+if file_paths:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        hashes = list(pool.map(hash_file, file_paths))
+hi = 0
+verified_lines = []
+for rel_p, kind, meta, _ in entries:
+    if kind == "link":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "link", meta], ensure_ascii=True))
+    elif kind == "file":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "file", meta, hashes[hi]], ensure_ascii=True))
+        hi += 1
+    else:
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
+
+with open(os.path.join(rdir, "manifest"), "rb") as fh:
+    expected_bytes = fh.read()
+if hashlib.sha256(expected_bytes).hexdigest() != mhash:
+    sys.exit(1)
+actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
+if expected_bytes != actual_text.encode("utf-8"):
+    sys.exit(1)
+
+rrepo = os.path.join(rdir, "repo")
+rev = subprocess.check_output(
+    ["git", "-C", rrepo, "rev-parse", "--is-shallow-repository", "HEAD", "HEAD^{tree}"]
+).decode().splitlines()
+if rev != ["true", lhead, ltree]:
+    sys.exit(1)
+wtree = subprocess.check_output(["git", "-C", rrepo, "write-tree"]).decode().strip()
+if wtree != ltree:
+    sys.exit(1)'
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' 'import concurrent.futures
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+
+cache, rdir, git_mode, lhead, ltree, mhash = sys.argv[1:7]
+snap = os.path.join(cache, "snapshot")
+repo = os.path.join(snap, "repo")
+expected_files = set()
+expected_dirs = {repo}
+with open(os.path.join(snap, "manifest"), "r", encoding="utf-8") as fh:
+    for line in fh:
+        item = json.loads(line)
+        rel = item[0]
+        if rel == "repo" or rel.startswith("repo/"):
+            p = os.path.join(snap, rel)
+            if item[1] == "dir":
+                expected_dirs.add(p)
+            else:
+                expected_files.add(p)
+for cur, dirs, files in os.walk(repo, topdown=False):
+    if cur == os.path.join(repo, ".git") or cur.startswith(os.path.join(repo, ".git") + os.sep):
+        continue
+    for f in files:
+        p = os.path.join(cur, f)
+        if p not in expected_files:
+            os.unlink(p)
+    for d in dirs:
+        p = os.path.join(cur, d)
+        if d == ".git" and cur == repo:
+            continue
+        if os.path.islink(p):
+            if p not in expected_files:
+                os.unlink(p)
+        elif p in expected_files or p not in expected_dirs:
+            shutil.rmtree(p)
+
+delta_pack = os.path.join(snap, "delta.pack")
+cold_git = os.path.join(snap, "cold.git")
+repo_git = os.path.join(repo, ".git")
+if git_mode == "cold":
+    if os.path.exists(repo_git):
+        shutil.rmtree(repo_git)
+    shutil.move(cold_git, repo_git)
+elif git_mode == "delta":
+    pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
+    shutil.move(delta_pack, pack_dst)
+    subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
+    shallow_path = os.path.join(repo_git, "shallow")
+    shallow = []
+    if os.path.isfile(shallow_path):
+        with open(shallow_path, "r", encoding="utf-8") as fh:
+            shallow = [line.strip() for line in fh if line.strip()]
+    if lhead not in shallow:
+        shallow.append(lhead)
+    with open(shallow_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(shallow) + "\n")
+    subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
+    subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
+if os.path.exists(delta_pack):
+    os.unlink(delta_pack)
+if os.path.exists(cold_git):
+    shutil.rmtree(cold_git)
+
+def clean_dir(target):
+    for n in os.listdir(target):
+        p = os.path.join(target, n)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.unlink(p)
+
+src_dot = os.path.join(snap, ".")
+if subprocess.call(["cp", "-RcPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+    clean_dir(rdir)
+    if subprocess.call(["cp", "--reflink=auto", "-RPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+        clean_dir(rdir)
+        subprocess.check_call(["cp", "-RPp", src_dot, rdir + "/"])
+os.chmod(rdir, 0o700)
+
+rdir_b = os.fsencode(rdir)
+entries = []
+def walk(path, relative=b""):
+    for name in sorted(os.listdir(path)):
+        if not relative and name == b"manifest":
+            continue
+        if relative == b"repo" and name == b".git":
+            continue
+        entry = os.path.join(path, name)
+        rel_p = os.path.join(relative, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode):
+            entries.append((rel_p, "link", os.fsdecode(os.readlink(entry)), None))
+        elif stat.S_ISREG(mode):
+            entries.append((rel_p, "file", mode & 0o777, entry))
+        elif stat.S_ISDIR(mode):
+            entries.append((rel_p, "dir", None, None))
+            walk(entry, rel_p)
+        else:
+            sys.exit(1)
+
+def hash_file(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            d.update(block)
+    return d.hexdigest()
+
+walk(rdir_b)
+file_paths = [item[3] for item in entries if item[1] == "file"]
+hashes = []
+if file_paths:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        hashes = list(pool.map(hash_file, file_paths))
+hi = 0
+verified_lines = []
+for rel_p, kind, meta, _ in entries:
+    if kind == "link":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "link", meta], ensure_ascii=True))
+    elif kind == "file":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "file", meta, hashes[hi]], ensure_ascii=True))
+        hi += 1
+    else:
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
+
+with open(os.path.join(rdir, "manifest"), "rb") as fh:
+    expected_bytes = fh.read()
+if hashlib.sha256(expected_bytes).hexdigest() != mhash:
+    sys.exit(1)
+actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
+if expected_bytes != actual_text.encode("utf-8"):
+    sys.exit(1)
+
+rrepo = os.path.join(rdir, "repo")
+rev = subprocess.check_output(
+    ["git", "-C", rrepo, "rev-parse", "--is-shallow-repository", "HEAD", "HEAD^{tree}"]
+).decode().splitlines()
+if rev != ["true", lhead, ltree]:
+    sys.exit(1)
+wtree = subprocess.check_output(["git", "-C", rrepo, "write-tree"]).decode().strip()
+if wtree != ltree:
+    sys.exit(1)'
+++9:fm-test-queue-remote.sh:545 remote_quote /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
+++9:fm-test-queue-remote.sh:545 remote_quote /tmp/fm-test-offload.ilcQPfPJ
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ
+++9:fm-test-queue-remote.sh:545 remote_quote delta
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' delta
+++9:fm-test-queue-remote.sh:545 remote_quote 5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' 5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8
+++9:fm-test-queue-remote.sh:545 remote_quote dd6cffb47baa78ba896582d247f8314c8f2366ee
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' dd6cffb47baa78ba896582d247f8314c8f2366ee
+++9:fm-test-queue-remote.sh:545 remote_quote ac8653c52963169bed69007230d579d20f8ccf6192549ee453b784da03ca7ac5
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' ac8653c52963169bed69007230d579d20f8ccf6192549ee453b784da03ca7ac5
+++9:fm-test-queue-remote.sh:545 remote_quote /tmp/fm-test-offload.ilcQPfPJ/repo
+++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ/repo
++++9:fm-test-queue-remote.sh:545 remote_quote /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
++++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
++++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
+++9:fm-test-queue-remote.sh:545 remote_lock_release ''\''/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873'\'''
++++9:fm-test-queue-remote.sh:21 remote_quote host=Eduardos-MacBook-Pro-2.local
++++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
++++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' host=Eduardos-MacBook-Pro-2.local
++++9:fm-test-queue-remote.sh:21 remote_quote pid=70062
++++9:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
++++9:fm-test-queue-remote.sh:11 printf ''\''%s'\''' pid=70062
+++9:fm-test-queue-remote.sh:21 printf '{ c=%s; if grep -qxF -- %s "$c/lock/owner" 2>/dev/null && grep -qxF -- %s "$c/lock/owner"; then rm -f -- "$c/lock/owner" && rmdir -- "$c/lock"; fi; }' ''\''/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873'\''' ''\''host=Eduardos-MacBook-Pro-2.local'\''' ''\''pid=70062'\'''
++9:fm-test-queue-remote.sh:545 remote_ssh m3 'python3 -c '\''import concurrent.futures
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+
+cache, rdir, git_mode, lhead, ltree, mhash = sys.argv[1:7]
+snap = os.path.join(cache, "snapshot")
+repo = os.path.join(snap, "repo")
+expected_files = set()
+expected_dirs = {repo}
+with open(os.path.join(snap, "manifest"), "r", encoding="utf-8") as fh:
+    for line in fh:
+        item = json.loads(line)
+        rel = item[0]
+        if rel == "repo" or rel.startswith("repo/"):
+            p = os.path.join(snap, rel)
+            if item[1] == "dir":
+                expected_dirs.add(p)
+            else:
+                expected_files.add(p)
+for cur, dirs, files in os.walk(repo, topdown=False):
+    if cur == os.path.join(repo, ".git") or cur.startswith(os.path.join(repo, ".git") + os.sep):
+        continue
+    for f in files:
+        p = os.path.join(cur, f)
+        if p not in expected_files:
+            os.unlink(p)
+    for d in dirs:
+        p = os.path.join(cur, d)
+        if d == ".git" and cur == repo:
+            continue
+        if os.path.islink(p):
+            if p not in expected_files:
+                os.unlink(p)
+        elif p in expected_files or p not in expected_dirs:
+            shutil.rmtree(p)
+
+delta_pack = os.path.join(snap, "delta.pack")
+cold_git = os.path.join(snap, "cold.git")
+repo_git = os.path.join(repo, ".git")
+if git_mode == "cold":
+    if os.path.exists(repo_git):
+        shutil.rmtree(repo_git)
+    shutil.move(cold_git, repo_git)
+elif git_mode == "delta":
+    pack_dst = os.path.join(repo_git, "objects", "pack", f"pack-{lhead}-{os.getpid()}.pack")
+    shutil.move(delta_pack, pack_dst)
+    subprocess.check_call(["git", "-C", repo, "index-pack", pack_dst], stdout=subprocess.DEVNULL)
+    shallow_path = os.path.join(repo_git, "shallow")
+    shallow = []
+    if os.path.isfile(shallow_path):
+        with open(shallow_path, "r", encoding="utf-8") as fh:
+            shallow = [line.strip() for line in fh if line.strip()]
+    if lhead not in shallow:
+        shallow.append(lhead)
+    with open(shallow_path, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(shallow) + "\n")
+    subprocess.check_call(["git", "-C", repo, "update-ref", "HEAD", lhead])
+    subprocess.check_call(["git", "-C", repo, "read-tree", "HEAD"])
+if os.path.exists(delta_pack):
+    os.unlink(delta_pack)
+if os.path.exists(cold_git):
+    shutil.rmtree(cold_git)
+
+def clean_dir(target):
+    for n in os.listdir(target):
+        p = os.path.join(target, n)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p)
+        else:
+            os.unlink(p)
+
+src_dot = os.path.join(snap, ".")
+if subprocess.call(["cp", "-RcPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+    clean_dir(rdir)
+    if subprocess.call(["cp", "--reflink=auto", "-RPp", src_dot, rdir + "/"], stderr=subprocess.DEVNULL) != 0:
+        clean_dir(rdir)
+        subprocess.check_call(["cp", "-RPp", src_dot, rdir + "/"])
+os.chmod(rdir, 0o700)
+
+rdir_b = os.fsencode(rdir)
+entries = []
+def walk(path, relative=b""):
+    for name in sorted(os.listdir(path)):
+        if not relative and name == b"manifest":
+            continue
+        if relative == b"repo" and name == b".git":
+            continue
+        entry = os.path.join(path, name)
+        rel_p = os.path.join(relative, name)
+        mode = os.lstat(entry).st_mode
+        if stat.S_ISLNK(mode):
+            entries.append((rel_p, "link", os.fsdecode(os.readlink(entry)), None))
+        elif stat.S_ISREG(mode):
+            entries.append((rel_p, "file", mode & 0o777, entry))
+        elif stat.S_ISDIR(mode):
+            entries.append((rel_p, "dir", None, None))
+            walk(entry, rel_p)
+        else:
+            sys.exit(1)
+
+def hash_file(path):
+    d = hashlib.sha256()
+    with open(path, "rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            d.update(block)
+    return d.hexdigest()
+
+walk(rdir_b)
+file_paths = [item[3] for item in entries if item[1] == "file"]
+hashes = []
+if file_paths:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
+        hashes = list(pool.map(hash_file, file_paths))
+hi = 0
+verified_lines = []
+for rel_p, kind, meta, _ in entries:
+    if kind == "link":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "link", meta], ensure_ascii=True))
+    elif kind == "file":
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "file", meta, hashes[hi]], ensure_ascii=True))
+        hi += 1
+    else:
+        verified_lines.append(json.dumps([os.fsdecode(rel_p), "dir"], ensure_ascii=True))
+
+with open(os.path.join(rdir, "manifest"), "rb") as fh:
+    expected_bytes = fh.read()
+if hashlib.sha256(expected_bytes).hexdigest() != mhash:
+    sys.exit(1)
+actual_text = ("\n".join(verified_lines) + "\n") if verified_lines else ""
+if expected_bytes != actual_text.encode("utf-8"):
+    sys.exit(1)
+
+rrepo = os.path.join(rdir, "repo")
+rev = subprocess.check_output(
+    ["git", "-C", rrepo, "rev-parse", "--is-shallow-repository", "HEAD", "HEAD^{tree}"]
+).decode().splitlines()
+if rev != ["true", lhead, ltree]:
+    sys.exit(1)
+wtree = subprocess.check_output(["git", "-C", rrepo, "write-tree"]).decode().strip()
+if wtree != ltree:
+    sys.exit(1)'\'' '\''/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873'\'' '\''/tmp/fm-test-offload.ilcQPfPJ'\'' '\''delta'\'' '\''5d48e256a8d5c6f6c1fd8b94a3319944fa7de2b8'\'' '\''dd6cffb47baa78ba896582d247f8314c8f2366ee'\'' '\''ac8653c52963169bed69007230d579d20f8ccf6192549ee453b784da03ca7ac5'\'' && cd '\''/tmp/fm-test-offload.ilcQPfPJ/repo'\'' && { c='\''/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/remote-home/.cache/firstmate/test-mirrors/91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873'\''; if grep -qxF -- '\''host=Eduardos-MacBook-Pro-2.local'\'' "$c/lock/owner" 2>/dev/null && grep -qxF -- '\''pid=70062'\'' "$c/lock/owner"; then rm -f -- "$c/lock/owner" && rmdir -- "$c/lock"; fi; }'
++12:fm-test-queue-remote.sh:546 REMOTE_CACHE=
++12:fm-test-queue-remote.sh:547 rm -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/offload-checksum-91516d20d82e59e77870440a049f5a45b299cc4db7806018f15d4b89c5a7a873
++12:fm-test-queue-remote.sh:548 REMOTE_ROOT=/tmp/fm-test-offload.ilcQPfPJ/repo
++12:fm-test-queue-remote.sh:549 REMOTE_CWD=/tmp/fm-test-offload.ilcQPfPJ/repo
++12:fm-test-queue-remote.sh:550 LOCAL_ROOT=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo
++12:fm-test-queue-remote.sh:551 echo 'fm-test-queue: offloading to m3 (verified snapshot of /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo)'
+fm-test-queue: offloading to m3 (verified snapshot of /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/repo)
++12:fm-test-queue-remote.sh:552 return 0
++12:fm-test-queue.sh:770 continue
++12:fm-test-queue.sh:758 :
++12:fm-test-queue.sh:759 lock_acquire
++12:fm-test-queue.sh:282 local tries=0 pid start age m generation owner lock_pid=70062
+++12:fm-test-queue.sh:283 pid_start 70062
+++12:fm-test-queue.sh:233 TZ=UTC
+++12:fm-test-queue.sh:233 LC_ALL=C
+++12:fm-test-queue.sh:233 ps -p 70062 -o lstart=
+++12:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++12:fm-test-queue.sh:283 LOCK_TOKEN='70062 Fri Nov 20 03:35:51 2026'
+++12:fm-test-queue.sh:284 mktemp -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.XXXXXXXX
++12:fm-test-queue.sh:284 LOCK_CANDIDATE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.7m5MGyUq
++12:fm-test-queue.sh:285 mkdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.7m5MGyUq/lock
++12:fm-test-queue.sh:286 umask 077
++12:fm-test-queue.sh:286 printf '%s\n' '70062 Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:287 :
++12:fm-test-queue.sh:288 '[' '!' -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock ']'
++12:fm-test-queue.sh:288 mv /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.7m5MGyUq/lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/
+++12:fm-test-queue.sh:289 path_identity /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++12:fm-test-queue.sh:278 stat -c %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++12:fm-test-queue.sh:278 stat -f %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++12:fm-test-queue.sh:289 LOCK_GENERATION=16777232:1375528253
++12:fm-test-queue.sh:290 HAVE_LOCK=1
++12:fm-test-queue.sh:291 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.7m5MGyUq
++12:fm-test-queue.sh:292 LOCK_CANDIDATE=
++12:fm-test-queue.sh:293 return 0
++12:fm-test-queue.sh:760 reclaim_dead
++12:fm-test-queue.sh:592 local f
++12:fm-test-queue.sh:593 IFS=
++12:fm-test-queue.sh:593 read -r f
+++12:fm-test-queue.sh:591 ticket_files
+++12:fm-test-queue.sh:376 local f
+++12:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++12:fm-test-queue.sh:378 case "$f" in
+++12:fm-test-queue.sh:379 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
+++12:fm-test-queue.sh:379 printf '%s\n' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:594 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:344 local line k v
++12:fm-test-queue.sh:345 T_PID=
++12:fm-test-queue.sh:345 T_START=
++12:fm-test-queue.sh:345 T_CHILD_PID=
++12:fm-test-queue.sh:345 T_CHILD_START=
++12:fm-test-queue.sh:345 T_PGID=
++12:fm-test-queue.sh:345 T_CALLER=
++12:fm-test-queue.sh:345 T_HOLDER_PID=
++12:fm-test-queue.sh:345 T_HOLDER_START=
++12:fm-test-queue.sh:345 T_SIBLINGS=
++12:fm-test-queue.sh:345 T_ENQUEUED=
++12:fm-test-queue.sh:345 T_SERVED=
++12:fm-test-queue.sh:345 T_TASK=
++12:fm-test-queue.sh:345 T_LABEL=
++12:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pid
++12:fm-test-queue.sh:349 v=70062
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:351 T_PID=70062
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=start
++12:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:353 T_CHILD_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:354 T_CHILD_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pgid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:355 T_PGID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=caller_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:356 T_CALLER=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:357 T_HOLDER_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:358 T_HOLDER_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=siblings
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:359 T_SIBLINGS=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=enqueued
++12:fm-test-queue.sh:349 v=1795145752
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=served
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:361 T_SERVED=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=task
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:362 T_TASK=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=label
++12:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:597 ticket_group_reapable stale
++12:fm-test-queue.sh:475 local caller_group
++12:fm-test-queue.sh:476 is_uint ''
++12:fm-test-queue.sh:164 case "$1" in
++12:fm-test-queue.sh:164 return 1
++12:fm-test-queue.sh:476 return 1
++12:fm-test-queue.sh:600 ticket_alive
++12:fm-test-queue.sh:399 owner_alive 70062 'Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:247 local now_start
++12:fm-test-queue.sh:248 is_uint 70062
++12:fm-test-queue.sh:164 case "$1" in
++12:fm-test-queue.sh:249 kill -0 70062
++12:fm-test-queue.sh:250 '[' -n 'Fri Nov 20 03:35:51 2026' ']'
+++12:fm-test-queue.sh:251 pid_start 70062
+++12:fm-test-queue.sh:233 TZ=UTC
+++12:fm-test-queue.sh:233 LC_ALL=C
+++12:fm-test-queue.sh:233 ps -p 70062 -o lstart=
+++12:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++12:fm-test-queue.sh:251 now_start='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:252 '[' -z 'Fri Nov 20 03:35:51 2026' ']'
++12:fm-test-queue.sh:252 '[' 'Fri Nov 20 03:35:51 2026' = 'Fri Nov 20 03:35:51 2026' ']'
++12:fm-test-queue.sh:593 IFS=
++12:fm-test-queue.sh:593 read -r f
++12:fm-test-queue.sh:761 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:762 admission_check
++12:fm-test-queue.sh:681 local f serving=0 head= pos=0 load=
++12:fm-test-queue.sh:682 POSITION=0
++12:fm-test-queue.sh:683 WANT_REMOTE=0
++12:fm-test-queue.sh:684 IFS=
++12:fm-test-queue.sh:684 read -r f
+++12:fm-test-queue.sh:680 ticket_files
+++12:fm-test-queue.sh:376 local f
+++12:fm-test-queue.sh:377 for f in '"$TICKETS"/[0-9]*'
+++12:fm-test-queue.sh:378 case "$f" in
+++12:fm-test-queue.sh:379 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
+++12:fm-test-queue.sh:379 printf '%s\n' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:685 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:344 local line k v
++12:fm-test-queue.sh:345 T_PID=
++12:fm-test-queue.sh:345 T_START=
++12:fm-test-queue.sh:345 T_CHILD_PID=
++12:fm-test-queue.sh:345 T_CHILD_START=
++12:fm-test-queue.sh:345 T_PGID=
++12:fm-test-queue.sh:345 T_CALLER=
++12:fm-test-queue.sh:345 T_HOLDER_PID=
++12:fm-test-queue.sh:345 T_HOLDER_START=
++12:fm-test-queue.sh:345 T_SIBLINGS=
++12:fm-test-queue.sh:345 T_ENQUEUED=
++12:fm-test-queue.sh:345 T_SERVED=
++12:fm-test-queue.sh:345 T_TASK=
++12:fm-test-queue.sh:345 T_LABEL=
++12:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pid
++12:fm-test-queue.sh:349 v=70062
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:351 T_PID=70062
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=start
++12:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:353 T_CHILD_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:354 T_CHILD_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pgid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:355 T_PGID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=caller_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:356 T_CALLER=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:357 T_HOLDER_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:358 T_HOLDER_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=siblings
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:359 T_SIBLINGS=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=enqueued
++12:fm-test-queue.sh:349 v=1795145752
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=served
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:361 T_SERVED=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=task
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:362 T_TASK=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=label
++12:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:686 '[' -n '' ']'
++12:fm-test-queue.sh:689 pos=1
++12:fm-test-queue.sh:690 '[' -n '' ']'
++12:fm-test-queue.sh:690 head=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:691 '[' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 = /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:691 POSITION=1
++12:fm-test-queue.sh:684 IFS=
++12:fm-test-queue.sh:684 read -r f
++12:fm-test-queue.sh:694 '[' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 '!=' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:696 '[' 0 -ge 1 ']'
+++12:fm-test-queue.sh:699 load1
+++12:fm-test-queue.sh:218 local v=
+++12:fm-test-queue.sh:219 '[' 1 = 1 ']'
+++12:fm-test-queue.sh:219 '[' -n /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/load ']'
+++12:fm-test-queue.sh:220 read -r v _
+++12:fm-test-queue.sh:226 case "$v" in
+++12:fm-test-queue.sh:227 printf '%s\n' 9
++12:fm-test-queue.sh:699 load=9
++12:fm-test-queue.sh:700 '[' -z m3 ']'
++12:fm-test-queue.sh:704 '[' -z m3 ']'
++12:fm-test-queue.sh:708 '[' -z 9 ']'
++12:fm-test-queue.sh:711 WAIT_REASON=
+++12:fm-test-queue.sh:763 date +%s
++12:fm-test-queue.sh:763 now=1795145763
++12:fm-test-queue.sh:764 '[' 0 = 1 ']'
++12:fm-test-queue.sh:772 '[' -z '' ']'
++12:fm-test-queue.sh:773 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:344 local line k v
++12:fm-test-queue.sh:345 T_PID=
++12:fm-test-queue.sh:345 T_START=
++12:fm-test-queue.sh:345 T_CHILD_PID=
++12:fm-test-queue.sh:345 T_CHILD_START=
++12:fm-test-queue.sh:345 T_PGID=
++12:fm-test-queue.sh:345 T_CALLER=
++12:fm-test-queue.sh:345 T_HOLDER_PID=
++12:fm-test-queue.sh:345 T_HOLDER_START=
++12:fm-test-queue.sh:345 T_SIBLINGS=
++12:fm-test-queue.sh:345 T_ENQUEUED=
++12:fm-test-queue.sh:345 T_SERVED=
++12:fm-test-queue.sh:345 T_TASK=
++12:fm-test-queue.sh:345 T_LABEL=
++12:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pid
++12:fm-test-queue.sh:349 v=70062
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:351 T_PID=70062
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=start
++12:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:353 T_CHILD_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=child_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:354 T_CHILD_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=pgid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:355 T_PGID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=caller_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:356 T_CALLER=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_pid
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:357 T_HOLDER_PID=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=holder_start
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:358 T_HOLDER_START=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=siblings
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:359 T_SIBLINGS=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=enqueued
++12:fm-test-queue.sh:349 v=1795145752
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=served
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:361 T_SERVED=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=task
++12:fm-test-queue.sh:349 v=
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:362 T_TASK=
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
++12:fm-test-queue.sh:348 k=label
++12:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:350 case "$k" in
++12:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:347 IFS=
++12:fm-test-queue.sh:347 read -r line
+++12:fm-test-queue.sh:774 date +%s
++12:fm-test-queue.sh:774 T_SERVED=1795145763
++12:fm-test-queue.sh:775 ticket_write /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:369 local tmp=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062
++12:fm-test-queue.sh:370 umask 077
++12:fm-test-queue.sh:370 printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nholder_pid=%s\nholder_start=%s\nsiblings=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' 70062 'Fri Nov 20 03:35:51 2026' '' '' '' '' '' '' '' 1795145752 1795145763 '' 'sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++12:fm-test-queue.sh:372 mv -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++12:fm-test-queue.sh:776 lock_release
++12:fm-test-queue.sh:330 '[' 1 = 1 ']'
++12:fm-test-queue.sh:331 HAVE_LOCK=0
++12:fm-test-queue.sh:332 lock_break 16777232:1375528253 '70062 Fri Nov 20 03:35:51 2026'
++12:fm-test-queue.sh:319 local owner=
++12:fm-test-queue.sh:320 '[' -n 16777232:1375528253 ']'
++12:fm-test-queue.sh:321 cd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++12:fm-test-queue.sh:322 path_identity .
+++12:fm-test-queue.sh:278 stat -c %d:%i .
+++12:fm-test-queue.sh:278 stat -f %d:%i .
++12:fm-test-queue.sh:322 '[' 16777232:1375528253 = 16777232:1375528253 ']'
+++13:fm-test-queue.sh:323 cat owner
++13:fm-test-queue.sh:323 owner='70062 Fri Nov 20 03:35:51 2026'
++13:fm-test-queue.sh:324 '[' '70062 Fri Nov 20 03:35:51 2026' = '70062 Fri Nov 20 03:35:51 2026' ']'
++13:fm-test-queue.sh:325 rm -f owner
++13:fm-test-queue.sh:326 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++13:fm-test-queue.sh:777 break
++13:fm-test-queue.sh:787 '[' -z '' ']'
++13:fm-test-queue.sh:788 '[' -n '' ']'
++13:fm-test-queue.sh:794 local child_pid siblings
+++13:fm-test-queue.sh:795 exec sh -c 'printf "%s" "$PPID"'
++13:fm-test-queue.sh:795 child_pid=6847
++13:fm-test-queue.sh:796 lock_acquire 6847
++13:fm-test-queue.sh:282 local tries=0 pid start age m generation owner lock_pid=6847
+++13:fm-test-queue.sh:283 pid_start 6847
+++13:fm-test-queue.sh:233 TZ=UTC
+++13:fm-test-queue.sh:233 LC_ALL=C
+++13:fm-test-queue.sh:233 ps -p 6847 -o lstart=
+++13:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++13:fm-test-queue.sh:283 LOCK_TOKEN='6847 Fri Nov 20 03:36:04 2026'
+++13:fm-test-queue.sh:284 mktemp -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.XXXXXXXX
++13:fm-test-queue.sh:284 LOCK_CANDIDATE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.ad4ckOHk
++13:fm-test-queue.sh:285 mkdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.ad4ckOHk/lock
++13:fm-test-queue.sh:286 umask 077
++13:fm-test-queue.sh:286 printf '%s\n' '6847 Fri Nov 20 03:36:04 2026'
++13:fm-test-queue.sh:287 :
++13:fm-test-queue.sh:288 '[' '!' -d /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock ']'
++13:fm-test-queue.sh:288 mv /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.ad4ckOHk/lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/
+++13:fm-test-queue.sh:289 path_identity /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++13:fm-test-queue.sh:278 stat -c %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++13:fm-test-queue.sh:278 stat -f %d:%i /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++13:fm-test-queue.sh:289 LOCK_GENERATION=16777232:1375528490
++13:fm-test-queue.sh:290 HAVE_LOCK=1
++13:fm-test-queue.sh:291 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/.lock.ad4ckOHk
++13:fm-test-queue.sh:292 LOCK_CANDIDATE=
++13:fm-test-queue.sh:293 return 0
++13:fm-test-queue.sh:797 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++13:fm-test-queue.sh:344 local line k v
++13:fm-test-queue.sh:345 T_PID=
++13:fm-test-queue.sh:345 T_START=
++13:fm-test-queue.sh:345 T_CHILD_PID=
++13:fm-test-queue.sh:345 T_CHILD_START=
++13:fm-test-queue.sh:345 T_PGID=
++13:fm-test-queue.sh:345 T_CALLER=
++13:fm-test-queue.sh:345 T_HOLDER_PID=
++13:fm-test-queue.sh:345 T_HOLDER_START=
++13:fm-test-queue.sh:345 T_SIBLINGS=
++13:fm-test-queue.sh:345 T_ENQUEUED=
++13:fm-test-queue.sh:345 T_SERVED=
++13:fm-test-queue.sh:345 T_TASK=
++13:fm-test-queue.sh:345 T_LABEL=
++13:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=pid
++13:fm-test-queue.sh:349 v=70062
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:351 T_PID=70062
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=start
++13:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=child_pid
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:353 T_CHILD_PID=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=child_start
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:354 T_CHILD_START=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=pgid
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:355 T_PGID=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=caller_pid
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:356 T_CALLER=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=holder_pid
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:357 T_HOLDER_PID=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=holder_start
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:358 T_HOLDER_START=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=siblings
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:359 T_SIBLINGS=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=enqueued
++13:fm-test-queue.sh:349 v=1795145752
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=served
++13:fm-test-queue.sh:349 v=1795145763
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:361 T_SERVED=1795145763
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=task
++13:fm-test-queue.sh:349 v=
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:362 T_TASK=
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:348 k=label
++13:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++13:fm-test-queue.sh:350 case "$k" in
++13:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++13:fm-test-queue.sh:347 IFS=
++13:fm-test-queue.sh:347 read -r line
++13:fm-test-queue.sh:798 T_CHILD_PID=6847
+++13:fm-test-queue.sh:799 pid_start 6847
+++13:fm-test-queue.sh:233 TZ=UTC
+++13:fm-test-queue.sh:233 LC_ALL=C
+++13:fm-test-queue.sh:233 ps -p 6847 -o lstart=
+++13:fm-test-queue.sh:233 sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
++13:fm-test-queue.sh:799 T_CHILD_START='Fri Nov 20 03:36:04 2026'
++13:fm-test-queue.sh:802 '[' -n '' ']'
++13:fm-test-queue.sh:807 ticket_write /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++13:fm-test-queue.sh:369 local tmp=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062
++13:fm-test-queue.sh:370 umask 077
++13:fm-test-queue.sh:370 printf 'pid=%s\nstart=%s\nchild_pid=%s\nchild_start=%s\npgid=%s\ncaller_pid=%s\nholder_pid=%s\nholder_start=%s\nsiblings=%s\nenqueued=%s\nserved=%s\ntask=%s\nlabel=%s\n' 70062 'Fri Nov 20 03:35:51 2026' 6847 'Fri Nov 20 03:36:04 2026' '' '' '' '' '' 1795145752 1795145763 '' 'sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++13:fm-test-queue.sh:372 mv -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002.tmp.70062 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++13:fm-test-queue.sh:808 lock_release
++13:fm-test-queue.sh:330 '[' 1 = 1 ']'
++13:fm-test-queue.sh:331 HAVE_LOCK=0
++13:fm-test-queue.sh:332 lock_break 16777232:1375528490 '6847 Fri Nov 20 03:36:04 2026'
++13:fm-test-queue.sh:319 local owner=
++13:fm-test-queue.sh:320 '[' -n 16777232:1375528490 ']'
++13:fm-test-queue.sh:321 cd /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
+++13:fm-test-queue.sh:322 path_identity .
+++13:fm-test-queue.sh:278 stat -c %d:%i .
+++13:fm-test-queue.sh:278 stat -f %d:%i .
++13:fm-test-queue.sh:322 '[' 16777232:1375528490 = 16777232:1375528490 ']'
+++13:fm-test-queue.sh:323 cat owner
++13:fm-test-queue.sh:323 owner='6847 Fri Nov 20 03:36:04 2026'
++13:fm-test-queue.sh:324 '[' '6847 Fri Nov 20 03:36:04 2026' = '6847 Fri Nov 20 03:36:04 2026' ']'
++13:fm-test-queue.sh:325 rm -f owner
++13:fm-test-queue.sh:326 rmdir /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/lock
++13:fm-test-queue.sh:809 export FM_TEST_QUEUE_HELD=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++13:fm-test-queue.sh:809 FM_TEST_QUEUE_HELD=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++13:fm-test-queue.sh:810 '[' -n m3 ']'
++13:fm-test-queue.sh:811 remote_exec sh -c '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++13:fm-test-queue-remote.sh:563 local arg command= rc
++13:fm-test-queue-remote.sh:566 for arg in '"$@"'
++13:fm-test-queue-remote.sh:567 arg=sh
+++14:fm-test-queue-remote.sh:568 remote_quote sh
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' sh
++14:fm-test-queue-remote.sh:568 command=' '\''sh'\'''
++14:fm-test-queue-remote.sh:566 for arg in '"$@"'
++14:fm-test-queue-remote.sh:567 arg=-c
+++14:fm-test-queue-remote.sh:568 remote_quote -c
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' -c
++14:fm-test-queue-remote.sh:568 command=' '\''sh'\'' '\''-c'\'''
++14:fm-test-queue-remote.sh:566 for arg in '"$@"'
++14:fm-test-queue-remote.sh:567 arg='[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
+++14:fm-test-queue-remote.sh:568 remote_quote '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' '[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++14:fm-test-queue-remote.sh:568 command=' '\''sh'\'' '\''-c'\'' '\''[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'\'''
++14:fm-test-queue-remote.sh:570 :
+++14:fm-test-queue-remote.sh:573 remote_quote /tmp/fm-test-offload.ilcQPfPJ/repo
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ/repo
+++14:fm-test-queue-remote.sh:573 remote_quote /tmp/fm-test-offload.ilcQPfPJ/repo
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ/repo
+++14:fm-test-queue-remote.sh:573 remote_quote /tmp/fm-test-offload.ilcQPfPJ/queue/fm-test-queue.sh
+++14:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++14:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ/queue/fm-test-queue.sh
++14:fm-test-queue-remote.sh:573 remote_ssh m3 'cd '\''/tmp/fm-test-offload.ilcQPfPJ/repo'\'' && exec env FM_HOME='\''/tmp/fm-test-offload.ilcQPfPJ/repo'\'' FM_TEST_QUEUE_REMOTE_DISABLE=1 bash '\''/tmp/fm-test-offload.ilcQPfPJ/queue/fm-test-queue.sh'\'' run -- '\''sh'\'' '\''-c'\'' '\''[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'\'''
++14:fm-test-queue-remote.sh:16 ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=15 -o ServerAliveCountMax=2 m3 'cd '\''/tmp/fm-test-offload.ilcQPfPJ/repo'\'' && exec env FM_HOME='\''/tmp/fm-test-offload.ilcQPfPJ/repo'\'' FM_TEST_QUEUE_REMOTE_DISABLE=1 bash '\''/tmp/fm-test-offload.ilcQPfPJ/queue/fm-test-queue.sh'\'' run -- '\''sh'\'' '\''-c'\'' '\''[ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'\'''
++25:fm-test-queue-remote.sh:574 rc=0
++25:fm-test-queue-remote.sh:575 '[' 0 -lt 128 ']'
++25:fm-test-queue-remote.sh:575 rm -f /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/execution-uncertain
++25:fm-test-queue-remote.sh:576 return 0
++25:fm-test-queue.sh:812 exit 0
++25:fm-test-queue.sh:854 cleanup
++25:fm-test-queue.sh:609 remote_cleanup
++25:fm-test-queue-remote.sh:26 '[' -n m3 ']'
++25:fm-test-queue-remote.sh:26 '[' -n /tmp/fm-test-offload.ilcQPfPJ ']'
++25:fm-test-queue-remote.sh:27 '[' -f /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4/execution-uncertain ']'
+++25:fm-test-queue-remote.sh:30 remote_quote /tmp/fm-test-offload.ilcQPfPJ
+++25:fm-test-queue-remote.sh:10 local 'quote='\''"'\''"'\'''
+++25:fm-test-queue-remote.sh:11 printf ''\''%s'\''' /tmp/fm-test-offload.ilcQPfPJ
++25:fm-test-queue-remote.sh:30 remote_ssh m3 'rm -rf -- '\''/tmp/fm-test-offload.ilcQPfPJ'\'''
++27:fm-test-queue-remote.sh:33 '[' -n m3 ']'
++27:fm-test-queue-remote.sh:33 '[' -n '' ']'
++27:fm-test-queue-remote.sh:36 REMOTE_CACHE=
++27:fm-test-queue-remote.sh:37 '[' -z /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4 ']'
++27:fm-test-queue-remote.sh:37 rm -rf /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-offload.kIX10mR4
++27:fm-test-queue-remote.sh:38 REMOTE_HOST=
++27:fm-test-queue-remote.sh:38 REMOTE_DIR=
++27:fm-test-queue-remote.sh:38 REMOTE_LOCAL=
++27:fm-test-queue.sh:610 '[' -n /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++27:fm-test-queue.sh:611 ticket_read /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++27:fm-test-queue.sh:344 local line k v
++27:fm-test-queue.sh:345 T_PID=
++27:fm-test-queue.sh:345 T_START=
++27:fm-test-queue.sh:345 T_CHILD_PID=
++27:fm-test-queue.sh:345 T_CHILD_START=
++27:fm-test-queue.sh:345 T_PGID=
++27:fm-test-queue.sh:345 T_CALLER=
++27:fm-test-queue.sh:345 T_HOLDER_PID=
++27:fm-test-queue.sh:345 T_HOLDER_START=
++27:fm-test-queue.sh:345 T_SIBLINGS=
++27:fm-test-queue.sh:345 T_ENQUEUED=
++27:fm-test-queue.sh:345 T_SERVED=
++27:fm-test-queue.sh:345 T_TASK=
++27:fm-test-queue.sh:345 T_LABEL=
++27:fm-test-queue.sh:346 '[' -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002 ']'
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=pid
++27:fm-test-queue.sh:349 v=70062
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:351 T_PID=70062
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=start
++27:fm-test-queue.sh:349 v='Fri Nov 20 03:35:51 2026'
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:352 T_START='Fri Nov 20 03:35:51 2026'
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=child_pid
++27:fm-test-queue.sh:349 v=6847
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:353 T_CHILD_PID=6847
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=child_start
++27:fm-test-queue.sh:349 v='Fri Nov 20 03:36:04 2026'
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:354 T_CHILD_START='Fri Nov 20 03:36:04 2026'
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=pgid
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:355 T_PGID=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=caller_pid
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:356 T_CALLER=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=holder_pid
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:357 T_HOLDER_PID=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=holder_start
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:358 T_HOLDER_START=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=siblings
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:359 T_SIBLINGS=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=enqueued
++27:fm-test-queue.sh:349 v=1795145752
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:360 T_ENQUEUED=1795145752
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=served
++27:fm-test-queue.sh:349 v=1795145763
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:361 T_SERVED=1795145763
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=task
++27:fm-test-queue.sh:349 v=
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:362 T_TASK=
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:348 k=label
++27:fm-test-queue.sh:349 v='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++27:fm-test-queue.sh:350 case "$k" in
++27:fm-test-queue.sh:363 T_LABEL='sh -c [ "$(git show HEAD:committed)" = committed ] && [ ! -e deleted ] && [ ! -e ignored ] && [ ! -e leaked ] && [ -x source ] && [ "$(readlink link)" = source ] && [ "$(stat -c %a .. 2>/dev/null || stat -f %Lp ..)" = 700 ] || exit 9; printf "%s|%s" "$(cat source)" "$(cat "extra space")"'
++27:fm-test-queue.sh:347 IFS=
++27:fm-test-queue.sh:347 read -r line
++27:fm-test-queue.sh:613 '[' -n 6847 ']'
++27:fm-test-queue.sh:613 owner_alive 6847 'Fri Nov 20 03:36:04 2026'
++27:fm-test-queue.sh:247 local now_start
++27:fm-test-queue.sh:248 is_uint 6847
++27:fm-test-queue.sh:164 case "$1" in
++27:fm-test-queue.sh:249 kill -0 6847
++27:fm-test-queue.sh:249 return 1
++27:fm-test-queue.sh:616 ticket_group_reapable exit
++27:fm-test-queue.sh:475 local caller_group
++27:fm-test-queue.sh:476 is_uint ''
++27:fm-test-queue.sh:164 case "$1" in
++27:fm-test-queue.sh:164 return 1
++27:fm-test-queue.sh:476 return 1
++27:fm-test-queue.sh:619 stop_holder
++27:fm-test-queue.sh:582 '[' -n '' ']'
++27:fm-test-queue.sh:582 return 0
++27:fm-test-queue.sh:622 workload_alive 70062
++27:fm-test-queue.sh:395 owner_alive 6847 'Fri Nov 20 03:36:04 2026'
++27:fm-test-queue.sh:247 local now_start
++27:fm-test-queue.sh:248 is_uint 6847
++27:fm-test-queue.sh:164 case "$1" in
++27:fm-test-queue.sh:249 kill -0 6847
++27:fm-test-queue.sh:249 return 1
++27:fm-test-queue.sh:395 group_alive '' 70062
++27:fm-test-queue.sh:384 local members
++27:fm-test-queue.sh:385 is_uint ''
++27:fm-test-queue.sh:164 case "$1" in
++27:fm-test-queue.sh:164 return 1
++27:fm-test-queue.sh:385 return 1
++27:fm-test-queue.sh:622 rm -f /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-queue.93pFQM/offload-incremental/spool/tickets/0000000002
++28:fm-test-queue.sh:624 MY_TICKET=
++28:fm-test-queue.sh:626 lock_release
++28:fm-test-queue.sh:330 '[' 0 = 1 ']'
++28:fm-test-queue.sh:330 return 0
++28:fm-test-queue.sh:627 '[' -z '' ']'

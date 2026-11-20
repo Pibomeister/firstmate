@@ -1,0 +1,4 @@
+fm-test-queue: ticket 2268, position 5: waiting behind 4 earlier ticket(s)
+fm-test-queue: ticket 2268, position 4: waiting behind 3 earlier ticket(s)
+fm-test-queue: ticket 2268, position 3: waiting behind 2 earlier ticket(s)
+QUEUE_RC=143

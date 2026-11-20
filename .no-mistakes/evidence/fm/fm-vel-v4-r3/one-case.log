@@ -1,0 +1,2 @@
+not ok - warm offload took 35s (limit 30s)
+timeout 600 bash $EV/one-case.test.sh  3.70s user 11.12s system 2% cpu 8:28.91 total

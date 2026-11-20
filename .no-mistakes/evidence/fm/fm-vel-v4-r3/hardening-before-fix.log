@@ -1,0 +1,2 @@
+not ok - same-size, same-second stale mirror manifest was not replaced
+case test_remote_offload_hardening rc=1 151s

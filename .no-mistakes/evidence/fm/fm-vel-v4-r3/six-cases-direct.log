@@ -1,0 +1,15 @@
+ok - fm-test-queue.sh: warm delta prepared in 23s; mismatch falls back and uncertain execution does not
+case test_remote_incremental_manifest_and_uncertain_run rc=0 178s
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+case test_remote_offload_hardening rc=0 295s
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+case test_remote_offload_snapshot_and_failure rc=0 60s
+ok - fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable
+case test_unreachable_remote_waits_locally_and_threshold_is_configurable rc=0 12s
+ok - fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally
+case test_unlisted_project_runs_locally_and_failed_upload_falls_back rc=0 56s
+not ok - timed out waiting for: remote run returned with its output closed
+test-queue: slots=1 load_ceiling=150 load1=9 serving=0 waiting=1 stale=0 spool=/private/tmp/fmq-hard.wK0225/fm-test-queue.VRZBrG/offload-straggler/spool
+waiting position=1 ticket=1 pid=88576 age=45s task=- label=sh -c sleep 100000 & echo $! > "$1/straggler"; echo remote-done _ /private/tmp/fmq-hard.wK0225/fm-test-queue.VRZBrG/offload-straggler
+case test_remote_straggler_cannot_hold_the_ssh_output rc=1 48s
+RC=0

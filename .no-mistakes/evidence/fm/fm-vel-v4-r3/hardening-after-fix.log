@@ -1,0 +1,2 @@
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+case test_remote_offload_hardening rc=0 309s
