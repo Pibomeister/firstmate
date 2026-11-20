@@ -1156,13 +1156,11 @@ tests/fm-kiro-signals-live-e2e.test.sh 60
 tests/fm-lane-register.test.sh 52000
 tests/fm-lane-vitals.test.sh 9527
 tests/fm-layer-chain.test.sh 29492
-tests/fm-load-relief.test.sh 99821
 tests/fm-procevent-factory.test.sh 25000
 tests/fm-quiet-hours.test.sh 3189
 tests/fm-ready-pr-discovery.test.sh 25000
 tests/fm-relay-guard.test.sh 35000
 tests/fm-remote-inherit-generation.test.sh 12737
-tests/fm-reset-audit.test.sh 105860
 tests/fm-send-kiro-confirm.test.sh 6795
 tests/fm-session-start-drift.test.sh 13657
 tests/fm-soak-record.test.sh 35000
