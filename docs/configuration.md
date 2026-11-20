@@ -1949,6 +1949,7 @@ Moving it to another declared Claude account is not a runner change, so `--accou
 When no declared account is at or above the floor, keep the work queued until a window resets.
 
 [`bin/fm-quota-floor-lib.sh`](../bin/fm-quota-floor-lib.sh) owns the rule, the read, and the reroute lines.
+
 ## Worker account pin (config/claude-account, config/pi-account)
 
 A home that mixes accounts for one runner, such as a work login and a personal one, can pin the account its own Claude and Pi workers launch on.
