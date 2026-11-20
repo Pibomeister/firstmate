@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-goal-digest.sh: new-merge detection,
 # the changed flag, missed ETAs, stalls, unreachable sources, the
-# changed-only summarizer (and its Opus refusal), and LaunchAgent install.
+# changed-only summarizer, and the LaunchAgent install and its scheduled run.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -28,6 +28,16 @@ esac
 SH
 chmod +x "$FAKE/gh"
 
+cat > "$FAKE/date" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "+%s" ] && [ -n "${FM_GD_NOW_EPOCH:-}" ]; then
+  printf '%s\n' "$FM_GD_NOW_EPOCH"
+  exit 0
+fi
+exec /bin/date "$@"
+SH
+chmod +x "$FAKE/date"
+
 cat > "$FAKE/launchctl" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_GD_LAUNCH_LOG"
@@ -42,10 +52,16 @@ printf 'summary\n'
 SH
 chmod +x "$TMP_ROOT/summarize.sh"
 
+# 2026-01-01T12:00:00Z and the following hours, independent of the host clock.
+RUN1_EPOCH=1767268800
+RUN2_EPOCH=1767272400
+RUN3_EPOCH=1767276000
+
 write_fixtures() {  # <include-second-merge:0|1>
   if [ "$1" = 1 ]; then
     cat > "$FIXTURE/merged-example-org_example-repo.json" <<'JSON'
 [{"number": 2, "title": "Second", "html_url": "https://example.invalid/pr/2", "merge_commit_sha": "bbbbbbbbbbbbcccc", "merged_at": "2026-01-02T00:00:00Z", "created_at": "2026-01-01T00:00:00Z"},
+ {"number": 9, "title": "Old merge, newly updated", "html_url": "https://example.invalid/pr/9", "merge_commit_sha": "999999999999dddd", "merged_at": "2025-06-01T00:00:00Z", "created_at": "2025-05-01T00:00:00Z"},
  {"number": 1, "title": "First", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"}]
 JSON
   else
@@ -61,7 +77,7 @@ JSON
 make_home() {  # <name> [summarize_cmd]
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/config" "$home/data"
-  printf 'eta: 2020-01-01 deliver the thing\nprogress: started\n' > "$home/status.txt"
+  printf 'eta: 2020-01-01 deliver the thing\nprogress: started\nbeta 2020-03-01 release\nshipped 2020-01-05 (eta: 2099-12-01)\n' > "$home/status.txt"
   touch -t 202001010000 "$home/status.txt"
   printf 'working [at=1]: T1 in progress\n' > "$home/review.status"
   {
@@ -74,16 +90,16 @@ make_home() {  # <name> [summarize_cmd]
   printf '%s' "$home"
 }
 
-run_digest() {  # <home>
+run_digest() {  # <home> [now-epoch]
   PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 FM_HOME="$1" FM_GD_FIXTURE="$FIXTURE" \
-    FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" "$SCRIPT" run
+    FM_GD_NOW_EPOCH="${2:-}" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" "$SCRIPT" run
 }
 
 test_new_merge_changed_and_summarize_only_on_change() {
   write_fixtures 0
   local home out1 out2
   home=$(make_home home1)
-  out1=$(run_digest "$home") || fail "first run failed: $out1"
+  out1=$(run_digest "$home" "$RUN1_EPOCH") || fail "first run failed: $out1"
   assert_contains "$out1" "changed=yes" "first run is changed"
   assert_contains "$(cat "$home/data/goal-digest/latest.md")" "https://example.invalid/pr/1" "digest lists new merge URL"
   assert_contains "$(cat "$home/data/goal-digest/latest.md")" "aaaaaaaaaaaa" "digest lists new merge SHA"
@@ -91,14 +107,14 @@ test_new_merge_changed_and_summarize_only_on_change() {
   [ -f "$TMP_ROOT/summary-marker" ] || fail "summarizer not called on changed run"
   local marker_size
   marker_size=$(wc -c < "$TMP_ROOT/summary-marker")
-  out2=$(run_digest "$home") || fail "second run failed: $out2"
-  assert_contains "$out2" "changed=no" "unchanged second run"
+  out2=$(run_digest "$home" "$RUN2_EPOCH") || fail "second run failed: $out2"
+  assert_contains "$out2" "changed=no" "second run an hour later with only ages grown is unchanged"
   [ "$(wc -c < "$TMP_ROOT/summary-marker")" = "$marker_size" ] || fail "summarizer called on unchanged run"
   write_fixtures 1
   local out3
-  out3=$(run_digest "$home") || fail "third run failed: $out3"
+  out3=$(run_digest "$home" "$RUN3_EPOCH") || fail "third run failed: $out3"
   assert_contains "$out3" "changed=yes" "new merge marks changed"
-  assert_contains "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([m["number"] for m in d["new_merges"]])' "$home/data/goal-digest/latest.json")" "[2]" "only the unseen merge is new"
+  assert_contains "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([m["number"] for m in d["new_merges"]])' "$home/data/goal-digest/latest.json")" "[2]" "only the merge after the previous run is new, not an old merge newly in the window"
   [ -n "$(ls "$home/data/goal-digest/history/"*.md 2>/dev/null)" ] || fail "history copy missing"
   pass "new merge detection, changed flag and changed-only summarizer"
 }
@@ -110,6 +126,7 @@ test_missed_eta_stall_and_unreachable() {
   run_digest "$home" >/dev/null || fail "run with unreachable source failed"
   local json="$home/data/goal-digest/latest.json"
   assert_contains "$(cat "$json")" '"eta": "2020-01-01"' "missed ETA recorded"
+  assert_equals "['2020-01-01']" "$(python3 -c 'import json,sys; print(sorted(m["eta"] for m in json.load(open(sys.argv[1]))["missed_etas"]))' "$json")" "beta date and a date before the eta are not missed ETAs"
   assert_contains "$(cat "$json")" '"source": "Example status"' "stalled source recorded"
   assert_contains "$(cat "$json")" "Missing status" "unreachable status recorded"
   assert_contains "$(cat "$json")" "T1 in progress" "review convergence last line recorded"
@@ -117,30 +134,46 @@ test_missed_eta_stall_and_unreachable() {
   pass "missed ETA, stall, unreachable source and review record"
 }
 
-test_opus_summarizer_refused() {
-  write_fixtures 0
-  local home out
-  home=$(make_home home3 "opus-model summarize")
-  out=$(run_digest "$home" 2>&1) || fail "opus-refusal run failed: $out"
-  assert_contains "$out" "changed=yes" "digest still produced when summarizer refused"
-  [ ! -f "$home/data/goal-digest/summary.txt" ] || fail "opus summarizer produced a summary"
-  pass "opus summarizer refused, digest still written"
-}
-
 test_install_launchagent() {
-  local home
+  write_fixtures 0
+  local home other
   home=$(make_home home4)
+  other=$(make_home home5)
   mkdir -p "$home/fake-home"
   FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
     FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" install >/dev/null || fail "install failed"
-  local plist="$home/fake-home/Library/LaunchAgents/dev.firstmate.goal-digest.plist"
-  [ -f "$plist" ] || fail "plist not installed"
-  assert_contains "$(cat "$plist")" "<integer>1200</integer>" "plist uses 20 minute interval"
-  assert_contains "$(cat "$plist")" "fm-goal-digest.sh" "plist runs the digest script"
+  FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
+    FM_HOME="$other" HOME="$home/fake-home" "$SCRIPT" install >/dev/null || fail "second home install failed"
+  local plists plist
+  plists=$(ls "$home/fake-home/Library/LaunchAgents/"dev.firstmate.goal-digest*.plist 2>/dev/null)
+  assert_equals "2" "$(printf '%s\n' "$plists" | grep -c .)" "two homes install two separate agents"
+  plist=$(printf '%s\n' "$plists" | while IFS= read -r f; do grep -l "<string>$home</string>" "$f"; done | head -1)
+  [ -f "$plist" ] || fail "plist for first home not installed"
+  local agent
+  agent=$(python3 -c '
+import plistlib, sys
+d = plistlib.load(open(sys.argv[1], "rb"))
+env = d["EnvironmentVariables"]
+print(d["StartInterval"])
+print(env["FM_HOME"])
+print(env["HOME"])
+print(env["PATH"])
+print("\0".join(d["ProgramArguments"]))
+' "$plist") || fail "plist does not parse"
+  assert_equals "1200" "$(printf '%s\n' "$agent" | sed -n 1p)" "plist uses 20 minute interval"
+  assert_equals "$(cd "$home" && pwd -P)" "$(printf '%s\n' "$agent" | sed -n 2p)" "agent runs with the installing home"
+  assert_equals "$home/fake-home" "$(printf '%s\n' "$agent" | sed -n 3p)" "agent runs with the installer HOME"
+  local agent_path
+  agent_path=$(printf '%s\n' "$agent" | sed -n 4p)
+  # Run the agent's program the way launchd does: only its declared environment.
+  env -i FM_HOME="$(printf '%s\n' "$agent" | sed -n 2p)" HOME="$home/fake-home" PATH="$agent_path" \
+    FM_GD_FIXTURE="$FIXTURE" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" \
+    "$SCRIPT" run >/dev/null || fail "scheduled run failed"
+  assert_contains "$(cat "$home/data/goal-digest/latest.md")" "https://example.invalid/pr/1" "scheduled run finds gh and writes into the installing home"
   FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
     FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" uninstall >/dev/null || fail "uninstall failed"
   [ ! -f "$plist" ] || fail "plist not removed by uninstall"
   pass "launchagent install and uninstall"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_opus_summarizer_refused test_install_launchagent
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_install_launchagent

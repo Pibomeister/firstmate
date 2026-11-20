@@ -9,8 +9,10 @@
 #       directory. Prints one machine line:
 #         goal-digest: changed=<yes|no> latest=<path> generated=<iso>
 #   fm-goal-digest.sh install
-#       Install the macOS LaunchAgent dev.firstmate.goal-digest with the
-#       configured interval (default 1200 seconds, every 20 minutes).
+#       Install the macOS LaunchAgent dev.firstmate.goal-digest-<cksum of
+#       FM_HOME> with the configured interval (default 1200 seconds, every
+#       20 minutes). The agent runs with this home's FM_HOME and the
+#       installer's PATH and HOME.
 #   fm-goal-digest.sh uninstall
 #       Remove that LaunchAgent.
 #   fm-goal-digest.sh --help
@@ -28,22 +30,26 @@
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
 #
-# The digest lists new merges (URL and SHA) since the previous run, open
+# The digest lists new merges (URL and SHA) since the previous run (a
+# merged pull already reported, or merged before the repository's previous
+# successful fetch, is not new), open
 # pull requests waiting for review with their age, missed ETAs (a status
-# line "eta: YYYY-MM-DD" in the past), stalled status sources (local file
+# line with the word "eta" followed by ":" or space and a YYYY-MM-DD date
+# in the past), stalled status sources (local file
 # not modified within stall_hours) and the last line of each review
 # record. Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
 #
 # changed is yes when the digest content other than its generated time
-# differs from the previous run, including the first run. A configured
-# summarize_cmd runs only on a changed run and receives latest.md on
-# stdin; a command naming an Opus model is refused and skipped. This
+# and age values differs from the previous run, including the first run.
+# A configured summarize_cmd runs only on a changed run and receives
+# latest.md on stdin. This
 # script never merges, deploys, tags, pushes or messages anyone: its
 # only network reads are `gh api` GET requests and read-only ssh cat.
 #
 # State under the output directory: .state/seen.tsv holds every merged
-# pull request already reported, .state/content.hash holds the previous
+# pull request already reported, .state/since.tsv holds each repository's
+# previous successful fetch time, .state/content.hash holds the previous
 # content hash. FM_GOAL_DIGEST_GH replaces the gh binary only when
 # FM_TEST_SEAM=1.
 set -u
@@ -59,10 +65,8 @@ usage() {
 script_dir=$(cd "$(dirname "$0")" && pwd -P)
 code_root=$(cd "$script_dir/.." && pwd -P)
 fm_home=${FM_HOME:-$code_root}
-config_file=${FM_GOAL_DIGEST_CONFIG:-$fm_home/config/goal-digest}
-if [ -n "${FM_TEST_SEAM:-}" ] && [ -n "${FM_GOAL_DIGEST_CONFIG:-}" ]; then
-  config_file=$FM_GOAL_DIGEST_CONFIG
-fi
+fm_home=$(cd "$fm_home" 2>/dev/null && pwd -P || printf '%s' "$fm_home")
+config_file=$fm_home/config/goal-digest
 
 gh_bin=gh
 if [ -n "${FM_TEST_SEAM:-}" ] && [ -n "${FM_GOAL_DIGEST_GH:-}" ]; then
@@ -146,7 +150,9 @@ do_run() {
   mkdir -p "$output_dir/history" "$output_dir/.state" || return 1
   local seen_file=$output_dir/.state/seen.tsv
   local hash_file=$output_dir/.state/content.hash
+  local since_file=$output_dir/.state/since.tsv
   [ -f "$seen_file" ] || : > "$seen_file"
+  [ -f "$since_file" ] || : > "$since_file"
   local work
   work=$(mktemp -d "${TMPDIR:-/tmp}/fm-goal-digest.XXXXXX") || return 1
   # shellcheck disable=SC2064
@@ -172,9 +178,17 @@ do_run() {
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed" >> "$work/unreachable.tsv"
     else
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
+      FM_GD_SINCE="$since_file" FM_GD_NOW="$now_epoch" \
       python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
-import json, os, sys
+import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
+since_path = os.environ["FM_GD_SINCE"]
+since = {}
+with open(since_path) as fh:
+    for line in fh:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 2 and parts[1].isdigit():
+            since[parts[0]] = int(parts[1])
 seen = set()
 try:
     with open(os.environ["FM_GD_SEEN"]) as fh:
@@ -194,7 +208,19 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
         sha = (pr.get("merge_commit_sha") or "")[:12]
         if (repo, number) in seen:
             continue
+        if repo in since:
+            try:
+                merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+            except ValueError:
+                continue
+            if merged.timestamp() <= since[repo]:
+                continue
         out.write("\t".join([repo, number, str(pr.get("title", "")), str(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
+since[repo] = int(os.environ["FM_GD_NOW"])
+with open(since_path + ".tmp", "w") as fh:
+    for key in sorted(since):
+        fh.write(f"{key}\t{since[key]}\n")
+os.replace(since_path + ".tmp", since_path)
 PY
       # Record every merged pull as seen, new or not.
       FM_GD_REPO="$repo" python3 - "$json_file" >> "$seen_file" <<'PY'
@@ -231,6 +257,7 @@ PY
   done
   sort -u "$seen_file" -o "$seen_file.tmp" && mv "$seen_file.tmp" "$seen_file"
 
+  local eta_pattern='(^|[^[:alnum:]_])eta[: ]+[0-9]{4}-[0-9]{2}-[0-9]{2}'
   for i in "${!status_labels[@]}"; do
     label=${status_labels[$i]}; loc=${status_locs[$i]}
     content=$work/status-content; mtime_file=$work/status-mtime
@@ -239,12 +266,12 @@ PY
       continue
     fi
     while IFS= read -r eta_line; do
-      eta_date=$(printf '%s' "$eta_line" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1 || true)
+      eta_date=$(printf '%s' "$eta_line" | grep -oiE "$eta_pattern" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
       if [ -n "$eta_date" ] && [ "$eta_date" \< "$today" ]; then
         printf '%s\t%s\t%s\n' "$label" "$eta_date" "$(trim "$eta_line")" >> "$work/missed.tsv"
       fi
     done <<EOF
-$(grep -iE 'eta[: ]' "$content" 2>/dev/null || true)
+$(grep -iE "$eta_pattern" "$content" 2>/dev/null || true)
 EOF
     local mtime
     mtime=$(cat "$mtime_file")
@@ -269,11 +296,12 @@ EOF
     printf '%s\t%s\n' "$label" "$last_line" >> "$work/reviews.tsv"
   done
 
-  # The persistent-content hash excludes the generated time and the
-  # transient new-merges list (a merge reported once would otherwise
-  # flip the next run back to changed when it drops off that list).
+  # The persistent-content hash excludes the generated time, the age
+  # columns that grow every hour, and the transient new-merges list (a
+  # merge reported once would otherwise flip the next run back to changed
+  # when it drops off that list).
   local content_hash changed
-  content_hash=$(cat "$work/waiting.tsv" "$work/missed.tsv" "$work/stalled.tsv" "$work/reviews.tsv" "$work/unreachable.tsv" | shasum -a 256 | awk '{print $1}')
+  content_hash=$({ cut -f1-5,7,8 "$work/waiting.tsv"; cat "$work/missed.tsv"; cut -f1 "$work/stalled.tsv"; cat "$work/reviews.tsv" "$work/unreachable.tsv"; } | shasum -a 256 | awk '{print $1}')
   changed=no
   if [ -s "$work/new_merges.tsv" ] || [ ! -f "$hash_file" ] || [ "$(cat "$hash_file")" != "$content_hash" ]; then
     changed=yes
@@ -344,15 +372,8 @@ PY
   cp "$output_dir/latest.json" "$output_dir/history/$stamp.json"
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
-    case "$summarize_cmd" in
-      *[Oo][Pp][Uu][Ss]*)
-        printf '%s\n' "goal-digest: summarize_cmd refused (names an Opus model); skipped" >&2
-        ;;
-      *)
-        # shellcheck disable=SC2086
-        $summarize_cmd < "$output_dir/latest.md" > "$output_dir/summary.txt" 2>/dev/null || printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
-        ;;
-    esac
+    # shellcheck disable=SC2086
+    $summarize_cmd < "$output_dir/latest.md" > "$output_dir/summary.txt" 2>/dev/null || printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
   fi
 
   trap - EXIT
@@ -360,13 +381,26 @@ PY
   printf 'goal-digest: changed=%s latest=%s generated=%s\n' "$changed" "$output_dir/latest.md" "$now_iso"
 }
 
+agent_label() {
+  local sum
+  read -r sum _ <<EOF
+$(printf '%s' "$fm_home" | cksum)
+EOF
+  printf '%s-%s' "$LABEL" "$sum"
+}
+
 plist_path() {
-  printf '%s/Library/LaunchAgents/%s.plist' "$HOME" "$LABEL"
+  printf '%s/Library/LaunchAgents/%s.plist' "$HOME" "$(agent_label)"
+}
+
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
 do_install() {
   load_config
-  local plist dir
+  local plist dir label
+  label=$(agent_label)
   plist=$(plist_path)
   dir=$(dirname "$plist")
   mkdir -p "$dir" "$output_dir" || return 1
@@ -376,23 +410,32 @@ do_install() {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>$LABEL</string>
+  <string>$label</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$code_root/bin/fm-goal-digest.sh</string>
+    <string>$(xml_escape "$code_root/bin/fm-goal-digest.sh")</string>
     <string>run</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>FM_HOME</key>
+    <string>$(xml_escape "$fm_home")</string>
+    <key>PATH</key>
+    <string>$(xml_escape "$PATH")</string>
+    <key>HOME</key>
+    <string>$(xml_escape "$HOME")</string>
+  </dict>
   <key>StartInterval</key>
   <integer>$interval_seconds</integer>
   <key>StandardOutPath</key>
-  <string>$output_dir/launchd.log</string>
+  <string>$(xml_escape "$output_dir/launchd.log")</string>
   <key>StandardErrorPath</key>
-  <string>$output_dir/launchd.log</string>
+  <string>$(xml_escape "$output_dir/launchd.log")</string>
 </dict>
 </plist>
 EOF
   if command -v launchctl >/dev/null 2>&1; then
-    launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+    launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
     launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1 || printf '%s\n' "goal-digest: launchctl bootstrap failed; plist written at $plist" >&2
   fi
   printf 'goal-digest: installed=%s interval_seconds=%s\n' "$plist" "$interval_seconds"
@@ -402,7 +445,7 @@ do_uninstall() {
   local plist
   plist=$(plist_path)
   if command -v launchctl >/dev/null 2>&1; then
-    launchctl bootout "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || true
+    launchctl bootout "gui/$(id -u)/$(agent_label)" >/dev/null 2>&1 || true
   fi
   rm -f "$plist"
   printf 'goal-digest: uninstalled=%s\n' "$plist"
