@@ -10,8 +10,9 @@
 #       two-sample top for the user/sys/idle split.
 #   fm-host-ledger.sh report [--hours <N>]
 #       Summarize the last <N> hours (default 24): row count, peak new-pid
-#       rate, peak load1, lowest free disk, peak live workers per CLI, and
-#       tokens per active-agent-hour per provider where it can be derived.
+#       rate, peak load1, lowest free disk, peak live workers, RSS, and
+#       local worker-hours per CLI, the account-wide quota per provider
+#       scope, and tokens per active-agent-hour, which stays unreported.
 #   fm-host-ledger.sh microbench [--n <N>]
 #       Time repeated execs (default N=100, N must be positive): a cached
 #       system binary, the same throwaway script path, a fresh script path per
@@ -42,7 +43,7 @@
 #
 # Columns: ts_epoch, load1, procs, new_pids, interval_s, new_per_s,
 # cpu_user, cpu_sys, cpu_idle, swap_used_mib, disk_free_kib, cli, parents,
-# tokens_remaining, tokens_unreported.
+# quota_account_wide, quota_account_wide_unreported.
 # Unknown values are the word unknown. new_pids counts pids present now that
 # were absent at the previous sample, so processes that lived and died
 # between samples are missed: new_per_s is a floor on the true launch rate,
@@ -51,21 +52,22 @@
 # privileged exec tracer, which this unprivileged sampler deliberately is not.
 # cli is name=count:rss_kib for each known agent CLI process basename
 # (claude, codex, grok, muse, droid, cursor-agent, agy, kimi, opencode), so
-# active RSS per CLI is measured. Token use is not visible from the process
-# table, so it is read from quota-axi when it is on PATH: one bounded,
-# side-effect-free read (quota-axi --json --no-credential-refresh --max-age
-# FM_HOST_LEDGER_QUOTA_MAX_AGE, default 5m, under a
-# FM_HOST_LEDGER_QUOTA_TIMEOUT bound, default 10 seconds). A token reading
-# is a provider's credits object whose unit is tokens; tokens_remaining is
-# provider=remaining for each such reading, or none. tokens_unreported counts
-# the known CLI providers (claude codex grok muse droid cursor agy kimi
-# opencode-go) with no token reading in that sample, so an absent, failed,
-# timed-out, or unparsable read records all of them. Tokens are never
-# estimated or interpolated. report derives tokens consumed only from a drop
-# in one provider's remaining between two consecutive rows (a rise is a
-# reset and is skipped), and active-agent-hours from the later row's worker
-# count for that provider's CLI times its interval_s; tokens per
-# active-agent-hour is printed only where both exist, and says so otherwise.
+# active RSS per CLI is measured, and report sums each CLI's local
+# worker-hours (count times interval_s). quota_account_wide comes from one
+# bounded, side-effect-free quota-axi read when it is on PATH (quota-axi
+# --json --no-credential-refresh --max-age FM_HOST_LEDGER_QUOTA_MAX_AGE,
+# default 5m, under a FM_HOST_LEDGER_QUOTA_TIMEOUT bound, default 10
+# seconds). It is provider/scope=effectivePercentRemaining/pace for each
+# known effectiveAvailability entry, exactly as reported, or unreported.
+# These figures are ACCOUNT-WIDE: every host on that subscription draws them
+# down, so they are drawdown evidence for the whole account, never this
+# host's consumption, and nothing here divides them by local worker-hours.
+# quota_account_wide_unreported counts the known CLI providers (claude codex
+# grok muse droid cursor agy kimi opencode-go) with no entry in that sample,
+# so an absent, failed, timed-out, or unparsable read records all of them.
+# No harness exposes a per-host token source yet, so tokens per
+# active-agent-hour is reported as unreported and never estimated,
+# interpolated, or derived from percents or credits.
 #
 # Exit: 0 on success, 2 on a usage error. A failed probe degrades its own
 # column to unknown and still writes the row, because a gap in the ledger is
@@ -77,7 +79,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LEDGER_DIR=${FM_HOST_LEDGER_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/host-ledger}
 QUOTA_TIMEOUT=${FM_HOST_LEDGER_QUOTA_TIMEOUT:-10}
 QUOTA_MAX_AGE=${FM_HOST_LEDGER_QUOTA_MAX_AGE:-5m}
-TOKEN_PROVIDERS="claude codex grok muse droid cursor agy kimi opencode-go"
+QUOTA_PROVIDERS="claude codex grok muse droid cursor agy kimi opencode-go"
 VOLUME=${FM_HOST_LEDGER_VOLUME:-/System/Volumes/Data}
 [ -d "$VOLUME" ] || VOLUME=/
 
@@ -196,28 +198,30 @@ new_pids_calc() {
     }' "$prev" "$cur"
 }
 
-# Prints "tokens_remaining tokens_unreported" from one bounded quota-axi read.
-tokens_read() {
-  local out='' readings='' n=0
+# Prints "quota_account_wide quota_account_wide_unreported" from one
+# bounded quota-axi read.
+quota_read() {
+  local out='' readings='' providers=0
   if command -v quota-axi >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
     # shellcheck source=bin/fm-timeout-lib.sh
     . "$SCRIPT_DIR/fm-timeout-lib.sh"
     out=$(fm_run_timed "$QUOTA_TIMEOUT" quota-axi --json --no-credential-refresh \
       --max-age "$QUOTA_MAX_AGE" </dev/null 2>/dev/null) || out=
-    readings=$(printf '%s' "$out" | jq -r --arg names "$TOKEN_PROVIDERS" '
+    readings=$(printf '%s' "$out" | jq -r --arg names "$QUOTA_PROVIDERS" '
       ($names | split(" ")) as $known
-      | [.providers[]? | select(.provider as $p | $known | index($p))
-         | select(.credits.unit? == "tokens" and (.credits.remaining | type) == "number")]
-      | group_by(.provider)
-      | map("\(.[0].provider)=\(map(.credits.remaining) | add | floor)") | join(",")' 2>/dev/null) || readings=
-    case "$readings" in *[!a-z0-9=,-]*) readings= ;; esac
+      | [.providers[]? | select(.provider as $p | $known | index($p)) | .provider as $p
+         | .quotaSemantics.effectiveAvailability[]?
+         | select(.status == "known" and (.effectivePercentRemaining | type) == "number")
+         | "\($p)/\(.scope)=\(.effectivePercentRemaining)/\(.pace.status // "unknown")"]
+      | join(",")' 2>/dev/null) || readings=
+    case "$readings" in *[!A-Za-z0-9_:./=,-]*) readings= ;; esac
   fi
   if [ -n "$readings" ]; then
-    n=$(printf '%s\n' "$readings" | tr ',' '\n' | grep -c '=')
+    providers=$(printf '%s\n' "$readings" | tr ',' '\n' | sed 's|/.*||' | sort -u | grep -c .)
   fi
   # shellcheck disable=SC2086
-  set -- $TOKEN_PROVIDERS
-  printf '%s %s\n' "${readings:-none}" "$(( $# - n ))"
+  set -- $QUOTA_PROVIDERS
+  printf '%s %s\n' "${readings:-unreported}" "$(( $# - providers ))"
 }
 
 cmd_sample() {
@@ -263,19 +267,19 @@ EOF
   [ -n "$swap" ] || swap=unknown
   [ -n "$free_kib" ] || free_kib=unknown
   [ -n "$cu" ] || { cu=unknown; cs=unknown; ci=unknown; }
-  local tokens tokens_unreported
-  read -r tokens tokens_unreported <<EOF
-$(tokens_read)
+  local quota quota_unreported
+  read -r quota quota_unreported <<EOF
+$(quota_read)
 EOF
   if [ ! -s "$file" ]; then
-    printf 'ts_epoch\tload1\tprocs\tnew_pids\tinterval_s\tnew_per_s\tcpu_user\tcpu_sys\tcpu_idle\tswap_used_mib\tdisk_free_kib\tcli\tparents\ttokens_remaining\ttokens_unreported\n' >> "$file" || {
+    printf 'ts_epoch\tload1\tprocs\tnew_pids\tinterval_s\tnew_per_s\tcpu_user\tcpu_sys\tcpu_idle\tswap_used_mib\tdisk_free_kib\tcli\tparents\tquota_account_wide\tquota_account_wide_unreported\n' >> "$file" || {
       echo "fm-host-ledger: cannot write $file" >&2
       exit 1
     }
   fi
   now=$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
     "$ts" "$load1" "$procs" "$new_pids" "$interval" "$new_per_s" \
-    "$cu" "$cs" "$ci" "$swap" "$free_kib" "$cli" "$parents" "$tokens" "$tokens_unreported")
+    "$cu" "$cs" "$ci" "$swap" "$free_kib" "$cli" "$parents" "$quota" "$quota_unreported")
   printf '%s\n' "$now" >> "$file" || {
     echo "fm-host-ledger: cannot write $file" >&2
     exit 1
@@ -300,30 +304,17 @@ cmd_report() {
   fi
   # shellcheck disable=SC2086
   awk -F '\t' -v cutoff="$cutoff" '
-    BEGIN {
-      split("claude=claude codex=codex grok=grok muse=muse droid=droid cursor=cursor-agent agy=agy kimi=kimi opencode-go=opencode", m, " ")
-      for (i in m) { split(m[i], kv, "="); cli_of[kv[1]] = kv[2] }
-    }
     $1 == "ts_epoch" { next }
-    $1 + 0 < cutoff { delete prev_tok; next }
+    $1 + 0 < cutoff { next }
     {
       rows++
-      delete workers
-      n = split($12, parts, ",")
-      for (i = 1; i <= n; i++)
-        if (split(parts[i], kv, "=") == 2 && split(kv[2], cr, ":") == 2) workers[kv[1]] = cr[1] + 0
-      delete cur_tok
       n = split($14, parts, ",")
-      for (i = 1; i <= n; i++)
-        if (split(parts[i], kv, "=") == 2 && kv[2] ~ /^[0-9]+$/) cur_tok[kv[1]] = kv[2] + 0
-      for (p in cur_tok) {
-        if (!(p in prev_tok) || $5 !~ /^[0-9]+$/ || cur_tok[p] > prev_tok[p]) continue
-        paired[p] = 1
-        consumed[p] += prev_tok[p] - cur_tok[p]
-        agent_s[p] += workers[cli_of[p]] * $5
+      for (i = 1; i <= n; i++) {
+        if (split(parts[i], kv, "=") != 2 || split(kv[2], pv, "/") != 2 || pv[1] !~ /^[0-9.]+$/) continue
+        q = kv[1]
+        if (!(q in q_min) || pv[1] + 0 < q_min[q]) q_min[q] = pv[1] + 0
+        q_last[q] = pv[1]; q_pace[q] = pv[2]
       }
-      delete prev_tok
-      for (p in cur_tok) prev_tok[p] = cur_tok[p]
       if ($6 ~ /^[0-9.]+$/ && $6 + 0 > peak_rate) peak_rate = $6 + 0
       if ($2 ~ /^[0-9.]+$/ && $2 + 0 > peak_load) peak_load = $2 + 0
       if ($11 ~ /^[0-9]+$/ && (min_free == "" || $11 + 0 < min_free)) min_free = $11 + 0
@@ -333,24 +324,16 @@ cmd_report() {
         if (split(parts[i], kv, "=") == 2 && split(kv[2], cr, ":") == 2) {
           if (cr[1] + 0 > peak_cnt[kv[1]]) peak_cnt[kv[1]] = cr[1] + 0
           if (cr[2] + 0 > peak_rss[kv[1]]) peak_rss[kv[1]] = cr[2] + 0
+          if ($5 ~ /^[0-9]+$/) worker_s[kv[1]] += (cr[1] + 0) * $5
         }
       }
     }
     END {
       printf "host-ledger report: rows=%d peak_new_per_s=%.2f peak_load1=%.2f min_disk_free_kib=%s last_disk_free_kib=%s\n", \
         rows + 0, peak_rate + 0, peak_load + 0, (min_free == "" ? "unknown" : min_free), (last_free == "" ? "unknown" : last_free)
-      for (name in peak_cnt) printf "host-ledger cli: %s peak_count=%d peak_rss_kib=%d\n", name, peak_cnt[name], peak_rss[name]
-      any = 0
-      for (p in paired) {
-        any = 1
-        if (agent_s[p] > 0)
-          printf "host-ledger tokens: %s tokens_consumed=%d active_agent_hours=%.2f tokens_per_active_agent_hour=%d\n", \
-            p, consumed[p], agent_s[p] / 3600, consumed[p] / (agent_s[p] / 3600)
-        else
-          printf "host-ledger tokens: %s tokens_consumed=%d active_agent_hours=0 tokens_per_active_agent_hour=unknown reason=no_active_workers\n", \
-            p, consumed[p]
-      }
-      if (!any) print "host-ledger tokens: unreported (no two consecutive rows carry a token reading for one provider, so tokens per active-agent-hour cannot be derived)"
+      for (name in peak_cnt) printf "host-ledger cli: %s peak_count=%d peak_rss_kib=%d local_worker_hours=%.2f\n", name, peak_cnt[name], peak_rss[name], worker_s[name] / 3600
+      for (q in q_last) printf "host-ledger quota account-wide: %s last_pct_remaining=%s min_pct_remaining=%s last_pace=%s\n", q, q_last[q], q_min[q], q_pace[q]
+      print "host-ledger tokens_per_active_agent_hour: unreported: no per-host token source"
     }' $files
 }
 
