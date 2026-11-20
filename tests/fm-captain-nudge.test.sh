@@ -520,7 +520,8 @@ test_once_ladder_does_not_ack_its_own_wake() {
   local home cap echoed now=2000000000 st
   echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
   cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
-    | jq -c --arg s "$echoed" --argjson at "$now" '.fixture.after_send = {screen:$s, last_activity_epoch:$at}')
+    | jq -c --arg s "$echoed" --argjson at "$now" \
+      '.fixture.after_send = [{}, {screen:$s, last_activity_epoch:$at}]')
   home=$(write_home ladder-echo "[$cap]")
   FM_NUDGE_NOW=$now run_once "$home"
   assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"

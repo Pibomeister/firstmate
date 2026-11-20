@@ -474,10 +474,11 @@ emit_event() {  # <captain-id> <owner> <decision-json> <idle> <open-summary> [ex
   printf '%s\n' "$event"
 }
 
-observe_fixture() {  # <captain-json> [after_send] -> observation fields via globals
+observe_fixture() {  # <captain-json> [after-send-read-index] -> observation fields via globals
   local cap=$1
-  if [ "${2:-}" = after_send ]; then
-    cap=$(printf '%s' "$cap" | jq -c '.fixture += (.fixture.after_send // {})')
+  if [ -n "${2:-}" ]; then
+    cap=$(printf '%s' "$cap" | jq -c --argjson i "$2" \
+      '.fixture += ((.fixture.after_send // []) as $r | if ($r | length) == 0 then {} else $r[[$i, ($r | length) - 1] | min] end)')
   fi
   OBS_SCREEN=$(fm_nudge_json_get "$cap" '.fixture.screen // ""' '') || true
   OBS_LAST_AT=$(fm_nudge_json_get "$cap" '.fixture.last_activity_epoch // ""' '') || true
@@ -548,16 +549,23 @@ idle_min_from_obs() {
 }
 
 store_post_send_fingerprint() {  # <id> <captain-json>
-  local id=$1 cap=$2
-  if [ "$(fm_nudge_json_get "$cap" '.backend' '')" = fixture ]; then
-    observe_fixture "$cap" after_send
-  else
-    observe_live "$cap" || return 0
-    [ -n "${OBS_SCREEN:-}" ] || return 0
-  fi
-  write_captain_state "$id" "$(jq -nc \
-    --arg fp "$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")" \
-    '{fingerprint:$fp}')"
+  local id=$1 cap=$2 backend prev='' cur reads=0 limit=${FM_NUDGE_SETTLE_READS:-10}
+  case "$limit" in ''|*[!0-9]*|0) limit=10 ;; esac
+  backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
+  while :; do
+    if [ "$backend" = fixture ]; then
+      observe_fixture "$cap" "$reads"
+    else
+      observe_live "$cap" || return 0
+      [ -n "${OBS_SCREEN:-}" ] || return 0
+    fi
+    reads=$((reads + 1))
+    cur=$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")
+    [ "$cur" != "$prev" ] && [ "$reads" -lt "$limit" ] || break
+    prev=$cur
+    [ "$backend" = fixture ] || sleep "${FM_NUDGE_SETTLE_DELAY:-1}"
+  done
+  write_captain_state "$id" "$(jq -nc --arg fp "$cur" '{fingerprint:$fp}')"
 }
 
 process_captain() {  # <captain-json> [force]
