@@ -91,9 +91,8 @@ trim() {
 }
 
 load_config() {
-  [ -f "$config_file" ] || return 0
   local line key value label loc
-  while IFS= read -r line || [ -n "$line" ]; do
+  [ -f "$config_file" ] && while IFS= read -r line || [ -n "$line" ]; do
     line=$(trim "$line")
     case "$line" in ''|'#'*) continue ;; esac
     case "$line" in *=*) ;; *) continue ;; esac
