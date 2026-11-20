@@ -402,6 +402,11 @@ esac
 # The primary home's open-goal predicate is shared with watcher arming.
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
+# Host-load throttling of the periodic monitoring cadences below (the
+# heartbeat ticker's launch interval and the heartbeat wake cadence); the
+# library owns the probe, threshold, and interval arithmetic.
+# shellcheck source=bin/fm-load-lib.sh
+. "$SCRIPT_DIR/fm-load-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -4919,7 +4924,12 @@ load_relief_check_detached() {
 # document and its bounds. An independent single-flight ticker launches one
 # detached publication every POLL seconds,
 # apart from this loop's own work, so POLL is the true launch interval that the
-# heartbeat's stale bound counts (stale_after_secs, HB-3). The first launch is
+# heartbeat's stale bound counts (stale_after_secs, HB-3). While the host
+# load is above the bin/fm-load-lib.sh throttle threshold the ticker's
+# interval is the throttled one instead, re-read on every cycle so the
+# ordinary cadence returns as soon as the load falls back; the heartbeat
+# applies the same throttled cycle to its stale bound and its own
+# too-soon guard. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
 # singleton lock, and a publication already under way still completes.
 FLEET_HEARTBEAT_PID=
@@ -4939,7 +4949,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
   trap - EXIT
   trap 'exit 0' HUP INT TERM
   while :; do
-    sleep "$POLL" &
+    sleep "$(fm_load_interval "$POLL")" &
     nap=$!
     wait "$nap" 2>/dev/null || true
     kill -0 "$WATCHER_PID" 2>/dev/null || exit 0
@@ -5981,6 +5991,11 @@ EOF
       WATCH_WAIT_BUDGET=$remaining
     fi
   fi
+  # Host-load throttle (bin/fm-load-lib.sh): above the load threshold the
+  # heartbeat wake cadence stretches by the throttle factor, open-work cap
+  # included, because the fleet scan behind this cadence is part of the
+  # churn being relieved; a calm load restores the cadence computed above.
+  hb=$(fm_load_interval "$hb")
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the

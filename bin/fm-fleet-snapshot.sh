@@ -8,6 +8,13 @@
 # atomically refresh parent-side cached copies of remote home summaries under
 # state/secondmate-summary-cache; those observational cache writes are its only
 # fleet-state mutation.
+# The --json and --secondmate-home-summary modes are single-flight per
+# home (state/.fleet-snapshot.lock): a second run waits up to
+# FM_SNAPSHOT_SINGLE_FLIGHT_WAIT seconds (default 30) for the holder to
+# finish and never starts while it runs; past that bound it prints no
+# document, names the holder on stderr, and exits 75 without starting
+# its fan-out, so overlapping monitoring under load cannot multiply the
+# churn it exists to observe.
 #
 # Top-level fields:
 #   schema: stable schema id.
@@ -332,6 +339,37 @@ snapshot_stage() {  # <stage-name>
   { printf '%s\t%s\n' "$1" "$((SECONDS - SNAPSHOT_STAGE_START + ${FM_SNAPSHOT_STAGE_BASE:-0}))" \
       >&"$FM_SNAPSHOT_STAGE_FD"; } 2>/dev/null || true
 }
+
+# Single flight: the fan-out below is the expensive monitoring read, and
+# overlapping runs in one home are pure duplicate churn under load, so a
+# full snapshot (the --json and --secondmate-home-summary modes) holds the
+# per-home lock state/.fleet-snapshot.lock for its whole run and a second
+# run never starts while one is still running. A second run first waits
+# up to FM_SNAPSHOT_SINGLE_FLIGHT_WAIT seconds (default 30) for the holder
+# to finish, because callers such as the home-summary refresh have no
+# fresher copy to fall back on; only a holder still running past that
+# bound makes it start no fan-out at all - it prints nothing on stdout,
+# names the holder on stderr, and exits 75 (temporary failure), leaving
+# the caller to retry on its next cycle, whose interval
+# bin/fm-load-lib.sh owns. A dead holder's lock is reclaimed by the lock
+# helper as usual. The cheap --contribution-input mode performs no worker
+# observations and is not single-flighted.
+if [ "$OUTPUT_MODE" != contribution-input ]; then
+  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck disable=SC1091
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  SNAPSHOT_LOCK="$STATE/.fleet-snapshot.lock"
+  SNAPSHOT_SINGLE_FLIGHT_WAIT=${FM_SNAPSHOT_SINGLE_FLIGHT_WAIT:-30}
+  case "$SNAPSHOT_SINGLE_FLIGHT_WAIT" in
+    ''|*[!0-9]*) SNAPSHOT_SINGLE_FLIGHT_WAIT=30 ;;
+    *) SNAPSHOT_SINGLE_FLIGHT_WAIT=$((10#$SNAPSHOT_SINGLE_FLIGHT_WAIT)) ;;
+  esac
+  if ! fm_lock_acquire_wait_max "$SNAPSHOT_LOCK" "$SNAPSHOT_SINGLE_FLIGHT_WAIT"; then
+    echo "fm-fleet-snapshot: another snapshot is already running in this home (pid ${FM_LOCK_HELD_PID:-unknown}); not starting a second" >&2
+    exit 75
+  fi
+  trap 'fm_lock_release "$SNAPSHOT_LOCK"' EXIT
+fi
 
 bool_json() {
   if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
