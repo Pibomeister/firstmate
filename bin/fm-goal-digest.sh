@@ -169,8 +169,8 @@ read_source() {
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
       local quoted
       quoted=$(shell_quote "$path")
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" 9>&- > "$content_out" 2>/dev/null || return 1
+      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" 9>&- > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
       return 0
       ;;
     *)
@@ -187,8 +187,17 @@ do_run() {
   mkdir -p "$output_dir/history" "$output_dir/.state" || return 1
   local lock_file=$output_dir/.state/run.flock
   exec 9>>"$lock_file" || return 1
-  if ! python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)' 2>/dev/null; then
+  local lock_rc=0
+  python3 -c 'import fcntl, sys
+try:
+    fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.exit(75)' || lock_rc=$?
+  if [ "$lock_rc" = 75 ]; then
     printf 'goal-digest: another run is in progress; skipping (lock %s)\n' "$lock_file" >&2
+    return 1
+  elif [ "$lock_rc" != 0 ]; then
+    printf 'goal-digest: could not take the run lock %s (python3 exit %s)\n' "$lock_file" "$lock_rc" >&2
     return 1
   fi
   local seen_file=$output_dir/.state/seen.tsv
@@ -448,7 +457,7 @@ PY
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
     # shellcheck disable=SC2086
-    $summarize_cmd < "$output_dir/latest.md" > "$output_dir/summary.txt" 2>/dev/null || printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
+    $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt" 2>/dev/null || printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
   fi
 
   trap - EXIT
