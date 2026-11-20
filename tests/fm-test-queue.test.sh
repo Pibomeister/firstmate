@@ -196,20 +196,22 @@ test_slots_bound_concurrency() {
 }
 
 test_load_ceiling_holds_the_head() {
-  local p rc
+  local oldest second
   new_case load
+  echo slots=2 > "$FM_TEST_QUEUE_DIR/config"
   echo 20.5 > "$CASE/load"
-  qbg run -- sh -c 'echo ran > "$1/ran"' _ "$CASE" 2>"$CASE/stderr" &
-  p=$!
-  track_pids "$p"
+  start_held oldest; oldest=$HELD_PID
+  wait_until "oldest served at high load" status_has '^serving .*label=oldest$'
+  start_held second; second=$HELD_PID
   wait_until "load wait reported" grep -Fq "load 20.5 is not below 16" "$CASE/stderr"
-  status_has '^waiting position=1 ' || fail "a run under high load is not shown waiting"
-  assert_absent "$CASE/ran" "a run started while the load was above the ceiling"
+  status_has ' serving=1 waiting=1 ' || fail "the second run was not held by the load ceiling while the reserved slot served the oldest"
+  assert_absent "$CASE/started-second" "the second run started while the load was above the ceiling"
   echo 15.9 > "$CASE/load"
-  wait "$p"; rc=$?
-  expect_code 0 "$rc" "the run once the load fell"
-  assert_present "$CASE/ran" "the run never started after the load fell below the ceiling"
-  pass "fm-test-queue.sh: the head of the line waits until the load is below the ceiling"
+  wait_until "second served after load fell" status_has '^serving .*label=second$'
+  release oldest; release second
+  wait "$oldest" "$second"
+  line_is_empty || fail "the line is not empty after the load runs left"
+  pass "fm-test-queue.sh: the reserved slot serves the oldest at any load and the second slot obeys the ceiling"
 }
 
 test_signals_release_the_ticket() {
@@ -1256,9 +1258,8 @@ test_unreachable_remote_waits_locally_and_threshold_is_configurable() {
   p=$!
   track_pids "$p"
   wait_until 'unreachable remote fallback' grep -Fq 'no remote prepared; using local admission' "$CASE/stderr"
-  assert_absent "$CASE/ran" 'unreachable hosts bypassed the local load ceiling'
-  echo 1 > "$CASE/load"
-  wait "$p" || fail 'local fallback did not complete after load fell'
+  wait_until 'local fallback served through the reserved slot' file_exists "$CASE/ran"
+  wait "$p" || fail 'local fallback did not complete through the reserved slot'
   assert_present "$CASE/ran" 'local fallback never ran'
   printf 'slots=1\nload_ceiling=16\nremote_hosts=m3\noffload_threshold=12\n' > "$FM_TEST_QUEUE_DIR/config"
   echo 9 > "$CASE/load"

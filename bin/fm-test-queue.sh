@@ -14,7 +14,11 @@
 # run takes the next ticket and waits until all three hold at once:
 #   - its ticket is the oldest live waiting ticket (the head of the line);
 #   - fewer than <slots> tickets are being served;
-#   - the 1-minute load average is below <load ceiling>.
+#   - the 1-minute load average is below <load ceiling>, except that one
+#     reserved slot always serves the oldest waiting ticket at any load:
+#     while no ticket is being served, the head is admitted regardless of
+#     load, and only a further slot obeys the load ceiling. With one slot
+#     configured, that slot is the reserved one.
 # It then runs the command as an ordinary child in the wrapper's job, with the
 # caller's stdin, stdout, and stderr, and exits with the command's exit status.
 # A signal (INT, TERM, HUP, QUIT) sent only to the wrapper takes effect after
@@ -63,7 +67,8 @@
 # A failed preparation falls back to ordinary local admission and retries after
 # 60 seconds while waiting. Preparation includes the snapshot upload and the
 # queue scripts, which travel beside the snapshot rather than inside it, so a
-# failure before the suite starts never becomes a test result. It never bypasses the local ceiling or slot limit.
+# failure before the suite starts never becomes a test result. It never bypasses the local slot limit, and it reaches the load ceiling
+# only through the reserved-slot rule above.
 # Remote runs use the remote user's queue and its local load/slot policy;
 # FM_TEST_QUEUE_REMOTE_DISABLE=1 prevents recursive offloading there.
 # The transport snapshots the current Git checkout (shallow HEAD, tracked and
@@ -701,7 +706,9 @@ admission_check() {
       [ -n "$load" ] && awk -v l="$load" -v c="$OFFLOAD_THRESHOLD" 'BEGIN { exit !(l + 0 > c + 0) }'; then
       WANT_REMOTE=1
     fi
-    if [ -z "$REMOTE_HOST" ] && [ -n "$load" ] && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
+    # The reserved slot serves the head at any load while nothing is being
+    # served; every further slot still obeys the ceiling.
+    if [ "$serving" -ge 1 ] && [ -z "$REMOTE_HOST" ] && [ -n "$load" ] && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
       WAIT_REASON="load $load is not below $LOAD_CEILING"
       return
     fi
