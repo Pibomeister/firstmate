@@ -30,8 +30,9 @@
 #       PR cannot reach: a timing word, a flake word, and an unreachable word.
 #   fm_wd_pr_label <text>
 #       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
-#       else its first `PR #<n>`, else its first bare `#<n>` (as in `pr: #<n>`);
-#       prints nothing when it names none.
+#       else its first `PR #<n>`, else its first structured `pr: #<n>` or
+#       `pr: <n>` component, else its first bare `#<n>`; prints nothing when
+#       it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -255,7 +256,7 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared (db|database)|e-?mail|sms|message to|delet|destroy|wipe|changed behavio|force.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|force.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
 fm_wd_nm_awaiting_approval() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval'
@@ -276,7 +277,8 @@ fm_wd_known_unreachable_timing_flake() {  # <text>
 fm_wd_pr_label() {  # <text>
   local hit n
   hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
-  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE 'PR #[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE 'PR #[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE '(^|[^A-Za-z])pr:[[:space:]]*#?[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '#[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || return 0
   n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')

@@ -1653,7 +1653,13 @@ council-seats=claude:haiku,agy:flash'
   printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. The fixture holds customer PII. A approve, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 50 council --task t1 --key nm-pii --record-file "$H/record.txt" 2>&1) || fail "PII council failed: $out"
   assert_contains "$out" "council=held answer=none" "a PII awaiting_approval stays the owner's: $out"
-  assert_equals 2 "$(seat_calls)" "no seat saw a force-push, publish, or PII record"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve shared-database writes so the PR can merge, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 60 council --task t1 --key nm-shared-db --record-file "$H/record.txt" 2>&1) || fail "shared-database council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a shared-database awaiting_approval stays the owner's: $out"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve and send messages to people, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 70 council --task t1 --key nm-messages --record-file "$H/record.txt" 2>&1) || fail "messages council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a messages-to-people awaiting_approval stays the owner's: $out"
+  assert_equals 2 "$(seat_calls)" "no seat saw a force-push, publish, PII, shared-database, or messages record"
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
@@ -1736,6 +1742,21 @@ council-seats=claude:haiku,agy:flash'
   printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 Example #77 no-mistakes test awaiting_approval. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
   run_wd 0 once >/dev/null 2>&1 || fail "bare-number decision pass failed"
   grep -rqs 'PR #77' "$H/state/operational-inbox" || fail "a decision naming its PR only as a bare number gets no PR label: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 per Firstmate issue #306, no-mistakes test awaiting_approval - pr: 88. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "structured pr decision pass failed"
+  grep -rqs 'PR #88' "$H/state/operational-inbox" || fail "a structured pr: number does not outrank an earlier issue number: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  ! grep -rqs 'PR #306' "$H/state/operational-inbox" || fail "the nudge named the earlier issue number over the structured pr: number: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=nm-deploy]: G3 no-mistakes deploy step awaiting_approval for PR #99. A deploy to production, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "held decision pass failed"
+  assert_grep 'PR #99' "$H/data/watchdog/status.md" "the held-for-owner status gap names the PR by number"
   pass "decisions: the nudge names work by PR number from the record, not by a goal alias alone"
 }
 
