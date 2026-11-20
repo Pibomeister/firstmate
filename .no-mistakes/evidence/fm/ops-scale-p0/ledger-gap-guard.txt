@@ -1,0 +1,4 @@
+$ backdate prev-pids.tsv 8h, then sample
+host-ledger: 1795137193	195.67	2117	293	unknown	unknown
+$ report --hours 1 (worker-hours must not grow vs previous 0.24 for claude)
+host-ledger cli: claude peak_count=45 peak_rss_kib=24759568 local_worker_hours=0.24

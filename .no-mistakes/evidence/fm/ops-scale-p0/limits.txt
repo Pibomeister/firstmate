@@ -1,0 +1,10 @@
+$ limits
+kern.maxproc: 16000
+kern.maxprocperuid: 10666
+kern.maxfiles: 491520
+kern.num_taskthreads: 16384
+launchctl 	maxproc     10666          16000          
+launchctl 	maxfiles    256            unlimited      
+ulimit -u: 10666
+ulimit -n: 1048576
+exit=0

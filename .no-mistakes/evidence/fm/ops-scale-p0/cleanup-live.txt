@@ -1,0 +1,114 @@
+$ tree before
+.
+./cache
+./cache/fresh
+./cache/fresh/f
+./cache/mixed
+./cache/mixed/db.db
+./cache/mixed/repos
+./cache/mixed/repos/old.bin
+./cache/oldtool
+./cache/oldtool/sub
+./cache/oldtool/sub/blob
+./logs
+./logs/oldlog
+./logs/oldlog/a.log
+./npm
+./npm/_cacache
+./npm/_cacache/content-v2
+./npm/_cacache/content-v2/blob
+./npm/_cacache/index-v5
+./npm/_cacache/index-v5/idx
+./state
+./wt
+./wt/projA
+./wt/projA/src
+./wt/projA/src/big
+./wt/projA/tracked.txt
+./wt/projB
+$ report
+host-cleanup report: free_kib=69155332 free_gib=66.0 target_gib=1 volume=/System/Volumes/Data
+host-cleanup cache: root=/tmp/fmcln.ltep/cache size_kib=2456 old_entries=1 old_kib=1956 age_days=7
+host-cleanup cache: root=/tmp/fmcln.ltep/npm size_kib=8 old_entries=0 old_kib=0 age_days=7
+host-cleanup logs: root=/tmp/fmcln.ltep/logs size_kib=4 old_entries=1 old_kib=4 age_days=14
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projA size_kib=300
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projB size_kib=0
+exit=0
+$ clean (dry run)
+host-cleanup clean: mode=dry-run free_before_kib=69192560 free_before_gib=66.0
+host-cleanup clean: root=/tmp/fmcln.ltep/cache old_entries=1 old_kib=1956 remaining_old_entries=1
+host-cleanup clean: root=/tmp/fmcln.ltep/npm old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=/tmp/fmcln.ltep/logs old_entries=1 old_kib=4 remaining_old_entries=1
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projA size_kib=300
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projB size_kib=0
+host-cleanup clean: mode=dry-run free_after_kib=69205596 free_after_gib=66.0 target_gib=1
+exit=0
+$ tree after dry run (unchanged expected)
+.
+./cache
+./cache/fresh
+./cache/fresh/f
+./cache/mixed
+./cache/mixed/db.db
+./cache/mixed/repos
+./cache/mixed/repos/old.bin
+./cache/oldtool
+./cache/oldtool/sub
+./cache/oldtool/sub/blob
+./logs
+./logs/oldlog
+./logs/oldlog/a.log
+./npm
+./npm/_cacache
+./npm/_cacache/content-v2
+./npm/_cacache/content-v2/blob
+./npm/_cacache/index-v5
+./npm/_cacache/index-v5/idx
+./state
+./wt
+./wt/projA
+./wt/projA/src
+./wt/projA/src/big
+./wt/projA/tracked.txt
+./wt/projB
+$ clean --apply
+host-cleanup clean: mode=apply free_before_kib=69219572 free_before_gib=66.0
+host-cleanup clean: root=/tmp/fmcln.ltep/cache old_entries=1 old_kib=1956 remaining_old_entries=0
+host-cleanup clean: root=/tmp/fmcln.ltep/npm old_entries=0 old_kib=0 remaining_old_entries=0
+host-cleanup clean: root=/tmp/fmcln.ltep/logs old_entries=1 old_kib=4 remaining_old_entries=0
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projA size_kib=300
+host-cleanup worktrees: root=/tmp/fmcln.ltep/wt/projB size_kib=0
+host-cleanup clean: mode=apply free_after_kib=69230252 free_after_gib=66.0 target_gib=1
+exit=0
+$ tree after apply
+.
+./cache
+./cache/fresh
+./cache/fresh/f
+./cache/mixed
+./cache/mixed/db.db
+./cache/mixed/repos
+./cache/mixed/repos/old.bin
+./logs
+./npm
+./npm/_cacache
+./npm/_cacache/content-v2
+./npm/_cacache/content-v2/blob
+./npm/_cacache/index-v5
+./npm/_cacache/index-v5/idx
+./state
+./state/cleanup.log
+./wt
+./wt/projA
+./wt/projA/src
+./wt/projA/src/big
+./wt/projA/tracked.txt
+./wt/projB
+$ cleanup.log
+2026-11-19T19:15:12-0600 clean free_before_kib=69219572 free_after_kib=69230252 target_gib=1 volume=/System/Volumes/Data
+$ target 100000 GiB (health line)
+host-cleanup: free space is under the 100000 GiB target
+exit=3
+$ bad flag
+usage: fm-host-cleanup.sh report|clean [--apply]|render-launchd|--help
+exit=2

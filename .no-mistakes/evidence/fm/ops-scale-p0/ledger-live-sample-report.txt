@@ -1,0 +1,35 @@
+$ fm-host-ledger.sh sample (1st)
+host-ledger: 1795137094	100.63	2204	unknown	unknown	unknown	45.17	36.71	18.11	1103.19	69418448	codex=9:1416736,grok=11:1850112,droid=8:4984576,cursor-agent=11:2560320,agy=4:1226352,opencode=1:132144,claude=44:24002016	unknown	claude/all_models=33/ahead,claude/model:fable=33/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=50/ahead,cursor/pool:auto=34/ahead,cursor/pool:api=0/ahead,grok/all_products=81/ahead,grok/product:grok_build=81/ahead,grok/product:chat=81/mixed,agy/gemini=49/mixed,agy/claude_gpt=47/mixed,droid/droid_core=22/behind,droid/other_models=57/behind	3 file=/tmp/fmled.5Ltl/ledger-2026-11-19.tsv
+exit=0
+$ sample (2nd, 3s later)
+host-ledger: 1795137115	87.76	2057	192	20	9.60	44.57	37.89	17.52	1103.19	69136128	codex=9:1416848,grok=11:1850320,droid=8:4985440,cursor-agent=11:2497568,agy=4:1226384,opencode=1:132240,claude=44:24231328	bash=113,(bash)=43,(node)=7,timeout=7,launchd=6	claude/all_models=33/ahead,claude/model:fable=33/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=50/ahead,cursor/pool:auto=34/ahead,cursor/pool:api=0/ahead,grok/all_products=81/ahead,grok/product:grok_build=81/ahead,grok/product:chat=81/mixed,agy/gemini=49/mixed,agy/claude_gpt=47/mixed,droid/droid_core=22/behind,droid/other_models=57/behind	3 file=/tmp/fmled.5Ltl/ledger-2026-11-19.tsv
+exit=0
+$ ledger file
+ts_epoch	load1	procs	new_pids	interval_s	new_per_s	cpu_user	cpu_sys	cpu_idle	swap_used_mib	disk_free_kib	cli	parents	quota_account_wide	quota_account_wide_unreported
+1795137094	100.63	2204	unknown	unknown	unknown	45.17	36.71	18.11	1103.19	69418448	codex=9:1416736,grok=11:1850112,droid=8:4984576,cursor-agent=11:2560320,agy=4:1226352,opencode=1:132144,claude=44:24002016	unknown	claude/all_models=33/ahead,claude/model:fable=33/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=50/ahead,cursor/pool:auto=34/ahead,cursor/pool:api=0/ahead,grok/all_products=81/ahead,grok/product:grok_build=81/ahead,grok/product:chat=81/mixed,agy/gemini=49/mixed,agy/claude_gpt=47/mixed,droid/droid_core=22/behind,droid/other_models=57/behind	3
+1795137115	87.76	2057	192	20	9.60	44.57	37.89	17.52	1103.19	69136128	codex=9:1416848,grok=11:1850320,droid=8:4985440,cursor-agent=11:2497568,agy=4:1226384,opencode=1:132240,claude=44:24231328	bash=113,(bash)=43,(node)=7,timeout=7,launchd=6	claude/all_models=33/ahead,claude/model:fable=33/mixed,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=50/ahead,cursor/pool:auto=34/ahead,cursor/pool:api=0/ahead,grok/all_products=81/ahead,grok/product:grok_build=81/ahead,grok/product:chat=81/mixed,agy/gemini=49/mixed,agy/claude_gpt=47/mixed,droid/droid_core=22/behind,droid/other_models=57/behind	3
+$ report --hours 1
+host-ledger report: rows=2 peak_new_per_s=9.60 peak_load1=100.63 min_disk_free_kib=69136128 last_disk_free_kib=69136128
+host-ledger cli: cursor-agent peak_count=11 peak_rss_kib=2560320 local_worker_hours=0.06
+host-ledger cli: droid peak_count=8 peak_rss_kib=4985440 local_worker_hours=0.04
+host-ledger cli: opencode peak_count=1 peak_rss_kib=132240 local_worker_hours=0.01
+host-ledger cli: grok peak_count=11 peak_rss_kib=1850320 local_worker_hours=0.06
+host-ledger cli: agy peak_count=4 peak_rss_kib=1226384 local_worker_hours=0.02
+host-ledger cli: codex peak_count=9 peak_rss_kib=1416848 local_worker_hours=0.05
+host-ledger cli: claude peak_count=44 peak_rss_kib=24231328 local_worker_hours=0.24
+host-ledger quota account-wide: codex/all_models last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: grok/product:chat last_pct_remaining=81 min_pct_remaining=81 last_pace=mixed
+host-ledger quota account-wide: agy/claude_gpt last_pct_remaining=47 min_pct_remaining=47 last_pace=mixed
+host-ledger quota account-wide: grok/all_products last_pct_remaining=81 min_pct_remaining=81 last_pace=ahead
+host-ledger quota account-wide: cursor/pool:auto last_pct_remaining=34 min_pct_remaining=34 last_pace=ahead
+host-ledger quota account-wide: agy/gemini last_pct_remaining=49 min_pct_remaining=49 last_pace=mixed
+host-ledger quota account-wide: claude/model:fable last_pct_remaining=33 min_pct_remaining=33 last_pace=mixed
+host-ledger quota account-wide: droid/droid_core last_pct_remaining=22 min_pct_remaining=22 last_pace=behind
+host-ledger quota account-wide: droid/other_models last_pct_remaining=57 min_pct_remaining=57 last_pace=behind
+host-ledger quota account-wide: cursor/pool:api last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: grok/product:grok_build last_pct_remaining=81 min_pct_remaining=81 last_pace=ahead
+host-ledger quota account-wide: cursor/grok_bot last_pct_remaining=50 min_pct_remaining=50 last_pace=ahead
+host-ledger quota account-wide: cursor/all_models last_pct_remaining=0 min_pct_remaining=0 last_pace=ahead
+host-ledger quota account-wide: claude/all_models last_pct_remaining=33 min_pct_remaining=33 last_pace=ahead
+host-ledger tokens_per_active_agent_hour: unreported: no per-host token source
+exit=0

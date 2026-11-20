@@ -1,0 +1,12 @@
+$ microbench --n 50
+host-microbench: load1=181.54 n=50 (run at a quiet time for gate numbers)
+host-microbench: cached_binary ms_per_exec=27.059 n=50
+host-microbench: cached_script ms_per_exec=49.696 n=50
+host-microbench: fresh_script_with_write ms_per_exec=269.927 n=50
+host-microbench: bash_c_true ms_per_exec=59.777 n=50
+host-microbench: builtin_true_in_one_bash ms_per_exec=0.260 n=50
+host-microbench: external_true_in_one_bash ms_per_exec=41.560 n=50
+exit=0
+$ microbench --n 0
+usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|render-launchd|--help
+exit=2
