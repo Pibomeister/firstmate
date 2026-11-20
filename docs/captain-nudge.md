@@ -50,6 +50,7 @@ The ladder climbs once per stall:
 
 The ack is the captain's own progress after a wake: new output, a new heartbeat, or a new commit.
 The next pass records it as `stall_acked` and resets the ladder.
+A prompt this tool types is not an ack: after each send it stores what the pane shows, and the stall age keeps counting from the start of the stall.
 A `0` for `escalate_min`, `council_min`, or `lane_stall_min` turns that step off.
 
 ## Stall ledger

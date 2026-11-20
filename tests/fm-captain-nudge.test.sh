@@ -516,6 +516,29 @@ test_once_ladder_wakes_escalates_councils_and_records_ack() {
   pass "fm-captain-nudge: once wakes at 20m, escalates at 40m, raises a council row at 60m, and records the ack"
 }
 
+test_once_ladder_does_not_ack_its_own_wake() {
+  local home cap echoed now=2000000000 st
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c --arg s "$echoed" --argjson at "$now" '.fixture.after_send = {screen:$s, last_activity_epoch:$at}')
+  home=$(write_home ladder-echo "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at')
+  write_home ladder-echo "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "the pane's echo of the tool's own wake must not count as the captain's ack"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "40m into the stall after an echoed wake gets the second wake"
+  FM_NUDGE_NOW=$((now + 40 * 60)) run_once "$home"
+  assert_equals stall_council "$(last_event "$home")" "60m into the stall after echoed wakes raises the council row"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 3' >/dev/null || fail "state must record the council tier: $st"
+  pass "fm-captain-nudge: the ladder never reads the pane's echo of its own wake as the captain's ack"
+}
+
 write_ready_bin() {  # <dir> -> fake fm-ready-pr-discovery reading $FAKE_READY_JSON
   mkdir -p "$1"
   cat > "$1/ready" <<'SH'
@@ -735,6 +758,7 @@ fm_test_run \
   test_herdr_idle_tracks_screen_change_not_heartbeat \
   test_once_submits_own_unsent_prompt_only \
   test_once_ladder_wakes_escalates_councils_and_records_ack \
+  test_once_ladder_does_not_ack_its_own_wake \
   test_once_merge_ready_nudges_once_after_15_minutes \
   test_once_records_the_captain_home_stall_ledger \
   test_once_stalled_lane_wakes_with_the_lane_table \

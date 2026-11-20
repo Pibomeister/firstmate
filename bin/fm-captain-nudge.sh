@@ -474,8 +474,11 @@ emit_event() {  # <captain-id> <owner> <decision-json> <idle> <open-summary> [ex
   printf '%s\n' "$event"
 }
 
-observe_fixture() {  # <captain-json> -> observation fields via globals
+observe_fixture() {  # <captain-json> [after_send] -> observation fields via globals
   local cap=$1
+  if [ "${2:-}" = after_send ]; then
+    cap=$(printf '%s' "$cap" | jq -c '.fixture += (.fixture.after_send // {})')
+  fi
   OBS_SCREEN=$(fm_nudge_json_get "$cap" '.fixture.screen // ""' '') || true
   OBS_LAST_AT=$(fm_nudge_json_get "$cap" '.fixture.last_activity_epoch // ""' '') || true
   OBS_TARGET=$(fm_nudge_json_get "$cap" '.id' 'fixture') || true
@@ -544,13 +547,26 @@ idle_min_from_obs() {
   printf '%s\n' "$age"
 }
 
+store_post_send_fingerprint() {  # <id> <captain-json>
+  local id=$1 cap=$2
+  if [ "$(fm_nudge_json_get "$cap" '.backend' '')" = fixture ]; then
+    observe_fixture "$cap" after_send
+  else
+    observe_live "$cap" || return 0
+    [ -n "${OBS_SCREEN:-}" ] || return 0
+  fi
+  write_captain_state "$id" "$(jq -nc \
+    --arg fp "$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")" \
+    '{fingerprint:$fp}')"
+}
+
 process_captain() {  # <captain-json> [force]
   local cap=$1 force=${2:-0} id owner backend idle_th cool_th maxn
   local st last_nudge fp consec escalated now cool_left
   local open_line open_ok open_sum idle dialog composer obs decision
   local cur_fp progress send_ok=0 extra row session ev
   local tier esc_th council_th mr_th lane_th fmhome prompt new_tier would_send=0
-  local lanes='' lane_age=0 lane_table=''
+  local lanes='' lane_age=0 lane_table='' since since_age
   id=$(fm_nudge_json_get "$cap" '.id' '') || true
   [ -n "$id" ] || return 0
   owner=$(fm_nudge_json_get "$cap" '.owner' 'firstmate') || true
@@ -585,6 +601,8 @@ process_captain() {  # <captain-json> [force]
   last_nudge=$(fm_nudge_json_get "$st" '.last_nudge_epoch' '0') || true
   fp=$(fm_nudge_json_get "$st" '.fingerprint' '') || true
   consec=$(fm_nudge_json_get "$st" '.consecutive_no_progress' '0') || true
+  since=$(fm_nudge_json_get "$st" '.stall_since_epoch' '0') || true
+  case "$since" in ''|*[!0-9]*) since=0 ;; esac
   escalated=false
   fm_nudge_json_bool "$st" '.escalated' && escalated=true
   case "$last_nudge" in ''|*[!0-9]*) last_nudge=0 ;; esac
@@ -649,7 +667,9 @@ process_captain() {  # <captain-json> [force]
     decision=$(jq -nc '{event:"nudge",severity:"info",reason:"submitted own fixed prompt left unsent in composer (Enter only)",should_send:true}')
     if cfg_mode_is_act; then
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
-      if ! send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
+      if send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
+        store_post_send_fingerprint "$id" "$cap"
+      else
         decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"submit of pending fixed prompt failed",should_send:false}')
       fi
     fi
@@ -693,6 +713,12 @@ process_captain() {  # <captain-json> [force]
     cool_left=0
     consec=0
     escalated=false
+  fi
+  if [ "$progress" = true ]; then
+    since=0
+  elif [ "$force" != 1 ] && [ "$tier" -gt 0 ] && [ "$since" -gt 0 ]; then
+    since_age=$(( (now - since) / 60 ))
+    [ "$since_age" -le "$idle" ] || idle=$since_age
   fi
 
   # Count a prior nudge that produced no progress only when this captain
@@ -779,29 +805,31 @@ process_captain() {  # <captain-json> [force]
   fi
 
   if [ "$send_ok" = 1 ]; then
+    [ "$since" -gt 0 ] || since=$(( now - idle * 60 ))
     write_captain_state "$id" "$(jq -nc \
-      --argjson now "$now" --arg fp "$cur_fp" --argjson consec "$consec" --argjson tier "$new_tier" \
-      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false, stall_tier:$tier}')"
+      --argjson now "$now" --arg fp "$cur_fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
+      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false, stall_tier:$tier, stall_since_epoch:$since}')"
+    store_post_send_fingerprint "$id" "$cap"
   else
     if [ "$ev" = nudge_no_progress ]; then
       write_captain_state "$id" "$(jq -nc \
-        --argjson now "$last_nudge" --arg fp "$fp" --argjson consec "$consec" --argjson tier "$new_tier" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true, stall_tier:$tier}')"
+        --argjson now "$last_nudge" --arg fp "$fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true, stall_tier:$tier, stall_since_epoch:$since}')"
     elif [ "$progress" = true ]; then
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "$cur_fp" --argjson tier "$new_tier" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false, stall_tier:$tier}')"
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false, stall_tier:$tier, stall_since_epoch:0}')"
     else
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "${fp:-$cur_fp}" --argjson consec "$consec" \
-        --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" --argjson tier "$new_tier" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc, stall_tier:$tier}')"
+        --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" --argjson tier "$new_tier" --argjson since "$since" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc, stall_tier:$tier, stall_since_epoch:$since}')"
     fi
   fi
 
   if [ "$force" != 1 ]; then
     merge_ready_pass "$id" "$owner" "$fmhome" "$mr_th" "$dialog" "$composer" "$backend" \
-      "${OBS_TARGET:-$id}" "$(fm_nudge_json_get "$cap" '.session // ""' '' || true)" "$idle" "$send_ok"
+      "${OBS_TARGET:-$id}" "$(fm_nudge_json_get "$cap" '.session // ""' '' || true)" "$idle" "$send_ok" "$cap"
   fi
 }
 
@@ -809,9 +837,9 @@ process_captain() {  # <captain-json> [force]
 # Waiting time starts when this tool first sees the head merge-ready, because
 # discovery reports run age, not time since ready. A pass that already typed
 # a stall prompt leaves the merge prompt for the next pass.
-merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backend> <target> <session> <idle> <sent>
+merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backend> <target> <session> <idle> <sent> <captain-json>
   local id=$1 owner=$2 home=$3 min=$4 dialog=$5 composer=$6 backend=$7 target=$8 session=$9
-  local idle=${10} sent=${11}
+  local idle=${10} sent=${11} cap=${12}
   local json rows old new now key pr entry first nudged due='' due_prs='' extra decision summary
   [ -n "$home" ] && [ "$min" -gt 0 ] || return 0
   json=$(ready_discovery_json "$home") || return 0
@@ -861,9 +889,13 @@ merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backen
       due=''
     else
       decision=$(jq -nc --argjson m "$min" '{event:"merge_ready_wait",severity:"info",reason:("merge-ready PR unmerged for " + ($m|tostring) + "m; asking to dispatch the merge or record why"),should_send:true,prompt:"merge"}')
-      if cfg_mode_is_act && ! send_fixed_prompt merge "$backend" "$target" "$session"; then
-        decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"merge-ready prompt send failed",should_send:false}')
-        due=''
+      if cfg_mode_is_act; then
+        if send_fixed_prompt merge "$backend" "$target" "$session"; then
+          store_post_send_fingerprint "$id" "$cap"
+        else
+          decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"merge-ready prompt send failed",should_send:false}')
+          due=''
+        fi
       fi
     fi
     emit_event "$id" "$owner" "$decision" "$idle" "$summary" "$extra" >/dev/null
