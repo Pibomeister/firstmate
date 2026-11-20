@@ -41,9 +41,18 @@ chmod +x "$FAKE/date"
 cat > "$FAKE/launchctl" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_GD_LAUNCH_LOG"
+[ -n "${FM_GD_LAUNCH_FAIL:-}" ] && exit 1
 exit 0
 SH
 chmod +x "$FAKE/launchctl"
+
+cat > "$FAKE/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_GD_SSH_LOG"
+printf 'ssh progress line\n'
+exit 0
+SH
+chmod +x "$FAKE/ssh"
 
 cat > "$TMP_ROOT/summarize.sh" <<'SH'
 #!/usr/bin/env bash
@@ -185,4 +194,24 @@ print("\0".join(d["ProgramArguments"]))
   pass "launchagent install and uninstall"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent
+test_ssh_quoting_lock_and_install_failure() {
+  write_fixtures 0
+  local home
+  home=$(make_home home6)
+  printf 'review = Quoted review | ssh:example-host:/tmp/it'"'"'s status.txt\n' >> "$home/config/goal-digest"
+  FM_GD_SSH_LOG="$TMP_ROOT/ssh.log" run_digest "$home" >/dev/null || fail "run with quoted ssh path failed"
+  assert_contains "$(cat "$TMP_ROOT/ssh.log")" "it'\\''s status.txt" "ssh path is shell-quoted"
+  assert_contains "$(cat "$home/data/goal-digest/latest.json")" "ssh progress line" "ssh source content recorded"
+  mkdir -p "$home/data/goal-digest/.state/run.lock"
+  local rc=0
+  run_digest "$home" >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 0 ] || fail "concurrent run was not refused by the lock"
+  rmdir "$home/data/goal-digest/.state/run.lock"
+  rc=0
+  FM_GD_LAUNCH_FAIL=1 FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
+    FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" install >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 0 ] || fail "failed launchctl bootstrap reported install success"
+  pass "ssh quoting, concurrent-run lock and install failure"
+}
+
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure

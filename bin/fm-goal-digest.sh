@@ -120,6 +120,42 @@ load_config() {
   fi
 }
 
+shell_quote() {
+  local s=$1
+  s=${s//\'/\'\\\'\'}
+  printf "'%s'" "$s"
+}
+
+# fetch_pulls <repo> <state-query> <out-json>: paginate at 100 per page,
+# up to 10 pages, combining every page into one JSON array. 0 ok, 1 failed.
+fetch_pulls() {
+  local repo=$1 query=$2 out=$3 page=1 page_file count
+  : > "$work/pages.txt"
+  while [ "$page" -le 10 ]; do
+    page_file=$work/page-$page.json
+    if ! "$gh_bin" api "repos/$repo/pulls?$query&per_page=100&page=$page" > "$page_file" 2>/dev/null; then
+      [ "$page" -gt 1 ] || return 1
+      break
+    fi
+    printf '%s\n' "$page_file" >> "$work/pages.txt"
+    count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$page_file" 2>/dev/null || printf '0')
+    [ "$count" -lt 100 ] && break
+    page=$((page + 1))
+  done
+  python3 - "$out" <<'PY'
+import json, os, sys
+pages = []
+with open(os.path.join(os.path.dirname(sys.argv[1]), "pages.txt")) as fh:
+    pages = [line.strip() for line in fh if line.strip()]
+pulls = []
+for page in pages:
+    with open(page) as fh:
+        pulls.extend(json.load(fh))
+with open(sys.argv[1], "w") as fh:
+    json.dump(pulls, fh)
+PY
+}
+
 # read_source <location> <content-out> <mtime-out>: 0 ok, 1 unreachable.
 read_source() {
   local loc=$1 content_out=$2 mtime_out=$3 host path
@@ -131,8 +167,10 @@ read_source() {
       path=${host#*:}
       host=${host%%:*}
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- '$path'" > "$content_out" 2>/dev/null || return 1
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- '$path' 2>/dev/null || stat -f %m -- '$path'" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      local quoted
+      quoted=$(shell_quote "$path")
+      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
+      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
       return 0
       ;;
     *)
@@ -147,6 +185,11 @@ read_source() {
 do_run() {
   load_config
   mkdir -p "$output_dir/history" "$output_dir/.state" || return 1
+  local lock_dir=$output_dir/.state/run.lock
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf 'goal-digest: another run is in progress; skipping (lock %s)\n' "$lock_dir" >&2
+    return 1
+  fi
   local seen_file=$output_dir/.state/seen.tsv
   local hash_file=$output_dir/.state/content.hash
   local since_file=$output_dir/.state/since.tsv
@@ -155,8 +198,10 @@ do_run() {
   local work
   work=$(mktemp -d "${TMPDIR:-/tmp}/fm-goal-digest.XXXXXX") || return 1
   # shellcheck disable=SC2064
-  trap "rm -rf '$work'" EXIT
+  trap "rm -rf '$work'; rmdir '$lock_dir' 2>/dev/null || true" EXIT
   : > "$work/new_merges.tsv"
+  : > "$work/seen-new.tsv"
+  : > "$work/since-new.tsv"
   : > "$work/waiting.tsv"
   : > "$work/missed.tsv"
   : > "$work/stalled.tsv"
@@ -173,11 +218,11 @@ do_run() {
   for repo in "${repos[@]:-}"; do
     [ -n "$repo" ] || continue
     json_file=$work/prs.json
-    if ! "$gh_bin" api "repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=30" > "$json_file" 2>/dev/null; then
+    if ! fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed" >> "$work/unreachable.tsv"
     else
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
-      FM_GD_SINCE="$since_file" FM_GD_NOW="$now_epoch" \
+      FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
       python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
@@ -215,14 +260,13 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             if merged.timestamp() <= since[repo]:
                 continue
         out.write("\t".join([repo, number, str(pr.get("title", "")), str(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
-since[repo] = int(os.environ["FM_GD_NOW"])
-with open(since_path + ".tmp", "w") as fh:
-    for key in sorted(since):
-        fh.write(f"{key}\t{since[key]}\n")
-os.replace(since_path + ".tmp", since_path)
+with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
+    fh.write(f"{repo}\t{os.environ['FM_GD_NOW']}\n")
 PY
-      # Record every merged pull as seen, new or not.
-      FM_GD_REPO="$repo" python3 - "$json_file" >> "$seen_file" <<'PY'
+      # Record every merged pull as seen, new or not. This is staged and
+      # only committed to seen.tsv after the digest is written, so an
+      # interrupted run cannot lose a merge notification.
+      FM_GD_REPO="$repo" python3 - "$json_file" >> "$work/seen-new.tsv" <<'PY'
 import json, os, sys
 repo = os.environ["FM_GD_REPO"]
 with open(sys.argv[1]) as fh:
@@ -232,7 +276,7 @@ for pr in pulls:
         print("\t".join([repo, str(pr.get("number", "")), (pr.get("merge_commit_sha") or "")[:12]]))
 PY
     fi
-    if ! "$gh_bin" api "repos/$repo/pulls?state=open&sort=created&direction=asc&per_page=30" > "$json_file" 2>/dev/null; then
+    if ! fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed" >> "$work/unreachable.tsv"
     else
       FM_GD_REPO="$repo" FM_GD_NOW="$now_epoch" python3 - "$json_file" >> "$work/waiting.tsv" <<'PY'
@@ -254,7 +298,6 @@ for pr in pulls:
 PY
     fi
   done
-  sort -u "$seen_file" -o "$seen_file.tmp" && mv "$seen_file.tmp" "$seen_file"
 
   local eta_pattern='(^|[^[:alnum:]_])eta[: ]+[0-9]{4}-[0-9]{2}-[0-9]{2}'
   for i in "${!status_labels[@]}"; do
@@ -305,8 +348,6 @@ EOF
   if [ -s "$work/new_merges.tsv" ] || [ ! -f "$hash_file" ] || [ "$(cat "$hash_file")" != "$content_hash" ]; then
     changed=yes
   fi
-  printf '%s\n' "$content_hash" > "$hash_file"
-
   FM_GD_WORK="$work" FM_GD_NOW_ISO="$now_iso" FM_GD_NOW_CST="$now_cst" FM_GD_CHANGED="$changed" \
   FM_GD_LATEST_MD="$output_dir/latest.md" FM_GD_LATEST_JSON="$output_dir/latest.json" \
   python3 - <<'PY'
@@ -364,6 +405,40 @@ lines.append("")
 with open(os.environ["FM_GD_LATEST_MD"], "w") as fh:
     fh.write("\n".join(lines))
 PY
+  local digest_rc=$?
+  if [ "$digest_rc" -ne 0 ]; then
+    printf '%s\n' "goal-digest: digest generation failed; state not advanced" >&2
+    return 1
+  fi
+
+  # The digest is published; only now commit the staged state.
+  printf '%s\n' "$content_hash" > "$hash_file"
+  cat "$work/seen-new.tsv" >> "$seen_file"
+  local seen_tmp
+  seen_tmp=$(mktemp "$output_dir/.state/seen.XXXXXX")
+  sort -u "$seen_file" -o "$seen_tmp" && mv "$seen_tmp" "$seen_file"
+  FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" python3 - <<'PY'
+import os
+since = {}
+try:
+    with open(os.environ["FM_GD_SINCE"]) as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 2:
+                since[parts[0]] = parts[1]
+except OSError:
+    pass
+with open(os.environ["FM_GD_SINCE_NEW"]) as fh:
+    for line in fh:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) >= 2:
+            since[parts[0]] = parts[1]
+tmp = os.environ["FM_GD_SINCE"] + ".tmp"
+with open(tmp, "w") as fh:
+    for key in sorted(since):
+        fh.write(f"{key}\t{since[key]}\n")
+os.replace(tmp, os.environ["FM_GD_SINCE"])
+PY
 
   local stamp
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
@@ -377,6 +452,7 @@ PY
 
   trap - EXIT
   rm -rf "$work"
+  rmdir "$lock_dir" 2>/dev/null || true
   printf 'goal-digest: changed=%s latest=%s generated=%s\n' "$changed" "$output_dir/latest.md" "$now_iso"
 }
 
@@ -435,7 +511,10 @@ do_install() {
 EOF
   if command -v launchctl >/dev/null 2>&1; then
     launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
-    launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1 || printf '%s\n' "goal-digest: launchctl bootstrap failed; plist written at $plist" >&2
+    if ! launchctl bootstrap "gui/$(id -u)" "$plist" >/dev/null 2>&1; then
+      printf '%s\n' "goal-digest: launchctl bootstrap failed; plist written at $plist but the job is not scheduled" >&2
+      return 1
+    fi
   fi
   printf 'goal-digest: installed=%s interval_seconds=%s\n' "$plist" "$interval_seconds"
 }
