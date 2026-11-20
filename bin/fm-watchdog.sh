@@ -1619,7 +1619,9 @@ Pick the option that keeps work going on another model or account without buying
 # O_REC_SUBJECT, when set, is the worker this page belongs to, and that subject
 # has its own window so one pane does not consume another's or the home's.
 # The page carries no dialog text; the ledger row records which dialog fired,
-# withheld for a credential or sign-in prompt or when it looks like a secret. Quiet mode is not paged: the owner is
+# withheld for a credential or sign-in prompt or when it looks like a secret. A
+# dashed rule is shortened before the text is cut at 300 characters, so a pane-wide
+# rule does not push the command out of the row. Quiet mode is not paged: the owner is
 # watching the session there.
 wd_page_permission() {
   local text id summary out rc subject who
@@ -1632,6 +1634,7 @@ wd_page_permission() {
   if case "${WD_PP_REASON:-}" in credential|sign-in) true ;; *) false ;; esac; then
     text='[withheld: a credential or sign-in prompt]'
   elif fm_secret_like "$text"; then text='[withheld: the dialog text looks like a secret]'; fi
+  text=$(printf '%s' "$text" | sed -E 's/(╌)+/╌╌╌/g')
   text=${text:0:300}
   id=$(wd_id)
   if [ "$(wd_mode)" != act ]; then wd_rec "$id" dialog page dry-run "would page the owner; permission: $text"; return 0; fi

@@ -334,9 +334,12 @@
 #   Disk alarm: before any lock, brief, endpoint, worktree, record, or backlog
 #   move, a fresh ship or scout runs bin/fm-disk-alarm.sh --gate crew. The human
 #   line stays on stderr and the machine line is discarded. A refusal exits 1
-#   and does not stay queued. A relaunch and a --secondmate spawn are not new
-#   crewmate launches. A refused batch pair is FAILED. bin/fm-disk-alarm.sh owns
-#   the reading and the levels.
+#   and does not stay queued; it leaves one bin/fm-disk-retry.sh record of
+#   this invocation's arguments, which an admitted launch of the same task
+#   removes and which the watcher replays through this script once the alarm
+#   clears. A relaunch and a --secondmate spawn are not new crewmate launches.
+#   A refused batch pair is FAILED. bin/fm-disk-alarm.sh owns the reading and
+#   the levels, and bin/fm-disk-retry.sh owns the record and its re-dispatch.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
 #   spawns require an explicit harness so firstmate cannot silently skip dispatch
@@ -2492,7 +2495,14 @@ done
   exit 1
 }
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
-  "$SCRIPT_DIR/fm-disk-alarm.sh" --gate crew >/dev/null || exit $?
+  disk_gate_rc=0
+  "$SCRIPT_DIR/fm-disk-alarm.sh" --gate crew >/dev/null || disk_gate_rc=$?
+  if [ "$disk_gate_rc" -ne 0 ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-disk-retry.sh" record "$ID" "$@" \
+      || echo "warning: the disk-alarm refusal of $ID was not recorded; it will not be dispatched again by itself when the alarm clears" >&2
+    exit "$disk_gate_rc"
+  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-disk-retry.sh" clear "$ID" || true
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   BRANCH="$BRANCH_PREFIX$ID"
@@ -4618,6 +4628,24 @@ esac
 
 json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# spawn_claude_away_preallow_json - the `"permissions":{"allow":[...]},` member
+# for a Claude ship or scout worker launched while a valid away record is in
+# force, built from the owner-approved list. bin/fm-afk-preallow.sh owns the
+# list and its approval; any failed read there prints nothing here, so the
+# worker's settings stay as they are without an approval.
+spawn_claude_away_preallow_json() {
+  local entries entry items=
+  [ -f "$STATE/.afk-contract" ] || return 0
+  FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" validate >/dev/null 2>&1 || return 0
+  [ "$(FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" mode 2>/dev/null)" = away ] || return 0
+  entries=$(FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-afk-preallow.sh" approved 2>/dev/null) || return 0
+  [ -n "$entries" ] || return 0
+  while IFS= read -r entry; do
+    items="$items${items:+,}\"$(json_escape "$entry")\""
+  done <<<"$entries"
+  printf '"permissions":{"allow":[%s]},' "$items"
 }
 
 # rovo confines every file-tool operation (open_files, create_file, grep, ...)
@@ -7827,7 +7855,7 @@ BUSY_GEN=
       printf '{%s%s}\n' "$session_keys" "$hooks_json" >"$STATE_REAL/$ID.claude-settings.json"
     else
       mkdir -p "$WT/.claude"
-      printf '{%s}\n' "$hooks_json" >"$WT/.claude/settings.local.json"
+      printf '{%s%s}\n' "$(spawn_claude_away_preallow_json)" "$hooks_json" >"$WT/.claude/settings.local.json"
       exclude_path '.claude/settings.local.json'
     fi
     ;;

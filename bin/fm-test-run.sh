@@ -1939,7 +1939,7 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-capacity.test.sh"
       printf '%s\n' "__script__:fm-project-capacity.test.sh"
       ;;
-    bin/fm-disk-alarm.sh)
+    bin/fm-disk-alarm.sh|bin/fm-disk-retry.sh)
       printf '%s\n' "__script__:fm-disk-alarm.test.sh"
       ;;
     bin/fm-memory-guard.sh)
