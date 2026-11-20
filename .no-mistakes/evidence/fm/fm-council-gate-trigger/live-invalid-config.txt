@@ -1,0 +1,9 @@
+--- watcher cycle FM_WATCH_NOW=4600
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.KHD3oP/state/worker.status
+watcher exit=0
+stderr:
+  watcher: gate council roster is missing or unreadable
+  watcher: away gate council check failed; the council is skipped this cycle
+claims:
+  (none)
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1

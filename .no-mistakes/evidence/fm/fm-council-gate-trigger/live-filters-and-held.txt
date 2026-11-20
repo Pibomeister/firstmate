@@ -1,0 +1,43 @@
+===== captain present (no away record), gate 8000s old
+--- watcher cycle FM_WATCH_NOW=9000
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.8StDIm/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  (none)
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1
+===== quiet posture, gate 8000s old
+--- watcher cycle FM_WATCH_NOW=9000
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.xDEcG6/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  (none)
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1
+===== project not on allowlist (Goodword), gate 8000s old
+--- watcher cycle FM_WATCH_NOW=9000
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.SBwEDk/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  (none)
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1
+rm: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.SBwEDk/state: Directory not empty
+rm: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.SBwEDk: Directory not empty
+===== allowlisted project by name (Casco), gate 8000s old
+--- watcher cycle FM_WATCH_NOW=9000
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.kupk0n/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  worker	nm-r1-review	1000	running	9000	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.kupk0n/data/worker/gate-council-nm-r1-review-1000
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1
+===== captain-held task, gate 3600s old
+worker placed on captain hold
+--- watcher cycle FM_WATCH_NOW=4600
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Yx30S2/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  (none)
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1

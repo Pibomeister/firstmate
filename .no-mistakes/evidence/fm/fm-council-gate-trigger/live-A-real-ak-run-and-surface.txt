@@ -1,0 +1,25 @@
+--- watcher cycle FM_WATCH_NOW=4600
+signal: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/state/worker.status
+watcher exit=0
+stderr:
+claims:
+  worker	nm-r1-review	1000	running	4600	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000
+council exit file: 2
+card: {"id":"gate-worker-nm-r1-review-1000","question":"A Firstmate worker's no-mistakes validation gate (worker, nm-r1-review) has waited at least 3600 seconds on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?","options":["fix","decline"],"approve":"fix"}
+ak log:
+  ak council: invalid council configuration: [{"instancePath":"","schemaPath":"#/required","keyword":"required","params":{"missingProperty":"veto"},"message":"must have required property 'veto'"}]
+--- watcher cycle FM_WATCH_NOW=4700
+check: gate council ruled: worker key=nm-r1-review outcome=error exit=2 choice=- log=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000/log
+watcher exit=0
+stderr:
+claims:
+  worker	nm-r1-review	1000	running	4600	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000
+  worker	nm-r1-review	1000	surfaced	4700	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000
+--- watcher cycle FM_WATCH_NOW=4800
+check: rearm-resurface
+watcher exit=0
+stderr:
+claims:
+  worker	nm-r1-review	1000	running	4600	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000
+  worker	nm-r1-review	1000	surfaced	4700	/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Y9wRuk/data/worker/gate-council-nm-r1-review-1000
+status log unchanged by watcher: needs-decision [at=1000] [key=nm-r1-review]: ask-user findin... lines=1
