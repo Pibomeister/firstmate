@@ -180,6 +180,7 @@ make_home() {
 #!/usr/bin/env bash
 cat "$H/screen.txt"
 stty -echo
+: > "$H/agent.ready"
 exec cat >> "$H/typed.log"
 SH
   chmod +x "$H/agent.sh"
@@ -199,6 +200,17 @@ SH
     '{schema:"fm-heartbeat.v1", generated_epoch:$e, primary:{terminal:{backend:"tmux",target:$t,present:true},session:{trusted_id:$s},writer:{anchor_pid:$p,session_id:$s}}}' \
     > "$H/state/heartbeat.json"
   printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nquota-guard=off\nmemory-guard=off\nheartbeat-frozen-secs=0\n%s\n' "$H/claude" "$extra" > "$H/config/watchdog"
+  # A loaded host can start the agent late; a blank pane would read as an
+  # unknown composer and silently change what a pass decides.
+  # A deliberately blank screen only waits for the agent to start.
+  local drawn=0 blank=0
+  [ -n "$(printf '%s' "$screen" | tr -d '[:space:]')" ] || blank=1
+  while [ ! -e "$H/agent.ready" ] \
+    || { [ "$blank" = 0 ] && [ -z "$("$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null | tr -d '[:space:]')" ]; }; do
+    drawn=$((drawn + 1))
+    [ "$drawn" -le 300 ] || fail "make_home: the captain pane never drew its screen"
+    sleep 0.1
+  done
   sleep 0.5
 }
 
@@ -1802,6 +1814,7 @@ test_primary_ignores_another_sessions_endpoint() {
   transcript 3000 "Working on the fix." "Now testing it." "Tests are green."
   owe_input 3000
   printf '00000000-0000-4000-8000-0000000000ff\n' > "$H/state/.lock-session"
+  fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
   run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
   run_wd 1000 once >/dev/null 2>&1 || fail "second pass failed"
   assert_equals "" "$(cat "$H/typed.log")" "another session's pane gets no text"
@@ -1823,6 +1836,7 @@ test_primary_without_lock_identity_never_trusts_heartbeat_endpoint() {
     owe_input 3000
     if [ "$state" = empty ]; then
       printf '\n' > "$H/state/.lock-session"
+      fm_touch_epoch "$((BASE - 1))" "$H/state/.lock-session"
     else
       rm "$H/state/.lock-session"
     fi
@@ -1871,7 +1885,10 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   cat > "$TMP_ROOT/fake-captain.sh" <<'SH'
 #!/usr/bin/env bash
 p="$*"
+sid=$(head -n 1 "$PWD/state/.lock-session")
 printf '%s\n' "$$" > "$PWD/state/.lock"
+# A real session start records the endpoint it took the lock from.
+printf '%s\nbackend=tmux\nterminal=%s\nworktree=%s\n' "$sid" "$TMUX_PANE" "$PWD" > "$PWD/state/.lock-session"
 ( sleep "${WD_FIXTURE_SLEEP:-100000}" > /dev/null 2>&1 & printf '%s\n' "$!" > "$PWD/state/.supervise-daemon.pid" )
 eval "${p##*run: }" > "$PWD/pickup.out" 2>&1
 # Leave an idle composer on the successor pane so later passes can read it.

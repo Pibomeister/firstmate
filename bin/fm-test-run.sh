@@ -248,7 +248,7 @@ CHANGED_DEFAULT_TIMEOUT_SECS=1500
 
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
-PORTABLE_SERIAL_SHARDS=25
+PORTABLE_SERIAL_SHARDS=27
 
 # Fixed balance estimate for a portable-serial script with no measurement.
 # Replace it with a measured hint when CI timing becomes available.
@@ -1168,6 +1168,9 @@ tests/fm-stop-policy-live-e2e.test.sh 60
 tests/fm-stop-policy.test.sh 36274
 tests/fm-stall-ledger.test.sh 20000
 tests/fm-wake-ledger.test.sh 25000
+tests/fm-afk-preallow.test.sh 2487700
+tests/fm-tmux-relaunch-input.test.sh 8356
+tests/fm-unpushed-reconcile.test.sh 1043032
 EOF
 }
 

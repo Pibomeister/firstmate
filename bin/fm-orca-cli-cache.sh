@@ -4,7 +4,8 @@
 # Supervision homes each boot the Orca CLI for the same read-only facts.
 # This file is the only owner of reusing those results.
 #
-# fm_orca_cli runs `command orca` with the given arguments. A read-only
+# fm_orca_cli runs the orca binary found on PATH, by its resolved path, with the
+# given arguments. A read-only
 # command whose exit status is 0, and whose stdout is not JSON with
 # `"ok":false`, is reused for FM_ORCA_CLI_CACHE_TTL seconds (default 3).
 # A mutating command is never stored and drops every cached result before it
@@ -50,6 +51,14 @@ if [ -n "${FM_ORCA_CLI_CACHE_SOURCED:-}" ]; then
   return 0
 fi
 FM_ORCA_CLI_CACHE_SOURCED=1
+
+# Bash 3.2 runs `command <external>` in an asynchronous job without forking,
+# so everything after it in that job is lost. A resolved path forks normally.
+fm_orca_cli_exec() {
+  local bin
+  bin=$(type -P orca) || return 127
+  "$bin" "$@"
+}
 
 fm_orca_cli_cache_enabled() {
   case "${FM_ORCA_CLI_CACHE:-}" in
@@ -319,17 +328,17 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <owner-marker> <orca-args...>
   gen=$(fm_orca_cli_read_gen "$dir")
   outf=$(mktemp "$dir/staging/out.XXXXXX") || {
     fm_orca_cli_lock_release "$lock" "$held_token"
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   }
   errf=$(mktemp "$dir/staging/err.XXXXXX") || {
     rm -f "$outf"
     fm_orca_cli_lock_release "$lock" "$held_token"
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   }
   rc=0
-  command orca "$@" >"$outf" 2>"$errf" || rc=$?
+  fm_orca_cli_exec "$@" >"$outf" 2>"$errf" || rc=$?
   cat "$outf"
   cat "$errf" >&2
   cacheable=0
@@ -366,15 +375,15 @@ fm_orca_cli_fill() { # <dir> <key> <lock> <owner-marker> <orca-args...>
 fm_orca_cli_cached() {
   local key dir lock i held_token='' lock_rc
   if [ "$(fm_orca_cli_ttl)" -eq 0 ]; then
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   fi
   key=$(fm_orca_cli_cache_key "$@") || {
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   }
   dir=$(fm_orca_cli_cache_prepare) || {
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   }
   if fm_orca_cli_try_replay "$dir" "$key"; then
@@ -386,7 +395,7 @@ fm_orca_cli_cached() {
   else
     lock_rc=$?
     if [ "$lock_rc" -eq 2 ]; then
-      command orca "$@" || return $?
+      fm_orca_cli_exec "$@" || return $?
       return 0
     fi
     i=0
@@ -399,7 +408,7 @@ fm_orca_cli_cached() {
       i=$((i + 1))
     done
     if ! fm_orca_cli_lock_acquire "$lock" 15 held_token; then
-      command orca "$@" || return $?
+      fm_orca_cli_exec "$@" || return $?
       return 0
     fi
   fi
@@ -453,19 +462,19 @@ fm_orca_cli_classify() {
 fm_orca_cli() {
   local kind
   if ! fm_orca_cli_cache_enabled; then
-    command orca "$@" || return $?
+    fm_orca_cli_exec "$@" || return $?
     return 0
   fi
   kind=$(fm_orca_cli_classify "$@")
   case "$kind" in
     mutate)
-      fm_orca_cli_mutation command orca "$@"
+      fm_orca_cli_mutation fm_orca_cli_exec "$@"
       ;;
     read)
       fm_orca_cli_cached "$@"
       ;;
     *)
-      command orca "$@" || return $?
+      fm_orca_cli_exec "$@" || return $?
       return 0
       ;;
   esac
