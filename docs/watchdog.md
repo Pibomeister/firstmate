@@ -287,7 +287,7 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
   One carve-out: a decision naming a no-mistakes `awaiting_approval` step reaches the council despite the merge or release it would unblock, because that step is a council or captain decision by default.
   It stays held only when it also names a human-only category - a deploy, a publish, a force-push, spend, secrets or credentials, a sign-in, security, production or shared-database writes, PII, messages to people, deletion, or a failure in the PR's own changed behavior - or it looks like a secret, or its key is reserved above.
   A plain merge decision that names no `awaiting_approval` step stays held exactly as before.
-- The rolled-up decision nudge and the ruling nudge name a decision's PR by number when its record carries one, so work is never identified only by a goal alias.
+- The rolled-up decision nudge, the ruling nudge, and the decision status gaps name a decision's PR by number when its record carries one, so work is never identified only by a goal alias.
 - A decision whose task, key, or summary looks like a secret is held the same way, with no council and no ruling file. The gap omits a task or key name that looks like a secret.
 - A nudge whose text names a merge, deploy, or release word is not sent and appears as a held gap.
 - A nudge goes out only onto a composer read as empty. An unknown composer, an Orca draft, or a failed draft read holds the nudge as a gap. A held nudge counts toward `max-nudges`, so a frozen session still reaches the restart proof with nothing typed. A stable clean draft gets Enter once before that ladder.

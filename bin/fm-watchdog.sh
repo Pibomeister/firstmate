@@ -949,7 +949,8 @@ wd_decision_reserved() {  # <task> <key> <summary>
   # default: the merge or release it would unblock, which fm_wd_reserved reads
   # as owner-reserved, does not by itself make it the owner's. It stays the
   # owner's only when it names a human-only category (fm_wd_human_only).
-  if fm_wd_nm_awaiting_approval "$1 $2 $3" && ! fm_wd_human_only "$1 $2 $3"; then
+  if fm_wd_nm_awaiting_approval "$1 $2 $3"; then
+    fm_wd_human_only "$1 $2 $3" && return 0
     return 1
   fi
   fm_wd_reserved "$1 $2 $3"
@@ -2238,7 +2239,8 @@ wd_handle_decisions() {
     [ "$age" -ge "$secs" ] || continue
     if wd_decision_reserved "$task" "$key" "$summary"; then
       held=$((held + 1))
-      [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
+      pr_label=$(fm_wd_pr_label "$summary")
+      [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key${pr_label:+ ($pr_label)}"
       continue
     fi
     if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
@@ -2253,11 +2255,13 @@ wd_handle_decisions() {
     case "$rec" in
       no-ruling*)
         split=$((split + 1))
-        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key"
+        pr_label=$(fm_wd_pr_label "$summary")
+        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key${pr_label:+ ($pr_label)}"
         continue ;;
       ruled*)
         ruled=$((ruled + 1))
-        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key" ;;
+        pr_label=$(fm_wd_pr_label "$summary")
+        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key${pr_label:+ ($pr_label)}" ;;
     esac
     aged=$((aged + 1))
     # Name work by its PR number when the record carries one, so a nudge is
@@ -2296,10 +2300,16 @@ wd_handle_decisions() {
       unanimous*)
         pr_label=$(fm_wd_pr_label "$summary")
         wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task${pr_label:+ ($pr_label)}. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
-      no-ruling*) wd_gap "council gave no ruling on $task $key; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
-      refused*) wd_gap "no council on $task $key: $(printf '%s' "$res" | cut -f4); held" ;;
+      no-ruling*)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "council gave no ruling on $task $key${pr_label:+ ($pr_label)}; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
+      refused*)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "no council on $task $key${pr_label:+ ($pr_label)}: $(printf '%s' "$res" | cut -f4); held" ;;
       busy*) ;;
-      *) wd_gap "council did not publish a final record on $task $key; held" ;;
+      *)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "council did not publish a final record on $task $key${pr_label:+ ($pr_label)}; held" ;;
     esac
   done < "$WD/.decisions-aged"
 }
