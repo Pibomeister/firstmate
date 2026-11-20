@@ -42,15 +42,19 @@
 #
 # changed is yes when the digest content other than its generated time
 # and age values differs from the previous run, including the first run.
-# A configured summarize_cmd runs only on a changed run and receives
-# latest.md on stdin. This
+# A configured summarize_cmd runs only on a changed run, receives
+# latest.md on stdin and writes summary.txt in the output directory. This
 # script never merges, deploys, tags, pushes or messages anyone: its
 # only network reads are `gh api` GET requests and read-only ssh cat.
 #
 # State under the output directory: .state/seen.tsv holds every merged
 # pull request already reported, .state/since.tsv holds each repository's
 # previous successful fetch time, .state/content.hash holds the previous
-# content hash. FM_GOAL_DIGEST_GH replaces the gh binary only when
+# content hash, and .state/run.flock is the run lock: a run that finds
+# another run holding it prints a skip line and exits 1. The kernel lock
+# is released when its holder exits, so a crashed run never leaves it
+# held; children that may outlive the run close fd 9 so they cannot keep
+# it held. FM_GOAL_DIGEST_GH replaces the gh binary only when
 # FM_TEST_SEAM=1.
 set -u
 
