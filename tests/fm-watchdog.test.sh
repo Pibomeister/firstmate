@@ -1811,6 +1811,13 @@ council-seats=claude:haiku,agy:flash'
   assert_equals 1 "$(ledger_rows decisions nudge pending)" "the aged decision gets its nudge: $(ledger | cut -f5-8)"
   grep -rqs 'PR #562' "$H/state/operational-inbox" || fail "the decision nudge does not name the PR by number: $(cat "$H"/state/operational-inbox/* 2>&1)"
   ! grep -rqs 'PR #306' "$H/state/operational-inbox" || fail "the decision nudge named an earlier issue number as the PR: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  printf 'needs-decision [at=%s] [key=nm-test-awaiting]: G3 Example #77 no-mistakes test awaiting_approval. A (recommended) approve, or B hold?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "bare-number decision pass failed"
+  grep -rqs 'PR #77' "$H/state/operational-inbox" || fail "a decision naming its PR only as a bare number gets no PR label: $(cat "$H"/state/operational-inbox/* 2>&1)"
   pass "decisions: the nudge names work by PR number from the record, not by a goal alias alone"
 }
 

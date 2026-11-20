@@ -30,7 +30,8 @@
 #       PR cannot reach: a timing word, a flake word, and an unreachable word.
 #   fm_wd_pr_label <text>
 #       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
-#       else its first `PR #<n>`; prints nothing when it names neither.
+#       else its first `PR #<n>`, else its first bare `#<n>` (as in `pr: #<n>`);
+#       prints nothing when it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -340,6 +341,7 @@ fm_wd_pr_label() {  # <text>
   local hit n
   hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE 'PR #[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '#[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || return 0
   n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')
   [ -n "$n" ] && printf 'PR #%s\n' "$n"
