@@ -153,15 +153,15 @@ EOF
   assert_contains "$(cat "$args")" "--json" "quota-axi is read as JSON"
   assert_contains "$(cat "$args")" "--no-credential-refresh" "the read never refreshes credentials"
   assert_contains "$(cat "$args")" "--max-age" "the read reuses quota-axi's cache"
-  age_prev_pids "$dir" 1800
+  age_prev_pids "$dir" 252
   FM_FAKE_QUOTA_JSON="$q2" run_ledger "$ps" "$dir" sample
   [ "$RC" = 0 ] || fail "second quota sample: expected exit 0, got $RC"$'\n'"$OUT"
   run_ledger "$ps" "$dir" report --hours 1
   [ "$RC" = 0 ] || fail "quota report: expected exit 0, got $RC"$'\n'"$OUT"
   assert_contains "$OUT" "host-ledger quota account-wide: claude/all_models last_pct_remaining=35 min_pct_remaining=35 last_pace=ahead" \
     "report carries the latest and lowest account-wide percent as reported"
-  # one claude worker across the ~1800 s second interval is 0.50 local worker-hours
-  assert_contains "$OUT" "host-ledger cli: claude peak_count=1 peak_rss_kib=5000 local_worker_hours=0.50" \
+  # one claude worker across the ~252 s second interval is 0.07 local worker-hours
+  assert_contains "$OUT" "host-ledger cli: claude peak_count=1 peak_rss_kib=5000 local_worker_hours=0.07" \
     "local worker-hours are recorded next to the account-wide figures"
   assert_contains "$OUT" "host-ledger tokens_per_active_agent_hour: unreported: no per-host token source" \
     "tokens per active-agent-hour is stated as unreported"
@@ -169,6 +169,33 @@ EOF
     fail "report must never print a numeric tokens per active-agent-hour from account-wide inputs"$'\n'"$OUT"
   fi
   pass "account-wide quota is recorded as reported and never divided by local worker-hours"
+}
+
+test_gap_interval_is_unknown_and_credits_no_worker_hours() {
+  local dir="$TMP_ROOT/gap" ps="$TMP_ROOT/ps-quota" row
+  mkdir -p "$dir"
+  run_ledger "$ps" "$dir" sample
+  [ "$RC" = 0 ] || fail "first gap sample: expected exit 0, got $RC"$'\n'"$OUT"
+  age_prev_pids "$dir" 108
+  run_ledger "$ps" "$dir" sample
+  [ "$RC" = 0 ] || fail "in-bound sample: expected exit 0, got $RC"$'\n'"$OUT"
+  row=$(tail -n 1 "$dir"/ledger-*.tsv)
+  case "$(printf '%s' "$row" | awk -F '\t' '{ print $5 }')" in
+    1[0-2][0-9]) ;;
+    *) fail "a two-minute interval is recorded, got: $row" ;;
+  esac
+  # eight hours of sleep: the 60 s job could not have sampled it
+  age_prev_pids "$dir" 28800
+  run_ledger "$ps" "$dir" sample
+  [ "$RC" = 0 ] || fail "gap sample: expected exit 0, got $RC"$'\n'"$OUT"
+  row=$(tail -n 1 "$dir"/ledger-*.tsv)
+  assert_equals "unknown" "$(printf '%s' "$row" | awk -F '\t' '{ print $5 }')" "an eight-hour gap records interval_s as unknown"
+  assert_equals "unknown" "$(printf '%s' "$row" | awk -F '\t' '{ print $6 }')" "an eight-hour gap records new_per_s as unknown"
+  run_ledger "$ps" "$dir" report --hours 1
+  # one claude worker over only the ~108 s in-bound interval is ~0.03 h, never the 8 h gap
+  assert_contains "$OUT" "host-ledger cli: claude peak_count=1 peak_rss_kib=5000 local_worker_hours=0.03" \
+    "the gap adds no local worker-hours"
+  pass "a sample gap past 300 s is unknown and credits no worker-hours"
 }
 
 test_failed_quota_read_is_unreported_and_row_still_written() {
@@ -254,6 +281,7 @@ test_usage_errors_exit_2() {
 fm_test_run \
   test_sample_appends_row_and_counts_new_pids \
   test_account_wide_quota_recorded_and_never_rated_per_host \
+  test_gap_interval_is_unknown_and_credits_no_worker_hours \
   test_failed_quota_read_is_unreported_and_row_still_written \
   test_render_launchd_runs_sample_every_minute \
   test_report_without_ledger_is_honest \

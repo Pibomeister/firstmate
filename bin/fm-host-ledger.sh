@@ -44,7 +44,9 @@
 # Columns: ts_epoch, load1, procs, new_pids, interval_s, new_per_s,
 # cpu_user, cpu_sys, cpu_idle, swap_used_mib, disk_free_kib, cli, parents,
 # quota_account_wide, quota_account_wide_unreported.
-# Unknown values are the word unknown. new_pids counts pids present now that
+# Unknown values are the word unknown. interval_s and new_per_s are unknown
+# unless the previous sample is 1 to 300 seconds old, so a sleep, a stopped
+# job, or a reboot gap is never credited to report's local worker-hours. new_pids counts pids present now that
 # were absent at the previous sample, so processes that lived and died
 # between samples are missed: new_per_s is a floor on the true launch rate,
 # and parents (the surviving new pids grouped by parent, top 5) is biased
@@ -249,8 +251,10 @@ EOF
   new_per_s=unknown
   if [ -n "$prev_ts" ] && [ "$new_pids" != unknown ]; then
     interval=$((ts - prev_ts))
-    if [ "$interval" -gt 0 ] 2>/dev/null; then
+    if [ "$interval" -gt 0 ] && [ "$interval" -le 300 ]; then
       new_per_s=$(awk -v n="$new_pids" -v s="$interval" 'BEGIN { printf "%.2f", n / s }')
+    else
+      interval=unknown
     fi
   fi
   mv -f "$cur_tmp" "$prev" 2>/dev/null || rm -f "$cur_tmp"

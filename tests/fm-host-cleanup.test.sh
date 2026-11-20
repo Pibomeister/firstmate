@@ -142,6 +142,42 @@ run_default_roots() {  # <home> [args...]: run with the default roots under home
     PATH="$FAKE:$BASE_PATH" bash "$CLEANUP" "$@" 2>&1) || RC=$?
 }
 
+test_clean_lists_each_root_once() {
+  local world="$TMP_ROOT/scan" spy="$TMP_ROOT/scan-bin" log="$TMP_ROOT/scan.log" mode count args
+  mkdir -p "$spy"
+  cat > "$spy/find" <<'SH'
+#!/usr/bin/env bash
+if [ "$2" = -mindepth ] && [ "$3" = 1 ]; then printf '%s\n' "$1" >> "$FM_FIND_LOG"; fi
+exec /usr/bin/find "$@"
+SH
+  chmod +x "$spy/find"
+  for mode in dry-run apply; do
+    args=(clean)
+    [ "$mode" = apply ] && args+=(--apply)
+    rm -rf "$world"
+    mkdir -p "$world/cache/fresh" "$world/logs" "$world/state" "$world/vol"
+    printf 'old\n' > "$world/cache/old.bin"
+    printf 'new\n' > "$world/cache/fresh/new.bin"
+    touch -t 202501010000 "$world/cache/old.bin"
+    : > "$log"
+    RC=0
+    OUT=$(FM_TEST_SEAM=1 FM_CLEANUP_VOLUME="$world/vol" FM_FAKE_VOLUME="$world/vol" \
+      FM_FAKE_DF_AVAIL=209715200 FM_FIND_LOG="$log" \
+      FM_CLEANUP_CACHE_ROOTS="$world/cache" FM_CLEANUP_LOG_ROOTS="$world/logs" \
+      FM_CLEANUP_WORKTREE_ROOTS="$world/none" FM_CLEANUP_DIR="$world/state" \
+      FM_CLEANUP_TARGET_GIB=100 \
+      PATH="$spy:$FAKE:$BASE_PATH" bash "$CLEANUP" "${args[@]}" 2>&1) || RC=$?
+    [ "$RC" = 0 ] || fail "$mode clean: expected exit 0, got $RC"$'\n'"$OUT"
+    count=$(grep -cxF "$world/cache" "$log" || true)
+    assert_equals "1" "$count" "$mode clean lists the cache root's entries once"
+  done
+  assert_contains "$(printf '%s\n' "$OUT" | grep -F "root=$world/cache ")" "old_entries=1 old_kib=" "the apply pass counts the one old entry"
+  assert_contains "$(printf '%s\n' "$OUT" | grep -F "root=$world/cache ")" "remaining_old_entries=0" "the apply pass reports it gone without a rescan"
+  assert_absent "$world/cache/old.bin" "the old entry is deleted"
+  assert_present "$world/cache/fresh/new.bin" "the fresh entry is kept"
+  pass "clean walks each root once per run"
+}
+
 test_npm_cacache_is_one_entry_under_default_roots() {
   local fresh="$TMP_ROOT/home-fresh" old="$TMP_ROOT/home-old"
   npm_home "$fresh" fresh
@@ -198,6 +234,7 @@ fm_test_run \
   test_report_under_target_exits_3 \
   test_clean_dry_run_deletes_nothing \
   test_clean_apply_deletes_only_old_cache_and_logs \
+  test_clean_lists_each_root_once \
   test_npm_cacache_is_one_entry_under_default_roots \
   test_render_launchd_runs_clean_apply_every_six_hours \
   test_usage_errors_exit_2
