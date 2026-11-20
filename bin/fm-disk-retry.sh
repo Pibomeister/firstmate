@@ -24,7 +24,8 @@
 #         - keep it, launching nothing, when the backlog item cannot be read;
 #         - keep it, launching nothing, when the backlog item is Queued but
 #           held or blocked, and report it once until its record changes;
-#         - otherwise run bin/fm-dispatch-resolve.sh on <data>/<task-id>/brief.md.
+#         - otherwise run bin/fm-dispatch-resolve.sh on <data>/<task-id>/brief.md,
+#           with --project set to the base name of the recorded project path.
 #           When the resolution is not clear, or the brief is missing, drop the
 #           record, launching nothing, and report the task for dispatch by hand.
 #           On clear, scan itself runs bin/fm-spawn.sh with the recorded
