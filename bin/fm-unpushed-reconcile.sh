@@ -81,8 +81,10 @@ journal_settled() { printf 'S\t%s\t%s\t%s\n' "$1" "$2" "$3" >> "$FM_UNPUSHED_WOR
 
 # Ends the recorded timed scan group of <work directory> when it is still live,
 # so nothing a cut-short scan started outlives the caller that replays it. Only
-# a group whose member still names this work directory as a scan is ended, and
-# never the caller's own group, so a stale or reused id ends nothing else.
+# a group whose member still names exactly this work directory, as a whole
+# argument, as a scan is ended, and never the caller's own group, so a stale or
+# reused id ends nothing else, even another scan whose work directory merely
+# starts with this one.
 end_scan_group() { # <caller-owned work directory>
   local group own
   [ -f "$1/group" ] && [ ! -L "$1/group" ] || return 0
@@ -91,7 +93,15 @@ end_scan_group() { # <caller-owned work directory>
   own=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
   [ "$group" != "$own" ] || return 0
   ps -A -o pgid= -o command= 2>/dev/null | awk -v g="$group" -v w=" $1" '
-    $1 == g && (index($0, "fm-unpushed-reconcile.sh --scan" w) || index($0, "fm-unpushed-reconcile.sh --discover" w)) { found=1 }
+    function names(line, t,   i, c) {
+      while ((i = index(line, t)) > 0) {
+        c = substr(line, i + length(t), 1)
+        if (c == "" || c == " " || c == "\t") return 1
+        line = substr(line, i + 1)
+      }
+      return 0
+    }
+    $1 == g && (names($0, "fm-unpushed-reconcile.sh --scan" w) || names($0, "fm-unpushed-reconcile.sh --discover" w)) { found=1 }
     END { exit !found }
   ' || return 0
   kill -KILL -- "-$group" 2>/dev/null || true

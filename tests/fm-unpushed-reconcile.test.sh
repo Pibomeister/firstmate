@@ -368,6 +368,24 @@ if command -v perl >/dev/null 2>&1; then
   kill -0 "$other" 2>/dev/null || fail 'the replay ended an unrelated process group'
   kill "$other" 2>/dev/null || true
   wait "$other" 2>/dev/null || true
+  # A live scan of another work directory whose path starts with this one does
+  # not belong to this work directory, even when the recorded id is its group.
+  mkdir -p "$TMP_ROOT/decoy"
+  printf '#!/usr/bin/env bash\nsleep 30\n' > "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh"
+  perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' \
+    bash "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" --scan "$group_work-other" &
+  other=$!
+  for _ in $(seq 1 50); do
+    ps -o command= -p "$other" 2>/dev/null | grep -q -- "--scan $group_work-other" && break
+    sleep 0.1
+  done
+  ps -o command= -p "$other" 2>/dev/null | grep -q -- "--scan $group_work-other" \
+    || fail 'the decoy scan of the neighbouring work directory never started'
+  printf '%s\n' "$other" > "$group_work/group"
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+  kill -0 "$other" 2>/dev/null || fail 'the replay ended the scan of a neighbouring work directory'
+  kill "$other" 2>/dev/null || true
+  wait "$other" 2>/dev/null || true
 fi
 pass 'the replay never ends its own or an unrelated process group'
 
