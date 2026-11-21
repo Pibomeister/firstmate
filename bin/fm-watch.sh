@@ -556,6 +556,10 @@ WATCH_HELPER_BUDGET=${FM_WATCH_HELPER_BUDGET:-}
 case "$WATCH_HELPER_BUDGET" in ''|*[!0-9]*|0) WATCH_HELPER_BUDGET=120 ;; esac
 HUNG_LADDER_SAMPLE_SECS=${FM_HUNG_LADDER_SAMPLE_SECS:-}
 case "$HUNG_LADDER_SAMPLE_SECS" in ''|*[!0-9]*|0) HUNG_LADDER_SAMPLE_SECS=60 ;; esac
+FLEET_LEDGER_HEARTBEAT_SECS=${FM_FLEET_LEDGER_HEARTBEAT_SECS:-}
+case "$FLEET_LEDGER_HEARTBEAT_SECS" in ''|*[!0-9]*|0) FLEET_LEDGER_HEARTBEAT_SECS=300 ;; esac
+LIVE_STATUS_REFRESH_SECS=${FM_LIVE_STATUS_REFRESH_SECS:-}
+case "$LIVE_STATUS_REFRESH_SECS" in ''|*[!0-9]*|0) LIVE_STATUS_REFRESH_SECS=60 ;; esac
 HUNG_LADDER_BUDGET=${FM_HUNG_LADDER_BUDGET:-}
 case "$HUNG_LADDER_BUDGET" in ''|*[!0-9]*|0) HUNG_LADDER_BUDGET=30 ;; esac
 # A busy pane is unconditional proof of liveness with no built-in duration bound,
@@ -752,7 +756,7 @@ inbox_steer_escalate_unavailable() {  # <window> <task> <record>
     fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
     return 0
   fi
-  fm_wake_append stale "$w" "$reason" || exit 1
+  stale_wake_append "$w" "$reason" || exit 1
   if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
     echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
     exit 1
@@ -898,6 +902,12 @@ inbox_steer_busy() {  # <window> <backend> <task> <tail40>
 # being healthy, while an unacknowledged instruction can still be a stuck steer.
 inbox_steer_check() {  # <window> <task>
   local w=$1 task=$2 action verb rec count tail40 reason='' ring_rc backend agent_state recover_rc=1 stuck_busy=0 age dismiss_rc=0
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  # shellcheck disable=SC2016 # The inner shell expands its own arguments.
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    bash -c '. "$1/fm-classify-lib.sh" && . "$1/fm-task-inbox-lib.sh" && fm_task_inbox_receipts_sync "$2" "$3"' \
+    _ "$SCRIPT_DIR" "$STATE" "$task" 2>/dev/null || true
   action=$(fm_task_inbox_due_action "$STATE" "$task") || return 0
   verb=${action%% *}
   [ "$verb" != quiet ] || return 0
@@ -919,7 +929,7 @@ inbox_steer_check() {  # <window> <task>
         return 0
       fi
       reason="stale: $w (unread firstmate instruction: $rec is unhandled after ${age}s; reported without another interrupt)"
-      fm_wake_append stale "$w" "$reason" || exit 1
+      stale_wake_append "$w" "$reason" || exit 1
       if ! fm_task_inbox_record_age_escalated "$STATE" "$task" "$rec"; then
         echo "error: stale wake was queued for $task but its inbox age-escalation marker could not be written" >&2
         exit 1
@@ -980,7 +990,7 @@ inbox_steer_check() {  # <window> <task>
         fi
         if [ -d "${rec%/*}" ]; then
           reason="stale: $w (steering-inbox ladder bookkeeping unwritable: ${rec%/*}/.ring-state cannot be written while $rec stays unhandled; the doorbell cannot advance toward escalation - inspect the inbox directory)"
-          fm_wake_append stale "$w" "$reason" || exit 1
+          stale_wake_append "$w" "$reason" || exit 1
           wake "$reason"
         fi
       fi
@@ -992,7 +1002,7 @@ inbox_steer_check() {  # <window> <task>
         fm_task_inbox_ring "$backend" "$w" "$rec" "$(window_label "$w")" || ring_rc=$?
       if ! fm_task_inbox_clear_retry "$STATE" "$task" "$rec" && [ -f "$rec" ]; then
         reason="stale: $w (steering-inbox retry mark unremovable: ${rec%/*}/.retry-ring cannot be removed, so $rec would ring on every poll - inspect the inbox directory)"
-        fm_wake_append stale "$w" "$reason" || exit 1
+        stale_wake_append "$w" "$reason" || exit 1
         wake "$reason"
       fi
       triage_log "steer-inbox retry ring: $task ${rec##*/} result=$ring_rc"
@@ -1022,7 +1032,7 @@ inbox_steer_check() {  # <window> <task>
         fm_task_inbox_due_action "$STATE" "$task" >/dev/null || true
         return 0
       fi
-      fm_wake_append stale "$w" "$reason" || exit 1
+      stale_wake_append "$w" "$reason" || exit 1
       if ! fm_task_inbox_record_escalated "$STATE" "$task" "$rec"; then
         echo "error: stale wake was queued for $task but its inbox escalation marker could not be written" >&2
         exit 1
@@ -1799,6 +1809,7 @@ _wedge_cap_terminal_append() {  # <win> <wkey> <reason> [guard [guard args...]]
     rm -f "$_queued"
   fi
   fm_lock_release "$FM_WAKE_QUEUE_LOCK" || [ "$_status" -ne 0 ] || _status=4
+  [ "$_status" -ne 0 ] || ledger_task_stalled "$_win" "$_reason"
   return "$_status"
 }
 
@@ -1901,7 +1912,7 @@ resurface_absorbed() {  # <window> <throttle-marker> <age> <reason> [scope] [min
       pause_overdue_reconcile "$task" "$statusf" || return 0
     fi
   fi
-  fm_wake_append stale "$win" "$reason" || exit 1
+  stale_wake_append "$win" "$reason" || exit 1
   if [ -n "$scope" ]; then printf '%s' "$scope" > "$throttle"; else fm_watch_now > "$throttle"; fi
   wake "$reason"
 }
@@ -2430,7 +2441,7 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
   # written ahead of a failed append outlives it, and the next sighting would then
   # absorb the retry - the one way this bound could swallow the report outright
   # rather than deliver it once.
-  fm_wake_append stale "$win" "$reason" || exit 1
+  stale_wake_append "$win" "$reason" || exit 1
   printf '%s %s' "$agent_state" "$id" > "$marker"
   clear_write_tracking "$key"
   wake "$reason"
@@ -2814,9 +2825,10 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
             return 0
           fi
           [ "$append_status" -eq 0 ] || exit 1
+          ledger_task_stalled "$win" "$reason"
           wedge_write_escalation_count "$win" "$_wkey" "$escalation_file" "$since_file" "$n"
         else
-          fm_wake_append stale "$win" "$reason" || exit 1
+          stale_wake_append "$win" "$reason" || exit 1
         fi
         # The ladder's own step, not an episode end: this pane is still wedged,
         # so the idle timer restarts for the next rung of the same escalation
@@ -3038,7 +3050,7 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
         return 0
       fi
       if [ "$(cat "$STATE/.stale-$key" 2>/dev/null || true)" != "$declared" ]; then
-        fm_wake_append stale "$win" "stale: $win" || exit 1
+        stale_wake_append "$win" "stale: $win" || exit 1
         printf '%s' "$declared" > "$STATE/.stale-$key"
         wake "stale: $win"
       fi
@@ -3396,6 +3408,135 @@ hung_ladder_observe() {  # <task> <kind> <1 when the pane reads busy> <dialog> <
   printf -v "$stamp" '%s' "$now"
   printf '%s\n' "$5" | fm_run_timed "$HUNG_LADDER_BUDGET" "$BASH" "$SCRIPT_DIR/fm-hung-ladder.sh" \
     tick --task "$task" --kind "$kind" --busy "$3" --dialog "$4" >/dev/null 2>"$STATE/.hung-ladder.err" || true
+}
+
+# One shell-variable name per task slug, so per-task throttles need no file
+# read on the poll path. `_` is escaped first, then `-` and `.`.
+task_stamp_var() {  # <prefix> <task> <out-var>
+  local slug=${2//_/_5f}
+  slug=${slug//-/_2d}; slug=${slug//./_2e}
+  printf -v "$3" '%s_%s' "$1" "${slug//[!A-Za-z0-9_]/_}"
+}
+
+# Opt-in fleet activity ledger (docs/fleet-ledger.md): a busy worker whose
+# screen changed is making progress, recorded as task.started for a new
+# incarnation and task.heartbeat after that, at most once per
+# FLEET_LEDGER_HEARTBEAT_SECS per task. The last record time also lives in
+# state/.<task>.fleet-ledger-beat so a restarted watcher keeps the spacing.
+ledger_task_activity() {  # <task>
+  local task=$1 stamp last now beat
+  [ -e "$CONFIG/fleet-ledger" ] || return 0
+  [ -n "$task" ] || return 0
+  task_stamp_var LEDGER_BEAT_AT "$task" stamp
+  beat="$STATE/.$task.fleet-ledger-beat"
+  last=${!stamp:-}
+  if [ -z "$last" ]; then
+    { IFS= read -r last < "$beat"; } 2>/dev/null || last=0
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+  fi
+  fm_epoch_seconds_to now
+  [ $((now - last)) -ge "$FLEET_LEDGER_HEARTBEAT_SECS" ] || { printf -v "$stamp" '%s' "$last"; return 0; }
+  printf -v "$stamp" '%s' "$now"
+  { printf '%s\n' "$now" > "$beat"; } 2>/dev/null || true
+  fm_run_timed "$WATCH_HELPER_BUDGET" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-fleet-ledger.sh" activity "$task" \
+    >/dev/null 2>&1 || true
+}
+
+# Readable per-task live status, state/<task>.live.json (docs/configuration.md
+# "Task live status" owns the schema). Built from what this poll already read
+# plus the inbox's own records: the queued steering count, the last delivery
+# attempt, and the composer verdict that attempt read (bin/fm-task-inbox-lib.sh
+# writes both), and the dialog classified from this poll's screen. The dialog is
+# reclassified only when the screen hash changed. The file is atomically
+# replaced when its content changes and at least every LIVE_STATUS_REFRESH_SECS,
+# so its ts shows the monitor is still refreshing it. Best effort.
+live_status_refresh() {  # <task> <kind> [<screen-hash> <screen>]
+  local task=$1 kind=$2 h=${3-} screen=${4-} dir f b n queued=0 oldest='' oldest_n=0 oldest_at=''
+  local line ring_msg='' ring_result='' ring_at='' comp='' comp_at='' sig_var at_var hash_var dialog_var
+  local dialog dialog_at now body last_at file
+  [ -n "$task" ] || return 0
+  # Both go into the JSON unescaped, so only plain identifier text qualifies.
+  case "$task$kind" in *[!A-Za-z0-9._-]*) return 0 ;; esac
+  dir="$STATE/$task.inbox"
+  for f in "$dir"/*.msg; do
+    [ -f "$f" ] || continue
+    b=${f##*/}
+    n=${b%.msg}
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    queued=$((queued + 1))
+    if [ -z "$oldest" ] || [ "$((10#$n))" -lt "$oldest_n" ]; then
+      oldest=$b
+      oldest_n=$((10#$n))
+    fi
+  done
+  if [ -n "$oldest" ]; then
+    while IFS= read -r line; do
+      case "$line" in
+        at=*) oldest_at=${line#at=}; break ;;
+        --) break ;;
+      esac
+    done < "$dir/$oldest" 2>/dev/null
+    case "$oldest_at" in *[!0-9TZ:.-]*) oldest_at='' ;; esac
+  fi
+  { IFS=$'\t' read -r ring_msg ring_result ring_at < "$dir/.last-ring"; } 2>/dev/null || ring_msg=''
+  n=${ring_msg%.msg}
+  case "$n" in ''|*[!0-9]*) ring_msg='' ;; esac
+  case "$ring_result" in rang|composer-pending|composer-unproven|send-failed|endpoint-gone) ;; *) ring_msg='' ;; esac
+  case "$ring_at" in ''|*[!0-9]*) ring_msg='' ;; esac
+  { IFS=$'\t' read -r comp comp_at < "$dir/.composer"; } 2>/dev/null || comp=''
+  case "$comp" in empty|pending|pending-unproven|unknown) ;; *) comp='' ;; esac
+  case "$comp_at" in ''|*[!0-9]*) comp='' ;; esac
+  task_stamp_var LIVE_SIG "$task" sig_var
+  task_stamp_var LIVE_AT "$task" at_var
+  task_stamp_var LIVE_HASH "$task" hash_var
+  task_stamp_var LIVE_DIALOG "$task" dialog_var
+  fm_epoch_seconds_to now
+  if [ -z "$screen" ]; then
+    dialog=not-read
+    dialog_at=null
+  elif [ "$h" = "${!hash_var:-}" ] && [ -n "${!dialog_var:-}" ]; then
+    dialog=${!dialog_var% *}
+    dialog_at=${!dialog_var#* }
+  else
+    dialog=$(fm_wd_pane_dialog "$screen" 2>/dev/null) || dialog=none
+    case "$dialog" in feedback|permission|usage-limit|model-switch|question) ;; *) dialog=none ;; esac
+    dialog_at=$now
+    printf -v "$hash_var" '%s' "$h"
+    printf -v "$dialog_var" '%s %s' "$dialog" "$dialog_at"
+  fi
+  body="\"task\":\"$task\",\"kind\":\"$kind\""
+  if [ -n "$comp" ]; then
+    body+=",\"composer\":{\"state\":\"$comp\",\"at\":$comp_at}"
+  else
+    body+=',"composer":{"state":"not-read","at":null}'
+  fi
+  body+=",\"inbox\":{\"queued\":$queued"
+  if [ -n "$oldest" ]; then
+    body+=",\"oldest\":\"$oldest\""
+  else
+    body+=',"oldest":null'
+  fi
+  if [ -n "$oldest_at" ]; then
+    body+=",\"oldest_queued_at\":\"$oldest_at\""
+  else
+    body+=',"oldest_queued_at":null'
+  fi
+  if [ -n "$ring_msg" ]; then
+    body+=",\"last_delivery\":{\"msg\":\"$ring_msg\",\"result\":\"$ring_result\",\"at\":$ring_at}}"
+  else
+    body+=',"last_delivery":null}'
+  fi
+  body+=",\"dialog\":{\"state\":\"$dialog\",\"at\":$dialog_at}"
+  last_at=${!at_var:-0}
+  if [ "$body" = "${!sig_var:-}" ] && [ $((now - last_at)) -lt "$LIVE_STATUS_REFRESH_SECS" ]; then
+    return 0
+  fi
+  file="$STATE/$task.live.json"
+  { printf '{"v":1,"ts":%s,%s}\n' "$now" "$body" > "$file.tmp" && mv -f "$file.tmp" "$file"; } 2>/dev/null \
+    || { rm -f "$file.tmp" 2>/dev/null; return 0; }
+  printf -v "$sig_var" '%s' "$body"
+  printf -v "$at_var" '%s' "$now"
 }
 
 # Ladder records of tasks that are gone are resolved and pruned once an hour
@@ -4111,7 +4252,7 @@ surface_nonterminal_stale() {  # <window> <hash> [dialog-name] [queued-reason]
   fi
   [ -z "$queued" ] || throttled=1
   if [ "$throttled" -ne 0 ]; then
-    [ -n "$queued" ] || fm_wake_append stale "$win" "$reason" || exit 1
+    [ -n "$queued" ] || stale_wake_append "$win" "$reason" || exit 1
     stale_wait_record "$key"
   fi
   printf '%s' "$h" > "$STATE/.stale-$key"
@@ -4210,7 +4351,7 @@ parked_gate_notice() {  # <window> <task> <crew-state-line>
   triage_log "parked-gate notice: $task ${rec##*/} owner=${gate%%$'\t'*} ring=$ring_rc"
   if [ "${gate%%$'\t'*}" = human ]; then
     PARKED_GATE_REASON="stale: $win (declared pause on a parked run - its no-mistakes run is parked on an ask-user finding and waits on a decision, not on anything external; the worker was pointed at the gate through its steering inbox, so expect its escalation or inspect the gate)"
-    fm_wake_append stale "$win" "$PARKED_GATE_REASON" || exit 1
+    stale_wake_append "$win" "$PARKED_GATE_REASON" || exit 1
   fi
   printf '%s' "$notice" > "$marker"
 }
@@ -5933,15 +6074,17 @@ EOF
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
+      live_status_refresh "$task" "$kind"
       continue
     fi
-    watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || continue
+    watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || { live_status_refresh "$task" "$kind"; continue; }
     tail40=$WATCHER_CAPTURE
     # The matcher is already defined in this shell. It reads the capture this
     # poll already takes, and a miss drops a name the away daemon saved.
     dialog=$(fm_composer_blocking_dialog "$tail40") || dialog=
     [ -n "$dialog" ] || clear_dialog_suffix "$task"
     h=$(printf '%s' "$tail40" | hash_pane)
+    live_status_refresh "$task" "$kind" "$h" "$tail40"
     hf="$STATE/.hash-$key"
     cf="$STATE/.count-$key"
     sf="$STATE/.stale-$key"
@@ -5998,7 +6141,7 @@ EOF
               wake "$PARKED_GATE_REASON"
             elif [ "$(cat "$sf" 2>/dev/null || true)" != "$h" ]; then
               stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
-              fm_wake_append stale "$w" "$stale_reason" || exit 1
+              stale_wake_append "$w" "$stale_reason" || exit 1
               printf '%s' "$h" > "$sf"
               _wedge_cap_markers_clear "$key"
               wake "$stale_reason"
@@ -6051,7 +6194,7 @@ EOF
               triage_log "absorbed stale (worker's open blocker already surfaced for this status): $w"
             else
               stale_reason=$(stale_reason_naming_dialog "stale: $w" "$dialog")
-              fm_wake_append stale "$w" "$stale_reason" || exit 1
+              stale_wake_append "$w" "$stale_reason" || exit 1
               stale_wait_record "$key"
               printf '%s' "$h" > "$sf"
               # Pre-cap shape kept the count here (keep-count contract).
@@ -6184,6 +6327,7 @@ EOF
       printf '%s' "$h" > "$hf"
       echo 0 > "$cf"
       paused_bound=1
+      [ "$busy_now" -ne 0 ] || ledger_task_activity "$task"
       [ "$busy_now" -ne 0 ] || clear_worker_blocker_throttle "$key"
       if [ "$busy_now" -eq 0 ] && busy_turn_over_age "$task"; then
         busy_turn_bound_check "$w" "$task" "$h" "$ssf" "$ewf" "$dialog" && paused_bound=0

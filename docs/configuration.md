@@ -118,7 +118,10 @@ Each effective `FM_HOME` contains private operational directories.
 - Parent-side remote ledger copies under `state/secondmate-summary-cache/`.
 - One-shot Bearings reconcile requests under `state/reconcile-notify/`.
 - Private secondmate config-reread generations with their retry and quarantine state.
-- Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
+- Per-task steering-inbox records under `state/<id>.inbox/`, with their append-only typed receipts in `state/<id>.inbox/receipts.jsonl` (`bin/fm-task-inbox-lib.sh`).
+- Per-task live status files, `state/<id>.live.json` ([Task live status](#task-live-status)).
+- The home's write-once producer identity, `state/producer-identity.json` (`bin/fm-producer-identity-lib.sh`), and the fleet ledger's record counters, `state/.fleet-ledger.seq` and `state/.<id>.fleet-ledger-rev` (`bin/fm-fleet-ledger.sh`).
+- The dry-run unblocker's stall claims under `state/unblock/` and its candidate log, `state/unblock.jsonl` (`bin/fm-unblock.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
@@ -1018,6 +1021,52 @@ See [`trace-context.md`](trace-context.md) for carrier semantics, supported rout
 ## Fleet activity ledger (config/fleet-ledger)
 
 See [`fleet-ledger.md`](fleet-ledger.md) for the opt-in setup, record contract, and limits.
+
+## Task live status
+
+The supervision monitor keeps one readable status file per task, `state/<id>.live.json`, so a tool outside the worker's terminal can see what would hold up steering.
+It needs no flag.
+The monitor replaces the file atomically on each poll where its content changed, and at least every `FM_LIVE_STATUS_REFRESH_SECS` seconds (default 60) while it watches the task, so an old `ts` means the monitor is not refreshing it.
+Teardown removes the file.
+`bin/fm-watch.sh`'s `live_status_refresh` is the writer.
+
+The file is one JSON object:
+
+```json
+{"v":1,"ts":1790133000,"task":"fix-login","kind":"ship",
+ "composer":{"state":"pending","at":1790132990},
+ "inbox":{"queued":1,"oldest":"004.msg","oldest_queued_at":"2026-09-23T10:01:40Z",
+          "last_delivery":{"msg":"004.msg","result":"composer-pending","at":1790132990}},
+ "dialog":{"state":"none","at":1790133000}}
+```
+
+| Member | Meaning |
+| ------ | ------- |
+| `v` | Format version, currently `1`. |
+| `ts` | Unix time in seconds when the monitor last wrote the file. |
+| `task`, `kind` | The task id and its kind: `ship`, `scout`, or `secondmate`. |
+| `composer.state` | The worker's input line as the last steering delivery attempt read it: `empty`, `pending` (it holds text that is not the delivery), `pending-unproven`, or `unknown`; `not-read` when no attempt has read it yet. |
+| `composer.at` | When that reading was taken, or `null`. |
+| `inbox.queued` | Steering messages written but not yet acknowledged by the worker. |
+| `inbox.oldest`, `inbox.oldest_queued_at` | The oldest unacknowledged message's name and its UTC enqueue time, or `null`. |
+| `inbox.last_delivery` | The last delivery attempt by any sender: the message name, `result` (`rang`, `composer-pending` when the input line held other text so delivery was skipped, `composer-unproven` when the strict draft guard skipped a line it could not prove free, `send-failed`, or `endpoint-gone`), and its time; `null` before any attempt. |
+| `dialog.state` | A dialog the worker's screen shows that needs an answer: `permission` (an approval or trust prompt), `question`, `feedback`, `usage-limit`, `model-switch`, or `none`; `not-read` when this poll did not read the screen, as for an idle second mate. |
+| `dialog.at` | When the screen was last classified, or `null`. |
+
+The composer reading comes from delivery attempts only, so the monitor takes no extra screen read for it; check `composer.at` before relying on it.
+The dialog is classified from the screen the monitor already reads each poll, and only again when that screen changed.
+Readers must ignore members they do not recognize.
+
+[Typed receipts](supervision-events.md#typed-receipts) owns the contract.
+`bin/fm-task-snapshot.sh` prints these facts with the task's binding, ownership, state, and waits as one JSON object per task ([Task snapshot](supervision-events.md#task-snapshot)).
+
+## Inbox draft guard (config/inbox-draft-guard)
+
+[Input-line guard](supervision-events.md#input-line-guard) owns the contract.
+
+## Auto-unblock (config/auto-unblock)
+
+[Unblocker](supervision-events.md#unblocker) owns the contract.
 
 ## Claim verifier AgentKit gate (config/agentkit-gate)
 
@@ -3847,6 +3896,8 @@ FM_WATCHER_CLEANUP_LOCK_BOUND=   # optional watcher EXIT marker-lock wait; defau
 FM_WAKE_QUEUE_LOCK_WAIT=30   # seconds a short state lock (the wake queue, a recovery marker, a pending-reply record) is waited for before the caller gives up with the state untouched; zero or invalid values use 30
 FM_LEASE_COMMAND_LOCK_WAIT=60   # seconds a lease command or a guarded mutation (fm-send, fm-control, fm-teardown) waits for this home's lease-command lock before refusing with exit 6 and naming the holder; zero or invalid values use 60
 FM_WATCH_HELPER_BUDGET=120   # seconds each watcher helper (fleet-ledger capture, herdr group sync, process-event reconcile, inactive reconcile scan, worktree cleanup) may run before the watcher skips it for that cycle; zero or invalid values use 120
+FM_FLEET_LEDGER_HEARTBEAT_SECS=300   # minimum seconds between screen-progress heartbeats of one task in the opt-in fleet activity ledger (docs/fleet-ledger.md); zero or invalid values use 300
+FM_LIVE_STATUS_REFRESH_SECS=60   # longest interval between rewrites of an unchanged state/<id>.live.json while the watcher watches that task; zero or invalid values use 60
 FM_HUNG_LADDER_SAMPLE_SECS=60   # seconds between hung-worker ladder observations of one task when config/hung-ladder exists; zero or invalid values use 60
 FM_HUNG_LADDER_BUDGET=30   # seconds one hung-worker ladder observation may run before the watcher skips it for that pass; zero or invalid values use 30
 FM_WORKTREE_CLEANUP=1   # set to 0 to skip the watcher's linked-worktree cleanup pass; bin/fm-worktree-cleanup.sh owns the pass

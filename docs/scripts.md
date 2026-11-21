@@ -26,6 +26,9 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-captain-inbox-lib.sh` | Compute the unread captain inbox note age shared by the heartbeat ledger and `fm-inbox.sh ready` |
 | `fm-home-summary-refresh.sh` | Atomically publish this home's structured summary ledger                         |
 | `fm-fleet-ledger.sh`     | Append the opt-in fleet activity ledger's records ([contract](fleet-ledger.md))      |
+| `fm-producer-identity-lib.sh` | Name who produced a supervision record: the machine, the home, and the actor and session ([contract](supervision-events.md)) |
+| `fm-task-snapshot.sh`    | Print one read-only JSON snapshot of a task's binding, ownership, queue, state, waits, and capabilities ([contract](supervision-events.md)) |
+| `fm-unblock.sh`          | Decide, in dry run only, which stalled steering message or ready backlog item one owner may resume or dispatch ([contract](supervision-events.md)) |
 | `fm-fleet-view.sh`       | Render the fleet snapshot, plus discovered ready PRs, as a human Markdown view       |
 | `fm-fleet-learnings.sh`  | Print the labeled tracked fleet learnings section for AFK preflight                   |
 | `fm-bearings-snapshot.sh` | Project the bounded remote-ledger fleet snapshot to compact TOON; `--include-prs` adds live GitHub enrichment |

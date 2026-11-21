@@ -81,6 +81,60 @@ SH
   printf '%s\n' "$fb"
 }
 
+# A fake tmux whose pane is a Claude-style composer that keeps its content in
+# FM_FAKE_COMPOSER: literal input appends to it, capture renders it wrapped
+# between rules, and Enter submits it (logged as SUBMIT) unless
+# FM_FAKE_DROP_ENTERS still holds a count of Enters to swallow. A nonempty
+# FM_FAKE_SCREEN file replaces the rendered screen verbatim.
+make_composer_stub() {  # <dir>
+  mkdir -p "$1/fakebin"
+  cat > "$1/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  send-keys)
+    shift
+    literal=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) shift 2 ;;
+        -l) literal=1; shift ;;
+        *) break ;;
+      esac
+    done
+    if [ "$literal" = 1 ]; then
+      printf '%s' "$1" >> "$FM_FAKE_COMPOSER"
+    elif [ "${1:-}" = Enter ]; then
+      drops=$(cat "$FM_FAKE_DROP_ENTERS" 2>/dev/null || echo 0)
+      if [ "$drops" -gt 0 ]; then
+        echo $((drops - 1)) > "$FM_FAKE_DROP_ENTERS"
+      elif [ -s "$FM_FAKE_COMPOSER" ]; then
+        printf 'SUBMIT: %s\n' "$(cat "$FM_FAKE_COMPOSER")" >> "$FM_SEND_LOG"
+        : > "$FM_FAKE_COMPOSER"
+      fi
+    fi
+    exit 0 ;;
+  display-message)
+    case "$*" in *cursor_y*) printf '2\n'; exit 0 ;; esac
+    printf 'fakepane\n'; exit 0 ;;
+  capture-pane)
+    if [ -s "${FM_FAKE_SCREEN:-}" ]; then cat "$FM_FAKE_SCREEN"; exit 0; fi
+    rule=$(printf '─%.0s' $(seq 64))
+    printf '● done\n%s\n' "$rule"
+    if [ -s "$FM_FAKE_COMPOSER" ]; then
+      fold -w 60 "$FM_FAKE_COMPOSER" | awk 'NR == 1 { print "❯ " $0; next } { print "  " $0 }'
+    else
+      printf '❯ \n'
+    fi
+    printf '%s\n  ? for shortcuts\n' "$rule"
+    exit 0 ;;
+  list-windows) printf 'fm-t1\n'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$1/fakebin/tmux"
+}
+
 age_path() {  # <path>  (set mtime well past any grace under test)
   touch -t 202001010000 "$1"
 }
