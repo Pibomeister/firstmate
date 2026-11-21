@@ -668,7 +668,7 @@ interval=1200
 classifier=jev
 ```
 
-An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout` is a configuration error that stops the check before it reads any screen.
+An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout`, including nonnumeric timing values, is a configuration error that stops the check before it reads any screen.
 A watcher-started tick reports that error with one `check:` notification per distinct file content.
 
 **Deterministic pass**
@@ -682,6 +682,7 @@ On an unchanged screen these rules decide without a model, in order:
 - A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
 - A captain with no open work is `idle_done` unless its screen shows a terminal provider or API error.
   The captain has open work only when `bin/fm-dispatch-log.sh overdue` lists an overdue goal or a wake has waited in the queue for longer than one interval; otherwise a captain idle at its prompt is waiting on its watcher, which is healthy.
+  If the overdue probe fails or times out, the check treats open work as unknown and judges the captain instead of declaring it `idle_done`.
 
 Only the remaining screens reach the classifier.
 A rendered activity row such as a spinner, `esc to interrupt`, or a retry countdown is never decided by rule, because a busy footer left in scrollback would hide a stall; the classifier reads it instead.

@@ -422,6 +422,19 @@ test_captain_api_error_without_open_work() {
   pass 'captain: a terminal API error reaches recovery without open work'
 }
 
+test_captain_overdue_probe_failure() {
+  reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  grok_says idle_with_goals 0.9
+  sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a successful empty overdue probe allows healthy idle'
+  FM_DISPATCH_SLA_MINUTES=bad sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'a failed overdue probe keeps captain work unknown'
+  assert_not_contains "$OUT" 'verdict=idle_done' 'a failed overdue probe never declares healthy idle'
+  pass 'captain: overdue probe failure reaches the classifier'
+}
+
 test_fingerprint_preserves_error_status() {
   reset_lab
   make_worker fp1 api-error.screen
@@ -746,6 +759,23 @@ test_tick_schedule() {
   pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
 }
 
+test_invalid_timing_configuration() {
+  local key
+  reset_lab
+  make_worker badtime stalled.screen
+  for key in interval timeout; do
+    printf '%s=not-a-number\n' "$key" > "$LAB/config/stall-watch"
+    sw check badtime
+    expect_code 2 "$RC" "check rejects nonnumeric $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number" "check names invalid $key"
+    sw tick --force
+    expect_code 2 "$RC" "tick rejects nonnumeric $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number" "tick names invalid $key"
+  done
+  assert_equals 0 "$(ledger_rows badtime)" 'invalid timing never checks a screen'
+  pass 'timing configuration: check and tick reject nonnumeric values'
+}
+
 launch_age() { perl -e 'print time - (stat $ARGV[0])[9]' "$1/state/stall-watch/.last-launch"; }
 
 test_watcher_starts_tick_and_delivers_reports() {
@@ -889,6 +919,7 @@ fm_test_run \
   test_jev_unavailable_reasons \
   test_stale_captain_endpoint_is_skipped \
   test_captain_api_error_without_open_work \
+  test_captain_overdue_probe_failure \
   test_fingerprint_preserves_error_status \
   test_classifier_never_sees_secrets \
   test_unchanged_screen_guard \
@@ -898,4 +929,5 @@ fm_test_run \
   test_nudge_ends_with_work \
   test_refusal_after_ordinary_stop_is_judged \
   test_tick_schedule \
+  test_invalid_timing_configuration \
   test_watcher_starts_tick_and_delivers_reports

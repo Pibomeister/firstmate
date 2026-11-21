@@ -102,13 +102,13 @@ sw_now() {
 }
 
 # ---- configuration -----------------------------------------------------------
-INTERVAL=$(fm_wd_conf_int "$CONF" interval 1200)
+INTERVAL=$(fm_wd_conf_get "$CONF" interval 1200)
 CLASSIFIER=$(fm_wd_conf_get "$CONF" classifier jev)
 GROK_MODEL=$(fm_wd_conf_get "$CONF" grok_model grok-4.7-build-fast)
 JEV_MODEL=$(fm_wd_conf_get "$CONF" jev_model jev-latest)
 LINES=$(fm_wd_conf_int "$CONF" lines 60)
 FLOOR=$(fm_wd_conf_get "$CONF" confidence_floor 0.6)
-MODEL_TIMEOUT=$(fm_wd_conf_int "$CONF" timeout 90)
+MODEL_TIMEOUT=$(fm_wd_conf_get "$CONF" timeout 90)
 CAPTURE_TIMEOUT=20
 SEND_TIMEOUT=60
 FAILOVER_TIMEOUT=900
@@ -131,6 +131,10 @@ sw_check_config() {
   case "$CLASSIFIER" in jev|grok) ;; *) sw_config_error "config/stall-watch classifier must be jev or grok" ;; esac
   case "$GROK_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch grok_model is not a model name" ;; esac
   case "$JEV_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch jev_model is not a model name" ;; esac
+  case "$INTERVAL" in ''|*[!0-9]*) sw_config_error "config/stall-watch interval must be a whole number" ;; esac
+  case "$MODEL_TIMEOUT" in ''|*[!0-9]*) sw_config_error "config/stall-watch timeout must be a whole number" ;; esac
+  INTERVAL=$((10#$INTERVAL))
+  MODEL_TIMEOUT=$((10#$MODEL_TIMEOUT))
   awk -v f="$FLOOR" 'BEGIN { exit !(f ~ /^(0(\.[0-9]+)?|1(\.0+)?)$/) }' \
     || sw_config_error "config/stall-watch confidence_floor must be a number from 0 to 1"
   [ "$INTERVAL" -ge 60 ] || sw_config_error "config/stall-watch interval must be at least 60 seconds"
@@ -594,7 +598,7 @@ sw_captain_has_work() {  # <now>
   local rc=0
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE fm_run_timed "$CAPTURE_TIMEOUT" \
     bash "$SCRIPT_DIR/fm-dispatch-log.sh" overdue </dev/null >/dev/null 2>&1 || rc=$?
-  [ "$rc" != 3 ] || return 0
+  [ "$rc" = 0 ] || return 0
   [ -f "$STATE/.wake-queue" ] || return 1
   awk -F '\t' -v cut=$(($1 - INTERVAL)) '
     NF >= 5 && $1 ~ /^[0-9]+$/ && $1 + 0 <= cut + 0 { found = 1; exit }
