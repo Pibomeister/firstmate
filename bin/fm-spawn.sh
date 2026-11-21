@@ -1909,6 +1909,9 @@ SPAWN_META_TMP=
 SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
+TMUX_RELAUNCH_PRIOR_META_TMP=
+TMUX_RELAUNCH_PRIOR_STOP_TMP=
+TMUX_RELAUNCH_PRESERVE_SNAPSHOT=0
 SPAWN_FRESH_COMMIT_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
@@ -1983,6 +1986,10 @@ spawn_orca_reclaim_launch_file() {
 
 spawn_abort_cleanup() {
   local status=$?
+  if [ "$TMUX_RELAUNCH_PRESERVE_SNAPSHOT" != 1 ]; then
+    [ -z "$TMUX_RELAUNCH_PRIOR_META_TMP" ] || rm -f -- "$TMUX_RELAUNCH_PRIOR_META_TMP"
+    [ -z "$TMUX_RELAUNCH_PRIOR_STOP_TMP" ] || rm -f -- "$TMUX_RELAUNCH_PRIOR_STOP_TMP"
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] &&
     [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] &&
     [ -n "$SPAWN_META_TMP" ] &&
@@ -5829,6 +5836,12 @@ if [ "$RELAUNCH" -eq 1 ]; then
     T=$RELAUNCH_TARGET
     WT_TARGET=$T
     SES=${T%%:*}
+    if [ "$BACKEND" = tmux ]; then
+      fm_backend_tmux_prepare_relaunch "$T" wait-only || {
+        echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+        exit 1
+      }
+    fi
   elif [ "$BACKEND" = orca ]; then
     # The recorded terminal is proven closed with no agent left in the
     # worktree, so create ONE fresh terminal inside the task's own Orca
@@ -5944,6 +5957,10 @@ EOF
       }
       T="$SES:$W"
       WT_TARGET=$WID
+      fm_backend_tmux_prepare_relaunch "$T" wait-only || {
+        echo "error: re-created tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+        exit 1
+      }
     else
     HERDR_REBIND_SES=${RELAUNCH_TARGET%%:*}
     HERDR_CONTAINER_RAW=$(HERDR_PANE_ID="$RELAUNCH_LAUNCHER_PANE_ID" \
@@ -8858,6 +8875,16 @@ spawn_report_preserved_state() {
 }
 
 if [ "$RELAUNCH" -eq 1 ]; then
+  if [ "$BACKEND" = tmux ]; then
+    # Snapshot the prior record so a late foreground child can refuse launch
+    # and restore it under the task's meta lock.
+    TMUX_RELAUNCH_PRIOR_META_TMP="$STATE/.$ID.meta.pre-tmux-guard.${BASHPID:-$$}"
+    cp -p -- "$STATE/$ID.meta" "$TMUX_RELAUNCH_PRIOR_META_TMP" || exit 1
+    if [ -e "$STATE/.crew-stopped-$ID" ]; then
+      TMUX_RELAUNCH_PRIOR_STOP_TMP="$STATE/.$ID.stopped.pre-tmux-guard.${BASHPID:-$$}"
+      cp -p -- "$STATE/.crew-stopped-$ID" "$TMUX_RELAUNCH_PRIOR_STOP_TMP" || exit 1
+    fi
+  fi
   SPAWN_META_PUBLISH_STARTED=1
   if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
     echo "error: replacement task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
@@ -8866,8 +8893,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=
-  rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
-    echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
+  if [ "$BACKEND" != tmux ]; then
+    rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
+      echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
+  fi
 fi
 # A published replacement or fresh record ends any deliberate stop that
 # `fm-control.sh <id> exit` recorded, so the watcher's automatic relaunch
@@ -9537,16 +9566,39 @@ else
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
   fi
   if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
-    fm_backend_tmux_prepare_relaunch "$T" || {
-      echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
+    tmux_guard_mode='no-wait'
+    [ "$RELAUNCH_REBIND" -eq 0 ] || tmux_guard_mode='wait-only'
+    if ! fm_backend_tmux_prepare_relaunch "$T" "$tmux_guard_mode"; then
+      RELAUNCH_REPLACEMENT_PENDING=1
+      TMUX_RELAUNCH_PRESERVE_SNAPSHOT=1
+      tmux_stop_restored=0
+      if [ -z "$TMUX_RELAUNCH_PRIOR_STOP_TMP" ]; then
+        tmux_stop_restored=1
+      elif cp -p -- "$TMUX_RELAUNCH_PRIOR_STOP_TMP" "$STATE/.crew-stopped-$ID"; then
+        tmux_stop_restored=1
+      else
+        echo "warning: could not restore the prior intentional-stop marker for $ID; inspect $TMUX_RELAUNCH_PRIOR_STOP_TMP" >&2
+      fi
+      if ! fm_backlog_atomic_transition publish "$TMUX_RELAUNCH_PRIOR_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
+        echo "error: tmux relaunch refused and prior task record could not be restored ($FM_BACKLOG_TRANSITION_ERROR); inspect $TMUX_RELAUNCH_PRIOR_META_TMP" >&2
+      else
+        rm -f -- "$TMUX_RELAUNCH_PRIOR_META_TMP"
+        TMUX_RELAUNCH_PRIOR_META_TMP=
+        [ "$tmux_stop_restored" = 1 ] && TMUX_RELAUNCH_PRESERVE_SNAPSHOT=0
+      fi
+      echo "error: tmux pane $T left its clean shell prompt before launch delivery" >&2
       exit 1
-    }
+    fi
+    rm -f -- "$STATE_REAL/$ID.droid-session-end" ||
+      echo "warning: could not retire the prior Droid stop marker of $ID; it names a retired generation, so it proves nothing about the replacement" >&2
   fi
   if ! spawn_send_literal "$T" "$LAUNCH_SOURCE_TEXT"; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail
     exit 1
   fi
-  sleep 0.3
+  if [ "$BACKEND" != tmux ] || [ "$RELAUNCH" -ne 1 ]; then
+    sleep 0.3
+  fi
   if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
     HERDR_PROJECTION_ABORT_CLEANUP=0
     spawn_herdr_presentation_order_lock_release
@@ -9554,6 +9606,11 @@ else
   if ! spawn_send_key "$T" Enter; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail
     exit 1
+  fi
+  if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
+    rm -f -- "$TMUX_RELAUNCH_PRIOR_META_TMP" "$TMUX_RELAUNCH_PRIOR_STOP_TMP"
+    TMUX_RELAUNCH_PRIOR_META_TMP=
+    TMUX_RELAUNCH_PRIOR_STOP_TMP=
   fi
   if [ "$ORCA_LAUNCH_ENV_ENABLED" = 1 ]; then
     spawn_orca_wait_launch_consumed
