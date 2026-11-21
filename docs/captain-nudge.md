@@ -95,3 +95,6 @@ Host notes:
 - macOS launchd jobs cannot read `~/Documents` without Full Disk Access, so keep the firstmate checkout that runs this tool outside `~/Documents`; a `fm_home` or `queue_file` there reads as absent under launchd, and open work then has to come from `open_work.repos`.
 - Herdr refuses a client whose protocol is newer than the running server. Install with `PATH` putting the herdr binary that matches the server first (for example `PATH="$HOME/.local/bin:$PATH" bin/fm-captain-nudge.sh install ...`); the unit records that `PATH`.
 - Herdr has no last-output time, so a Herdr captain's idle time is how long its visible screen has been unchanged (tracked in `state_dir/captains/<id>.screen`). The first pass after install starts that clock.
+- A Herdr `pane` pin goes stale when herdr restarts or the captain moves.
+  When an explicit `pane` pin cannot be read and the captain names `fm_home`, the nudge reads and types into the live captain terminal that home recorded in `state/captain-handle` at its last session start, provided the session that recorded it still holds the home's lock.
+  A `title` selector never falls back this way, even when the pane it matched cannot be read.
