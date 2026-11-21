@@ -1,0 +1,324 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-11-21T01:15:53Z",
+  "fm_home": "/tmp/fm-lab.P2p1m0-base",
+  "session": {
+    "endpoint": {
+      "backend": "unknown",
+      "target": "unknown"
+    }
+  },
+  "roots": {
+    "fm_root": "/tmp/fm-base.8EFxOH",
+    "state": "/tmp/fm-lab.P2p1m0-base/state",
+    "data": "/tmp/fm-lab.P2p1m0-base/data",
+    "config": "/tmp/fm-lab.P2p1m0-base/config",
+    "projects": "/tmp/fm-lab.P2p1m0-base/projects"
+  },
+  "backlog": {
+    "path": "/tmp/fm-lab.P2p1m0-base/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [
+    {
+      "id": "alpha",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "/tmp/fm-lab.P2p1m0/wt-a",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/alpha.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/alpha.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "needs-decision",
+            "note": "partial",
+            "raw": "needs-decision [key=next]: partial",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.P2p1m0/wt-a",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.P2p1m0-base/data/alpha/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fm:fm-alpha",
+        "raw": "state: unknown · source: none · backend target gone: fm:fm-alpha",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fm:fm-alpha",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "cred",
+            "verb": "blocked",
+            "summary": "need a login"
+          },
+          {
+            "key": "next",
+            "verb": "needs-decision",
+            "summary": "partial"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "needs-decision [key=next]: partial"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-alpha",
+        "steer": "bin/fm-send.sh fm-alpha '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "bravo",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "/tmp/fm-lab.P2p1m0/wt-b",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/bravo.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/bravo.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "paused",
+            "note": "waiting on CI",
+            "raw": "paused: waiting on CI",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.P2p1m0/wt-b",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.P2p1m0-base/data/bravo/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fm:fm-bravo",
+        "raw": "state: unknown · source: none · backend target gone: fm:fm-bravo",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fm:fm-bravo",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "paused: waiting on CI"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-bravo",
+        "steer": "bin/fm-send.sh fm-bravo '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "charlie",
+      "kind": "scout",
+      "harness": "claude",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "/tmp/fm-lab.P2p1m0/wt-c",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/charlie.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "/tmp/fm-lab.P2p1m0-base/state/charlie.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "done",
+            "note": "report written",
+            "raw": "done: report written",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/tmp/fm-lab.P2p1m0/wt-c",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "/tmp/fm-lab.P2p1m0-base/data/charlie/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fm:fm-charlie",
+        "raw": "state: unknown · source: none · backend target gone: fm:fm-charlie",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fm:fm-charlie",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-11-21T01:15:53Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "done: report written"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-charlie",
+        "steer": "bin/fm-send.sh fm-charlie '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": false,
+    "proven_clear": false,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 1,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/tmp/fm-lab.P2p1m0-base/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-11-21T01:15:53Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

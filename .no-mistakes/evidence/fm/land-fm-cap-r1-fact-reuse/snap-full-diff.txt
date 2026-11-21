@@ -1,0 +1,4 @@
+36c36
+<     "fm_root": "/tmp/fm-base.8EFxOH",
+---
+>     "fm_root": "{run-worktree}",

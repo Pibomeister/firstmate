@@ -1,0 +1,15 @@
+Lab-home A/B: base d6d5594c vs branch ee4d8a65, fm-fleet-snapshot.sh --json on identical fixture homes (alpha: 2 open decisions; bravo: resolved+paused; charlie: done scout)
+run1 task diff:        0 bytes; run2 (cursor reuse) task diff:        0 bytes
+full doc diff (only fm_root expected):
+36c36
+<     "fm_root": "/tmp/fm-base.8EFxOH",
+---
+>     "fm_root": "{run-worktree}",
+after growth (resolve route, partial needs-decision line):        0 bytes diff
+{"id":"alpha","od":["cred","next"],"pd":true}
+{"id":"bravo","od":[],"pd":false}
+{"id":"charlie","od":[],"pd":false}
+crew-state per task:
+alpha identical: state: unknown · source: none · backend target gone: fm:fm-alpha
+bravo identical: state: unknown · source: none · backend target gone: fm:fm-bravo
+charlie identical: state: unknown · source: none · backend target gone: fm:fm-charlie
