@@ -3698,7 +3698,7 @@ stall_watch_tick() {
     current=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || current=''
     [ "$current" != "$STALL_WATCH_START" ] || return 0
   fi
-  STALL_WATCH_PID= STALL_WATCH_START=
+  STALL_WATCH_PID='' STALL_WATCH_START=''
   [ "$(age_of "$stamp")" -ge 60 ] || return 0
   mkdir -p "$STATE/stall-watch" 2>/dev/null && touch "$stamp" 2>/dev/null || return 0
   case $- in *m*) monitor=1 ;; esac
