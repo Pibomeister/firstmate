@@ -878,6 +878,31 @@ council-seats=claude:haiku,agy:flash'
   pass "decisions: secret-looking text reaches no council seat, ruling, gap, or nudge; a clean decision still settles"
 }
 
+test_worker_human_step_key_is_held_for_the_owner() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 "Working."
+  # Brief rule 11's record of a human-only step, worded with none of the
+  # reserved or secret-looking words, beside an ordinary decision.
+  {
+    printf 'blocked [at=%s] [key=human-step-device]: human-only step: approve the browser prompt on the phone\n' "$((BASE - 9000))"
+    printf 'needs-decision [at=%s] [key=cache-layout]: A (recommended) flat keys or B nested keys?\n' "$((BASE - 9000))"
+  } > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "first pass failed"
+  assert_grep "1 decisions held for the owner" "$H/data/watchdog/status.md" "the human-only step is a held gap"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the ordinary decision still gets its nudge"
+  if grep -rqsF 'human-step-device' "$H/state/operational-inbox"; then
+    fail "the nudge asks the supervisor to answer a human-only step: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  fi
+  run_wd 2000 once >/dev/null 2>&1 || fail "second pass failed"
+  assert_equals 1 "$(ledger_rows decision:cache-layout council "done")" "the ordinary decision still reaches council"
+  assert_equals 0 "$(ledger | grep -c 'decision:human-step-device')" "the human-only step reaches no council"
+  assert_no_grep "browser prompt on the phone" "$H/prompt.log" "no seat saw the human-only step"
+  assert_equals 2 "$(grep -cE '^(claude|agy) -p' "$H/model.log")" "each seat was called once, for the ordinary decision"
+  pass "decisions: a worker's human-step key is the owner's, never nudged or put to council; an ordinary decision still settles"
+}
+
 test_secret_looking_model_switch_dialog_is_held() {
   local sentinel=FAKESENTINEL42
   make_home "curl run with Bearer $sentinel"$'\n\nSwitch to another model?\n\n ❯ 1. Switch to Sonnet\n   2. Buy more credits\n\nEnter to confirm · Esc to cancel' 'models=claude:haiku,agy:flash'
@@ -4755,6 +4780,38 @@ SH
   pass "quota guard: every act check nudges the primary once, whichever path ran it"
 }
 
+test_quota_guard_act_never_nudges_a_human_step_pane() {
+  local snap root
+  make_home $'API Error: 401 · Please run /login\n❯ \n  ? for shortcuts'
+  grep -v '^quota-guard=' "$H/config/watchdog" > "$H/watchdog.conf" && mv "$H/watchdog.conf" "$H/config/watchdog"
+  transcript 100 "Working."
+  root="$H/claude"
+  snap="$H/claude-quota.json"
+  jq -n --arg r "$root" '{schemaVersion: 6, providers: [{provider: "claude", accountKey: "acct", accountLocator: {path: $r},
+    state: {status: "fresh", stale: false},
+    quotaSemantics: {status: "known", effectiveAvailability: [{scope: "all_models", status: "known", effectivePercentRemaining: 0, runway: {status: "exhausted_now"}}]}}]}' > "$snap"
+  wd_quota_snapshot "$H/quota.json"
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --provider claude "*) cat "$snap" ;;
+  *) cat "$H/quota.json" ;;
+esac
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+  FM_SESSION_LOCK_OWNER_HARNESS=claude run_wd 0 once >/dev/null 2>&1 || fail "quota guard pass failed"
+  assert_equals 1 "$(ledger_rows quota-guard check "done")" "the quota check still runs: $(ledger | cut -f4-8)"
+  assert_equals "act" "$(sed -n 's/^verdict=//p' "$H/state/quota-guard/last")" "the check names moves"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "quota-guard" && $6 == "nudge"' | wc -l | tr -d ' ')" \
+    "an act check never nudges a pane showing a human-only step: $(ledger | cut -f4-8)"
+  if grep -rqsF "quota-guard: act" "$H/state/operational-inbox"; then
+    fail "a quota nudge reached a pane showing a human-only step: $(cat "$H"/state/operational-inbox/* 2>&1)"
+  fi
+  [ ! -s "$H/typed.log" ] || fail "something was typed into a human-only step: $(cat "$H/typed.log")"
+  rm -f "$FAKEBIN/quota-axi"
+  pass "quota guard: an act check never nudges a pane showing a human-only step"
+}
+
 # quota_guard_exhausted_root <root>: a fake quota-axi on which only the Claude
 # account at <root> is exhausted.
 quota_guard_exhausted_root() {
@@ -6455,7 +6512,20 @@ test_human_step_detection() {
   assert_equals "" "$(lib fm_wd_human_step $'Working on the MFA enrolment.\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  fm/fm-mfa-enroll · ~/w/fm-2fa-flow · ? for shortcuts')" "a branch name in the status line is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'GitHub needs you to sign in to continue before the push.\n> 1. merge the PR\n  2. then clean up')" "an echoed numbered prompt under a sign-in reply is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'The 2FA and otp checks pass now.\n> 1. merge it')" "a numbered composer draft under a 2FA reply is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Working on the mirror.\n────────────────────────────────────────\n❯ check whether\n  authentication is required for the mirror\n────────────────────────────────────────\n  ? for shortcuts')" "a wrapped composer draft that mentions authentication is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Working on the login flow.\n❯ next, enable the\n  2fa check and sign in to the staging app')" "a borderless wrapped draft that mentions 2FA and sign-in is not a step"
   pass "human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not"
+}
+
+test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step() {
+  make_home "Working on the mirror."$'\n'"$(ruled $'> check whether\n  authentication is required for the mirror' '  ? for shortcuts')"
+  transcript 100 "Working."
+  local off
+  for off in 0 400 800 1200; do FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1; done
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "human-step"' | wc -l | tr -d ' ')" "a draft that mentions authentication is escalated as a step: $(ledger | cut -f5-8)"
+  assert_no_grep "human-only" "$H/data/watchdog/status.md" "a draft is reported as a human-only step"
+  assert_equals 1 "$(ledger_rows pasted-input key pending)" "the held draft still gets its one Enter: $(ledger | cut -f5-8)"
+  pass "human-only step: a wrapped composer draft that mentions a sign-in is unsent input, not a step"
 }
 
 test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into() {
@@ -6492,6 +6562,29 @@ test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into() {
   assert_equals 0 "$(ledger | awk -F'\t' '$6 ~ /^(nudge|key|restart|council|self-heal)$/' | wc -l | tr -d ' ')" "a key, nudge, restart, council, or issue reached the step: $(ledger | cut -f4-8)"
   wd_pid_alive_check "$LOCKPID" || fail "the session holding the step was killed"
   pass "human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged"
+}
+
+test_human_step_overnight_reports_only_what_it_recorded() {
+  local BASE
+  BASE=$(hs_base night)
+  make_home "$HS_OTP" 'mode=dry-run'
+  transcript 100 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_grep "would be recorded for the morning handoff" "$H/data/watchdog/status.md" "a dry run reports the record it would write"
+  assert_no_grep "; recorded for the morning handoff" "$H/data/watchdog/status.md" "a dry run claims a record it never wrote"
+  assert_equals 0 "$(hs_rows "$(basename "$H")" morning-handoff)" "a dry run writes no morning-handoff row"
+
+  # A record that cannot be written is reported as such, never as recorded.
+  make_home "$HS_OTP"
+  transcript 100 "Working."
+  mkdir -p "$H/state/watchdog/human-steps.tsv"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows human-step handoff failed)" "the failed write is on record: $(ledger | cut -f4-8)"
+  assert_grep "morning-handoff record could not be written" "$H/data/watchdog/status.md" "a failed write is reported"
+  assert_no_grep "; recorded for the morning handoff" "$H/data/watchdog/status.md" "a failed write claims a record"
+  pass "human-only step: overnight, the status names a dry run or a failed write, never a record that was not written"
 }
 
 test_human_step_overnight_goes_to_the_morning_handoff() {
@@ -6664,7 +6757,10 @@ test_worker_human_step_keeps_other_work_moving() {
   [ ! -s "$H/worker-plain.typed" ] || fail "the watchdog typed into a plain worker pane: $(cat "$H/worker-plain.typed")"
   [ ! -e "$H/state/auth.status" ] || fail "the watchdog wrote a status that could hold the worker's PR: $(cat "$H/state/auth.status")"
   assert_equals 0 "$(ledger | awk -F'\t' '$4 == "worker:auth" && $6 != "page"' | wc -l | tr -d ' ')" "the worker step got an action other than its page: $(ledger | cut -f4-8)"
-  assert_no_grep "merge\|deploy\|hold" "$H/state/watchdog/human-steps.tsv" "the record names no merge, deploy, or hold"
+  local word
+  for word in merge deploy hold; do
+    assert_no_grep "$word" "$H/state/watchdog/human-steps.tsv" "the record names no merge, deploy, or hold: $word"
+  done
 
   rm -f "$H/state/.afk"
   printf '%s\n' "$HS_CODE" > "$H/worker-perm.txt"
@@ -6791,6 +6887,7 @@ fm_test_run \
   test_second_mate_session_start_after_the_window_is_not_done \
   test_reserved_model_switch_dialog_is_held \
   test_secret_looking_decision_reaches_no_council \
+  test_worker_human_step_key_is_held_for_the_owner \
   test_secret_looking_model_switch_dialog_is_held \
   test_model_switch_judge_is_rate_limited \
   test_worker_dialog_key_does_not_close_home_key_window \
@@ -6803,6 +6900,7 @@ fm_test_run \
   test_worker_usage_limit_names_a_pick \
   test_quota_guard_checks_at_kickoff_and_periodically \
   test_quota_guard_act_nudges_after_any_check \
+  test_quota_guard_act_never_nudges_a_human_step_pane \
   test_quota_guard_nudge_names_each_move_with_a_quoted_home \
   test_quota_guard_nudge_retries_a_failed_send_and_skips_a_dead_primary \
   test_quota_guard_nudge_skips_a_holder_that_died_during_the_check \
@@ -6825,7 +6923,9 @@ fm_test_run \
   test_primary_quoted_autowait_is_not_paged \
   test_primary_ordinary_idle_is_not_paged \
   test_human_step_detection \
+  test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step \
   test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into \
+  test_human_step_overnight_reports_only_what_it_recorded \
   test_human_step_overnight_goes_to_the_morning_handoff \
   test_human_step_overnight_handoff_is_paged_by_day_unless_briefed \
   test_human_step_removed_worker_closes_its_handoff \

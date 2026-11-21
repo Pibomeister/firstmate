@@ -96,7 +96,8 @@
 #       the like), only the paragraph just above the options counts, and a
 #       tool permission dialog (fm_wd_pane_dialog `permission`) never counts. Otherwise only the rows below
 #       the last composer prompt row count, down to the composer's bottom border
-#       or first blank row, so the footer and status line never do; with no
+#       or first blank row, so the footer and status line never do, and
+#       not the indented rows a wrapped draft fills under the prompt; with no
 #       prompt row either, as on a full-screen sign-in view, every one of those
 #       rows counts. Conversation above a prompt row does not count, except a
 #       row among the 4 just above it that opens by stating a sign-in error
@@ -598,7 +599,10 @@ fm_wd_human_step() {  # <screen>
       for (i = last; i >= floor; i--) if (row[i] ~ glyph) { g = i; break }
       if (!g) { for (i = floor; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]; exit }
       for (i = g - 1; i >= floor && n < 4; i--) if (row[i] ~ /[^ \t]/) { print "above\t" row[i]; n++ }
-      for (i = g + 1; i <= last && !blank(row[i]); i++) print "below\t" row[i]
+      # A typed draft wraps onto rows indented under the glyph, inside the
+      # composer body; only a row at column 0 belongs to the harness.
+      for (i = g + 1; i <= last && !blank(row[i]) && row[i] ~ /^(│|┃|[|])?[ \t]/; i++) ;
+      for (; i <= last && !blank(row[i]); i++) print "below\t" row[i]
     }')
   return 1
 }

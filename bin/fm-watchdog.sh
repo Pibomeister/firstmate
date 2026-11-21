@@ -916,7 +916,7 @@ wd_judge() {
 wd_decision_reserved() {  # <task> <key> <summary>
   # A permission-prompt hard stop is a credential, sign-in, spend, or
   # destructive prompt, so it is the owner's whatever its summary says.
-  case "$2" in captain-hold-*|permission-prompt-hardstop) return 0 ;; esac
+  case "$2" in captain-hold-*|human-step-*|permission-prompt-hardstop) return 0 ;; esac
   fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
     printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
 }
@@ -2114,13 +2114,18 @@ wd_handle_human_step() {  # <kind>
   fi
   id=$(wd_id)
   if [ "$overnight" = 1 ]; then
-    wd_gap "human-only $kind step on $who for $((age / 60))m; recorded for the morning handoff, not paged"
-    if [ "$(wd_mode)" != act ]; then wd_rec "$id" human-step handoff dry-run "would record a $kind step for the morning handoff"; return 0; fi
+    if [ "$(wd_mode)" != act ]; then
+      wd_rec "$id" human-step handoff dry-run "would record a $kind step for the morning handoff"
+      wd_gap "human-only $kind step on $who for $((age / 60))m; would be recorded for the morning handoff, not paged"
+      return 0
+    fi
     wd_rec "$id" human-step handoff pending "$kind step since $(fm_wd_iso "$since")"
     if wd_human_step_record "$kind" "$since" morning-handoff; then
       wd_rec "$id" human-step handoff "done" "recorded for the morning handoff; not paged"
+      wd_gap "human-only $kind step on $who for $((age / 60))m; recorded for the morning handoff, not paged"
     else
       wd_rec "$id" human-step handoff failed "the human-steps record could not be written"
+      wd_gap "human-only $kind step on $who for $((age / 60))m; the morning-handoff record could not be written, retried after nudge-secs"
     fi
     return 0
   fi
@@ -2457,7 +2462,7 @@ wd_quota_guard_pass() {
   # The check can run long, so the owner observed before it must still hold the
   # lock and be live before a nudge is sent.
   if [ "$(fm_wd_conf_get "$rec" verdict '')" = act ] && [ -n "$at" ] && [ "$O_ALIVE" = 1 ] &&
-     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ] &&
+     [ "$WD_RESTARTED" != 1 ] && [ "$WD_SYMPTOM" != usage-limit-autowait ] && [ "$WD_SYMPTOM" != human-step ] &&
      wd_same_live_owner "$O_HOME/state"; then
     if ! wd_quota_guard_nudged_since "$at"; then
       wd_nudge quota-guard "$(wd_quota_guard_nudge_text "$(fm_wd_conf_get "$rec" result '')")"
