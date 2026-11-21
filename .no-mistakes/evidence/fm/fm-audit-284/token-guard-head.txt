@@ -1,0 +1,6 @@
+work dir: [/tmp/fmtok.iUZjca/scan dir\tx]
+S1 PASS: pending (rc=0) ended the cut-short scan group in 2s
+S2 PASS: decoy [--scan /tmp/fmtok.iUZjca/scan dir\tx-other] left running
+S2 PASS: decoy [--scan /tmp/fmtok.iUZjca/scan dir\tx other] left running
+S3 PASS: malformed token file ends nothing
+S4: symlinked token -> pending exit=2 (expect 2)
