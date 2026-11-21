@@ -1856,6 +1856,56 @@ test_human_only_keeps_real_change_and_releases_negation() {
   pass "human-only: a real changed behavior or shared-database write stays held, and a negation of either does not"
 }
 
+test_human_only_releases_passing_changed_behavior() {
+  local record='PR #9 no-mistakes test awaiting_approval. Changed behavior passed; only a known unreachable load-sensitive timing flake survived the once-rerun. A approve, or B hold'
+  ! lib fm_wd_human_only "$record" || fail "passing changed behavior held an unrelated flake"
+  lib fm_wd_human_only "$record. Another test failed on changed behavior" \
+    || fail "passing changed behavior hid a later changed-behavior failure"
+  pass "human-only: passing changed behavior releases the flake but not a later real failure"
+}
+
+test_human_only_distinguishes_production_mentions_from_mutations() {
+  local record='PR #9 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only production database fixture; no writes. A approve, or B hold' phrase
+  ! lib fm_wd_human_only "$record" || fail "a read-only production fixture held an unrelated flake"
+  for phrase in 'write production data' 'production database mutations' 'update production records'; do
+    lib fm_wd_human_only "$record. Also $phrase" || fail "a read-only mention hid a real mutation: $phrase"
+  done
+  pass "human-only: a production mention is not a write, while production mutations stay held"
+}
+
+test_awaiting_approval_requires_no_mistakes_step_context() {
+  local phrase
+  for phrase in \
+    'PR awaiting approval to merge. A merge now, B wait' \
+    'PR awaiting_approval. A merge the PR now, or B hold' \
+    'CI awaiting approval to release v2' \
+    'no-mistakes run green; PR awaiting approval to merge. A merge now, B wait'
+  do
+    ! lib fm_wd_nm_awaiting_approval "$phrase" || fail "a plain merge or release was classified as a pipeline step: $phrase"
+  done
+  pass "awaiting_approval: a plain merge or release never opens the council carve-out"
+}
+
+test_awaiting_approval_recognizes_parked_no_mistakes_steps() {
+  local step
+  for step in test review document lint push pr ci intent rebase; do
+    lib fm_wd_nm_awaiting_approval "PR #9 no-mistakes $step step parked at awaiting_approval. A approve so PR can merge, B hold" \
+      || fail "a genuine parked no-mistakes $step step was not recognized"
+  done
+  lib fm_wd_nm_awaiting_approval 't1 nm-run123-test awaiting_approval. A approve so PR can merge, B hold' \
+    || fail "a typed no-mistakes step key was not recognized"
+  pass "awaiting_approval: genuine pipeline steps open the council carve-out, including parked-at wording"
+}
+
+test_human_only_holds_normalized_sign_in_variants() {
+  local phrase
+  for phrase in 'sign in' 'sign_in' 'sign-in' 'signin' 'log in' 'log_in' 'log-in' 'login'; do
+    lib fm_wd_human_only "PR #9 no-mistakes test awaiting_approval. A $phrase to continue, B hold" \
+      || fail "a sign-in variant escaped the human-only hold: $phrase"
+  done
+  pass "human-only: spaced, underscored, hyphenated, and joined sign-in variants stay held"
+}
+
 test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council() {
   local out
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -7467,6 +7517,11 @@ fm_test_run \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
   test_human_only_keeps_real_change_and_releases_negation \
+  test_human_only_releases_passing_changed_behavior \
+  test_human_only_distinguishes_production_mentions_from_mutations \
+  test_awaiting_approval_requires_no_mistakes_step_context \
+  test_awaiting_approval_recognizes_parked_no_mistakes_steps \
+  test_human_only_holds_normalized_sign_in_variants \
   test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council \
   test_council_revisit_on_contradicting_record \
   test_council_failed_revisit_keeps_the_prior_ruling \

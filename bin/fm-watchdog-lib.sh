@@ -328,9 +328,10 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|e-?mail|sms|messages? to|delet|destroy|wipe|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign[[:space:]_-]*in|log[[:space:]_-]*in|credential|secret|password|api.?key|security|pii|e-?mail|sms|messages? to|delet|destroy|wipe|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
-# Phrases that name a category only to cancel it. BSD grep has no lookbehind,
+# Phrases that cancel a category or report passing changed behavior.
+# BSD grep has no lookbehind,
 # so the category search below runs on the text after these are removed.
 _fm_wd_without_negated_categories() {
   LC_ALL=C sed -E \
@@ -341,6 +342,7 @@ _fm_wd_without_negated_categories() {
     -e 's/(^|[^a-z])without changed behavio[a-z]*/\1/g' \
     -e 's/(^|[^a-z])unchanged behavio[a-z]*/\1/g' \
     -e 's/(^|[^a-z])un changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])changed[[:space:]]+behavio[a-z]*([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/\1\4/g' \
     -e 's/(^|[^a-z])read-only/\1/g' \
     -e 's/(^|[^a-z])read only/\1/g' \
     -e 's/(^|[^a-z])readonly/\1/g' \
@@ -359,12 +361,12 @@ _fm_wd_category_line() {  # <view>
   printf '%s\n' "$1" | awk '{ space_joined = prev; prev = $0 } END { print space_joined }' | tr '_-' '  ' | _fm_wd_without_negated_categories
 }
 
-# A shared-database write, not a bare or read-only mention of the database.
-_fm_wd_shared_db_writes() {  # <view>
+# A production or shared-database mutation, not a bare or read-only mention.
+_fm_wd_data_writes() {  # <view>
   local cleaned
   cleaned=$(_fm_wd_category_line "$1")
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])shared[[:space:]]*(db|database)([^a-z]|$)' || return 1
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote)([^a-z]|$)'
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(production|shared[[:space:]]*(db|database))([^a-z]|$)' || return 1
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing))([^a-z]|$)'
 }
 
 # A failure in the PR's own changed behavior, including code this PR modified, added, or introduced.
@@ -380,10 +382,9 @@ fm_wd_nm_awaiting_approval() {  # <text>
   local view
   view=$(_fm_wd_guard_view "$1")
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval' || return 1
-  # The token alone does not prove a pipeline step: a plain merge decision can
-  # mention it. Require a named step beside the token, or the nm-<run>-<step>
-  # decision key a gate escalation carries.
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_:-]*(step[[:space:]_:-]+)?awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
+  # Bind the named step to no-mistakes itself, not to an unrelated mention
+  # elsewhere in a merge question. A typed nm-<run>-<step> key also proves it.
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])(no[-_ ]mistakes[[:space:]_:-]+(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_:-]+(step[[:space:]_:-]+)?(parked[[:space:]]+(at[[:space:]]+)?)?awaiting[_ ]approval|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$))'
 }
 
 fm_wd_human_only() {  # <text>
@@ -393,7 +394,7 @@ fm_wd_human_only() {  # <text>
   # Formatting alone must not change authority: shared_database and
   # messages-to-people name the same categories as their spaced forms.
   printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
-  _fm_wd_shared_db_writes "$view" && return 0
+  _fm_wd_data_writes "$view" && return 0
   _fm_wd_pr_caused_failure "$view"
 }
 
