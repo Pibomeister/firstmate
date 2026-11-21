@@ -227,7 +227,7 @@ A restart needs every one of these:
 
 A primary restart writes a lean handoff under `data/watchdog/handoffs/`, stops the old session process, and opens a new terminal on the same backend with `restart-command` and a prompt naming the handoff.
 The prompt names the handoff by path and does not include its text.
-A document longer than 60 lines warns, and the launch still passes only the path.
+A document over the launch line cap warns, and the launch still passes only the path ([early handoff trigger](configuration.md#early-handoff-trigger-confighandoff-trigger)).
 A muse `restart-command` with no approval-off flag is launched with `--yolo` added, as the key table states, and the restart's ledger row says `--yolo added by default`.
 A proven draft goes into the handoff as an unsubmitted note, from the prompt row down to the last long rule below it. A rule with draft text below it stays in the note. A draft in a closed box runs from the box's first prompt row to its last body row, keeping inner rules and quoted rows. A non-empty Orca draft field also goes in, marked as an unsent draft or a harness suggestion. A draft proven present whose boundary is not proven, such as a plain composer or a paste placeholder on a composer that is not unknown, becomes a gap line in the handoff and the status file; Enter is still never pressed on it. An unknown composer, an empty capture, or a failed read with no draft text is no lost draft: the handoff says the composer state was unknown and no draft was seen.
 On tmux the new window joins the old session; when that session closed with the old session process, a new session takes its place.

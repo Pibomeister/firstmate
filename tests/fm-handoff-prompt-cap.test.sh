@@ -74,7 +74,7 @@ hostile="$LAB/handoff ) '.md"
 rc=0
 FM_HOME="$LAB" bash "$ROOT/bin/fm-handoff-launch.sh" "$hostile" >"$TMP_ROOT/launch.out" 2>"$TMP_ROOT/launch.err" || rc=$?
 [ "$rc" -ne 0 ] || fail "unlocked launch succeeded"
-grep -q 'only the current session lock owner can launch its successor' "$TMP_ROOT/launch.err" \
+grep -q 'only the current session lock owner or its watcher can launch its successor' "$TMP_ROOT/launch.err" \
   || fail "lock refusal missing: $(cat "$TMP_ROOT/launch.err")"
 grep -q 'above the 60-line launch cap' "$TMP_ROOT/launch.err" \
   || fail "launch did not warn: $(cat "$TMP_ROOT/launch.err")"
