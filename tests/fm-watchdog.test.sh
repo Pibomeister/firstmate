@@ -1638,10 +1638,30 @@ daily-max-usd=0.01'
   assert_equals 2 "$(wc -l < "$H/state/watchdog/model-calls.tsv" | tr -d ' ')" "both calls were logged"
   printf '%s\tloop\tclaude:haiku\tok\t1\t1\tLOOP\t0.02\n' "$BASE" >> "$H/state/watchdog/model-calls.tsv"
   : > "$H/model.log"
-  printf 'is this a loop?' | run_wd 10 judge loop '(LOOP|WORK)' >/dev/null 2>&1 && fail "judge ran over the daily cap"
-  assert_equals "" "$(cat "$H/model.log")" "no model is called once the daily cap is spent"
+  out=$(printf 'is this a loop?' | run_wd 10 judge loop '(LOOP|WORK)') || fail "the unmetered model was stopped by the metered cap"
+  assert_equals WORK "$out" "the unmetered model still answers past the cap"
+  assert_equals "agy" "$(cut -d ' ' -f 1 "$H/model.log")" "no metered model is called once the daily cap is spent"
   grep -Fq cap-reached "$H/state/watchdog/model-calls.tsv" || fail "the cap refusal is logged"
+  printf 'models=claude:haiku\n' >> "$H/config/watchdog"
+  : > "$H/model.log"
+  printf 'is this a loop?' | run_wd 20 judge loop '(LOOP|WORK)' >/dev/null 2>&1 && fail "a metered judge ran over the daily cap"
+  assert_equals "" "$(cat "$H/model.log")" "a metered-only judge calls nothing once the daily cap is spent"
   pass "boundary: judge falls back across models, logs every call, and never spends past the daily cap"
+}
+
+test_zero_cap_runs_only_unmetered_models() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+daily-max-usd=0'
+  fake_models "$H" ok:LOOP ok:WORK
+  out=$(printf 'is this a loop?' | run_wd 0 judge loop '(LOOP|WORK)') || fail "a zero cap stopped the unmetered model"
+  assert_equals WORK "$out" "the unmetered model answers under a zero cap"
+  assert_equals "agy" "$(cut -d ' ' -f 1 "$H/model.log")" "a zero cap calls no metered model"
+  assert_equals 1 "$(awk -F'\t' '$3 == "claude:haiku" && $4 == "cap-reached"' "$H/state/watchdog/model-calls.tsv" | wc -l | tr -d ' ')" "the metered refusal is logged"
+  run_wd 10 once >/dev/null 2>&1
+  # shellcheck disable=SC2016  # the dollar signs are ERE literals and the end-of-line anchor, not expansions
+  grep -Eq 'spent 24h \$0\.0000 of \$0$' "$H/data/watchdog/status.md" || fail "the status file shows no spend"
+  pass "boundary: daily-max-usd=0 keeps the judge on unmetered models and spends nothing"
 }
 
 test_no_model_still_acts_and_reports_gap() {
@@ -3066,8 +3086,8 @@ SH
 
 # mate_restarted: a parent home whose second mate asked for a restart, run
 # until that relaunch exits 0. Sets H (parent), MATE, and MATE_OLD (the old lock pid).
-mate_restarted() {
-  local parent
+mate_restarted() {  # [extra-config]
+  local parent extra=${1:-}
   mate_code_root
   : > "$TMP_ROOT/code/control.log"
   make_home $'Captain session\n> '
@@ -3081,7 +3101,7 @@ mate_restarted() {
   : > "$MATE/state/.watchdog-restart-request"
   fm_touch_epoch "$((BASE - 10))" "$MATE/state/.watchdog-restart-request"
   printf -- '- ghost-mate - test mate (home: %s)\n' "$MATE" > "$parent/data/secondmates.md"
-  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\npickup-secs=600\nrelaunch-timeout-secs=20\n' "$MATE/claude" > "$parent/config/watchdog"
+  printf 'mode=act\nclaude-config-dirs=%s\nkey-settle-secs=1\nmodels=\nrestart=on\npickup-secs=600\nrelaunch-timeout-secs=20\n%s\n' "$MATE/claude" "$extra" > "$parent/config/watchdog"
   H=$parent
   WD=$MATE_WD run_wd 0 once >/dev/null 2>&1
   WD=$MATE_WD run_wd 10 once >/dev/null 2>&1
@@ -3102,6 +3122,31 @@ mate_started() {
 }
 
 live_pid() { ( sleep "$WD_FIXTURE_SLEEP" > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP_ROOT/live.pid" ); cat "$TMP_ROOT/live.pid"; }
+
+test_restart_scope_second_mates_never_restarts_a_primary() {
+  make_home $'Captain session\n> ' "restart=on
+restart-scope=second-mates
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working." "Testing." "Green."
+  kill_holder_with_anchor
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart refused)" "a dead primary is refused: $(ledger | cut -f5-8)"
+  assert_equals 0 "$(ledger_rows agent-gone restart pending)" "a dead primary starts nothing"
+  assert_absent "$H/pickup.out" "no new captain session was launched"
+  assert_grep "mode act, restart on (second mates only)" "$H/data/watchdog/status.md" "the status header names the scope"
+
+  make_home $'Captain session\n> \n  7% until auto-compact' "restart=on
+restart-scope=second-mates
+restart-command=/bin/true"
+  transcript 3000 "Working." "Testing." "Green."
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "handoff-request"' | wc -l | tr -d ' ')" "a low-context primary is asked for no handoff: $(ledger | cut -f5-8)"
+  assert_grep "restart-scope is second-mates; no handoff is asked for" "$H/data/watchdog/status.md" "the held restart is a gap"
+
+  mate_restarted 'restart-scope=second-mates'
+  pass "restart scope: second-mates restarts a second mate and never a primary"
+}
 
 test_second_mate_zero_exit_relaunch_is_not_done() {
   local dead new
@@ -5043,7 +5088,7 @@ SH
 # Guard, not proof. tmux already uses a true viewport on main, so this case
 # still passes there. The Orca scrollback false-positive is the proof case.
 test_home_usage_limit_ignores_grok_in_scrollback() {
-  local parent mate user snap grok picker mate_t observe history view
+  local parent mate user snap grok picker mate_t history view
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
   picker=$'You have hit your weekly limit for Opus.\n\n ❯ 1. Switch to Sonnet\n   2. Wait for the limit to reset\n   3. Buy more credits\n\nEnter to confirm · Esc to cancel'
   observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
@@ -5127,7 +5172,7 @@ SH
 }
 
 test_orca_usage_limit_does_not_relaunch_from_scrollback() {
-  local parent mate user snap grok grok_json observe
+  local parent mate user snap grok grok_json
   grok=$'                                                                                             █\n\n  ┃\n  ┃  You hit your weekly limit.\n  ┃\n  ┃\n  ┃  1 (○) Buy more credits  Purchase credits to keep using Grok Build\n  ┃  2 (○) Try Again         Resubmit the last prompt once you have usage again\n  ┃\n  ┃  ↑/↓ navigate · y copy                                                  Enter:submit\n  ┃\n\n  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'
   grok_json=$(printf '%s\n' "$grok" | jq -Rs 'split("\n")')
   observe() { bash -c '. "$1/bin/fm-watchdog-lib.sh"; . "$1/bin/fm-composer-lib.sh"; shift; "$@"' _ "$ROOT" "$@"; }
@@ -6580,4 +6625,6 @@ fm_test_run \
   test_heartbeat_ignores_orphan_and_previous_owner_receipts \
   test_heartbeat_recovery_serializes_with_handoff_launch \
   test_heartbeat_recovery_respects_recent_wake_activity \
-  test_heartbeat_recovery_requires_a_known_activity_source
+  test_heartbeat_recovery_requires_a_known_activity_source \
+  test_zero_cap_runs_only_unmetered_models \
+  test_restart_scope_second_mates_never_restarts_a_primary

@@ -3,7 +3,7 @@
   "host": "m4",
   "interval_secs": 300,
   "guard_stale_secs": 660,
-  "idle_min": 20,
+  "idle_min": 15,
   "cooldown_min": 30,
   "max_no_progress": 2,
   "mode": "act",
@@ -29,7 +29,7 @@
       "backend": "orca",
       "title": "m4ops",
       "handle": "",
-      "fm_home": "~/orca/projects/firstmate",
+      "fm_home": "",
       "open_work": {
         "repos": ["Pibomeister/firstmate"],
         "queue_file": "~/orca/projects/firstmate/data/backlog.md"

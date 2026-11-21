@@ -485,6 +485,153 @@ test_remote_secondmate_account_override_refuses_locally() {
   pass "a remote route refuses a primary-side account override instead of silently ignoring it"
 }
 
+# quota_snapshot <provider> <weekly-percent> [<5-hour-percent>]: a quota-axi
+# --json snapshot whose plan windows report those percentages remaining.
+quota_snapshot() {
+  jq -n --arg p "$1" --argjson w "$2" --arg s "${3:-}" '{
+    schemaVersion: 5,
+    providers: [{
+      provider: $p,
+      windows: ([{id: (if $p == "codex" then "weekly" else "seven_day" end), kind: "weekly", percentRemaining: $w},
+                 {id: "model:opus", kind: "model", percentRemaining: 1}]
+        + (if $s == "" then [] else [{id: "five_hour", kind: "session", percentRemaining: ($s | tonumber)}] end)),
+      quotaSemantics: {status: "known", effectiveAvailability: []}
+    }]
+  }'
+}
+
+# make_quota_fake: a quota-axi that answers a --profile-only read from
+# $CLAUDE_CONFIG_DIR/quota.json, the way the real read uses only that root's
+# credential, and any other read from $CASE/quota-<provider>.json. A missing
+# file exits 1 with no snapshot, which is how an unmeasurable read looks.
+make_quota_fake() {
+  cat > "$FAKEBIN/quota-axi" <<SH
+#!/usr/bin/env bash
+provider=
+profile=0
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --provider) provider=\$2; shift ;;
+    --profile-only) profile=1 ;;
+  esac
+  shift
+done
+printf '%s %s %s %s\n' "\$provider" "\$profile" "\${CLAUDE_CONFIG_DIR-unset}" "\${QUOTA_AXI_SNAPSHOT-unset}" >> '$CASE/quota-reads'
+if [ "\$profile" = 1 ]; then
+  cat "\$CLAUDE_CONFIG_DIR/quota.json" 2>/dev/null || exit 1
+else
+  cat '$CASE'/quota-"\$provider".json 2>/dev/null || exit 1
+fi
+SH
+  chmod +x "$FAKEBIN/quota-axi"
+}
+
+# floor_spawn_ship <id> [fm-spawn args...]: spawn_ship with the quota floor
+# reading the case's fake quota-axi instead of the suite-wide absent one.
+floor_spawn_ship() {
+  FM_QUOTA_FLOOR_BIN="$FAKEBIN/quota-axi" QUOTA_AXI_SNAPSHOT="$CASE/stray-fixture.json" spawn_ship "$@"
+}
+
+test_quota_floor_refuses_a_listed_account_under_15_percent_and_names_the_reroute() {
+  local out rc
+  new_case quota-list claude
+  make_quota_fake
+  signed_in_claude_root "$CASE/first"
+  signed_in_claude_root "$CASE/second"
+  signed_in_claude_root "$CASE/third"
+  signed_in_claude_root "$CASE/fourth"
+  printf '%s\n' "$CASE/first" "$CASE/second" "$CASE/third" "$CASE/fourth" > "$HOME_DIR/config/claude-accounts"
+  quota_snapshot claude 10 90 > "$CASE/first/quota.json"
+  quota_snapshot claude 15 15 > "$CASE/second/quota.json"
+  quota_snapshot claude 90 14 > "$CASE/third/quota.json"
+  out=$(floor_spawn_ship acct-floor-first --account "$CASE/first"); rc=$?
+  expect_code 1 "$rc" "a launch on an account with 10% weekly left must refuse: $out"
+  assert_refused_before_launch acct-floor-first "$out" "quota-floor: refused claude account $CASE/first: seven_day at 10% (under 15%)"
+  assert_contains "$out" "reroute: --account $CASE/second (lowest weekly or 5-hour window 15%)" \
+    "an account at exactly 15% is a reroute target"
+  assert_contains "$out" "reroute: --account $CASE/fourth (quota not measured)" \
+    "an unmeasured account stays eligible and is named as such"
+  assert_not_contains "$out" "--account $CASE/third" "an account whose 5-hour window is under 15% is no reroute target"
+  assert_grep "claude 1 $CASE/first unset" "$CASE/quota-reads" \
+    "the floor must read the listed account's own root, with no stray snapshot answering for it"
+
+  out=$(floor_spawn_ship acct-floor-second --account "$CASE/second"); rc=$?
+  expect_code 0 "$rc" "an account at exactly 15% on both windows should launch: $out"
+  assert_contains "$out" "account=$CASE/second" "the launch should use the account at the floor"
+  pass "the quota floor refuses a listed account under 15%, passes exactly 15%, and names the declared accounts to move to"
+}
+
+test_quota_floor_reads_the_5_hour_window_of_a_pinned_account() {
+  local out rc
+  new_case quota-pin claude
+  make_quota_fake
+  signed_in_claude_root "$CASE/work"
+  printf '%s\n' "$CASE/work" > "$HOME_DIR/config/claude-account"
+  quota_snapshot claude 80 12 > "$CASE/work/quota.json"
+  out=$(floor_spawn_ship acct-floor-5h); rc=$?
+  expect_code 1 "$rc" "a pinned account with 12% of its 5-hour window left must refuse: $out"
+  assert_refused_before_launch acct-floor-5h "$out" "quota-floor: refused claude account $CASE/work: five_hour at 12% (under 15%)"
+  assert_contains "$out" "reroute: choose another runtime or account" "a single pin names the general reroute"
+  out=$(floor_spawn_ship acct-floor-5h-raw --harness "claude --print raw"); rc=$?
+  expect_code 1 "$rc" "a raw Claude launch command on that account must refuse too: $out"
+  assert_refused_before_launch acct-floor-5h-raw "$out" "quota-floor: refused claude account $CASE/work: five_hour at 12% (under 15%)"
+  pass "the quota floor reads a pinned account's 5-hour window, for templated and raw Claude launches"
+}
+
+test_quota_floor_launches_when_quota_cannot_be_measured() {
+  local out rc
+  new_case quota-unknown claude
+  make_quota_fake
+  signed_in_claude_root "$CASE/work"
+  printf '%s\n' "$CASE/work" > "$HOME_DIR/config/claude-account"
+  out=$(floor_spawn_ship acct-floor-unknown); rc=$?
+  expect_code 0 "$rc" "unmeasured quota must not block a launch: $out"
+  assert_contains "$out" "notice: quota floor: could not measure claude quota for account $CASE/work" \
+    "the unmeasured read must be disclosed"
+  pass "unknown quota is disclosed and the launch proceeds"
+}
+
+test_quota_floor_refuses_codex_and_an_unpinned_claude_under_15_percent() {
+  local out rc
+  new_case quota-codex codex
+  make_quota_fake
+  quota_snapshot codex 2 > "$CASE/quota-codex.json"
+  out=$(floor_spawn_ship acct-floor-codex); rc=$?
+  expect_code 1 "$rc" "a Codex launch with 2% weekly left must refuse: $out"
+  assert_refused_before_launch acct-floor-codex "$out" "quota-floor: refused codex account the launching account: weekly at 2% (under 15%)"
+  assert_contains "$out" "never spends Codex credits" "the Codex refusal says it protects paid credits"
+
+  new_case quota-ambient claude
+  make_quota_fake
+  quota_snapshot claude 10 > "$CASE/quota-claude.json"
+  out=$(floor_spawn_ship acct-floor-ambient); rc=$?
+  expect_code 1 "$rc" "an unpinned Claude launch on an account with 10% weekly left must refuse: $out"
+  assert_refused_before_launch acct-floor-ambient "$out" "quota-floor: refused claude account the launching account: seven_day at 10% (under 15%)"
+
+  new_case quota-other pi
+  make_quota_fake
+  quota_snapshot claude 1 > "$CASE/quota-claude.json"
+  out=$(floor_spawn_ship acct-floor-pi --model gpt-5.5); rc=$?
+  expect_code 0 "$rc" "a runner with no account Firstmate selects is not judged: $out"
+  assert_absent "$CASE/quota-reads" "the floor must not read quota for a runner it does not judge"
+  pass "the quota floor refuses Codex and an unpinned Claude account under 15% and leaves other runners alone"
+}
+
+test_quota_floor_names_failover_for_a_secondmate() {
+  local out rc id=acct-floor-sm
+  new_case quota-secondmate claude
+  make_quota_fake
+  signed_in_claude_root "$CASE/mate"
+  mkdir -p "$HOME_DIR/config/secondmate-accounts/$id"
+  printf '%s\n' "$CASE/mate" > "$HOME_DIR/config/secondmate-accounts/$id/claude-account"
+  quota_snapshot claude 3 > "$CASE/mate/quota.json"
+  out=$(FM_QUOTA_FLOOR_BIN="$FAKEBIN/quota-axi" spawn_account_secondmate "$id"); rc=$?
+  expect_code 1 "$rc" "a secondmate on an account with 3% weekly left must refuse: $out"
+  assert_refused_before_launch "$id" "$out" "quota-floor: refused claude account $CASE/mate: seven_day at 3% (under 15%)"
+  assert_contains "$out" "reroute: bin/fm-supervisor-failover.sh secondmate $id" "a secondmate's reroute is its failover"
+  pass "a secondmate refused by the quota floor is pointed at its failover"
+}
+
 test_secondmate_account_override
 test_secondmate_account_refusals
 test_remote_secondmate_account_override_refuses_locally
@@ -501,5 +648,11 @@ test_raw_claude_command_receives_the_pin
 test_raw_claude_account_override_refuses_under_a_pin
 test_raw_claude_account_override_is_kept_without_a_pin
 test_local_secondmate_reads_the_launching_home_pin
+
+test_quota_floor_refuses_a_listed_account_under_15_percent_and_names_the_reroute
+test_quota_floor_reads_the_5_hour_window_of_a_pinned_account
+test_quota_floor_launches_when_quota_cannot_be_measured
+test_quota_floor_refuses_codex_and_an_unpinned_claude_under_15_percent
+test_quota_floor_names_failover_for_a_secondmate
 
 echo "# all fm-worker-account tests passed"

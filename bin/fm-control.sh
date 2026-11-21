@@ -131,6 +131,11 @@
 #              Moving a Claude task onto another harness is refused when
 #              bin/fm-quota-reroute.sh claude-tooling reports a signal, and
 #              when that check cannot complete; there is no override.
+#              The launch quota floor (bin/fm-quota-floor-lib.sh) also refuses
+#              here, before the old agent stops, when the replacement's account
+#              has under 15% of its weekly or 5-hour window left. A tooled
+#              Claude task reroutes with --account <entry>, which is not a
+#              harness change.
 #              A backlog item that cannot take a replacement worker also
 #              refuses before the old agent stops; a held In-flight item is
 #              admitted and keeps its hold (bin/fm-backlog-transition-lib.sh
@@ -293,6 +298,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-worker-account-lib.sh
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
+# shellcheck source=bin/fm-quota-floor-lib.sh
+. "$SCRIPT_DIR/fm-quota-floor-lib.sh"
 # shellcheck source=bin/fm-omp-profile-lib.sh
 . "$SCRIPT_DIR/fm-omp-profile-lib.sh"
 # shellcheck source=bin/fm-exclude-tools-lib.sh
@@ -1578,8 +1585,15 @@ resolve_relaunch_profile() {
   [ "$KIND" != secondmate ] || account_mate=$ID
   TARGET_ACCOUNT=$(fm_worker_account_relaunch_request "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
-  fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
-    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT" >/dev/null || return 1
+  local account_pick account_root
+  account_pick=$(fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
+    "$account_model" "$TARGET_HARNESS" "" "$account_mate" "$TARGET_ACCOUNT") || return 1
+  # The launch owner applies the quota floor too; asking here keeps a refused
+  # account from stopping the running agent first.
+  account_root=${account_pick#*$'\t'}
+  account_root=${account_root%%$'\t'*}
+  fm_quota_floor_check "$TARGET_HARNESS" "${account_pick%%$'\t'*}" "$account_root" \
+    "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$KIND" "$ID" || return 1
   fm_omp_profile_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$account_mate" >/dev/null || return 1
   # Likewise polytoken's launch profile and wiring refusals
