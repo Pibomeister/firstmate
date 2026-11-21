@@ -1,0 +1,11 @@
+SCENARIO: completed captain with no open work
+stall-watch target=classify verdict=idle_done stalled=no source=supervision confidence=- latency_ms=- cost_usd=- action=none
+SCENARIO: terminal provider refusal
+stall-watch target=classify verdict=rate_limit stalled=yes source=rule confidence=- latency_ms=- cost_usd=- action=none
+SCENARIO: no force bypass
+error: unexpected argument: --force
+tick exit=2
+SCENARIO: nonlocal cleartext TypeSafe base
+stall-watch: jev unavailable (jev-insecure-base)
+stall-watch target=classify verdict=unsure stalled=unsure source=none confidence=- latency_ms=- cost_usd=- action=none note=jev:jev-insecure-base
+classify exit=0

@@ -1,0 +1,5 @@
+tick at 1000: exit=0 last-tick=absent
+tick at 1060: exit=0 last-tick=absent
+tick at 2200: exit=0 last-tick=2200
+tick at 2250: exit=0 last-tick=2200
+tick at 3401: exit=0 last-tick=3401
