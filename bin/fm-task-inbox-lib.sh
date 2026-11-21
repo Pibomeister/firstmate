@@ -561,28 +561,56 @@ _fm_task_inbox_is_doorbell_copies() {  # <held> <line>
   [ -z "$held" ]
 }
 
+# Decode one base64 line. GNU base64 takes --decode; macOS takes -D.
+_fm_task_inbox_b64d() {  # <base64>
+  if printf '%s' "$1" | base64 --decode 2>/dev/null; then
+    return 0
+  fi
+  printf '%s' "$1" | base64 -D 2>/dev/null
+}
+
 # Whether the composer's content, ignoring line wrapping, is one or more whole
 # copies of <line> and nothing else.
 # Orca lifts the text on the cursor's prompt row out of its capture tail into
-# a separate draft field (bin/backends/orca.sh, fm_backend_orca_draft_text),
-# so a wrapped doorbell reads back split across the two: the tail extraction
-# alone is then a doorbell prefix, never whole copies, and every re-ring
-# skipped it as foreign pending text. The cursor sits at the end of typed
-# input, so the draft chunk follows the tail rows; only the concatenation is
-# judged, and anything else in either part still fails the proof.
+# a separate draft field, so a wrapped doorbell reads back split across the
+# two: the tail extraction alone is then a doorbell prefix, never whole copies,
+# and every re-ring skipped it as foreign pending text. The cursor sits at the
+# end of typed input, so the draft chunk follows the tail rows; only the
+# concatenation is judged, and anything else in either part still fails the
+# proof. Both parts come from one uncached read
+# (fm_backend_orca_composer_snapshot): a cached tail joined to a later draft
+# can match while the current composer holds foreign text.
 fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
-  local cap held line draft
+  local cap held line draft snap body tail_b64 draft_b64
   fm_backend_source "$1" || return 1
+  line=$(printf '%s' "$3" | tr -d '[:space:]')
+  if [ "$1" = orca ]; then
+    snap=$(fm_backend_orca_composer_snapshot "$2") || return 1
+    case "$snap" in
+      *$'\n'.) ;;
+      *) return 1 ;;
+    esac
+    body=${snap%$'\n'.}
+    case "$body" in
+      *$'\n'*) ;;
+      *) return 1 ;;
+    esac
+    tail_b64=${body%%$'\n'*}
+    draft_b64=${body#*$'\n'}
+    held=$(_fm_task_inbox_b64d "$tail_b64") || return 1
+    held=$(fm_composer_extract_selected_content styled=0 "$held") || return 1
+    held=$(printf '%s' "$held" | tr -d '[:space:]')
+    _fm_task_inbox_is_doorbell_copies "$held" "$line" && return 0
+    draft=$(_fm_task_inbox_b64d "$draft_b64") || return 1
+    draft=$(printf '%s' "$draft" | tr -d '[:space:]')
+    [ -n "$draft" ] || return 1
+    _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
+    return $?
+  fi
   cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
   held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
   held=$(printf '%s' "$held" | tr -d '[:space:]')
-  line=$(printf '%s' "$3" | tr -d '[:space:]')
-  _fm_task_inbox_is_doorbell_copies "$held" "$line" && return 0
-  [ "$1" = orca ] || return 1
-  draft=$(fm_backend_orca_draft_text "$2" 2>/dev/null) || return 1
-  draft=$(printf '%s' "$draft" | tr -d '[:space:]')
-  [ -n "$draft" ] || return 1
-  _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
+  _fm_task_inbox_is_doorbell_copies "$held" "$line"
 }
 
 # The harness recorded for the task that owns <record-path>, from the task's

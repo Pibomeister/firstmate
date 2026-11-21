@@ -498,8 +498,8 @@ process.exit((r.terminal || r).draft ? 0 : 1);
 
 # fm_backend_orca_draft_text: the draft text itself, on a fresh read like the
 # probe above. Prints nothing for an empty draft; fails when the read or its
-# payload cannot be trusted, so a caller proving composer ownership from it
-# fails closed instead of guessing.
+# payload cannot be trusted. Composer ownership uses
+# fm_backend_orca_composer_snapshot, not this single field.
 fm_backend_orca_draft_text() {  # <terminal-id>
   local out
   out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 1
@@ -511,6 +511,32 @@ const r = data.result || {};
 const draft = (r.terminal || r).draft;
 if (typeof draft !== "string") process.exit(1);
 process.stdout.write(draft);
+'
+}
+
+# One uncached terminal read, as two base64 lines (tail, then draft) and a
+# trailing ".". Tail selection matches fm_backend_orca_json_text. A missing
+# draft is empty; any other non-string draft fails the read.
+fm_backend_orca_composer_snapshot() {  # <terminal-id>
+  local out
+  fm_backend_orca_tool_check || return 1
+  out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); }
+catch (err) { process.exit(1); }
+if (!data || data.ok === false) process.exit(1);
+const r = data.result || {};
+let tail = "";
+if (r.terminal && Array.isArray(r.terminal.tail)) tail = r.terminal.tail.join("\n");
+else if (Array.isArray(r.tail)) tail = r.tail.join("\n");
+else tail = r.text || r.output || r.content || r.preview || "";
+let draft = (r.terminal || r).draft;
+if (draft == null) draft = "";
+else if (typeof draft !== "string") process.exit(1);
+function enc(s) { return Buffer.from(s, "utf8").toString("base64"); }
+process.stdout.write(enc(tail) + "\n" + enc(draft) + "\n.\n");
 '
 }
 
