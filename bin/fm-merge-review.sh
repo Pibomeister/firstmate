@@ -575,13 +575,20 @@ mr_ak() {  # <out> <cwd> <ak arguments...>
 # changes the legacy verdict; on any failure it records nothing and leaves the
 # reason in MR_SHADOW_NOTE for the line run prints.
 mr_shadow_record() {  # <repo> <records-dir> <batch-digest>
-  local repo=$1 records=$2 batch=$3 ledger out i rc=0 tier=unavailable verdict project
+  local repo=$1 records=$2 batch=$3 ledger out i rc=0 tier=unavailable verdict project counted
+  local saved_base=$MR_EXPECTED_BASE
   ledger="$(dirname "$MR_STORE")/ledger.jsonl"
   out="$MR_WORK/ak.out"
   command -v ak >/dev/null 2>&1 || { MR_SHADOW_NOTE='ak is not installed'; return 0; }
   i=0
   while [ "$i" -lt "$MR_SEAT_N" ]; do
-    if mr_seat_has_receipt "$i"; then
+    # The ledger takes exactly the reviews the legacy rule counts at this
+    # merge base: posted when post=on, and never one reviewed at another base.
+    counted=0
+    MR_EXPECTED_BASE=$MR_BASE
+    [ ! -f "$MR_STORE/${MR_SEAT_ID[$i]}.receipt" ] || ! mr_receipt_valid "$MR_STORE/${MR_SEAT_ID[$i]}.receipt" || counted=1
+    MR_EXPECTED_BASE=$saved_base
+    if [ "$counted" = 1 ]; then
       rc=0
       mr_ak "$out" "$MR_WORK" review ledger add --ledger "$ledger" --seat "${MR_SEAT_ID[$i]}" \
         --head "$MR_HEAD" --base "$MR_BASE" --review "$MR_STORE/${MR_SEAT_ID[$i]}.review.md" || rc=$?

@@ -1339,6 +1339,55 @@ test_shadow_appends_the_engine_verdict_without_changing_the_legacy_verdict() {
   pass "shadow appends the engine's verdict and tier while the legacy rule keeps the state word and exit status"
 }
 
+test_shadow_ledger_takes_only_reviews_the_legacy_rule_counts() {
+  local rc=0 store
+  make_case shadow-unposted "${TWO_SEATS[@]}" 'post=on' 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  : > "$STUB/gh.fail"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-unposted: run while the forge refuses comments"
+  assert_no_grep "review ledger add" "$STUB/ak.calls" "shadow-unposted: an unposted approval reached the shadow ledger"
+  rm -f "$STUB/gh.fail"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-unposted: rerun once the forge accepts comments ($(cat "$CASE/stdout"))"
+  assert_equals 2 "$(wc -l < "$(pr_dir)/ledger.jsonl" | tr -d ' ')" \
+    "shadow-unposted: the posted approvals did not reach the shadow ledger"
+
+  make_case shadow-unposted-block "${TWO_SEATS[@]}" 'post=on' 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo block > "$STUB/agy.mode"
+  : > "$STUB/gh.fail-block"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-unposted-block: the blocking run"
+  assert_grep "--seat google.agy.gemini-test-high --head $HEAD_SHA" "$STUB/ak.calls" \
+    "shadow-unposted-block: an unposted block, which still blocks, did not reach the shadow ledger"
+
+  make_case shadow-stale-block "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo block > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-stale-block: the blocking run"
+  store=$(store_dir)
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/google.agy.gemini-test-high.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/google.agy.gemini-test-high.receipt"
+  : > "$STUB/ak.calls"
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-stale-block: rerun must not approve at the new scope"
+  assert_no_grep "--seat google.agy.gemini-test-high" "$STUB/ak.calls" \
+    "shadow-stale-block: a block reviewed at another merge base was stamped with the live base"
+  assert_grep "--seat anthropic.claude.claude-test-1 --head $HEAD_SHA" "$STUB/ak.calls" \
+    "shadow-stale-block: the live approval did not reach the shadow ledger"
+  pass "the shadow ledger takes exactly the reviews the legacy rule counts at the live merge base"
+}
+
 test_shadow_drops_a_malformed_or_foreign_engine_verdict() {
   local rc=0 record
   make_case shadow-bad "${TWO_SEATS[@]}" 'convergence=shadow'
@@ -1421,4 +1470,5 @@ fm_test_run \
   test_convergence_on_is_refused_until_enforcement_is_approved \
   test_shadow_without_the_review_engine_reports_unavailable_and_records_nothing \
   test_shadow_appends_the_engine_verdict_without_changing_the_legacy_verdict \
-  test_shadow_drops_a_malformed_or_foreign_engine_verdict
+  test_shadow_drops_a_malformed_or_foreign_engine_verdict \
+  test_shadow_ledger_takes_only_reviews_the_legacy_rule_counts
