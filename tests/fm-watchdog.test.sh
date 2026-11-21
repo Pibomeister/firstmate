@@ -6503,6 +6503,11 @@ test_human_step_detection() {
   assert_equals captcha "$(lib fm_wd_human_step $'Please verify you are human.\nComplete the CAPTCHA to continue.')" "a captcha"
   assert_equals approval "$(lib fm_wd_human_step $'Waiting for approval on your other device...\nCheck your phone to approve this sign-in.')" "a device approval wait"
   assert_equals sign-in "$(lib fm_wd_human_step $'API Error: 401 · Please run /login\n❯ \n  ? for shortcuts')" "a sign-in error above the composer"
+  assert_equals sign-in "$(lib fm_wd_human_step $'Login expired · Please run /login\n❯ \n  ? for shortcuts')" "an expired login above the composer is a sign-in step"
+  assert_equals sign-in "$(lib fm_wd_human_step $'Failed to authenticate: OAuth session expired and could not be refreshed\n❯ \n  ? for shortcuts')" "an expired OAuth session above the composer is a sign-in step"
+  assert_equals sign-in "$(lib fm_wd_human_step 'Login expired · Please run /login')" "a standalone expired login is a sign-in step"
+  assert_equals sign-in "$(lib fm_wd_human_step 'Failed to authenticate: OAuth session expired and could not be refreshed')" "a standalone expired OAuth session is a sign-in step"
+  assert_equals "" "$(lib fm_wd_human_step $'I documented Login expired · Please run /login and Failed to authenticate: OAuth session expired.\n❯ \n  ? for shortcuts')" "conversation that mentions expired login errors is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'I updated the sign in to GitHub docs and the OTP section.\nThe verification code flow is unchanged.\n❯ \n  ? for shortcuts')" "conversation that mentions a sign-in is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Captain session\n❯ \n  ? for shortcuts')" "a plain composer is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel')" "a permission dialog is not a step"
@@ -6513,6 +6518,14 @@ test_human_step_detection() {
   assert_equals "" "$(lib fm_wd_human_step $'GitHub needs you to sign in to continue before the push.\n> 1. merge the PR\n  2. then clean up')" "an echoed numbered prompt under a sign-in reply is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'The 2FA and otp checks pass now.\n> 1. merge it')" "a numbered composer draft under a 2FA reply is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Working on the mirror.\n────────────────────────────────────────\n❯ check whether\n  authentication is required for the mirror\n────────────────────────────────────────\n  ? for shortcuts')" "a wrapped composer draft that mentions authentication is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Working.\n────────────────────────────────────────\n❯ check auth\n\n Also update 2FA tests\n────────────────────────────────────────\n  ? for shortcuts')" "a blank line inside a ruled draft does not expose draft text as a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Working.\n────────────────────────────────────────\n❯ check auth\n\n Also update 2FA tests\n────────────────────────────────────────')" "a composer rule alone excludes multiline draft text"
+  assert_equals "" "$(lib fm_wd_human_step $'Working.\n❯ check auth\n\n Also update 2FA tests\n  ? for shortcuts')" "a composer footer alone excludes multiline draft text"
+  local long_draft=$'❯ check auth\n\n Also update 2FA tests' i
+  for i in {1..16}; do long_draft+=$'\n More draft text'; done
+  long_draft+=$'\n Also update OTP tests\n────────────────────────────────────────\n  ? for shortcuts'
+  assert_equals "" "$(lib fm_wd_human_step "$long_draft")" "a long draft whose prompt is outside the detection window is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $' Also update OTP tests\n More draft text\n────────────────────────────────────────\n  ? for shortcuts')" "a cropped composer with no visible prompt is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Working on the login flow.\n❯ next, enable the\n  2fa check and sign in to the staging app')" "a borderless wrapped draft that mentions 2FA and sign-in is not a step"
   assert_equals verification-code "$(lib fm_wd_human_step $'❯ /login\n\nBrowser did not open? Use the url below to sign in\nPaste code here if prompted > ')" "a sign-in prompt below an echoed turn, with no composer under it"
   assert_equals otp "$(lib fm_wd_human_step $'❯ push the PR\n\n! First copy your one-time code: 8F3A-21C4\nPress Enter to open github.com in your browser...')" "a device code below an echoed turn, with no composer under it"

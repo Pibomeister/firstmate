@@ -105,13 +105,15 @@
 #       rows below the last composer prompt row count, down to the composer's
 #       bottom border or first blank row, so the footer and status line never
 #       do, and not the indented rows a wrapped draft fills under the prompt.
-#       A prompt row followed by an empty row and then output, other than one
-#       indented footer row, is an echoed earlier turn with no composer below
-#       it, so the rows after that empty row count instead. With no prompt row
-#       either, as on a full-screen sign-in view, every one of those rows
-#       counts. Conversation above a prompt row does not count, except a
-#       row among the 4 just above it that opens by stating a sign-in error
-#       such as `Not logged in` or `Please run /login`.
+#       With no composer rule or footer below it, a prompt row followed by an
+#       empty row and then output, other than one indented footer row, is an
+#       echoed earlier turn, so the rows after that empty row count instead.
+#       With neither a prompt row nor a composer boundary, as on a full-screen
+#       sign-in view, every one of those rows counts. Conversation above a
+#       prompt row does not count, except a row among the 4 just above it
+#       that opens by stating a sign-in error
+#       such as `Not logged in`, `Please run /login`, `Login expired`, or
+#       `Failed to authenticate: OAuth session expired`.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -566,7 +568,7 @@ FM_WD_HS_OTP_RE='one.?time (pass(word|code)|code)|(^|[^a-z0-9])(otp|2fa|mfa)([^a
 FM_WD_HS_CODE_RE='(verification|confirmation|security|authori[sz]ation|device|login|sign.?in|pairing) code|(^|[^a-z])(enter|paste|type|input) (the |your |this )?([0-9]+.digit )?code|code sent to'
 FM_WD_HS_APPROVAL_RE='waiting for (your |the )?approval|approve (this|the|your) (sign.?in|log.?in|login|request|device|session|connection)|(sign.?in|log.?in|login|device) approval|approval (is )?required|(check|open) your (phone|device|email|inbox|app) to (approve|confirm|continue|sign)'
 FM_WD_HS_SIGNIN_RE='(^|[^a-z])(sign|log).?in (to|with|required|again|via|using)|(^|[^a-z])signing in|(not|no longer) (signed|logged) in|log.?in required|authenticat(e|ion) (is )?required|authenticate to continue|waiting for (the )?(browser )?(authentication|auth|sign.?in|log.?in)|select (a |your )?login method|run /login'
-FM_WD_HS_AUTH_ERROR_RE='^[^a-z]*(not logged in|invalid api key|oauth token (has )?expired|please run /login|api error: 401|authentication (error|failed))'
+FM_WD_HS_AUTH_ERROR_RE='^[^a-z]*(not logged in|invalid api key|oauth token (has )?expired|please run /login|login expired|failed to authenticate: oauth session expired|api error: 401|authentication (error|failed))'
 
 # A recorded Codex CLI 0.151.0 dialog, which fm_wd_pane_dialog does not read:
 # its command-approval question or hook-review heading, a numbered cursor row
@@ -602,10 +604,8 @@ fm_wd_human_step() {  # <screen>
   ! fm_wd_codex_dialog "$1" >/dev/null || return 1
   while IFS=$'\t' read -r tag row; do
     row=$(fm_wd_lower "$row")
-    if [ "$tag" = above ]; then
-      printf '%s' "$row" | LC_ALL=C grep -Eq "$FM_WD_HS_AUTH_ERROR_RE" && { printf 'sign-in\n'; return 0; }
-      continue
-    fi
+    printf '%s' "$row" | LC_ALL=C grep -Eq "$FM_WD_HS_AUTH_ERROR_RE" && { printf 'sign-in\n'; return 0; }
+    [ "$tag" != above ] || continue
     for kind in captcha otp verification-code approval sign-in; do
       case "$kind" in
         captcha) re=$FM_WD_HS_CAPTCHA_RE ;;
@@ -636,8 +636,11 @@ fm_wd_human_step() {  # <screen>
         exit
       }
       for (i = last; i >= floor; i--) if (row[i] ~ glyph) { g = i; break }
+      for (i = last; i >= floor && i > g; i--) if ((blank(row[i]) && (index(row[i], "─") || index(row[i], "━"))) || row[i] ~ /\? for shortcuts/) { composer = 1; break }
+      if (!g && composer) exit
       if (!g) { for (i = floor; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]; exit }
       for (i = g - 1; i >= floor && n < 4; i--) if (row[i] ~ /[^ \t]/) { print "above\t" row[i]; n++ }
+      if (composer) exit
       # A typed draft wraps onto rows indented under the glyph, inside the
       # composer body; only a row at column 0 belongs to the harness.
       for (i = g + 1; i <= last && !blank(row[i]) && row[i] ~ /^(│|┃|[|])?[ \t]/; i++) ;
