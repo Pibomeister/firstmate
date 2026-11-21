@@ -266,8 +266,17 @@ case ${FM_CREW_STATE_META_OVERRIDE:-} in
   "$ID.meta"|*/"$ID.meta") META=$FM_CREW_STATE_META_OVERRIDE ;;
   *) META=$STATE/$ID.meta ;;
 esac
+OPEN_DECISIONS_FILE=
 case ${FM_CREW_STATE_STATUS_OVERRIDE:-} in
-  "$ID.status"|*/"$ID.status") LOG=$FM_CREW_STATE_STATUS_OVERRIDE ;;
+  "$ID.status"|*/"$ID.status")
+    LOG=$FM_CREW_STATE_STATUS_OVERRIDE
+    # The same composition may also supply its one open-decision fold of that
+    # captured log, so this read does not fold the whole log a second time. It
+    # is honoured only beside the captured log it was folded from.
+    case ${FM_CREW_STATE_OPEN_DECISIONS_OVERRIDE:-} in
+      "$ID.open-decisions"|*/"$ID.open-decisions") OPEN_DECISIONS_FILE=$FM_CREW_STATE_OPEN_DECISIONS_OVERRIDE ;;
+    esac
+    ;;
   *) LOG=$STATE/$ID.status ;;
 esac
 NM_TIMEOUT=${FM_CREW_STATE_NM_TIMEOUT:-10}
@@ -308,7 +317,7 @@ emit_run() {  # <state> <detail> [pr]
 [ -f "$META" ] || emit unknown none "no metadata for $ID"
 
 meta_value() {  # <key>
-  grep "^$1=" "$META" 2>/dev/null | tail -1 | cut -d= -f2- || true
+  fm_meta_get "$META" "$1"
 }
 
 WT=$(meta_value worktree)
@@ -357,7 +366,7 @@ map_log_state() {  # <line>
   esac
 }
 
-LOG_LINE=$(status_current_line "$LOG" "$KIND")
+LOG_LINE=$(status_current_line "$LOG" "$KIND" "$OPEN_DECISIONS_FILE")
 # Load relief (bin/fm-load-relief.sh) appends its own paused and resolved
 # [key=load-relief] lines without the worker's lock, so one can land just
 # after the worker's done or failed. Such a trailing bookkeeping line never

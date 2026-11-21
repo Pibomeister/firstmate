@@ -3674,6 +3674,60 @@ test_matched_state_override_is_honoured() {
   pass "override guard: a matching-name override still steers the read at the captured generation"
 }
 
+# A no-mistakes status field is the rest of the first line whose first word is
+# exactly <key>:, after leading whitespace, with whitespace after the colon
+# dropped; a key that only shares a prefix never matches.
+test_nm_status_field_reads_first_exact_key() {
+  local out
+  out=$(
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    doc=$(printf 'run:\n  head_sha: aaa\n\thead:   "fm/x: y"  \n  head: second\nstatus:running')
+    printf '[%s]' "$(fm_nm_field "$doc" head)" "$(fm_nm_field "$doc" head_sha)" \
+      "$(fm_nm_field "$doc" status)" "$(fm_nm_field "$doc" missing)" "$(fm_nm_field "$doc" run)"
+  )
+  assert_equals '["fm/x: y"  ][aaa][running][][]' "$out" "status field reads"
+  pass "a no-mistakes status field reads the first exact key's value"
+}
+
+# The snapshot's one open-decision fold of its captured log is read in place of
+# a second fold, but only beside that captured log and only under this task's
+# own name.
+test_captured_open_decision_fold_is_reused() {
+  reset_fakes
+  local d out
+  d=$(new_case override-open-decisions)
+  make_repo_on_branch "$d/wt" fm/feat-ovr3
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/feat-ovr3.meta" "window=fm:fm-feat-ovr3" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: live log line\n' > "$d/state/feat-ovr3.status"
+  mkdir -p "$d/snapshot"
+  fm_write_meta "$d/snapshot/feat-ovr3.meta" "window=fm:fm-feat-ovr3" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: captured log line\n' > "$d/snapshot/feat-ovr3.status"
+  printf 'route\tneeds-decision\tchoose a sample route\n' > "$d/snapshot/feat-ovr3.open-decisions"
+  printf 'route\tneeds-decision\tchoose a sample route\n' > "$d/snapshot/feat-other.open-decisions"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" feat-ovr3
+  out=$(FM_CREW_STATE_META_OVERRIDE="$d/snapshot/feat-ovr3.meta" \
+    FM_CREW_STATE_STATUS_OVERRIDE="$d/snapshot/feat-ovr3.status" \
+    FM_CREW_STATE_OPEN_DECISIONS_OVERRIDE="$d/snapshot/feat-ovr3.open-decisions" \
+    run_crew_state "$d" feat-ovr3)
+  assert_contains "$out" "state: parked" "the captured fold's open decision must be read"
+  assert_contains "$out" "choose a sample route" "the captured fold's open decision supplies the detail"
+  out=$(FM_CREW_STATE_META_OVERRIDE="$d/snapshot/feat-ovr3.meta" \
+    FM_CREW_STATE_STATUS_OVERRIDE="$d/snapshot/feat-ovr3.status" \
+    FM_CREW_STATE_OPEN_DECISIONS_OVERRIDE="$d/snapshot/feat-other.open-decisions" \
+    run_crew_state "$d" feat-ovr3)
+  assert_contains "$out" "state: working" "another task's fold must be ignored"
+  assert_contains "$out" "captured log line" "the captured log is folded when the fold override is foreign"
+  out=$(FM_CREW_STATE_OPEN_DECISIONS_OVERRIDE="$d/snapshot/feat-ovr3.open-decisions" \
+    run_crew_state "$d" feat-ovr3)
+  assert_contains "$out" "state: working" "a fold override without its captured log must be ignored"
+  assert_contains "$out" "live log line" "the live log is folded when no captured log is supplied"
+  pass "override guard: the captured open-decision fold is reused only beside its own captured log"
+}
+
 # (k) crew_is_provably_working end-to-end over the REAL fm-crew-state.sh (not a
 # canned fake verdict, unlike tests/fm-watch-triage.test.sh's classifier
 # coverage). This is the direct regression pair for the 2026-07-02 herdr
@@ -7728,6 +7782,8 @@ test_remote_dead_reports_remote_verdict
 test_missing_meta
 test_mismatched_state_override_is_ignored
 test_matched_state_override_is_honoured
+test_captured_open_decision_fold_is_reused
+test_nm_status_field_reads_first_exact_key
 test_provably_working_via_runs_list_fallback
 test_not_provably_working_when_stopped
 test_usage_error
