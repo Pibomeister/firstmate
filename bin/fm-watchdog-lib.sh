@@ -24,7 +24,9 @@
 #       awaiting_approval decision (deploy, publish, force-push or a forced push, spend,
 #       secrets or credentials, sign-in, security, production or
 #       shared-database writes, PII, messages to people, deletion, or a
-#       failure in the PR's own changed behavior).
+#       failure in the PR's own changed behavior, including code this PR
+#       modified). A read-only shared-database mention, a negated
+#       changed-behavior phrase, or unchanged behavior does not.
 #   fm_wd_known_unreachable_timing_flake <text>
 #       Returns 0 when the text describes a known timing flake in a test the
 #       PR cannot reach: a timing word (`timing`, `load-sensitive`, or
@@ -323,7 +325,47 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|e-?mail|sms|messages? to|delet|destroy|wipe|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+
+# Phrases that name a category only to cancel it. BSD grep has no lookbehind,
+# so the category search below runs on the text after these are removed.
+_fm_wd_without_negated_categories() {
+  LC_ALL=C sed -E \
+    -e 's/not on changed behavio[a-z]*//g' \
+    -e 's/is not changed behavio[a-z]*//g' \
+    -e 's/not changed behavio[a-z]*//g' \
+    -e 's/no changed behavio[a-z]*//g' \
+    -e 's/without changed behavio[a-z]*//g' \
+    -e 's/unchanged behavio[a-z]*//g' \
+    -e 's/un changed behavio[a-z]*//g' \
+    -e 's/read-only//g' \
+    -e 's/read only//g' \
+    -e 's/readonly//g' \
+    -e 's/no writes//g' \
+    -e 's/no write//g' \
+    -e 's/without writes//g' \
+    -e 's/without writing//g' \
+    -e 's/without a write//g' \
+    -e 's/not writing//g' \
+    -e 's/not a write//g'
+}
+
+# A shared-database write, not a bare or read-only mention of the database.
+_fm_wd_shared_db_writes() {  # <view>
+  local cleaned
+  cleaned=$(printf '%s\n' "$1" | tr '_-' '  ' | _fm_wd_without_negated_categories)
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])shared[[:space:]]*(db|database)([^a-z]|$)' || return 1
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote)([^a-z]|$)'
+}
+
+# A failure in the PR's own changed behavior, including code this PR modified.
+FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in this pr|introduced by this pr|code (this|the) pr (changed|modified|added)|pr.s own changed'
+
+_fm_wd_pr_caused_failure() {  # <view>
+  local cleaned
+  cleaned=$(printf '%s\n' "$1" | tr '_-' '  ' | _fm_wd_without_negated_categories)
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
+}
 
 fm_wd_nm_awaiting_approval() {  # <text>
   local view
@@ -341,7 +383,9 @@ fm_wd_human_only() {  # <text>
   printf '%s\n' "$view" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
   # Formatting alone must not change authority: shared_database and
   # messages-to-people name the same categories as their spaced forms.
-  printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE"
+  printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
+  _fm_wd_shared_db_writes "$view" && return 0
+  _fm_wd_pr_caused_failure "$view"
 }
 
 fm_wd_known_unreachable_timing_flake() {  # <text>

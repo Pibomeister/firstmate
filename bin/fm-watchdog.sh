@@ -1078,8 +1078,8 @@ wd_council() {
 task: $task
 key: $key
 record: $summary
-If the record itself asks for a merge, a release, a deploy, a publish, a force-push, money, credentials, security, production data, PII, a sign-in, or deletion, or says the owner reserved it, answer HOLD.
-A no-mistakes awaiting_approval step is a council decision: a merge or release the step would unblock does not by itself make it the owner's, and a failed once-rerun or an extra isolated green run is evidence to weigh, never a reason to refuse the question.
+If the record itself asks for a merge, a release, a deploy, a publish, a force-push, money, credentials, security, production data, shared-database writes, PII, messages to people, a sign-in, or deletion, or says the owner reserved it, or the failure is in the PR's own changed behavior, including code this PR modified or added, answer HOLD.
+A no-mistakes awaiting_approval step is a council decision: a merge or release the step would unblock does not by itself make it the owner's, and a failed once-rerun or an extra isolated green run is evidence to weigh, never a reason to refuse the question, unless that failure is in the PR's own changed behavior.
 ${flake_note}If the record offers options and one is clearly recommended or clearly safest for continuing work, answer PROCEED followed by that option's label (for example PROCEED A or PROCEED 2).
 Otherwise answer HOLD.
 Reply with exactly one line: PROCEED <label> or HOLD."

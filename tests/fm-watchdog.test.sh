@@ -1812,6 +1812,47 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean"
 }
 
+test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed in code modified by this PR. A approve the step, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key nm-modified --record-file "$H/record.txt" 2>&1) || fail "modified-by-pr council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a failure in code modified by this PR stays the owner's: $out"
+  assert_equals 0 "$(seat_calls)" "no seat saw a failure in code this PR modified"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. The once-rerun failed on changed behavior in this PR. A approve, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key nm-changed --record-file "$H/record.txt" 2>&1) || fail "changed-behavior council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a failure on changed behavior stays the owner's: $out"
+  assert_equals 0 "$(seat_calls)" "no seat saw a changed-behavior failure"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. The unit test failed on the new handler added in this PR. A approve, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 15 council --task t1 --key nm-added --record-file "$H/record.txt" 2>&1) || fail "added-in-pr council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a failure added in this PR stays the owner's: $out"
+  assert_equals 0 "$(seat_calls)" "no seat saw a failure added in this PR"
+  printf '%s\n' 'PR #9 no-mistakes test step awaiting_approval. A approve writes to the shared database so the PR can merge, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key nm-db-writes --record-file "$H/record.txt" 2>&1) || fail "shared-database writes council failed: $out"
+  assert_contains "$out" "council=held answer=none" "shared-database writes stay the owner's: $out"
+  assert_equals 0 "$(seat_calls)" "no seat saw a shared-database write"
+  printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only shared-database fixture; no writes are involved. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 30 council --task t1 --key nm-readonly-db --record-file "$H/record.txt" 2>&1) || fail "read-only shared-database flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a read-only shared-database flake reaches the council: $out"
+  assert_equals 2 "$(seat_calls)" "both seats saw the read-only shared-database flake"
+  assert_grep "approved, not clean" "$H/prompt.log" "the read-only fixture still gets the flake default"
+  assert_grep "PR's own changed behavior" "$H/prompt.log" "the seat prompt reserves a failure in the PR's own changed behavior"
+  : > "$H/prompt.log"
+  printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake that is not on changed behavior in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 40 council --task t1 --key nm-not-changed --record-file "$H/record.txt" 2>&1) || fail "negated changed-behavior flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a negated not-on-changed-behavior flake reaches the council: $out"
+  assert_equals 4 "$(seat_calls)" "both seats saw the negated changed-behavior flake"
+  assert_grep "approved, not clean" "$H/prompt.log" "the negated phrase still gets the flake default"
+  : > "$H/prompt.log"
+  printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is unchanged behavior in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 50 council --task t1 --key nm-unchanged --record-file "$H/record.txt" 2>&1) || fail "unchanged-behavior flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "unchanged behavior does not hold a known unreachable flake: $out"
+  assert_equals 6 "$(seat_calls)" "both seats saw the unchanged-behavior flake"
+  pass "council: a PR-caused failure stays held, and a negated or read-only flake still defaults to approve, not clean"
+}
+
 test_council_revisit_on_contradicting_record() {
   local out archived
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -7381,6 +7422,7 @@ fm_test_run \
   test_council_runs_one_at_a_time_per_decision \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
+  test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council \
   test_council_revisit_on_contradicting_record \
   test_council_failed_revisit_keeps_the_prior_ruling \
   test_decision_nudge_names_pr_by_number \
