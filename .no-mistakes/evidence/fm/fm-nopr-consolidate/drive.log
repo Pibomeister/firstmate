@@ -1,0 +1,51 @@
+10:27:03 load 10:27  up 5 days, 39 mins, 201 users, load averages: 301.04 286.00 285.62
+10:27:03 HEAD 15a6a009
+10:27:04 funcs prepared wd=    6795 brief=    2100 afk=    1595
+10:27:04 START test_crewmate_scaffolds_escalate_human_only_steps timeout=180s
+10:28:07 END test_crewmate_scaffolds_escalate_human_only_steps rc=0 elapsed=56s
+10:28:07   stdout: ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract ok - fm-brief.sh: every crewmate scaffold escalates a human-only step within 10 minutes and keeps work moving 
+10:28:07 START test_return_brief_lists_open_human_only_steps timeout=240s
+10:28:51 END test_return_brief_lists_open_human_only_steps rc=0 elapsed=40s
+10:28:51   stdout: ok - the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate 
+10:28:52 START scenario_unpublished_step_is_not_briefed timeout=240s
+10:29:54 END scenario_unpublished_step_is_not_briefed rc=0 elapsed=56s
+10:29:54   stdout: ok - an unpublished return brief does not mark a human-only step briefed; a published one lists it and marks it once 
+10:29:55 START test_human_step_detection timeout=120s
+10:30:17 END test_human_step_detection rc=0 elapsed=20s
+10:30:17   stdout: ok - human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not 
+10:30:17 START test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step timeout=240s
+10:31:34 END test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step rc=0 elapsed=68s
+10:31:34   stdout: ok - human-only step: a wrapped composer draft that mentions a sign-in is unsent input, not a step 
+10:31:34 START test_human_step_daytime_dry_run_names_the_page_it_would_send timeout=300s
+10:32:11 END test_human_step_daytime_dry_run_names_the_page_it_would_send rc=0 elapsed=34s
+10:32:12   stdout: ok - human-only step: a daytime dry run names the page it would send and sends none 
+10:32:12 START test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into timeout=360s
+10:33:38 END test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into rc=0 elapsed=78s
+10:33:38   stdout: ok - human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged 
+10:33:38 START test_human_step_overnight_reports_only_what_it_recorded timeout=300s
+10:33:57 END test_human_step_overnight_reports_only_what_it_recorded rc=0 elapsed=18s
+10:33:57   stdout: ok - human-only step: overnight, the status names a dry run or a failed write, never a record that was not written 
+10:33:57 START test_human_step_overnight_goes_to_the_morning_handoff timeout=420s
+10:35:41 END test_human_step_overnight_goes_to_the_morning_handoff rc=0 elapsed=94s
+10:35:41   stdout: ok - human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page 
+10:35:41 START test_human_step_overnight_handoff_is_paged_by_day_unless_briefed timeout=360s
+10:36:58 END test_human_step_overnight_handoff_is_paged_by_day_unless_briefed rc=0 elapsed=70s
+10:36:58   stdout: ok - human-only step: an overnight handoff still showing by day is paged once, unless the away return brief showed it 
+10:36:58 START test_human_step_removed_worker_closes_its_handoff timeout=300s
+10:37:22 END test_human_step_removed_worker_closes_its_handoff rc=0 elapsed=22s
+10:37:22   stdout: ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row 
+10:37:22 START test_human_step_undelivered_page_falls_back_to_the_record timeout=420s
+10:38:49 END test_human_step_undelivered_page_falls_back_to_the_record rc=0 elapsed=78s
+10:38:50   stdout: ok - human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel 
+10:38:50 START test_worker_human_step_keeps_other_work_moving timeout=420s
+10:40:40 END test_worker_human_step_keeps_other_work_moving rc=0 elapsed=98s
+10:40:40   stdout: ok - human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled 
+10:40:40 START test_worker_human_step_key_is_held_for_the_owner timeout=360s
+10:41:19 END test_worker_human_step_key_is_held_for_the_owner rc=0 elapsed=36s
+10:41:19   stdout: ok - decisions: a worker's human-step key is the owner's, never nudged or put to council; an ordinary decision still settles 
+10:41:19 START test_quota_guard_act_never_nudges_a_human_step_pane timeout=300s
+10:41:30 END test_quota_guard_act_never_nudges_a_human_step_pane rc=0 elapsed=10s
+10:41:30   stdout: ok - quota guard: an act check never nudges a pane showing a human-only step 
+10:41:30 ALL DONE
+10:41:30 load 10:41  up 5 days, 53 mins, 200 users, load averages: 206.53 248.44 263.61
+10:41:31 index written

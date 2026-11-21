@@ -1,0 +1,5 @@
+schema	fm-afk-return.v1
+started	1795278516
+phase	blocked
+evidence	health	supervision ran through the away window with no detected gap (watcher beat 24s old at return)
+blocker	dep-task	dep	firstmate can refresh the synthetic token

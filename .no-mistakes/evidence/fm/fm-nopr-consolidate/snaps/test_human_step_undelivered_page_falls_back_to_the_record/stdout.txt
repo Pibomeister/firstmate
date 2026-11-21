@@ -1,0 +1,1 @@
+ok - human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel

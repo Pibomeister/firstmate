@@ -1,0 +1,1 @@
+ok - decisions: a worker's human-step key is the owner's, never nudged or put to council; an ordinary decision still settles

@@ -1,0 +1,8 @@
+1795277892	worker:auth	otp	1795277292	morning-handoff
+1795277592	worker:done	sign-in	1795276992	morning-handoff
+1795278192	worker:done	sign-in	1795276992	cleared
+1795051692	worker:weekend	captcha	1795051092	morning-handoff
+1795051752	worker:sunday	approval	1795051152	morning-handoff
+1795206492	worker:sunday	approval	1795051152	cleared
+1795278512	worker:auth	otp	1795277292	briefed
+1795278512	worker:weekend	captcha	1795051092	briefed

@@ -1,0 +1,1 @@
+ok - human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not

@@ -1,0 +1,6 @@
+Working on the mirror.
+────────────────────────────────────────────────────────────
+> check whether
+  authentication is required for the mirror
+────────────────────────────────────────────────────────────
+  ? for shortcuts

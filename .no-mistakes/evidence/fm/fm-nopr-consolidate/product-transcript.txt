@@ -1,0 +1,54 @@
+Human-only step, driven on disposable homes at 15a6a009. Every case exited 0.
+
+Daytime act, sign-in pane, after 10 minutes (real fm-watchdog.sh, private tmux pane):
+  health: home1: HUMAN-STEP
+  gap: human-only sign-in step on home1 for 150m; escalated, nothing is typed into it
+  page: Firstmate watchdog: a human-only sign-in step has waited 10 minutes on home1, and only a person can complete it. Nothing was typed into it.
+  record: home1 sign-in page
+  typed.log: 0 bytes
+
+Daytime dry-run, same sign-in pane:
+  health: home1: HUMAN-STEP
+  gap: human-only sign-in step on home1 for 10m; would page the owner, nothing is typed into it
+  ledger: human-step page dry-run "would page the owner; sign-in step since 2026-11-25T18:00:00Z"
+  paged.log: absent; typed.log: 0 bytes
+
+Overnight OTP pane:
+  gap: human-only otp step on home1 for 11m; recorded for the morning handoff, not paged
+  no paged.log on that home
+
+Removed worker:
+  worker:auth otp morning-handoff
+  worker:auth otp cleared
+
+Worker auth step while another worker has a permission dialog:
+  page: a human-only otp step has waited 10 minutes on home1 worker auth
+  page: a permission dialog blocks the away session of home1 worker perm
+  page: a human-only verification-code step has waited 10 minutes on home1 worker perm
+  gaps: escalated, nothing is typed into it
+
+Held key beside an ordinary decision:
+  gap: 1 decisions held for the owner (never touched), e.g. t1/human-step-device
+
+Quota guard on a sign-in pane:
+  health: HUMAN-STEP
+  gap: human-only sign-in step on home1 for 0m; nothing is typed into it, and it is escalated after 10m
+  ledger: quota-guard check done, no nudge
+  typed.log: 0 bytes
+
+Away return brief:
+  Waiting on you:
+    - worker:auth: otp step waiting since 2026-11-21T16:08:12Z; only a person can complete it
+    - worker:weekend: captcha step waiting since 2026-11-19T01:18:12Z; only a person can complete it
+  ordinary blocker still gates: firstmate-actionable blocker: dep-task [key=dep]
+  briefed rows written for worker:auth and worker:weekend; cleared subjects not briefed
+
+Publish failure, then a successful check:
+  after the failed publish the record is only morning-handoff (no briefed row)
+  gate: recovery evidence publication failed
+  after check the brief lists "worker:auth: otp step waiting" and the record gains one briefed row
+
+Crewmate brief rule 11 (ship, scout, direct-PR, local-only); absent from the secondmate brief:
+  A human-only step is the one blocker you report without stopping.
+  Within 10 minutes, close or cancel the prompt, append blocked [key=human-step-<slug>],
+  never enter a credential, never hold a PR or deploy, keep other work moving.

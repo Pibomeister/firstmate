@@ -1,0 +1,1 @@
+ok - quota guard: an act check never nudges a pane showing a human-only step

@@ -1,0 +1,21 @@
+=== Return brief ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 24s old at return)
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  human-only steps recorded by the watchdog (nothing was typed into them):
+    - worker:auth: otp step waiting since 2026-11-21T16:08:12Z; only a person can complete it
+    - worker:weekend: captcha step waiting since 2026-11-19T01:18:12Z; only a person can complete it
+Tried and failed, or could not be fixed:
+  - dep-task [key=dep] still blocked, firstmate remediates before ordinary work: firstmate can refresh the synthetic token
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 2 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 24s old at return)
+firstmate-actionable blocker: dep-task [key=dep] firstmate can refresh the synthetic token
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check

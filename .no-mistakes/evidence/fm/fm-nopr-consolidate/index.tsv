@@ -1,0 +1,16 @@
+scenario	rc	stdout
+scenario_unpublished_step_is_not_briefed	0	ok - an unpublished return brief does not mark a human-only step briefed; a published one lists it and marks it once 
+test_crewmate_scaffolds_escalate_human_only_steps	0	ok - fm-brief: scaffolds leave the worker role scope to the launch boundary and keep the secondmate contract ok - fm-brief.sh: every crewmate scaffold escalates a human-only step within 10 minutes and keeps work moving 
+test_human_step_daytime_dry_run_names_the_page_it_would_send	0	ok - human-only step: a daytime dry run names the page it would send and sends none 
+test_human_step_detection	0	ok - human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not 
+test_human_step_overnight_goes_to_the_morning_handoff	0	ok - human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page 
+test_human_step_overnight_handoff_is_paged_by_day_unless_briefed	0	ok - human-only step: an overnight handoff still showing by day is paged once, unless the away return brief showed it 
+test_human_step_overnight_reports_only_what_it_recorded	0	ok - human-only step: overnight, the status names a dry run or a failed write, never a record that was not written 
+test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into	0	ok - human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged 
+test_human_step_removed_worker_closes_its_handoff	0	ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row 
+test_human_step_undelivered_page_falls_back_to_the_record	0	ok - human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel 
+test_quota_guard_act_never_nudges_a_human_step_pane	0	ok - quota guard: an act check never nudges a pane showing a human-only step 
+test_return_brief_lists_open_human_only_steps	0	ok - the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate 
+test_worker_human_step_keeps_other_work_moving	0	ok - human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled 
+test_worker_human_step_key_is_held_for_the_owner	0	ok - decisions: a worker's human-step key is the owner's, never nudged or put to council; an ordinary decision still settles 
+test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step	0	ok - human-only step: a wrapped composer draft that mentions a sign-in is unsent input, not a step 

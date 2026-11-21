@@ -1,0 +1,1 @@
+ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row

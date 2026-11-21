@@ -1,0 +1,21 @@
+=== Return brief (away 2026-11-21T16:28:54Z -> 2026-11-21T16:29:38Z, 44s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+Your instructions:
+  your words at entry:
+    keep the fleet moving
+  the away session took no action under them.
+Waiting on you:
+  human-only steps recorded by the watchdog (nothing was typed into them):
+    - worker:auth: otp step waiting since 2026-11-21T16:08:56Z; only a person can complete it
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+catch-up lifecycle: recovery evidence publication failed; retry catch-up before ordinary work
+fm-afk-return: catch-up clear; ordinary captain work may proceed

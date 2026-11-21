@@ -1,0 +1,7 @@
+Claude Code can be used with your Claude subscription or billed based on API usage.
+
+Select login method:
+
+ ❯ 1. Claude account with subscription
+   2. Anthropic Console account
+   3. 3rd-party platform
