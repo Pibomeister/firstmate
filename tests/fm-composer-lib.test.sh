@@ -2152,7 +2152,7 @@ grok_weekly_limit_screen() {
 
 test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure() {
   local screen out rc sink suffix
-  for suffix in '  │  Ctrl+e:expand thinking' '' '  │  Ctrl+e:expand thinking  │  Ctrl+r:retry'; do
+  for suffix in '  │  Ctrl+e:expand thinking' ''; do
     screen="$(grok_weekly_limit_screen)$suffix"
     out=$(fm_composer_blocking_dialog "$screen"); rc=$?
     [ "$rc" -eq 0 ] || fail "the recorded Grok weekly-limit choice should match"
@@ -2179,6 +2179,13 @@ test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure() {
     [ "$rc" -eq 1 ] || fail "prose after the footer must not match"
     out=$(fm_composer_blocking_dialog "$screen  │  quoted prose"); rc=$?
     [ "$rc" -eq 1 ] || fail "an extra footer segment without a shortcut must not match"
+  done
+  for suffix in '  │  Ctrl+r:retry' \
+    '  │  Ctrl+e:expand thinking  │  Ctrl+r:retry' \
+    '  │  Ctrl+e:expand thinking  │  Ctrl+e:expand thinking'; do
+    out=$(fm_composer_blocking_dialog "$(grok_weekly_limit_screen)$suffix"); rc=$?
+    [ "$rc" -eq 1 ] || fail "an unrecorded or repeated shortcut suffix must not match"
+    [ -z "$out" ] || fail "a rejected shortcut suffix must print nothing, got '$out'"
   done
   out=$(fm_composer_blocking_dialog "$(grok_weekly_limit_screen) followed by prose"); rc=$?
   [ "$rc" -eq 1 ] || fail "the legacy footer must not accept prose without a shortcut separator"
