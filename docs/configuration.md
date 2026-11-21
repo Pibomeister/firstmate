@@ -688,7 +688,8 @@ A timer or token counter that only counts up keeps the same fingerprint, while a
 
 The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`).
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
-It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is resolved the same way, but HTTP is accepted only for `localhost`, `127.x.x.x`, or `[::1]`, and the key reaches `curl` only through a file descriptor, never its arguments.
+It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`.
+`TYPESAFE_BASE` comes from the environment, else `.env`, else defaults to `https://api.typesafe.ai`; HTTP is accepted only for `localhost`, `127.x.x.x`, or `[::1]`, and the key reaches `curl` only through a file descriptor, never its arguments.
 With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
 The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
 This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
@@ -723,7 +724,7 @@ Each check appends one row to `state/stall-watch.tsv` with its verdict, source, 
 `bin/fm-stall-watch.sh check <task-id|captain> --dry-run` judges one target now without acting or recording, and `classify` judges a screen on stdin for evaluating recorded screens.
 
 A model is asked at most once per ambiguous unchanged screen per interval.
-Measured costs and latency are in [the verification record](verification/stall-watch.md).
+The [verification record](verification/stall-watch.md) gives the measured dry-run latency and the current limits of live classifier evidence.
 
 ## Context reading (config/context-reading)
 
