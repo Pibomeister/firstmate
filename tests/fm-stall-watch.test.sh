@@ -2,7 +2,7 @@
 # tests/fm-stall-watch.test.sh - the built-in stall check
 # (bin/fm-stall-watch.sh): redaction of the screen and of everything a
 # classifier receives, the deterministic first pass, the Jev and Grok judges
-# and their fallbacks, the unchanged-screen guard, the failover, nudge, and
+# and their unavailable verdicts, the unchanged-screen guard, the failover, nudge, and
 # escalation actions, the tick schedule, and the watcher starting the tick and
 # delivering its reports. The screens are recorded fixtures under
 # tests/fixtures/stall-watch; grok, curl, fm-failover.sh, fm-send.sh, and the
@@ -295,17 +295,20 @@ test_model_judge_maps_answers() {
   assert_equals choice "$(jq -r .questions.verdict.type "$LOGS/curl.body.1")" 'the request is one Choice question'
   assert_equals 10 "$(jq -r '.questions.verdict.criteria | length' "$LOGS/curl.body.1")" 'every reason is an option'
 
-  grok_says api_error 0.8
+  g=$(count grok)
   sw_in "$FIX/api-error.screen" classify
-  assert_contains "$OUT" 'source=grok' 'jev with no key falls back to grok'
-  assert_contains "$OUT" 'jev:no-key' 'the fallback is recorded'
-  assert_contains "$ERR" 'jev unavailable (no TypeSafe key' 'the fallback logs one line saying so'
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'jev with no key leaves an ambiguous screen unknown'
+  assert_contains "$OUT" 'jev:no-key' 'the missing key is recorded'
+  assert_contains "$ERR" 'jev unavailable (no TypeSafe key' 'the missing key is logged'
+  assert_equals "$g" "$(count grok)" 'a missing key never calls grok automatically'
   printf 'TYPESAFE_API_KEY=ts-env-file-key\nTYPESAFE_BASE=https://ts.example.test/\n' > "$LAB/.env"
   FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
   assert_contains "$(cat "$LOGS/curl.argv.2")" 'https://ts.example.test/v1/systemone' 'TYPESAFE_BASE from .env is honored'
   assert_equals 'Authorization: Bearer ts-env-file-key' "$(cat "$LOGS/curl.header.2")" 'the key from .env is used'
-  assert_contains "$OUT" 'source=grok' 'a failed jev call falls back to grok'
-  assert_contains "$ERR" 'jev call failed (jev-http-500)' 'the failed call is logged'
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed jev call leaves an ambiguous screen unknown'
+  assert_contains "$OUT" 'jev:jev-http-500' 'the HTTP failure is recorded'
+  assert_contains "$ERR" 'jev unavailable (jev-http-500)' 'the failed call is logged'
+  assert_equals "$g" "$(count grok)" 'a failed jev call never calls grok automatically'
   printf 'TYPESAFE_BASE=https://user:pw@ts.example.test\n' > "$LAB/.env"
   TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
   assert_contains "$OUT" 'jev:jev-base-invalid' 'an invalid base is refused without a call'
@@ -319,10 +322,54 @@ test_model_judge_maps_answers() {
   assert_equals "$g" "$(count grok)" 'a usable jev answer below the floor never asks grok'
   printf '{"answers":{"verdict":{"choice":"sleeping","confidence":0.9}}}\n' > "$FM_TEST_CURL_REPLY"
   TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
-  assert_contains "$OUT" 'source=grok' 'an unparseable jev answer falls back to grok'
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'an unparseable jev answer stays unknown'
   assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
-  assert_equals $((g + 1)) "$(count grok)" 'one grok call for the fallback'
-  pass 'model judge: jev by default, grok fallback, floors, failures, and the key kept out of argv'
+  assert_equals "$g" "$(count grok)" 'an unparseable jev answer never calls grok automatically'
+  pass 'model judge: jev by default, explicit grok, floors, failures, and the key kept out of argv'
+}
+
+test_jev_unavailable_takes_no_action() {
+  reset_lab
+  make_worker ju1 stalled.screen
+  sw check ju1; sw check ju1; sw check ju1
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'missing Jev leaves an unchanged screen unknown'
+  assert_contains "$OUT" 'action=none' 'unknown Jev result takes no action on repeated checks'
+  assert_equals 0 "$(count grok)" 'the default check never calls Grok'
+  assert_equals 0 "$(count send)" 'the default check does not nudge'
+  assert_equals 0 "$(count failover)" 'the default check does not fail over'
+  assert_absent "$LAB/state/.wake-queue"
+  pass 'unavailable Jev: repeated ambiguity remains unknown without action'
+}
+
+test_captain_api_error_without_open_work() {
+  reset_lab
+  cp "$FIX/api-error.screen" "$LAB/screens/captain.screen"
+  jev_says api_error 0.9
+  sw check captain; TYPESAFE_API_KEY=k sw check captain
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev' 'a terminal API error reaches Jev without overdue work'
+  assert_contains "$OUT" 'action=failover-switched' 'the captain API error reaches recovery'
+  assert_equals 'captain --reason api_error ' "$(cat "$LOGS/failover.argv.1")" 'recovery receives the API error class'
+  pass 'captain: a terminal API error reaches recovery without open work'
+}
+
+test_fingerprint_preserves_error_status() {
+  reset_lab
+  make_worker fp1 api-error.screen
+  sw check fp1
+  TYPESAFE_API_KEY=k jev_says api_error 0.9
+  TYPESAFE_API_KEY=k sw check fp1
+  assert_contains "$OUT" 'action=failover-switched' 'the first error is handled'
+  sed 's/API Error: 500/API Error: 429/' "$FIX/api-error.screen" > "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_contains "$OUT" 'verdict=progress' 'a changed HTTP status changes the fingerprint'
+  printf 'Elapsed 4m 02s · 3.1k tokens\n' >> "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_contains "$OUT" 'verdict=progress' 'a newly shown counter changes the screen'
+  sed 's/Elapsed 4m 02s · 3.1k tokens/Elapsed 5m 03s · 4.2k tokens/' "$LAB/screens/fp1.screen" > "$TMP_ROOT/next.screen"
+  cp "$TMP_ROOT/next.screen" "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_not_contains "$OUT" 'verdict=progress' 'timer and token changes alone keep the fingerprint'
+  pass 'fingerprint: error status changes count as progress, timer counters do not'
 }
 
 test_classifier_never_sees_secrets() {
@@ -342,6 +389,7 @@ test_classifier_never_sees_secrets() {
 
 test_unchanged_screen_guard() {
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker w1 stalled.screen
   grok_says idle_done 0.95
   sw check w1
@@ -375,6 +423,7 @@ test_unchanged_screen_guard() {
 
 test_actions() {
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker w2 api-error.screen
   grok_says api_error 0.9
   sw check w2; sw check w2
@@ -446,6 +495,7 @@ test_actions() {
 test_captain_actions() {
   local now
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker w1 working.screen
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   sw check captain; sw check captain
@@ -507,6 +557,7 @@ SH
 # ever receives its redacted copy.
 test_declared_status_reads_the_raw_verb() {
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker d1 stalled.screen
   printf 'needs-decision: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d1.status"
   sw check d1
@@ -529,6 +580,7 @@ test_declared_status_reads_the_raw_verb() {
 # change alone, such as the nudge doorbell, keeps it, so idle again fails over.
 test_nudge_ends_with_work() {
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker n3 stalled.screen
   grok_says idle_with_goals 0.9
   sw check n3; sw check n3
@@ -555,6 +607,7 @@ test_nudge_ends_with_work() {
 test_refusal_after_ordinary_stop_is_judged() {
   local gen
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker r1 rate-limited.screen
   gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r1) || fail 'fixture: arm'
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
@@ -673,6 +726,7 @@ test_watcher_starts_tick_and_delivers_reports() {
 test_decided_scenarios() {
   local id r rc
   reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
   make_worker a1 stalled.screen
   grok_says auth 0.9
   sw check a1; sw check a1
@@ -761,6 +815,9 @@ fm_test_run \
   test_rendered_activity_is_not_a_rule \
   test_decided_scenarios \
   test_model_judge_maps_answers \
+  test_jev_unavailable_takes_no_action \
+  test_captain_api_error_without_open_work \
+  test_fingerprint_preserves_error_status \
   test_classifier_never_sees_secrets \
   test_unchanged_screen_guard \
   test_actions \

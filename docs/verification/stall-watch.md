@@ -6,9 +6,11 @@ This record supports the opt-in `bin/fm-stall-watch.sh` contract owned by [`../c
 It records only facts that must be re-established when a classifier, its CLI, or the recorded screen shapes change.
 The Jev API facts the stall watch relies on (the `POST /v1/systemone` Choice shape, error shapes, and observed latency) are recorded in [the typed dispatch resolution record](dispatch-resolve.md#the-api-the-tool-depends-on).
 
-## Live Grok fallback run
+## Historical live Grok fallback run
 
 Run 2026-11-21 on macOS (Darwin 25.5.0) with `grok 1.0.92 (b06756fd6256) [stable]`, no TypeSafe key, `classifier=jev` (the default), and `grok_model=grok-4.7-build-fast`.
+This run predates the removal of automatic Grok fallback and its reported cost motivated that removal.
+Current `classifier=jev` leaves ambiguous screens `unsure` without an action when Jev is unavailable; Grok can be selected only with explicit `classifier=grok`.
 Each recorded screen in `tests/fixtures/stall-watch/` was judged from the repository root with this command, adding `--status '<line>'` where the table names one:
 
 ```sh
@@ -64,4 +66,4 @@ It read the screen through the Orca backend, took `working` from the task's busy
 
 - The Jev path has no live run on record yet; re-run the table above with `TYPESAFE_API_KEY` set to measure it.
 - Six recorded screens are a smoke test of the classifier path, not a calibration of `confidence_floor`.
-- A Grok call takes 10 to 19 s, so `timeout` should stay well above 20 s.
+- The historical Grok call took 10 to 19 s and cost about $0.06 per ambiguous screen; these measurements apply only to explicit Grok use now.

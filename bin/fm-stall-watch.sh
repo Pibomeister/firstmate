@@ -14,7 +14,7 @@
 # docs/configuration.md "Stall watch" owns the operator contract: the opt-in
 #   and its keys (interval, classifier, grok_model, jev_model, lines,
 #   confidence_floor, timeout), what counts as an unchanged screen, the
-#   deterministic pass, the classifiers and their fallback, the reasons, what
+#   deterministic pass, the classifiers and unavailable verdicts, the reasons, what
 #   leaves the machine, and the actions. This header owns the mechanics.
 #
 #   screen    Prints the last <n> rows (config lines, default 60) of the
@@ -397,7 +397,7 @@ sw_judge() {
     usage-limit) V_REASON=usage_limit V_STALLED=yes V_SOURCE=rule; return 0 ;;
     ?*) V_REASON=waiting_on_human V_STALLED=yes V_SOURCE=rule; return 0 ;;
   esac
-  if [ "$open" = no ]; then
+  if [ "$open" = no ] && ! printf '%s\n' "$screen" | tail -n 12 | LC_ALL=C grep -Eiq 'API Error: (5[0-9][0-9]|429)|HTTP (5[0-9][0-9]|429)|provider (error|refused)'; then
     V_REASON=idle_done V_STALLED=no V_SOURCE=supervision
     return 0
   fi
@@ -407,14 +407,12 @@ sw_judge() {
       if sw_jev "$screen" "$kind" "$open" "$status"; then
         V_SOURCE=jev
       else
-        log "jev call failed (${M_NOTE:-no answer}); using the deterministic result plus grok"
+        log "jev unavailable (${M_NOTE:-no answer})"
         V_NOTE="jev:${M_NOTE:-failed}"
-        choice=grok
       fi
     else
-      log "jev unavailable ($JEV_WHY); using the deterministic result plus grok"
+      log "jev unavailable ($JEV_WHY)"
       V_NOTE='jev:no-key'
-      choice=grok
     fi
   fi
   if [ "$choice" = grok ]; then
@@ -500,7 +498,7 @@ sw_work_sig() {  # <target> -> "<worktree-head> <status-size>", nothing for the 
 }
 
 sw_fingerprint() {  # <redacted-screen> <work-sig>
-  printf '%s\n--\n%s\n' "$(printf '%s' "$1" | tr -d '0-9')" "$2" | sw_hash
+  printf '%s\n--\n%s\n' "$(printf '%s' "$1" | perl -pe 's/\b\d{1,2}:\d{2}(?::\d{2})?\b/<timer>/g; s/\b\d+(?:\.\d+)?[smhd]\b/<timer>/g; s/\b\d+(?:\.\d+)?[kKmM]?\s+tokens\b/<counter> tokens/gi; s/\b\d+%\s+context left\b/<counter>% context left/gi')" "$2" | sw_hash
 }
 
 # ---- reports and actions -----------------------------------------------------
@@ -699,7 +697,9 @@ cmd_check() {  # <target> <dry-run>
       S_NUDGED='' S_NUDGE_WORK='' S_UNSURE=''
       ;;
     unsure)
-      if [ "$S_UNSURE" = "$fp" ]; then
+      if [[ "$V_NOTE" == jev:* ]]; then
+        action=none S_UNSURE=''
+      elif [ "$S_UNSURE" = "$fp" ]; then
         sw_escalate "$target" "$now" "may be stalled and the classifier could not tell twice"
         action=escalated S_ACTED=$fp
       else

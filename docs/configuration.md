@@ -648,7 +648,7 @@ It is off until the optional local `config/stall-watch` exists.
 While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
 Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain when this home records a session endpoint and each local ship or scout.
 A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
-A screen counts as unchanged only when its redacted rows with digits removed, the task's worktree HEAD, and its status file are all the same, so a new commit or status line is progress.
+A screen counts as unchanged only when its redacted rows with timer and counter text normalized, the task's worktree HEAD, and its status file are all the same, so a new commit, status line, or HTTP error code is progress.
 
 The file holds `key=value` lines; blank lines and lines that start with `#` are ignored, and every key is optional.
 
@@ -657,7 +657,7 @@ The file holds `key=value` lines; blank lines and lines that start with `#` are 
 | `interval` | `1200` | Seconds between checks, at least 60. |
 | `classifier` | `jev` | `jev`, `grok`, or `none`. |
 | `jev_model` | `jev-latest` | The TypeSafe model `jev` asks. |
-| `grok_model` | `grok-4.7-build-fast` | The Grok model `grok` asks, and `jev` falls back to. |
+| `grok_model` | `grok-4.7-build-fast` | The Grok model an explicit `classifier=grok` asks. |
 | `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
 | `confidence_floor` | `0.6` | A model answer below it is `unsure`. |
 | `timeout` | `90` | Seconds allowed for one model call, at least 5. |
@@ -680,22 +680,23 @@ On an unchanged screen these rules decide without a model, in order:
   After a turn the Claude hook recorded as an ordinary stop, the watcher does not act on such a row, so the classifier judges that screen instead.
   Because the hook reports every refusal as a stop failure, a refusal answer for that screen counts as `idle_with_goals`.
 - A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
-- A captain with no open work is `idle_done`.
+- A captain with no open work is `idle_done` unless its screen shows a terminal provider or API error.
   The captain has open work only when `bin/fm-dispatch-log.sh overdue` lists an overdue goal or a wake has waited in the queue for longer than one interval; otherwise a captain idle at its prompt is waiting on its watcher, which is healthy.
 
 Only the remaining screens reach the classifier.
 A rendered activity row such as a spinner, `esc to interrupt`, or a retry countdown is never decided by rule, because a busy footer left in scrollback would hide a stall; the classifier reads it instead.
-A timer that only counts up is digits, so such a screen still counts as unchanged and is judged once per interval.
+A timer or token counter that only counts up keeps the same fingerprint, while a changed HTTP status gets a new one.
 
 **Classifier**
 
 The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`), so `classifier=jev` is the default.
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
 It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is honored and validated the same way, and the key reaches `curl` only through a file descriptor, never its arguments.
-With no key, or when the call fails, the check logs one line saying so and asks the Grok fast tier through the installed `grok` CLI instead.
-`grok` asks Grok only, with web search, tools, memory, and subagents off and a JSON schema that admits only the ten reasons.
+With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
+This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
+An explicit `classifier=grok` asks Grok only, with web search, tools, memory, and subagents off and a JSON schema that admits only the ten reasons.
 `none` asks no model.
-An answer below `confidence_floor`, or no usable answer, is `unsure`, which counts as possibly stalled: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
+An answer below `confidence_floor`, or no usable answer from an explicitly selected Grok classifier, is `unsure`, which counts as possibly stalled: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
 
 The reasons are `working` and `idle_done`, which are not stalled, and `rate_limit`, `usage_limit`, `billing`, `api_error`, `auth`, `crashed`, `idle_with_goals`, and `waiting_on_human`, which are stalled.
 
@@ -715,7 +716,7 @@ Each unchanged screen is acted on once:
 - `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.
   When the next unchanged check within three intervals still finds a worker idle, it runs `bin/fm-failover.sh` with `--reason stalled`; a captain gets one notification instead and is never failed over as stalled.
   A new commit or status line after the nudge ends it, so the next idle spell starts with a nudge again.
-- `waiting_on_human`, `auth`, `crashed`, a nudge that could not be delivered, and a screen judged `unsure` on two checks in a row each wake firstmate with one `check: <target> ...` notification; a captain waiting on its owner is recorded only.
+- `waiting_on_human`, `auth`, `crashed`, a nudge that could not be delivered, and a screen judged `unsure` on two checks in a row each wake firstmate with one `check: <target> ...` notification; a captain waiting on its owner and an unknown result from unavailable Jev are recorded only.
 - `working`, `idle_done`, and a rule-recognized refusal do nothing.
 
 A failover that switched, found no eligible runtime, reached its attempt bound, or failed also wakes firstmate with one notification, and a failover lock held by another call is retried on the next check.
