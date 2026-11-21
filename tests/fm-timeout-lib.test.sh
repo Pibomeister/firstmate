@@ -142,6 +142,30 @@ test_system_bash_preserves_completion_and_signal_statuses() {
   pass "system Bash top-level and subshell calls preserve success, failure, and signal status"
 }
 
+# Stock macOS Bash 3.2 execs `command <program>` without a fork inside an
+# asynchronous function, so the bash mechanism's background child must not run
+# the function directly: the program would replace it, skip the rest of the
+# function, and report its own status instead of the function's.
+test_system_bash_timed_function_survives_command_builtin() {
+  local dir="$TMP_ROOT/command-builtin" out rc=0
+  mkdir -p "$dir/bin"
+  printf '#!/bin/sh\necho fake-ran\nexit 0\n' > "$dir/bin/fm-fake-program"
+  chmod +x "$dir/bin/fm-fake-program"
+  out=$(PATH="$dir/bin:$PATH" /bin/bash -c '
+    . "$1/bin/fm-timeout-lib.sh"
+    timed_fn() {
+      command fm-fake-program >"$2/fake.out"
+      echo after
+      return 5
+    }
+    fm_run_timed_fn 5 timed_fn "$@"
+  ' _ "$ROOT" "$dir" 2>&1) || rc=$?
+  [ "$(cat "$dir/fake.out" 2>/dev/null)" = fake-ran ] || fail "the timed function did not run its program"
+  [ "$out" = after ] || fail "system Bash lost the timed function's work after command <program> (out=$out)"
+  [ "$rc" -eq 5 ] || fail "system Bash returned the program's status, not the timed function's (rc=$rc)"
+  pass "system Bash runs a timed function past command <program> and returns its own status"
+}
+
 # A command that honors TERM ends at the bound, long before the grace would
 # have forced it, and is gone afterwards.
 test_term_ends_a_cooperative_command_at_the_bound() {
@@ -1016,6 +1040,7 @@ test_run_timed_perl_preserves_completion_and_caller_traps
 test_run_timed_preserves_piped_stdin
 test_passes_the_command_status_and_output_through
 test_system_bash_preserves_completion_and_signal_statuses
+test_system_bash_timed_function_survives_command_builtin
 test_run_timed_reports_the_bound_when_the_wrapper_records_a_signal_death
 test_run_timed_passes_a_natural_exit_through_a_fired_bound
 test_run_timed_keeps_stdout_and_nonzero_status_when_a_function_shadows_timeout
