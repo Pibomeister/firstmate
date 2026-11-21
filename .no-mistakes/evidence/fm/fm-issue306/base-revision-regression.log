@@ -1,0 +1,5 @@
+1..1
+not ok - an awaiting_approval step is a council decision even when the record names the merge it unblocks: council=held answer=none record=none prior=0 seats=none (missing: 'council=ruled answer=PROCEED A')
+--- output ---
+council=held answer=none record=none prior=0 seats=none
+exit=1

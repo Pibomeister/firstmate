@@ -1,0 +1,10 @@
+1..7
+ok - council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held
+ok - council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean
+ok - council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling
+ok - council: a failed or refused revisit leaves the prior ruling final, so no later pass re-rolls it
+ok - decisions: the nudge names work by PR number from the record, not by a goal alias alone
+ok - council: one convening of a decision at a time; a dead owner's lock is cleared
+ok - council command: a home whose decision path is a dry run gets no council
+FM_TEST_COMPLETE
+exit=0

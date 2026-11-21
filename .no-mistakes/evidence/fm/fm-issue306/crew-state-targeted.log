@@ -1,0 +1,5 @@
+ok - captured AXI replacement status replays through crew-state
+ok - captured AXI parked status replays through crew-state
+ok - captured AXI failed status replays through crew-state
+ok - a parked gate survives a dead daemon with its findings intact
+exit=0
