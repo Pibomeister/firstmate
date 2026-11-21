@@ -2376,14 +2376,16 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   else
     judged="$STATE/$task.failover-judged"
     [ "$(cat "$judged" 2>/dev/null || true)" != "$h" ] || return 1
-    printf '%s' "$h" > "$judged" 2>/dev/null || true
-    ! fm_failover_turn_end_known "$STATE" "$task" || return 1
-    class=$(fm_wd_provider_error_screen "$screen") || return 1
     src=screen
   fi
   [ -z "$(fm_meta_get "$STATE/$task.meta" remote_host 2>/dev/null || true)" ] || return 1
   if status_is_captain_held "$(status_declared_wait_line "$STATE/$task.status")" || task_captain_call_open "$task"; then
     return 1
+  fi
+  if [ "$src" = screen ]; then
+    printf '%s' "$h" > "$judged" 2>/dev/null || true
+    ! fm_failover_turn_end_known "$STATE" "$task" || return 1
+    class=$(fm_wd_provider_error_screen "$screen") || return 1
   fi
   printf '%s' "$h" > "$seen" 2>/dev/null || return 1
   # shellcheck source=bin/fm-timeout-lib.sh

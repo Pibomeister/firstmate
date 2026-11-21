@@ -670,7 +670,7 @@ watch_once() {  # <dir> [env assignments...]: run the watcher until it exits, at
 }
 
 test_watcher_moves_an_idle_refused_ship_in_one_poll() {
-  local dir key
+  local dir key before
   rm -f "$QUOTA"/*
   quota_fixture codex 80 60 > "$QUOTA/codex.json"
   dir=$(watch_case watch-429 $'⏺ API Error: Request rejected (429) · This request would exceed your account\'s rate limit.\n\n❯ Resend your message to try again\n  ⏵⏵ auto mode on')
@@ -696,6 +696,33 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   watch_once "$dir"
   assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
     'adjacent usage-limit and reset lines move the ship on its first idle poll'
+
+  dir=$(watch_case watch-held $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
+  before=$(cat "$dir/pane.txt")
+  printf 'captain-held: awaiting decision\n' >> "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  [ ! -e "$dir/state/fo.failover-judged" ] || fail 'a captain-held screen was marked judged'
+  [ ! -e "$dir/control.calls" ] || fail 'a captain-held worker was relaunched'
+  assert_equals "$before" "$(cat "$dir/pane.txt")" 'the held screen stays unchanged'
+  printf 'working: decision released\n' >> "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a rate_limit refusal' \
+    'the unchanged screen is retried after the captain hold clears'
+
+  dir=$(watch_case watch-remote $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
+  before=$(cat "$dir/pane.txt")
+  printf 'remote_host=hz1\n' >> "$dir/state/fo.meta"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  [ ! -e "$dir/state/fo.failover-judged" ] || fail 'a remote screen was marked judged'
+  [ ! -e "$dir/control.calls" ] || fail 'a remote worker was relaunched locally'
+  assert_equals "$before" "$(cat "$dir/pane.txt")" 'the remote screen stays unchanged'
+  grep -v '^remote_host=' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+  mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a rate_limit refusal' \
+    'the unchanged screen is retried after local eligibility returns'
 
   dir=$(watch_case watch-prose $'I fixed the API error path that returned 429 for rate limits.\n\n❯ \n  ⏵⏵ auto mode on')
   watch_once "$dir"
