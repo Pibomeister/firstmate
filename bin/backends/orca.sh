@@ -496,6 +496,32 @@ process.exit((r.terminal || r).draft ? 0 : 1);
 '
 }
 
+# One uncached terminal read, as two base64 lines (tail, then draft) and a
+# trailing ".". Tail selection matches fm_backend_orca_json_text. A missing
+# draft is empty; any other non-string draft fails the read.
+fm_backend_orca_composer_snapshot() {  # <terminal-id>
+  local out
+  fm_backend_orca_tool_check || return 1
+  out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 1
+  printf '%s' "$out" | node -e '
+const fs = require("fs");
+let data;
+try { data = JSON.parse(fs.readFileSync(0, "utf8")); }
+catch (err) { process.exit(1); }
+if (!data || data.ok === false) process.exit(1);
+const r = data.result || {};
+let tail = "";
+if (r.terminal && Array.isArray(r.terminal.tail)) tail = r.terminal.tail.join("\n");
+else if (Array.isArray(r.tail)) tail = r.tail.join("\n");
+else tail = r.text || r.output || r.content || r.preview || "";
+let draft = (r.terminal || r).draft;
+if (draft == null) draft = "";
+else if (typeof draft !== "string") process.exit(1);
+function enc(s) { return Buffer.from(s, "utf8").toString("base64"); }
+process.stdout.write(enc(tail) + "\n" + enc(draft) + "\n.\n");
+'
+}
+
 # fm_backend_orca_turn_running: Orca's own verdict that the agent in <terminal>
 # is mid-turn. Claude frames during a live turn can render no spinner row, so
 # the rendered busy signature alone misses them. Only Orca's timeout answer
