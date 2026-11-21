@@ -141,15 +141,34 @@ P_URLPASS="FAKEexamplePass"
 P_SLACK="xo""xb-FAKE-example"
 P_KEYKIND="OPENSSH PRI""VATE KEY"
 P_KEYBODY="b3BlbnNzaC1rZXktdjEAAAAA""FAKEexampleKEYbody"
-PLANTED="$P_GH $P_OPENAI $P_AWS $P_PASS $P_BEARER $P_URLPASS $P_SLACK $P_KEYBODY /Users/alice /home/bob"
+P_XAI="xa""i-FAKEexample0123456789abcdef"
+P_GLPAT="glp""at-FAKEexample0123456789ab"
+P_NPM="np""m_FAKEexample0123456789abcdefghij"
+P_HF="h""f_FAKEexample0123456789abcd"
+P_GOOGLE="AI""zaFAKEexample0123456789abcdefghijk"
+P_STRIPE="sk""_live_FAKEexample0123456789"
+P_JWT="ey""JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJGQUtFIn0.FAKEsignature0123"
+P_CLIKEY="FAKEcliKeyValue0123"
+P_CLIQ="FAKEcliQuoted"
+P_CLITOK="FAKEcliTokenValue0123"
+P_B64="QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejAxMjM0NTY3ODk"
+P_KEYTAIL="FAKEorphanKeyTail0123"
+P_SPACEDIR="Zanzibar"
+PLANTED="$P_GH $P_OPENAI $P_AWS $P_PASS $P_BEARER $P_URLPASS $P_SLACK $P_KEYBODY /Users/alice /home/bob
+  $P_XAI $P_GLPAT $P_NPM $P_HF $P_GOOGLE $P_STRIPE $P_JWT $P_CLIKEY $P_CLIQ $P_CLITOK $P_B64 $P_KEYTAIL $P_SPACEDIR"
 
-secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the planted values
+secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the planted values, then more
   sed -e "s|{{GH}}|$P_GH|" -e "s|{{OPENAI}}|$P_OPENAI|" -e "s|{{AWS}}|$P_AWS|" \
     -e "s|{{PASS}}|$P_PASS|" -e "s|{{BEARER}}|$P_BEARER|" -e "s|{{URLPASS}}|$P_URLPASS|" \
     -e "s|{{SLACK}}|$P_SLACK|" -e "s|{{KEYKIND}}|$P_KEYKIND|" -e "s|{{KEYBODY}}|$P_KEYBODY|" \
     "$FIX/secrets.screen"
+  printf '  echo %s\n  git push with %s\n  %s\n' "$P_XAI" "$P_GLPAT" "$P_NPM"
+  printf '  hub %s and %s\n  stripe %s\n  cookie %s\n' "$P_HF" "$P_GOOGLE" "$P_STRIPE" "$P_JWT"
+  printf '  %s\n  open "/Users/alice/My %s Plans/plan.md"\n' "$P_B64" "$P_SPACEDIR"
+  printf '  mytool --api-key %s --password "%s pass" --token=%s\n' "$P_CLIKEY" "$P_CLIQ" "$P_CLITOK"
+  # A key block whose BEGIN row has scrolled off the top.
+  printf '  %s\n  %s\n  -----END %s-----\n' "$P_B64" "$P_KEYTAIL" "$P_KEYKIND"
 }
-
 assert_no_planted() {  # <text> <where>
   local s
   for s in $PLANTED "$HOME"; do
@@ -169,7 +188,10 @@ test_screen_redacts_secrets_and_paths() {
   assert_contains "$OUT" 'Edited <path> and <path>' 'absolute user paths become <path>'
   assert_contains "$OUT" 'wrote <path>' 'the home directory becomes <path>'
   assert_contains "$OUT" 'echo <redacted> done' 'a bare provider key is replaced in place'
-  assert_contains "$OUT" 'row(s) withheld: credential-like text' 'a row still credential-like is withheld and counted'
+  assert_contains "$OUT" '<redacted key material>' 'a long base64 row is replaced whole'
+  assert_contains "$OUT" 'open "<path>"' 'a quoted user path with spaces is replaced whole'
+  assert_contains "$OUT" '--api-key <redacted> --password <redacted> --token=<redacted>' 'secret option values are replaced'
+  assert_equals 2 "$(printf '%s\n' "$OUT" | grep -c '<redacted private key>')" 'a key block, and one whose BEGIN row scrolled away, each collapse to one marker'  assert_contains "$OUT" 'row(s) withheld: credential-like text' 'a row still credential-like is withheld and counted'
   sw screen captain --lines 3
   [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -le 3 ] || fail "--lines 3 printed more than 3 rows: $OUT"
   sw screen ghost
@@ -217,6 +239,7 @@ test_rendered_activity_is_not_a_rule() {
 }
 
 test_model_judge_maps_answers() {
+  local g
   reset_lab
   grok_says idle_with_goals 0.92
   sw_in "$FIX/stalled.screen" classify --classifier grok
@@ -265,6 +288,18 @@ test_model_judge_maps_answers() {
   TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
   assert_contains "$OUT" 'jev:jev-base-invalid' 'an invalid base is refused without a call'
   assert_equals 2 "$(count curl)" 'nothing was posted to an invalid base'
+  rm -f "$LAB/.env"
+  g=$(count grok)
+  jev_says idle_done 0.3
+  TYPESAFE_API_KEY=k sw_in "$FIX/idle-done.screen" classify
+  assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=jev' 'a jev answer below the floor is unsure'
+  assert_contains "$OUT" 'below-floor' 'the floor is named for jev'
+  assert_equals "$g" "$(count grok)" 'a usable jev answer below the floor never asks grok'
+  printf '{"answers":{"verdict":{"choice":"sleeping","confidence":0.9}}}\n' > "$FM_TEST_CURL_REPLY"
+  TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'source=grok' 'an unparseable jev answer falls back to grok'
+  assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
+  assert_equals $((g + 1)) "$(count grok)" 'one grok call for the fallback'
   pass 'model judge: jev by default, grok fallback, floors, failures, and the key kept out of argv'
 }
 
@@ -387,20 +422,31 @@ test_actions() {
 }
 
 test_captain_actions() {
+  local now
   reset_lab
   make_worker w1 working.screen
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain idle with workers running and nothing owed is waiting on its watcher'
+  assert_equals 0 "$(count grok)" 'a healthy idle captain never reaches the model'
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received g1 --summary 'a goal' >/dev/null || fail 'fixture: received'
   cp "$FIX/api-error.screen" "$LAB/screens/captain.screen"
   grok_says usage_limit 0.9
   sw check captain; sw check captain
-  case "$OUT" in *verdict=idle_done*) fail "fixture: the captain needs open work: $OUT" ;; esac
-  assert_contains "$OUT" 'action=failover-switched' 'a model-judged captain refusal fails over'
+  assert_contains "$OUT" 'action=failover-switched' 'a model-judged refusal of a captain with an overdue goal fails over'
   assert_equals 'captain --reason usage_limit ' "$(cat "$LOGS/failover.argv.1")" 'fm-failover.sh captain with the class'
   assert_equals 1 "$(cat "$LOGS/failover.captain-env.1")" 'the watcher authorization is requested'
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   grok_says idle_with_goals 0.9
   sw check captain; sw check captain
-  assert_contains "$OUT" 'action=nudged' 'an idle captain with open work is nudged'
+  assert_contains "$OUT" 'action=nudged' 'an idle captain with work owed is nudged'
   assert_contains "$(cat "$LOGS/captain-send")" 'Stall check:' 'the captain typer received the nudge'
+  sw check captain
+  assert_contains "$OUT" 'action=escalated' 'a captain still idle after the nudge is escalated'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'captain is still idle with work waiting after a nudge' 'the escalation wake'
+  assert_equals 1 "$(count failover)" 'an idle captain is never failed over as stalled'
+  sw check captain
+  assert_contains "$OUT" 'already-handled' 'one escalation per screen'
   cp "$FIX/waiting-on-human.screen" "$LAB/screens/captain.screen"
   grok_says waiting_on_human 0.9
   sw check captain; sw check captain
@@ -420,16 +466,89 @@ SH
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
   assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a natively busy captain is working without a model'
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=idle sw check captain
-  assert_contains "$OUT" 'source=grok' 'a natively idle captain reaches the classifier'
-  rm -f "$LAB/state/.lock-session"
-  rm -f "$LAB/state/w1.meta" "$LAB/state/w1.status"
+  assert_contains "$OUT" 'source=grok' 'a natively idle captain with work owed reaches the classifier'
+  rm -f "$LAB/state/.lock-session" "$LAB/state/dispatch-log.tsv"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   printf '\n• Finished.\n' >> "$LAB/screens/captain.screen"
   sw check captain; sw check captain
-  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain with no open work is idle_done'
-  assert_contains "$OUT" 'action=none' 'an idle captain with no open work is left alone'
-  pass 'captain: native busy is working, failover with watcher authorization, composer nudge, owner waits recorded'
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'wakes queued within the interval are not work owed'
+  assert_contains "$OUT" 'action=none' 'an idle captain with nothing owed is left alone'
+  now=$(date +%s)
+  printf '%s\t%s\tcheck\told-key\tan old wake\n' "$((now - 5000))" 999 >> "$LAB/state/.wake-queue"
+  sw check captain
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'a wake left in the queue past one interval is work owed'
+  assert_contains "$OUT" 'action=nudged' 'and the idle captain is nudged'
+  pass 'captain: idle and owing nothing is healthy; owed work comes from overdue goals or old wakes; nudge then one escalation, never a stalled failover'
 }
+
+# A declared verb is read from the raw status line, while the classifier only
+# ever receives its redacted copy.
+test_declared_status_reads_the_raw_verb() {
+  reset_lab
+  make_worker d1 stalled.screen
+  printf 'needs-decision: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d1.status"
+  sw check d1
+  assert_contains "$OUT" 'verdict=declared stalled=no source=status' 'a credential-like decision line is still declared'
+  assert_contains "$OUT" 'status=needs-decision' 'its verb survives redaction'
+  make_worker d2 stalled.screen
+  printf 'done: fixed the Authorization: header handling [at=3]\n  The follow-up is in the PR body.\n' >> "$LAB/state/d2.status"
+  sw check d2
+  assert_contains "$OUT" 'status=done' 'a withheld done line with continuation prose is still declared'
+  make_worker d3 stalled.screen
+  printf 'working: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d3.status"
+  grok_says idle_with_goals 0.9
+  sw check d3; sw check d3
+  assert_contains "$OUT" 'source=grok' 'an undeclared worker is judged'
+  assert_not_contains "$(cat "$LOGS/grok.prompt.1")" "$P_PASS" 'the classifier never receives the raw status line'
+  pass 'declared status: the verb comes from the raw line; the classifier gets the redacted copy'
+}
+
+# A nudge ends only with real work: a new commit or status line. A screen
+# change alone, such as the nudge doorbell, keeps it, so idle again fails over.
+test_nudge_ends_with_work() {
+  reset_lab
+  make_worker n3 stalled.screen
+  grok_says idle_with_goals 0.9
+  sw check n3; sw check n3
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  printf 'x\n' > "$TMP_ROOT/wt-n3/work.txt"
+  git -C "$TMP_ROOT/wt-n3" add work.txt >/dev/null 2>&1
+  git -C "$TMP_ROOT/wt-n3" -c user.name=t -c user.email=t@example.com commit -qm work >/dev/null 2>&1 || fail 'fixture: commit'
+  sw check n3
+  assert_contains "$OUT" 'verdict=progress' 'a commit is progress'
+  assert_contains "$OUT" 'worked-after-nudge' 'and it ends the nudge'
+  sw check n3
+  assert_contains "$OUT" 'action=nudged' 'the next idle spell starts with a nudge again'
+  assert_equals 0 "$(count failover)" 'work after a nudge never leads to a stalled failover'
+  printf '\n• doorbell\n' >> "$LAB/screens/n3.screen"
+  sw check n3
+  assert_contains "$OUT" 'nudged-at=' 'a screen change alone keeps the nudge'
+  sw check n3
+  assert_contains "$OUT" 'action=failover-switched' 'still idle after that fails over'
+  pass 'nudge: a commit or status line ends it; a screen change alone does not'
+}
+
+# The watcher's failover skips a refusal row after an ordinary Claude stop, so
+# the stall check judges that screen instead of leaving it to the watcher.
+test_refusal_after_ordinary_stop_is_judged() {
+  local gen
+  reset_lab
+  make_worker r1 rate-limited.screen
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r1) || fail 'fixture: arm'
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
+  grok_says rate_limit 0.9
+  sw check r1; sw check r1
+  assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=grok' 'the refusal row is judged by the classifier'
+  assert_contains "$OUT" 'action=failover-switched' 'and the stall check fails over itself'
+  make_worker r2 rate-limited.screen
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r2) || fail 'fixture: arm'
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r2 idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null || fail 'fixture: stop-failure'
+  sw check r2; sw check r2
+  assert_contains "$OUT" 'action=watcher-owned' 'after a stop-failure the row stays the watcher'"'"'s'
+  assert_equals 1 "$(count grok)" 'only the ordinary stop reached the classifier'
+  pass 'refusal rows: left to the watcher unless the Claude hook recorded an ordinary stop'
+}
+config_reports() { grep -l 'the stall check is not running' "$LAB/state/stall-watch"/.report.* 2>/dev/null | wc -l | tr -d ' '; }
 
 test_tick_schedule() {
   reset_lab
@@ -460,8 +579,27 @@ test_tick_schedule() {
   printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
   sw tick
   expect_code 2 "$RC" 'an unknown classifier is a configuration error'
-  pass 'tick: opt-in, interval, force, single-flight, and config validation'
+  assert_equals 1 "$(config_reports)" 'a tick reports the invalid file'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'the stall check is not running because config/stall-watch classifier must be' 'the report names the error'
+  sw tick
+  expect_code 2 "$RC" 'the same invalid file is still an error'
+  assert_equals 1 "$(config_reports)" 'the same file content is reported once'
+  printf 'classifier=gpt\ninterval=600\n' > "$LAB/config/stall-watch"
+  sw check t1
+  expect_code 2 "$RC" 'check refuses the invalid file too'
+  assert_equals 1 "$(config_reports)" 'only a tick reports'
+  sw tick
+  assert_equals 2 "$(config_reports)" 'a changed invalid file is reported again'
+  printf 'interval=600\nclassifier=none\n' > "$LAB/config/stall-watch"
+  FM_STALL_WATCH_NOW=300000 sw tick
+  expect_code 0 "$RC" "a fixed file ticks again: $ERR"
+  printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
+  sw tick
+  assert_equals 3 "$(config_reports)" 'a valid tick clears the memory, so the old error is reported again'
+  pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
 }
+
+launch_age() { perl -e 'print time - (stat $ARGV[0])[9]' "$1/state/stall-watch/.last-launch"; }
 
 test_watcher_starts_tick_and_delivers_reports() {
   local dir pid i
@@ -481,6 +619,19 @@ test_watcher_starts_tick_and_delivers_reports() {
   while [ "$i" -lt 100 ] && [ ! -s "$dir/state/stall-watch.tsv" ]; do sleep 0.1; i=$((i + 1)); done
   assert_present "$dir/state/stall-watch.tsv"
   assert_contains "$(cat "$dir/state/stall-watch.tsv")" $'fo\tprogress\tno\tfingerprint' 'the watcher-started tick read the real pane through the backend'
+  # A launch touches .last-launch first, so its age shows whether one happened.
+  perl -e 'my $t = time - 30; utime $t, $t, $ARGV[0]' "$dir/state/stall-watch/.last-launch"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch1.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
+    wait "$!" 2>/dev/null || true )
+  [ "$(launch_age "$dir")" -ge 25 ] || fail 'a launch within the last minute must not launch again'
+  perl -e 'my $t = time - 120; utime $t, $t, $ARGV[0]' "$dir/state/stall-watch/.last-launch"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch1.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
+    wait "$!" 2>/dev/null || true )
+  [ "$(launch_age "$dir")" -lt 25 ] || fail 'a launch older than a minute must launch again'
   printf 'check: fo looks stalled (test report)\n' > "$dir/state/stall-watch/.report.1.1"
   ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
     FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
@@ -489,7 +640,7 @@ test_watcher_starts_tick_and_delivers_reports() {
     wait_for_exit "$pid" 300 >/dev/null 2>&1 || true )
   assert_contains "$(cat "$dir/watch2.out")" 'check: fo looks stalled (test report)' 'the watcher wakes with the tick report'
   assert_absent "$dir/state/stall-watch/.report.1.1"
-  pass 'watcher: starts the tick detached while opted in and delivers each report once'
+  pass 'watcher: starts the tick detached at most once a minute while opted in and delivers each report once'
 }
 
 # One case per remaining decision of cmd_check: escalations by class, model
@@ -590,5 +741,8 @@ fm_test_run \
   test_unchanged_screen_guard \
   test_actions \
   test_captain_actions \
+  test_declared_status_reads_the_raw_verb \
+  test_nudge_ends_with_work \
+  test_refusal_after_ordinary_stop_is_judged \
   test_tick_schedule \
   test_watcher_starts_tick_and_delivers_reports

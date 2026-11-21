@@ -3674,14 +3674,15 @@ disk_retry_tick() {
 }
 
 # Opt-in stall check (bin/fm-stall-watch.sh; docs/configuration.md "Stall
-# watch"): while config/stall-watch exists, start one detached tick at most
-# once a minute and single-flight; the tick keeps its own interval, so a model
-# call or a failover never holds a poll. This tick wakes with each report file
-# a tick left, even after the opt-in is removed. Off costs one glob and one
-# file test.
+# watch"): while config/stall-watch exists, start one tick at most once a
+# minute and single-flight, in its own process group like the disk retry scan,
+# so a model call or a failover never holds a poll and a watcher restart does
+# not cut one short; the tick keeps its own interval. This tick wakes with each
+# report file a tick left, even after the opt-in is removed. Off costs one glob
+# and one file test.
 STALL_WATCH_PID=
 stall_watch_tick() {
-  local f stamp="$STATE/stall-watch/.last-launch"
+  local f stamp="$STATE/stall-watch/.last-launch" monitor=0
   STALL_WATCH_REASON=
   for f in "$STATE/stall-watch"/.report.*; do
     [ -f "$f" ] || continue
@@ -3690,16 +3691,19 @@ stall_watch_tick() {
     [ -z "$STALL_WATCH_REASON" ] || break
   done
   [ -e "$CONFIG/stall-watch" ] || return 0
-  if [ -n "$STALL_WATCH_PID" ]; then
-    kill -0 "$STALL_WATCH_PID" 2>/dev/null && return 0
-    wait "$STALL_WATCH_PID" 2>/dev/null || true
-    STALL_WATCH_PID=
+  if [ -n "$STALL_WATCH_PID" ] && kill -0 "$STALL_WATCH_PID" 2>/dev/null; then
+    return 0
   fi
+  STALL_WATCH_PID=
   [ "$(age_of "$stamp")" -ge 60 ] || return 0
   mkdir -p "$STATE/stall-watch" 2>/dev/null && touch "$stamp" 2>/dev/null || return 0
+  case $- in *m*) monitor=1 ;; esac
+  set -m 2>/dev/null || true
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    "$SCRIPT_DIR/fm-stall-watch.sh" tick </dev/null >/dev/null 2>&1 &
+    nohup "$SCRIPT_DIR/fm-stall-watch.sh" tick </dev/null >/dev/null 2>&1 &
   STALL_WATCH_PID=$!
+  disown "$STALL_WATCH_PID" 2>/dev/null || true
+  [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
 }
 
 # Away decisions use the timed status fold. Without a council entrypoint every
