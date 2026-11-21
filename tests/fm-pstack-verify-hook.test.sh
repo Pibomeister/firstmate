@@ -92,6 +92,34 @@ test_loop_done_line_is_not_a_completion() {
   pass "a loop's closing done line or a quoted done outside a status write is not a completion"
 }
 
+test_bare_done_on_a_status_path_is_not_a_completion() {
+  local cmd
+  cmd=$(printf 'for f in state/*.status; do\n echo "$f"\ndone')
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
+    --claude
+  expect_silent "a for loop over state/*.status ending in done"
+
+  cmd='echo "done" >> state/notes.txt'
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
+    --claude
+  expect_silent "echo of a quoted done appended to state/notes.txt"
+
+  cmd='echo "done [at=1731880000]: shipped the export" >> state/task.status'
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
+    --claude
+  expect_claude_inject "principle-prove-it-works" "PreToolUse" "done [at=N] appended to a status file"
+
+  cmd='echo "done: shipped the export" >> state/task.status'
+  run_hook "$PRIMARY" \
+    "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
+    --claude
+  expect_claude_inject "principle-prove-it-works" "PreToolUse" "done: appended to a status file"
+  pass "a bare done on a status path is not a completion, and a real done line still is"
+}
+
 test_cursor_post_tool_use_status_append_injects() {
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"postToolUse\",\"tool_name\":\"Shell\",\"tool_input\":{\"command\":$(printf '%s' "$STATUS_APPEND" | jq -Rs .)},\"tool_output\":\"{\\\"exitCode\\\":0}\",\"cursor_version\":\"x\",\"conversation_id\":\"c1\",\"generation_id\":\"g\"}" \
@@ -1320,6 +1348,7 @@ test_vendored_skills_are_present() {
 
 test_status_append_command_injects_prove_it_works
 test_loop_done_line_is_not_a_completion
+test_bare_done_on_a_status_path_is_not_a_completion
 test_cursor_post_tool_use_status_append_injects
 test_write_contents_done_line_injects_prove_it_works
 test_captain_prompt_done_merge_is_not_completion

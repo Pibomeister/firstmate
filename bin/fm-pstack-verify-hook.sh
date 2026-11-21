@@ -39,12 +39,12 @@
 #
 # Triggers, each owned here:
 #   completion report  -> principle-prove-it-works
-#     status_is_done_verb (bin/fm-classify-lib.sh): status_is_terminal_verb
-#     and then the verb is done. blocked:, failed:, and needs-decision: stay
-#     out. Lines come from a Shell command that names a status path (the
-#     STATUS_APPEND shape), Write of a *.status file, and assistant or tool
-#     text. A loop's closing done line or a quoted done in any other command
-#     is not a completion. User prompts are not classified as completions.
+#     status_is_done_verb in bin/fm-classify-lib.sh requires status_is_terminal_verb and then the verb done.
+#     blocked:, failed:, and needs-decision: stay out.
+#     Lines come from a Shell command that names a status path (the STATUS_APPEND shape), a Write of a *.status file, and assistant or tool text.
+#     A command line or quoted string whose trimmed text is exactly done is not a completion report.
+#     A done: line and a done [at=...] line still are.
+#     User prompts are not classified as completions.
 #   tests added/changed -> principle-test-behavior-not-implementation
 #     Claude PreToolUse Write/Edit of a code test path (file_path/content or
 #     path/contents), Cursor postToolUse of the same, or a Shell
@@ -948,10 +948,21 @@ $CONTENTS
 $QUOTED
 $COMMAND"
 
+# Drop a line whose trimmed text is exactly done.
+# A done: line and a done [at=...] line are not that text, so they stay.
+drop_exact_done_lines() {
+  local line trimmed
+  while IFS= read -r line || [ -n "$line" ]; do
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    trimmed=${trimmed%"${trimmed##*[![:space:]]}"}
+    [ "$trimmed" = "done" ] && continue
+    printf '%s\n' "$line"
+  done
+}
+
 # Completion from STATUS_APPEND, status-file Write, and assistant/tool text.
-# User prompts are not classified as completions. A command's lines count only
-# when the command names a status path, so a loop's closing done line or an
-# unrelated quoted done is not a completion report.
+# User prompts are not classified as completions.
+# A command's lines count only when the command names a status path.
 COMPLETION=
 if is_write_tool "$TOOL" && is_status_path "$PATH_VAL"; then
   COMPLETION=$CONTENTS
@@ -959,8 +970,7 @@ fi
 case "$COMMAND" in
   *.status*|*state/*)
     COMPLETION="$COMPLETION
-$QUOTED
-$COMMAND"
+$(printf '%s\n' "$QUOTED" "$COMMAND" | drop_exact_done_lines)"
     ;;
 esac
 case "$EVENT" in
