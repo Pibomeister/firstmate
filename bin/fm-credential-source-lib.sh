@@ -7,7 +7,7 @@
 # never hold the key itself, for example
 #   {"typesafe": {"source": "macos-keychain", "service": "typesafe-api-key"}}
 # bin/fm-dispatch-resolve.sh and bin/fm-stall-watch.sh read it only after the
-# environment and .env have supplied no key (fm_credsrc_resolve), and
+# environment and .env have supplied no key (fm_credsrc_key owns that order), and
 # bin/fm-bootstrap.sh only checks whether it declares a typesafe source; docs/configuration.md "Typed dispatch resolution" owns the
 # file's location and the operator contract.
 #
@@ -151,6 +151,24 @@ fm_credsrc_resolve() {
   fi
   printf '%s' "$value"
 }
+
+# fm_credsrc_key <current> <env-file> <name> <file> <provider> <allowed-provider>...
+# The one key lookup order for a provider whose key may be declared: <current>
+# (the caller's private copy of the environment value), else <name> in
+# <env-file>, else the source <file> declares for <provider>. Status 0 prints
+# the key; any other status and output are fm_credsrc_resolve's. Needs
+# bin/fm-env-lib.sh for fmx_env_get.
+fm_credsrc_key() {
+  local current=$1 env_file=$2 name=$3
+  shift 3
+  [ -n "$current" ] || current=$(fmx_env_get "$name" "$env_file")
+  if [ -n "$current" ]; then
+    printf '%s' "$current"
+    return 0
+  fi
+  fm_credsrc_resolve "$@"
+}
+
 # macos-keychain: one generic-password read, bounded by FM_CREDSRC_TIMEOUT.
 # Only the service and, when declared, the account reach argv; the key comes
 # back on stdout.

@@ -8,6 +8,11 @@
 #
 #   FM_TS_DEFAULT_BASE
 #       The public TypeSafe endpoint base.
+#   fm_ts_base_setting <env-file> <variable>
+#       Sets <variable> to the configured TYPESAFE_BASE: the environment value
+#       byte for byte (so a stray newline still fails validation), else the
+#       one in <env-file>, else empty. Needs bin/fm-env-lib.sh. The caller
+#       validates it and chooses its own default and error wording.
 #   fm_ts_base_valid <base>
 #       Succeeds when <base> is an http(s) URL with a host and no userinfo,
 #       query, fragment, whitespace, or brackets in its path. Needs jq. Never
@@ -21,6 +26,12 @@
 
 # shellcheck disable=SC2034  # read by the sourcing scripts
 FM_TS_DEFAULT_BASE=https://api.typesafe.ai
+
+fm_ts_base_setting() {
+  local _fm_ts_base=${TYPESAFE_BASE:-}
+  [ -n "$_fm_ts_base" ] || _fm_ts_base=$(fmx_env_get TYPESAFE_BASE "$1")
+  printf -v "$2" '%s' "$_fm_ts_base"
+}
 
 fm_ts_base_valid() {
   jq -en --arg base "$1" '

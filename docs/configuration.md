@@ -674,15 +674,19 @@ An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout
 
 On an unchanged screen these rules decide without a model, in order:
 
-- A busy semantic record, or a live activity row near the bottom such as a spinner, `esc to interrupt`, or a retry countdown, is `working`.
+- A busy semantic record (`fm_busy_classify_meta` in `bin/fm-busy-lib.sh`) for a worker, or the backend's native busy state for the captain, is `working`.
 - A refusal row the watchdog patterns recognize (`fm_wd_provider_error_screen` in `bin/fm-watchdog-lib.sh`) is `rate_limit`, `usage_limit`, or `billing`, and is left to the watcher's own provider failover.
 - A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
 - A captain with no open work is `idle_done`.
 
-Only the remaining idle screens reach the classifier.
+Only the remaining screens reach the classifier.
+A rendered activity row such as a spinner, `esc to interrupt`, or a retry countdown is never decided by rule, because a busy footer left in scrollback would hide a stall; the classifier reads it instead.
+A timer that only counts up is digits, so such a screen still counts as unchanged and is judged once per interval.
 
 **Classifier**
 
+The issue that asked for this check named a cheap classifier called "JEV" without defining it, and its author could not be reached to clarify.
+It is interpreted as TypeSafe Jev (`jev-latest`), so `classifier=jev` is the default.
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
 It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is honored and validated the same way, and the key reaches `curl` only through a file descriptor, never its arguments.
 With no key, or when the call fails, the check logs one line saying so and asks the Grok fast tier through the installed `grok` CLI instead.

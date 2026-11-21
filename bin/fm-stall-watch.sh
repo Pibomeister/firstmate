@@ -32,21 +32,25 @@
 #             digits removed, the worktree HEAD, and the status file size) must
 #             be unchanged since the previous check; a changed one is progress
 #             and nothing else runs. On an unchanged screen the deterministic
-#             pass decides first: a working row or a busy semantic record is
-#             working, a refusal the watchdog patterns recognize
+#             pass decides first: a busy semantic record (fm_busy_classify_meta
+#             in bin/fm-busy-lib.sh) or, for the captain, the backend's native
+#             busy state (fm_backend_busy_state) is working; rendered activity
+#             rows are never decided by rule, because a busy footer left in
+#             scrollback would hide a stall. A refusal the watchdog patterns recognize
 #             (fm_wd_provider_error_screen) is left to the watcher's own
 #             failover, a recognized dialog (fm_wd_pane_dialog) is
 #             waiting_on_human, and a captain with no open work is idle_done.
-#             Only the remaining idle screens reach the classifier.
+#             Only the remaining screens reach the classifier.
 #   tick      Once the interval has passed since the last tick (or with
 #             --force), checks the captain (when this home records a session
 #             endpoint) and every local ship or scout, single-flight.
 #
 # Classifier: `jev` (default) asks TypeSafe Jev (jev-latest) one Choice
 #   question through bin/fm-typesafe-lib.sh, with the key found as
-#   bin/fm-dispatch-resolve.sh finds it: TYPESAFE_API_KEY from the
-#   environment, else $FM_HOME/.env, else the typesafe source declared in
-#   $CONFIG/dispatch-credential-sources.json; TYPESAFE_BASE likewise. With no
+#   bin/fm-dispatch-resolve.sh finds it (fm_credsrc_key): TYPESAFE_API_KEY from
+#   the environment, else $FM_HOME/.env, else the typesafe source declared in
+#   $CONFIG/dispatch-credential-sources.json; TYPESAFE_BASE likewise
+#   (fm_ts_base_setting). With no
 #   key, or when that call fails, it logs one line saying so and asks the Grok
 #   fast tier instead (`grok` CLI, grok_model, default grok-4.7-build-fast).
 #   `grok` asks Grok only, and `none` asks no model. With no usable answer the
@@ -83,9 +87,13 @@
 #   stalled, source, confidence, action, latency_ms, cost_usd, note),
 #   $STATE/stall-watch/<target>.state, .last-tick, .tick.lock, .report.*.
 # Bounds: each capture 20 s, each model call `timeout` (default 90 s), each
-#   nudge 60 s, each failover 900 s.
+#   nudge 60 s, each failover 900 s. A tick checks its targets one after
+#   another, so one tick can last up to those bounds summed per target; its
+#   lock only keeps two ticks from overlapping, and bin/fm-failover.sh holds its
+#   own per-target lock.
 # Exit 0 after a check or tick (whatever its verdict), 1 when a screen could
-#   not be read, 2 for a usage or configuration error.
+#   not be read or the backend library could not be loaded, 2 for a usage or
+#   configuration error.
 # Test-only: FM_TEST_SEAM=1 enables FM_STALL_WATCH_NOW (the clock),
 #   FM_STALL_WATCH_TEST_SCREENS (a directory of <target>.screen files read
 #   instead of the backend), and FM_STALL_WATCH_TEST_BIN (a directory holding
@@ -261,23 +269,14 @@ sw_valid_target() {
   return 0
 }
 
-# ---- deterministic pass ------------------------------------------------------
-sw_working_rows() {  # <screen>: a live activity row near the bottom
-  _fm_wd_tail_rows "$1" 12 | LC_ALL=C grep -Eiq \
-    -e '^[^a-z]*(working|thinking|processing|connecting|retrying|generating|running|executing)([^a-z]|$)' \
-    -e 'esc to interrupt' -e 'press esc to stop' -e 'ctrl\+c to (interrupt|stop)' -e 'retrying in [0-9]'
-}
-
 # ---- classifiers -------------------------------------------------------------
 M_REASON='' M_CONF='' M_LAT='' M_COST='' M_NOTE=''
 JEV_WHY=''
 
 sw_jev_key() {
   local v rc
-  [ -z "$TYPESAFE_API_KEY_PRIVATE" ] || return 0
-  TYPESAFE_API_KEY_PRIVATE=$(fmx_env_get TYPESAFE_API_KEY "$FM_HOME/.env")
-  [ -z "$TYPESAFE_API_KEY_PRIVATE" ] || return 0
-  v=$(fm_credsrc_resolve "$CONFIG/dispatch-credential-sources.json" typesafe typesafe openrouter); rc=$?
+  v=$(fm_credsrc_key "$TYPESAFE_API_KEY_PRIVATE" "$FM_HOME/.env" TYPESAFE_API_KEY \
+    "$CONFIG/dispatch-credential-sources.json" typesafe typesafe openrouter); rc=$?
   case "$rc" in
     0) TYPESAFE_API_KEY_PRIVATE=$v; return 0 ;;
     1) JEV_WHY='no TypeSafe key in the environment, .env, or a declared source' ;;
@@ -291,8 +290,7 @@ sw_jev_key() {
 
 sw_jev() {  # <screen> <kind> <open-work> <status>
   local base body resp http t0 t1 answer reasons criteria
-  base=${TYPESAFE_BASE:-}
-  [ -n "$base" ] || base=$(fmx_env_get TYPESAFE_BASE "$FM_HOME/.env")
+  fm_ts_base_setting "$FM_HOME/.env" base
   [ -n "$base" ] || base=$FM_TS_DEFAULT_BASE
   fm_ts_base_valid "$base" || { M_NOTE=jev-base-invalid; return 1; }
   base=$(fm_ts_base_trim "$base")
@@ -394,10 +392,6 @@ sw_judge() {
   V_CONF=- V_LAT=- V_COST=- V_NOTE=''
   if [ "$busy" = 1 ]; then
     V_REASON=working V_STALLED=no V_SOURCE=busy
-    return 0
-  fi
-  if sw_working_rows "$screen"; then
-    V_REASON=working V_STALLED=no V_SOURCE=rule
     return 0
   fi
   if class=$(fm_wd_provider_error_screen "$screen"); then
@@ -563,10 +557,14 @@ sw_nudge() {  # <target> -> 0 when the nudge was delivered
 }
 
 sw_failover_report() {  # <target> <class> <now> -> the action word; reports when the outcome needs one
-  local target=$1 class=$2 now=$3 why
+  local target=$1 class=$2 now=$3 why outcome
   why="the stall check judged it stopped ($class per $V_SOURCE${V_CONF:+, confidence $V_CONF})"
   sw_failover "$target" "$class" "$now"
-  case "$FO_RC" in
+  outcome=$FO_RC
+  # fm-failover.sh runs under set -e, so exit 1 also means an unexpected
+  # failure; only its own `none` line proves no runtime took over.
+  if [ "$FO_RC" = 1 ] && [ "${FO_LINE#none }" = "$FO_LINE" ]; then outcome=failed; fi
+  case "$outcome" in
     0) sw_report "$target" "$now" "check: $target moved to the next runtime after $why (${FO_LINE#switched }) - reconcile its current state rather than relaunching it again"; printf 'failover-switched\n' ;;
     1) sw_report "$target" "$now" "check: $target looks stopped ($why) and no runtime in the failover order took over (${FO_LINE:-no result line}) - recover it by hand"; printf 'failover-none\n' ;;
     3) sw_report "$target" "$now" "check: $target looks stopped again ($why), and automatic failover paused at its attempt bound (${FO_LINE:-no result line}) - recover it by hand"; printf 'failover-bound\n' ;;
@@ -608,10 +606,12 @@ cmd_check() {  # <target> <dry-run>
     kind=$(fm_meta_get "$meta" kind)
     case "$kind" in ship|scout) ;; *)
       V_REASON=not-a-worker V_STALLED=no V_SOURCE=meta
+      [ "$dry" = 1 ] || sw_row "$now" "$target" none
       sw_line "$target" none; return 0 ;;
     esac
     if [ -n "$(fm_meta_get "$meta" remote_host)" ]; then
       V_REASON=remote V_STALLED=no V_SOURCE=meta
+      [ "$dry" = 1 ] || sw_row "$now" "$target" none
       sw_line "$target" none; return 0
     fi
     status=$(sw_status_line "$target" | sw_clean 1)
@@ -655,6 +655,9 @@ cmd_check() {  # <target> <dry-run>
     command -v fm_busy_classify_meta >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-busy-lib.sh"
     verdict=$(fm_run_timed_fn "$CAPTURE_TIMEOUT" fm_busy_classify_meta "$meta" "$target" "$STATE" "$raw" 2>/dev/null || true)
     case "$verdict" in busy\ *) busy=1 ;; esac
+  elif sw_load_backend && sw_captain_endpoint; then
+    verdict=$(fm_run_timed_fn "$CAPTURE_TIMEOUT" fm_backend_busy_state "$CAP_BACKEND" "$CAP_TERMINAL" 2>/dev/null || true)
+    [ "$verdict" != busy ] || busy=1
   fi
   sw_judge "$red" "$kind" "$open" "$status" "$busy"
   if [ "$dry" = 1 ]; then

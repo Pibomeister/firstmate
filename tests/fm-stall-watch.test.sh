@@ -60,8 +60,10 @@ echo "$n" > "$FM_TEST_LOGS/failover.n"
 printf '%s ' "$@" > "$FM_TEST_LOGS/failover.argv.$n"
 printf '%s\n' "${FM_CAPTAIN_WATCHER_FAILOVER:-unset}" > "$FM_TEST_LOGS/failover.captain-env.$n"
 rc=${FM_TEST_FO_RC:-0}
-[ "$rc" != 0 ] || echo "switched task=${2:-captain} from=claude to=codex reason=${4:-x}"
-[ "$rc" != 1 ] || echo "none task=${2:-captain} reason=no_eligible_runtime"
+if [ "${FM_TEST_FO_SILENT:-0}" != 1 ]; then
+  [ "$rc" != 0 ] || echo "switched task=${2:-captain} from=claude to=codex reason=${4:-x}"
+  [ "$rc" != 1 ] || echo "none task=${2:-captain} reason=no_eligible_runtime"
+fi
 exit "$rc"
 SH
 cat > "$DELEGATES/fm-send.sh" <<'SH'
@@ -69,6 +71,7 @@ cat > "$DELEGATES/fm-send.sh" <<'SH'
 n=$(( $(cat "$FM_TEST_LOGS/send.n" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$FM_TEST_LOGS/send.n"
 printf '%s\n' "$@" > "$FM_TEST_LOGS/send.argv.$n"
+exit "${FM_TEST_SEND_RC:-0}"
 SH
 cat > "$DELEGATES/captain-send" <<'SH'
 #!/usr/bin/env bash
@@ -81,10 +84,10 @@ export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/co
 export FM_TEST_SEAM=1 FM_STALL_WATCH_TEST_SCREENS="$LAB/screens" FM_STALL_WATCH_TEST_BIN="$DELEGATES"
 export FM_TEST_LOGS="$LOGS" FM_TEST_GROK_REPLY="$TMP_ROOT/grok.reply" FM_TEST_CURL_REPLY="$TMP_ROOT/curl.reply"
 export HOME="$TMP_ROOT/user" PATH="$FAKEBIN:$PATH"
-unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_GROK_RC FM_TEST_CURL_HTTP FM_TEST_FO_RC FM_STALL_WATCH_NOW
+unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_GROK_RC FM_TEST_CURL_HTTP FM_TEST_FO_RC FM_TEST_FO_SILENT FM_TEST_SEND_RC FM_STALL_WATCH_NOW
 
 reset_lab() {
-  rm -rf "$LAB" "$LOGS"
+  rm -rf "${LAB:?}" "${LOGS:?}"
   mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/screens" "$LOGS"
   grok_says idle_with_goals 0.9
 }
@@ -118,7 +121,7 @@ sw_in() {  # <screen-file> <args...>: the same with the screen on stdin
 # and a screen.
 make_worker() {
   local id=$1 wt="$TMP_ROOT/wt-$1"
-  rm -rf "$wt" "$wt.repo" "$wt.repo.origin.git"
+  rm -rf "${wt:?}" "${wt:?}.repo" "${wt:?}.repo.origin.git"
   fm_git_worktree "$wt.repo" "$wt" "fm/$id" >/dev/null 2>&1 || fail "fixture: no worktree for $id"
   fm_write_meta "$LAB/state/$id.meta" "window=fm:fm-$id" kind=ship harness=claude "worktree=$wt" backend=tmux "spawn_gen=s1.$id"
   printf 'working: wiring the parser [at=1]\n' > "$LAB/state/$id.status"
@@ -178,14 +181,6 @@ test_screen_redacts_secrets_and_paths() {
 
 test_deterministic_pass_skips_the_model() {
   reset_lab
-  sw_in "$FIX/working.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=working stalled=no source=rule' 'a working row is working without a model'
-  printf 'Plan · 3/8\n\n ⠇ Executing...\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid.screen"
-  sw_in "$TMP_ROOT/droid.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=working stalled=no source=rule' 'a Droid executing row is working without a model'
-  printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
-  sw_in "$TMP_ROOT/droid-hint.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=working stalled=no source=rule' 'a Droid stop hint is working without a model'
   sw_in "$FIX/rate-limited.screen" classify --classifier grok
   assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=rule' 'a recognized 429 is classed by rule'
   printf 'Allow this command?\n\n❯ 1. Yes\n  2. No\n\nEnter to confirm · Esc to cancel\n' > "$TMP_ROOT/dialog.screen"
@@ -201,7 +196,24 @@ test_deterministic_pass_skips_the_model() {
   assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain with no open work is idle_done without a model'
   assert_equals 0 "$(count grok)" 'no deterministic verdict called the model'
   assert_equals 0 "$(count curl)" 'no deterministic verdict called Jev'
-  pass 'deterministic pass: working, rule refusals, dialogs, and no open work never reach a model'
+  pass 'deterministic pass: rule refusals, dialogs, and no open work never reach a model'
+}
+
+# A rendered busy footer is vendor text that can linger in scrollback, so it
+# never decides by rule; the classifier reads it, and a semantic busy record
+# (test_unchanged_screen_guard) is the deterministic working signal.
+test_rendered_activity_is_not_a_rule() {
+  reset_lab
+  sw_in "$FIX/working.screen" classify --classifier none
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a busy footer alone is not decided by rule'
+  printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
+  sw_in "$TMP_ROOT/droid-hint.screen" classify --classifier none
+  assert_contains "$OUT" 'verdict=unsure' 'a stop hint alone is not decided by rule'
+  grok_says working 0.95
+  sw_in "$FIX/working.screen" classify --classifier grok
+  assert_contains "$OUT" 'verdict=working stalled=no source=grok' 'the classifier judges a busy footer'
+  assert_equals 1 "$(count grok)" 'one model call for the busy footer'
+  pass 'rendered activity: a busy footer reaches the classifier instead of a rule'
 }
 
 test_model_judge_maps_answers() {
@@ -394,13 +406,29 @@ test_captain_actions() {
   sw check captain; sw check captain
   assert_contains "$OUT" 'action=none' 'a captain waiting on its owner is only recorded'
   assert_contains "$OUT" 'waiting-on-owner' 'the reason is named'
+  # The captain's backend reports its native busy state (hc's `get --json`).
+  cat > "$TMP_ROOT/hc" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = get ] || exit 1
+printf '{"status":{"state":"%s"}}\n' "$FM_TEST_HC_STATE"
+SH
+  chmod +x "$TMP_ROOT/hc"
+  printf 'backend=hc\nterminal=default:t1\n' > "$LAB/state/.lock-session"
+  cp "$FIX/working.screen" "$LAB/screens/captain.screen"
+  grok_says idle_with_goals 0.9
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
+  assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a natively busy captain is working without a model'
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=idle sw check captain
+  assert_contains "$OUT" 'source=grok' 'a natively idle captain reaches the classifier'
+  rm -f "$LAB/state/.lock-session"
   rm -f "$LAB/state/w1.meta" "$LAB/state/w1.status"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   printf '\n• Finished.\n' >> "$LAB/screens/captain.screen"
   sw check captain; sw check captain
   assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain with no open work is idle_done'
   assert_contains "$OUT" 'action=none' 'an idle captain with no open work is left alone'
-  pass 'captain: failover with watcher authorization, composer nudge, owner waits recorded'
+  pass 'captain: native busy is working, failover with watcher authorization, composer nudge, owner waits recorded'
 }
 
 test_tick_schedule() {
@@ -464,9 +492,99 @@ test_watcher_starts_tick_and_delivers_reports() {
   pass 'watcher: starts the tick detached while opted in and delivers each report once'
 }
 
+# One case per remaining decision of cmd_check: escalations by class, model
+# refusals per class, an undeliverable or expired nudge, every failover exit,
+# and the targets a check skips.
+test_decided_scenarios() {
+  local id r rc
+  reset_lab
+  make_worker a1 stalled.screen
+  grok_says auth 0.9
+  sw check a1; sw check a1
+  assert_contains "$OUT" 'verdict=auth stalled=yes source=grok' 'auth is judged'
+  assert_contains "$OUT" 'action=escalated' 'auth escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'a1 looks signed out or its credentials were rejected' 'the auth wake'
+  make_worker c1 stalled.screen
+  grok_says crashed 0.9
+  sw check c1; sw check c1
+  assert_contains "$OUT" 'action=escalated' 'crashed escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'c1 looks crashed' 'the crashed wake'
+  assert_equals 0 "$(count failover)" 'escalations never fail over'
+
+  for r in rate_limit usage_limit billing; do
+    id="m-$r"
+    id=${id//_/-}
+    make_worker "$id" stalled.screen
+    grok_says "$r" 0.9
+    sw check "$id"; sw check "$id"
+    assert_contains "$OUT" "verdict=$r stalled=yes source=grok" "a model-judged $r"
+    assert_contains "$OUT" 'action=failover-switched' "a model-judged $r fails over"
+  done
+  assert_equals "worker m-billing --reason billing --state $LAB/state " "$(cat "$LOGS/failover.argv.3")" 'the worker failover carries the class'
+
+  make_worker n1 stalled.screen
+  grok_says idle_with_goals 0.9
+  FM_STALL_WATCH_NOW=1000 sw check n1
+  FM_TEST_SEND_RC=1 FM_STALL_WATCH_NOW=2000 sw check n1
+  assert_contains "$OUT" 'action=escalated' 'a nudge that could not be delivered escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'n1 is idle with open work and could not be nudged' 'the undeliverable nudge wake'
+  make_worker n2 stalled.screen
+  FM_STALL_WATCH_NOW=1000 sw check n2
+  FM_STALL_WATCH_NOW=2000 sw check n2
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  FM_STALL_WATCH_NOW=5601 sw check n2
+  assert_contains "$OUT" 'action=nudged' 'a nudge older than three intervals nudges again instead of failing over'
+  FM_STALL_WATCH_NOW=5700 sw check n2
+  assert_contains "$OUT" 'action=failover-switched' 'a fresh nudge followed by idle fails over'
+
+  grok_says api_error 0.9
+  for rc in 1 1s 3 6 9; do
+    id="fo-$rc"
+    make_worker "$id" api-error.screen
+    sw check "$id"
+    case "$rc" in
+      1s) FM_TEST_FO_RC=1 FM_TEST_FO_SILENT=1 sw check "$id" ;;
+      *) FM_TEST_FO_RC=$rc sw check "$id" ;;
+    esac
+    case "$rc" in
+      1) assert_contains "$OUT" 'action=failover-none' 'exit 1 with its none line is no runtime'
+         assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'fo-1 looks stopped' 'the none report' ;;
+      1s) assert_contains "$OUT" 'action=failover-failed' 'exit 1 without a none line is a failure'
+          assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'automatic failover failed (exit 1)' 'the failure names the exit' ;;
+      3) assert_contains "$OUT" 'action=failover-bound' 'exit 3 is the attempt bound' ;;
+      6) assert_contains "$OUT" 'action=failover-not-needed' 'exit 6 needs no failover'
+         sw check "$id"
+         assert_contains "$OUT" 'already-handled' 'a not-needed failover is not retried on the same screen' ;;
+      9) assert_contains "$OUT" 'action=failover-failed' 'any other exit is a failure'
+         assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'automatic failover failed (exit 9)' 'the failure names exit 9' ;;
+    esac
+  done
+
+  fm_write_meta "$LAB/state/sm.meta" "window=fm:fm-sm" kind=secondmate harness=claude backend=tmux
+  sw check sm --dry-run
+  assert_equals 0 "$(ledger_rows sm)" 'a dry run of a skipped target writes no row'
+  sw check sm
+  assert_contains "$OUT" 'verdict=not-a-worker' 'a secondmate is not checked'
+  assert_equals 1 "$(ledger_rows sm)" 'a skipped non-worker still gets its ledger row'
+  make_worker rm1 stalled.screen
+  printf 'remote_host=h1\n' >> "$LAB/state/rm1.meta"
+  sw check rm1
+  assert_contains "$OUT" 'verdict=remote' 'a remote task is not checked'
+  assert_equals 1 "$(ledger_rows rm1)" 'a skipped remote task still gets its ledger row'
+  make_worker cf1 stalled.screen
+  rm -f "$LAB/screens/cf1.screen"
+  sw check cf1
+  expect_code 1 "$RC" 'an unreadable screen exits 1'
+  assert_contains "$OUT" 'verdict=capture-failed stalled=unsure' 'capture failure'
+  assert_equals 1 "$(ledger_rows cf1)" 'a capture failure gets its ledger row'
+  pass 'decisions: auth and crashed escalate, model refusals fail over, nudges expire, every failover exit maps, skipped targets are recorded'
+}
+
 fm_test_run \
   test_screen_redacts_secrets_and_paths \
   test_deterministic_pass_skips_the_model \
+  test_rendered_activity_is_not_a_rule \
+  test_decided_scenarios \
   test_model_judge_maps_answers \
   test_classifier_never_sees_secrets \
   test_unchanged_screen_guard \

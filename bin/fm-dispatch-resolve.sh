@@ -243,24 +243,28 @@ fi
 "$SCRIPT_DIR/fm-disk-alarm.sh" >/dev/null || true
 
 # ---- opt-in gate ---------------------------------------------------------------
-# declared_key <provider> <private variable>: set the variable from the source
-# $CRED_PATH declares for <provider>. Returns 1 when none is declared, which
-# leaves the off gate in charge. Past that point nothing is mistaken for an
-# unconfigured resolver: an unreadable or invalid declaration is a
-# configuration error, and a declared source this host cannot run or that
-# yields no key is an error outcome. Nothing is sent in either case.
-declared_key() {
-  local provider=$1 value rc
-  [ -e "$CRED_PATH" ] || [ -L "$CRED_PATH" ] || return 1
-  [ -r "$CRED_PATH" ] || die "credential source declaration not readable: $CRED_PATH"
-  command -v jq >/dev/null 2>&1 || die "jq required"
-  value=$(fm_credsrc_resolve "$CRED_PATH" "$provider" typesafe openrouter); rc=$?
+# select_key <provider> <KEY_NAME> <private variable>: set the variable in the
+# order fm_credsrc_key owns (the environment copy already in the variable, else
+# KEY_NAME in $FM_HOME/.env, else the source $CRED_PATH declares for the
+# provider). With none of them the tool is off, exactly as it was before
+# declarations existed. Past that point nothing is mistaken for an unconfigured
+# resolver: an unreadable or invalid declaration is a configuration error, and
+# a declared source this host cannot run or that yields no key is an error
+# outcome. Nothing is sent in either case.
+select_key() {
+  local provider=$1 name=$2 var=$3 value rc src
+  value=$(fm_credsrc_key "${!var}" "$FM_HOME/.env" "$name" "$CRED_PATH" "$provider" typesafe openrouter); rc=$?
   case "$rc" in
-    0) printf -v "$2" '%s' "$value"; return 0 ;;
-    1) return 1 ;;
-    2) die "malformed credential source declaration: $CRED_PATH - $value" ;;
+    0) printf -v "$var" '%s' "$value"; return 0 ;;
+    1) resolver_off "$name absent from the environment and $FM_HOME/.env" ;;
+    2)
+      case "$value" in
+        'not readable') die "credential source declaration not readable: $CRED_PATH" ;;
+        'jq required') die "jq required" ;;
+        *) die "malformed credential source declaration: $CRED_PATH - $value" ;;
+      esac
+      ;;
   esac
-  local src
   src=$(fm_credsrc_field "$CRED_PATH" "$provider" source)
   case "$rc" in
     3) emit_error "credential source $src declared for $provider is not supported on this host; nothing sent" ;;
@@ -269,24 +273,11 @@ declared_key() {
   esac
 }
 
-# select_key <provider> <KEY_NAME> <private variable>: the selected provider's
-# key is the environment copy already in the variable, else KEY_NAME in
-# $FM_HOME/.env, else the source declared for the provider. With none of them
-# the tool is off, exactly as it was before declarations existed.
-select_key() {
-  local provider=$1 name=$2 var=$3
-  [ -n "${!var}" ] || printf -v "$var" '%s' "$(fmx_env_get "$name" "$FM_HOME/.env")"
-  [ -n "${!var}" ] || declared_key "$provider" "$var"
-  if [ -z "${!var}" ]; then
-    resolver_off "$name absent from the environment and $FM_HOME/.env"
-  fi
-}
-
 # Select and validate the same optional base for implicit and explicit TypeSafe.
 # Never echo a rejected value: a misconfigured URL may contain credentials.
 select_typesafe_base() {
-  local base=${TYPESAFE_BASE:-}
-  [ -n "$base" ] || base=$(fmx_env_get TYPESAFE_BASE "$FM_HOME/.env")
+  local base
+  fm_ts_base_setting "$FM_HOME/.env" base
   [ -n "$base" ] || return 0
   command -v jq >/dev/null 2>&1 || die "jq required"
   fm_ts_base_valid "$base" \
