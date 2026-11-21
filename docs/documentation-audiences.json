@@ -786,6 +786,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/verification/stall-watch.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/verification/stow-memory.md",
       "audience": "maintainer-verification"
     },

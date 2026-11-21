@@ -16,6 +16,7 @@ Start with the directory layout, then use the setting reference for the behavior
 | Hung workers whose agent is still alive | [Hung-worker ladder](#hung-worker-ladder-confighung-ladder) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
 | Moving a worker or the captain off a provider that refused it | [Provider failover](#provider-failover-configfailover-order) |
+| Built-in stall check of workers and the captain | [Stall watch](#stall-watch-configstall-watch) |
 | Host memory and swap alarms | [Host memory guard](#host-memory-guard-configmemory-guard) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
@@ -638,6 +639,95 @@ Failover never signs in, adds funds, buys extra usage, or edits an account pin.
 A worker failover relaunches through `bin/fm-control.sh relaunch --provider-failover`, which closes a usage-limit picker by ending the endpoint without typing into it, since the task is leaving that provider anyway.
 An ordinary relaunch still refuses a usage-limit picker it cannot verify.
 The Claude refusal signals are live-verified in [Runtime backend verification](verification/runtime-backends.md#provider-failover-refusal-signals).
+The [stall watch](#stall-watch-configstall-watch) also calls `bin/fm-failover.sh` with `--reason api_error` for another API error that ended a turn, and with `--reason stalled` for a worker still idle with open work after one nudge.
+
+## Stall watch (config/stall-watch)
+
+The stall watch is a built-in stall check for the captain session and every local ship or scout, run by this home's own watcher instead of an outside timer.
+It reads each agent's screen, judges it deterministically first, asks a cheap classifier only when the screen stays ambiguous, and acts through the existing [provider failover](#provider-failover-configfailover-order), one nudge, or one notification.
+`bin/fm-stall-watch.sh` is the one entry point; its `--help` owns the subcommands, output line, records, exit codes, and bounds, and [`tests/fm-stall-watch.test.sh`](../tests/fm-stall-watch.test.sh) covers them against recorded screens in `tests/fixtures/stall-watch/`.
+
+It is off until the optional local `config/stall-watch` exists.
+While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
+Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain only while its recorded session owner is live and checks each local ship or scout.
+A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
+A screen counts as unchanged only when its redacted rows with timer and counter text normalized, its runtime identity, the task's worktree HEAD, and a checksum of its status content are all the same, so a relaunch, new captain session, new commit, status line, or HTTP error code is progress.
+
+The file holds `key=value` lines; blank lines and lines that start with `#` are ignored, and every key is optional.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `interval` | `1200` | Seconds between checks, at least 60. |
+| `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
+| `confidence_floor` | `0.6` | A model answer below it is `unsure`. |
+| `timeout` | `90` | Seconds allowed for one model call, at least 5. |
+
+```text
+# Check every 20 minutes and ask Jev about ambiguous screens
+interval=1200
+```
+
+An invalid `confidence_floor`, `interval`, or `timeout`, including nonnumeric or overlong timing values, is a configuration error that stops the check before it reads any screen.
+A watcher-started tick reports that error with one `check:` notification per distinct file content.
+
+**Deterministic pass**
+
+On an unchanged screen these rules decide without a model, in order:
+
+- A busy semantic record (`fm_busy_classify_meta` in `bin/fm-busy-lib.sh`) for a worker, or the backend's native busy state for the captain, is `working`.
+- A refusal row the watchdog patterns recognize (`fm_wd_provider_error_screen` in `bin/fm-watchdog-lib.sh`) is `rate_limit`, `usage_limit`, or `billing`, and is left to the watcher's own provider failover.
+  After a turn the Claude hook recorded as an ordinary stop, the watcher does not act on such a row, so the classifier judges that screen instead.
+  Because the hook reports every refusal as a stop failure, a refusal answer for that screen counts as `idle_with_goals`.
+- A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
+- A captain with no open work is `idle_done` unless its screen shows a terminal provider or API error.
+  The captain has open work only when `bin/fm-dispatch-log.sh overdue` lists an overdue goal or a wake has waited in the queue for longer than one interval; otherwise a captain idle at its prompt is waiting on its watcher, which is healthy.
+  If the overdue probe fails or times out, the check treats open work as unknown and judges the captain instead of declaring it `idle_done`.
+
+Only the remaining screens reach the classifier.
+A rendered activity row such as a spinner, `esc to interrupt`, or a retry countdown is never decided by rule, because a busy footer left in scrollback would hide a stall; the classifier reads it instead.
+A timer or token counter that only counts up keeps the same fingerprint, while a changed HTTP status gets a new one.
+
+**Classifier**
+
+The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`).
+`jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
+It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`.
+`TYPESAFE_BASE` comes from the environment, else `.env`, else defaults to `https://api.typesafe.ai`; HTTP is accepted only for `localhost`, `127.x.x.x`, or `[::1]`, and the key reaches `curl` only through a file descriptor, never its arguments.
+With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
+The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
+This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
+An answer below `confidence_floor` is `unsure`: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
+
+The reasons are `working` and `idle_done`, which are not stalled, and `rate_limit`, `usage_limit`, `billing`, `api_error`, `auth`, `crashed`, `idle_with_goals`, and `waiting_on_human`, which are stalled.
+
+**What leaves the machine**
+
+A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), and whether it has open work.
+The screen and key are never posted to a non-loopback HTTP base; HTTPS bases retain the shared TypeSafe URL validation.
+Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options and of compound names that end in them such as `--client-secret`, and URL credentials with `<redacted>`.
+It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row, including one inside a box border or behind a tool-output marker, into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
+Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib.sh`) is withheld and counted rather than sent.
+`bin/fm-stall-watch.sh screen <task-id|captain>` prints exactly the text a classifier would receive.
+
+**Actions**
+
+Each unchanged screen is acted on once; actionful checks for the same target use a bounded lock shared by direct checks and ticks.
+A verdict from a worker or captain runtime that changed after screen capture is recorded with `runtime-changed` and takes no action.
+
+- A model-judged `rate_limit`, `usage_limit`, `billing`, or `api_error` runs `bin/fm-failover.sh` with that `--reason`; a captain failover is authorized only as a descendant of this home's watcher.
+- `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.
+  When the next unchanged check within three intervals still finds a worker idle, it runs `bin/fm-failover.sh` with `--reason stalled`; a captain gets one notification instead and is never failed over as stalled.
+  A new runtime, commit, or status line after the nudge ends it, so the next idle spell starts with a nudge again.
+- `waiting_on_human`, `auth`, `crashed`, a nudge that could not be delivered, and a screen judged `unsure` on two checks in a row each wake firstmate with one `check: <target> ...` notification; a captain waiting on its owner and an unknown result from unavailable Jev are recorded only.
+- `working`, `idle_done`, and a rule-recognized refusal do nothing.
+
+A failover that switched, found no eligible runtime, reached its attempt bound, or failed also wakes firstmate with one notification, and a failover lock held by another call is retried on the next check.
+
+Each check appends one row to `state/stall-watch.tsv` with its verdict, source, confidence, action, latency, and reported cost; per-target memory lives in `state/stall-watch/`.
+`bin/fm-stall-watch.sh check <task-id|captain> --dry-run` judges one target now without acting or recording, and `classify` judges a screen on stdin for evaluating recorded screens.
+
+A model is asked at most once per ambiguous unchanged screen per interval.
+The [verification record](verification/stall-watch.md) gives the measured dry-run latency and the current limits of live classifier evidence.
 
 ## Context reading (config/context-reading)
 

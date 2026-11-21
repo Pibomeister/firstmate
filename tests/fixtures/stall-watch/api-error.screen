@@ -1,0 +1,9 @@
+⏺ Read(bin/fm-parser.sh)
+  ⎿  Read 214 lines
+
+⏺ API Error: 500 {"type":"error","error":{"type":"api_error","message":"Internal server error"},"request_id":"req_011CVabc"}
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ auto mode on (shift+tab to cycle)

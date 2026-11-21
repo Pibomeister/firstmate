@@ -2,7 +2,10 @@
 # fm-failover.sh - move a worker or the captain off a provider that refused it
 # onto the next provider in this home's failover order, and measure that order.
 # A refusal is an HTTP 429 or rate limit, a usage limit, or a billing, credit,
-# past-due, subscription, or account-hold refusal.
+# past-due, subscription, or account-hold refusal. The stall check
+# (bin/fm-stall-watch.sh) also passes --reason api_error for another API error
+# that ended the turn, and --reason stalled for an agent left idle with open
+# work after one nudge.
 #
 # Usage:
 #   fm-failover.sh plan
@@ -375,11 +378,19 @@ host_skip() {
 
 reason_or_record() {  # <id>
   if [ -n "$CLASS" ]; then
-    fm_failover_class_valid "$CLASS" || die '--reason must be rate_limit, usage_limit, or billing'
+    fm_failover_class_valid "$CLASS" || die '--reason must be rate_limit, usage_limit, billing, api_error, or stalled'
     printf '%s\n' "$CLASS"
     return 0
   fi
   fm_failover_record_class "$STATE" "$1" 2>/dev/null || printf 'rate_limit\n'
+}
+
+why_text() {  # <class>: what ended the previous runtime's turn, for the notes
+  case "$1" in
+    api_error) printf 'ended its turn on an API error from its provider' ;;
+    stalled) printf 'stayed idle with open work after a stall-check nudge' ;;
+    *) printf 'ended its turn on a %s refusal from its provider' "$1" ;;
+  esac
 }
 
 # --- plan ---------------------------------------------------------------------
@@ -599,7 +610,7 @@ cmd_worker() {
   while [ "${#CAND[@]}" -gt 0 ]; do
     row=${CAND[0]}
     IFS=$FM_FO_SEP read -r h m a label quota <<< "$row"
-    note="Provider failover: your previous runtime ($from) ended its turn on a $reason refusal from its provider at $(iso "$(now)"), so firstmate relaunched this task on $label in the same local copy.
+    note="Provider failover: your previous runtime ($from) $(why_text "$reason") at $(iso "$(now)"), so firstmate relaunched this task on $label in the same local copy.
 The local copy, its branch ${branch:-unknown}, its commits, and any uncommitted changes are exactly as the previous worker left them.
 Its newest status events, oldest first:
 $(tail -n 5 "$statusf" 2>/dev/null | sed 's/^/    /')
@@ -702,7 +713,7 @@ cmd_captain() {
   fi
   stamp=$(date -u '+%Y%m%dT%H%M%SZ')
   doc="$DATA/handoffs/handoff-$stamp-failover.md"
-  note="Provider failover: the previous captain session on $from ended its turn on a $reason refusal from its provider at $(iso "$(now)"), so this home started a successor on the next runtime in its failover order (bin/fm-failover.sh). Resume supervision from the ledger above; the previous session keeps running but no longer holds the lock."
+  note="Provider failover: the previous captain session on $from $(why_text "$reason") at $(iso "$(now)"), so this home started a successor on the next runtime in its failover order (bin/fm-failover.sh). Resume supervision from the ledger above; the previous session keeps running but no longer holds the lock."
   rc=0
   out=$(FM_HOME=$FM_HOME fm_run_timed 120 bash "$DELEGATE_BIN/fm-ledger.sh" handoff --doc "$doc" --note "$note" </dev/null 2>&1) || rc=$?
   if [ "$rc" -ne 0 ]; then

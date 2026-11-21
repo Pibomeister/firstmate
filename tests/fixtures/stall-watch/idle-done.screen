@@ -1,0 +1,14 @@
+⏺ The pull request is open and every required check is green:
+  https://github.com/example/widgets/pull/42
+
+  Summary:
+  - parser skips empty rows
+  - three new regression cases
+  - docs updated
+
+  The task is complete; nothing else is pending on my side.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ >                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  ⏵⏵ auto mode on (shift+tab to cycle)

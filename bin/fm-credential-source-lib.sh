@@ -6,9 +6,9 @@
 # object keyed by provider whose values say WHERE that provider's key lives and
 # never hold the key itself, for example
 #   {"typesafe": {"source": "macos-keychain", "service": "typesafe-api-key"}}
-# bin/fm-dispatch-resolve.sh reads it only after the environment and .env have
-# supplied no key, and bin/fm-bootstrap.sh only checks whether it declares a
-# typesafe source; docs/configuration.md "Typed dispatch resolution" owns the
+# bin/fm-dispatch-resolve.sh and bin/fm-stall-watch.sh read it only after the
+# environment and .env have supplied no key (fm_credsrc_key owns that order), and
+# bin/fm-bootstrap.sh only checks whether it declares a typesafe source; docs/configuration.md "Typed dispatch resolution" owns the
 # file's location and the operator contract.
 #
 # A source is an adapter: FM_CREDSRC_SCHEMA names each adapter and its fields,
@@ -125,6 +125,48 @@ fm_credsrc_read() {
       ;;
     *) return 1 ;;
   esac
+}
+
+# fm_credsrc_resolve <file> <provider> <allowed-provider>...
+# The key <provider>'s declared source yields, for a caller that has already
+# found no key in the environment or .env. Status 0 prints the key; 1 means
+# <file> is absent or declares no source for <provider>; 2 means <file> is
+# unreadable or malformed and prints the problem (never a value); 3 means the
+# declared source cannot run on this host; 4 means it did not answer within
+# FM_CREDSRC_TIMEOUT; 5 means it holds no readable key.
+fm_credsrc_resolve() {
+  local file=$1 provider=$2 problem src value rc
+  shift 2
+  [ -e "$file" ] || [ -L "$file" ] || return 1
+  [ -r "$file" ] || { printf 'not readable\n'; return 2; }
+  command -v jq >/dev/null 2>&1 || { printf 'jq required\n'; return 2; }
+  problem=$(fm_credsrc_check "$file" "$@") || { printf '%s\n' "$problem"; return 2; }
+  fm_credsrc_declares "$file" "$provider" || return 1
+  src=$(fm_credsrc_field "$file" "$provider" source)
+  fm_credsrc_supported "$src" || return 3
+  value=$(fm_credsrc_read "$file" "$provider"); rc=$?
+  if [ "$rc" -ne 0 ] || [ -z "$value" ]; then
+    if fm_timed_out "$rc"; then return 4; fi
+    return 5
+  fi
+  printf '%s' "$value"
+}
+
+# fm_credsrc_key <current> <env-file> <name> <file> <provider> <allowed-provider>...
+# The one key lookup order for a provider whose key may be declared: <current>
+# (the caller's private copy of the environment value), else <name> in
+# <env-file>, else the source <file> declares for <provider>. Status 0 prints
+# the key; any other status and output are fm_credsrc_resolve's. Needs
+# bin/fm-env-lib.sh for fmx_env_get.
+fm_credsrc_key() {
+  local current=$1 env_file=$2 name=$3
+  shift 3
+  [ -n "$current" ] || current=$(fmx_env_get "$name" "$env_file")
+  if [ -n "$current" ]; then
+    printf '%s' "$current"
+    return 0
+  fi
+  fm_credsrc_resolve "$@"
 }
 
 # macos-keychain: one generic-password read, bounded by FM_CREDSRC_TIMEOUT.

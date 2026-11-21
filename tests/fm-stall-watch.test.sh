@@ -1,0 +1,1156 @@
+#!/usr/bin/env bash
+# tests/fm-stall-watch.test.sh - the built-in stall check
+# (bin/fm-stall-watch.sh): redaction of the screen and of everything a
+# classifier receives, the deterministic first pass, the Jev judge
+# and their unavailable verdicts, the unchanged-screen guard, the failover, nudge, and
+# escalation actions, the tick schedule, and the watcher starting the tick and
+# delivering its reports. The screens are recorded fixtures under
+# tests/fixtures/stall-watch; curl, fm-failover.sh, fm-send.sh, and the
+# captain typer are stand-ins that record what they were given, while every
+# decision is the real script's.
+set -u
+# shellcheck source=tests/watch-triage-helpers.sh
+. "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
+TMP_ROOT=$(fm_test_tmproot fm-stall-watch)
+CAPTAIN_OWNER=''
+trap '[ -z "$CAPTAIN_OWNER" ] || { kill "$CAPTAIN_OWNER" 2>/dev/null || true; wait "$CAPTAIN_OWNER" 2>/dev/null || true; }; fm_test_cleanup' EXIT
+SW="$ROOT/bin/fm-stall-watch.sh"
+FIX="$ROOT/tests/fixtures/stall-watch"
+LAB="$TMP_ROOT/home"
+FAKEBIN="$TMP_ROOT/fakebin"
+DELEGATES="$TMP_ROOT/delegates"
+LOGS="$TMP_ROOT/logs"
+mkdir -p "$FAKEBIN" "$DELEGATES" "$LOGS" "$TMP_ROOT/user"
+ln -s "$(command -v sleep)" "$TMP_ROOT/claude"
+"$TMP_ROOT/claude" 600 &
+CAPTAIN_OWNER=$!
+
+# curl stand-in: keeps argv, the body, and the fd-3 header; writes the reply
+# file to -o and prints FM_TEST_CURL_HTTP.
+cat > "$FAKEBIN/curl" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_TEST_LOGS/curl.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_TEST_LOGS/curl.n"
+printf '%s\n' "$@" > "$FM_TEST_LOGS/curl.argv.$n"
+out='' prev=''
+for a in "$@"; do
+  [ "$prev" != -o ] || out=$a
+  [ "$a" != @/dev/fd/3 ] || cat /dev/fd/3 > "$FM_TEST_LOGS/curl.header.$n"
+  prev=$a
+done
+cat > "$FM_TEST_LOGS/curl.body.$n"
+if [ -n "${FM_TEST_TURNOVER_TARGET:-}" ]; then
+  if [ "$FM_TEST_TURNOVER_TARGET" = captain ]; then
+    sed '1s/^test-session$/replacement-session/' "$FM_STATE_OVERRIDE/.lock-session" > "$FM_STATE_OVERRIDE/.lock-session.next"
+    mv "$FM_STATE_OVERRIDE/.lock-session.next" "$FM_STATE_OVERRIDE/.lock-session"
+  else
+    sed 's/^spawn_gen=.*/spawn_gen=s2.relaunched/' "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta" > "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta.next"
+    mv "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta.next" "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta"
+  fi
+fi
+if [ "${FM_TEST_CURL_HOLD:-0}" = 1 ]; then
+  : > "$FM_TEST_LOGS/curl.entered"
+  while [ -f "$FM_TEST_LOGS/curl.hold" ]; do sleep 0.1; done
+fi
+[ -z "$out" ] || cat "$FM_TEST_CURL_REPLY" > "$out"
+printf '%s' "${FM_TEST_CURL_HTTP:-200}"
+SH
+cat > "$DELEGATES/fm-failover.sh" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_TEST_LOGS/failover.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_TEST_LOGS/failover.n"
+printf '%s ' "$@" > "$FM_TEST_LOGS/failover.argv.$n"
+printf '%s\n' "${FM_CAPTAIN_WATCHER_FAILOVER:-unset}" > "$FM_TEST_LOGS/failover.captain-env.$n"
+rc=${FM_TEST_FO_RC:-0}
+if [ "${FM_TEST_FO_SILENT:-0}" != 1 ]; then
+  [ "$rc" != 0 ] || echo "switched task=${2:-captain} from=claude to=codex reason=${4:-x}"
+  [ "$rc" != 1 ] || echo "none task=${2:-captain} reason=no_eligible_runtime"
+fi
+exit "$rc"
+SH
+cat > "$DELEGATES/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+n=$(( $(cat "$FM_TEST_LOGS/send.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$FM_TEST_LOGS/send.n"
+printf '%s\n' "$@" > "$FM_TEST_LOGS/send.argv.$n"
+if [ "${FM_TEST_SEND_HOLD:-0}" = 1 ]; then
+  : > "$FM_TEST_LOGS/send.entered"
+  while [ -f "$FM_TEST_LOGS/send.hold" ]; do sleep 0.1; done
+fi
+exit "${FM_TEST_SEND_RC:-0}"
+SH
+cat > "$DELEGATES/captain-send" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$FM_TEST_LOGS/captain-send"
+exit "${FM_TEST_CAPTAIN_SEND_RC:-0}"
+SH
+chmod +x "$FAKEBIN"/* "$DELEGATES"/*
+
+export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
+export FM_TEST_SEAM=1 FM_STALL_WATCH_TEST_SCREENS="$LAB/screens" FM_STALL_WATCH_TEST_BIN="$DELEGATES"
+export FM_TEST_LOGS="$LOGS" FM_TEST_CURL_REPLY="$TMP_ROOT/curl.reply"
+export HOME="$TMP_ROOT/user" PATH="$FAKEBIN:$PATH"
+unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_CURL_HTTP FM_TEST_FO_RC FM_TEST_FO_SILENT FM_TEST_SEND_RC FM_STALL_WATCH_NOW
+
+reset_lab() {
+  rm -rf "${LAB:?}" "${LOGS:?}"
+  mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/screens" "$LOGS"
+  write_captain_lock "$CAPTAIN_OWNER"
+  export TYPESAFE_API_KEY=k
+  jev_says idle_with_goals 0.9
+}
+
+write_captain_lock() {
+  local owner=$1 start
+  start=$(bash -c '. "$1"; fm_session_process_start "$2"' _ "$ROOT/bin/fm-session-lock-lib.sh" "$owner") || fail 'fixture: no captain owner identity'
+  printf '%s\n' "$owner" > "$LAB/state/.lock"
+  printf 'test-session\nanchor_pid=%s\nanchor_start=%s\nbackend=hc\nterminal=default:t1\n' "$owner" "$start" > "$LAB/state/.lock-session"
+}
+
+jev_says() {  # <choice> <confidence>
+  jq -cn --arg r "$1" --argjson c "$2" '{model: "jev-latest", answers: {verdict: {choice: $r, confidence: $c, probabilities: {}}}, usage: {input_tokens: 812, output_tokens: 3}}' > "$FM_TEST_CURL_REPLY"
+}
+
+count() { cat "$LOGS/$1.n" 2>/dev/null || echo 0; }
+
+OUT='' ERR='' RC=0
+sw() {  # <args...>: run the entry point, keeping stdout, stderr, and the exit code
+  RC=0
+  OUT=$(bash "$SW" "$@" 2> "$TMP_ROOT/err") || RC=$?
+  ERR=$(cat "$TMP_ROOT/err")
+}
+
+sw_in() {  # <screen-file> <args...>: the same with the screen on stdin
+  local f=$1
+  shift
+  RC=0
+  OUT=$(bash "$SW" "$@" < "$f" 2> "$TMP_ROOT/err") || RC=$?
+  ERR=$(cat "$TMP_ROOT/err")
+}
+
+# make_worker <id> <fixture>: a ship with a real worktree, a working status,
+# and a screen.
+make_worker() {
+  local id=$1 wt="$TMP_ROOT/wt-$1"
+  rm -rf "${wt:?}" "${wt:?}.repo" "${wt:?}.repo.origin.git"
+  fm_git_worktree "$wt.repo" "$wt" "fm/$id" >/dev/null 2>&1 || fail "fixture: no worktree for $id"
+  fm_write_meta "$LAB/state/$id.meta" "window=fm:fm-$id" kind=ship harness=claude "worktree=$wt" backend=tmux "spawn_gen=s1.$id"
+  printf 'working: wiring the parser [at=1]\n' > "$LAB/state/$id.status"
+  cp "$FIX/$2" "$LAB/screens/$id.screen"
+}
+
+ledger_rows() { awk -F '\t' -v t="$1" '$2 == t' "$LAB/state/stall-watch.tsv" 2>/dev/null | wc -l | tr -d ' '; }
+
+# The planted values are joined from parts at run time so no secret-shaped
+# literal is committed; secrets_screen fills them into the recorded screen.
+P_GH="gh""p_FAKEexampleTOKEN0123456789abcdefABCD"
+P_OPENAI="sk""-FAKEexample0123456789abcdef"
+P_AWS="AK""IAFAKEEXAMPLE01234"
+P_PASS="hunter2-fake-example"
+P_BEARER="FAKEexampleBearerToken"
+P_URLPASS="FAKEexamplePass"
+P_SLACK="xo""xb-FAKE-example"
+P_KEYKIND="OPENSSH PRI""VATE KEY"
+P_KEYBODY="b3BlbnNzaC1rZXktdjEAAAAA""FAKEexampleKEYbody"
+P_XAI="xa""i-FAKEexample0123456789abcdef"
+P_GLPAT="glp""at-FAKEexample0123456789ab"
+P_NPM="np""m_FAKEexample0123456789abcdefghij"
+P_HF="h""f_FAKEexample0123456789abcd"
+P_GOOGLE="AI""zaFAKEexample0123456789abcdefghijk"
+P_STRIPE="sk""_live_FAKEexample0123456789"
+P_JWT="ey""JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJGQUtFIn0.FAKEsignature0123"
+P_CLIKEY="FAKEcliKeyValue0123"
+P_CLIQ="FAKEcliQuoted"
+P_CLITOK="FAKEcliTokenValue0123"
+P_B64="QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejAxMjM0NTY3ODk"
+P_KEYTAIL="FAKEorphanKeyTail0123"
+P_SPACEDIR="Zanzibar"
+P_BOXKEY="FAKEboxed""KeyRowAAAA""0123456789abcdefFAKE"
+P_BOXB64="TUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFG""QUtF"
+P_CSEC="FAKEclientSecret0123"
+P_GHTOK="FAKEgithubTokenOpt0123"
+P_DBPW="FAKEdbPassword0123"
+# Text the key=value and option rules leave after a value, which is not redacted.
+P_TAILS="FAKEtailSpace FAKEtailComma FAKEtailSemi FAKEtailQuote"
+PLANTED="$P_GH $P_OPENAI $P_AWS $P_PASS $P_BEARER $P_URLPASS $P_SLACK $P_KEYBODY /Users/alice /home/bob
+  $P_XAI $P_GLPAT $P_NPM $P_HF $P_GOOGLE $P_STRIPE $P_JWT $P_CLIKEY $P_CLIQ $P_CLITOK $P_B64 $P_KEYTAIL $P_SPACEDIR
+  $P_BOXKEY $P_BOXB64 $P_CSEC $P_GHTOK $P_DBPW"
+
+secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the planted values, then more
+  sed -e "s|{{GH}}|$P_GH|" -e "s|{{OPENAI}}|$P_OPENAI|" -e "s|{{AWS}}|$P_AWS|" \
+    -e "s|{{PASS}}|$P_PASS|" -e "s|{{BEARER}}|$P_BEARER|" -e "s|{{URLPASS}}|$P_URLPASS|" \
+    -e "s|{{SLACK}}|$P_SLACK|" -e "s|{{KEYKIND}}|$P_KEYKIND|" -e "s|{{KEYBODY}}|$P_KEYBODY|" \
+    "$FIX/secrets.screen"
+  printf '  echo %s\n  git push with %s\n  %s\n' "$P_XAI" "$P_GLPAT" "$P_NPM"
+  printf '  hub %s and %s\n  stripe %s\n  cookie %s\n' "$P_HF" "$P_GOOGLE" "$P_STRIPE" "$P_JWT"
+  printf '  %s\n  open "/Users/alice/My %s Plans/plan.md"\n' "$P_B64" "$P_SPACEDIR"
+  printf '  mytool --api-key %s --password "%s pass" --token=%s\n' "$P_CLIKEY" "$P_CLIQ" "$P_CLITOK"
+  # A key block whose BEGIN row has scrolled off the top.
+  printf '  %s\n  %s\n  -----END %s-----\n' "$P_B64" "$P_KEYTAIL" "$P_KEYKIND"
+  # The same inside a box border, then a base64 row behind a tool-output marker.
+  printf '\342\224\202 %s \342\224\202\n\342\224\202 %s \342\224\202\n\342\224\202 -----END %s----- \342\224\202\n' "$P_BOXKEY" "$P_KEYTAIL" "$P_KEYKIND"
+  printf '  \342\216\277  %s\n' "$P_BOXB64"
+  printf '  mytool --client-secret %s --db-password %s --github-token=%s\n' "$P_CSEC" "$P_DBPW" "$P_GHTOK"
+  # Values the rules replace only in part, so the row stays credential-like.
+  printf '  conf secret=%s FAKEtailSpace\n  conf password=%s,FAKEtailComma\n' "$P_PASS" "$P_PASS"
+  printf '  conf password=%s;FAKEtailSemi\n  mytool --token=%s"FAKEtailQuote"\n' "$P_PASS" "$P_CLITOK"
+}
+assert_no_planted() {  # <text> <where>
+  local s
+  for s in $PLANTED "$HOME"; do
+    assert_not_contains "$1" "$s" "$2 must not carry $s"
+  done
+}
+
+test_screen_redacts_secrets_and_paths() {
+  local s
+  reset_lab
+  { secrets_screen; printf 'wrote %s/projects/notes.md\n' "$HOME"; printf 'echo %s done\n' "sk""-FAKEbareExample0123456789"; } > "$LAB/screens/captain.screen"
+  sw screen captain
+  expect_code 0 "$RC" "screen reads the captain screen: $ERR"
+  assert_no_planted "$OUT" 'the redacted screen'
+  assert_contains "$OUT" 'GITHUB_TOKEN=<redacted>' 'a token value is replaced in place'
+  assert_contains "$OUT" 'https://<redacted>@git.example.com' 'URL credentials are replaced'
+  assert_contains "$OUT" '<redacted private key>' 'a private key block collapses to one marker'
+  assert_contains "$OUT" 'Edited <path> and <path>' 'absolute user paths become <path>'
+  assert_contains "$OUT" 'wrote <path>' 'the home directory becomes <path>'
+  assert_contains "$OUT" 'echo <redacted> done' 'a bare provider key is replaced in place'
+  assert_contains "$OUT" '<redacted key material>' 'a long base64 row is replaced whole'
+  assert_contains "$OUT" 'open "<path>"' 'a quoted user path with spaces is replaced whole'
+  assert_contains "$OUT" '--api-key <redacted> --password <redacted> --token=<redacted>' 'secret option values are replaced'
+  assert_equals 3 "$(printf '%s\n' "$OUT" | grep -c '<redacted private key>')" 'a key block, and one whose BEGIN row scrolled away, plain or boxed, each collapse to one marker'
+  assert_contains "$OUT" '<redacted private key>'$'\n''<redacted key material>' 'a boxed key tail and a marked base64 row are replaced'
+  assert_contains "$OUT" '--client-secret <redacted> --db-password <redacted> --github-token=<redacted>' 'compound secret option values are replaced'
+  for s in $P_TAILS; do
+    assert_not_contains "$OUT" "$s" "a partly redacted row must be withheld, not carry $s"
+  done
+  assert_contains "$OUT" '<5 row(s) withheld: credential-like text>' 'the Authorization row and each partly redacted row are withheld and counted'
+  sw screen captain --lines 3
+  [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -le 3 ] || fail "--lines 3 printed more than 3 rows: $OUT"
+  sw screen ghost
+  expect_code 1 "$RC" 'an unreadable screen exits 1'
+  sw screen '../x'
+  expect_code 2 "$RC" 'an invalid target is a usage error'
+  pass 'screen: tokens, keys, URL credentials, private keys, and user paths are redacted; leftovers withheld'
+}
+
+test_deterministic_pass_skips_the_model() {
+  reset_lab
+  sw_in "$FIX/rate-limited.screen" classify
+  assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=rule' 'a recognized 429 is classed by rule'
+  printf 'Allow this command?\n\n❯ 1. Yes\n  2. No\n\nEnter to confirm · Esc to cancel\n' > "$TMP_ROOT/dialog.screen"
+  sw_in "$TMP_ROOT/dialog.screen" classify
+  assert_contains "$OUT" 'verdict=waiting_on_human stalled=yes source=rule' 'a recognized dialog waits on a person by rule'
+  printf 'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n' > "$TMP_ROOT/question.screen"
+  sw_in "$TMP_ROOT/question.screen" classify
+  assert_contains "$OUT" 'verdict=waiting_on_human stalled=yes source=rule' 'a question picker waits on a person by rule'
+  printf 'You hit your weekly limit.\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel\n' > "$TMP_ROOT/limit.screen"
+  sw_in "$TMP_ROOT/limit.screen" classify
+  assert_contains "$OUT" 'verdict=usage_limit stalled=yes source=rule' 'a usage-limit picker is a usage limit by rule'
+  sw_in "$FIX/stalled.screen" classify --kind captain --open-work no
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain with no open work is idle_done without a model'
+  assert_equals 0 "$(count curl)" 'no deterministic verdict called the model'
+  assert_equals 0 "$(count curl)" 'no deterministic verdict called Jev'
+  pass 'deterministic pass: rule refusals, dialogs, and no open work never reach a model'
+}
+
+# A rendered busy footer is vendor text that can linger in scrollback, so it
+# never decides by rule; the classifier reads it, and a semantic busy record
+# (test_unchanged_screen_guard) is the deterministic working signal.
+test_rendered_activity_is_not_a_rule() {
+  reset_lab
+  TYPESAFE_API_KEY='' sw_in "$FIX/working.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a busy footer alone is not decided by rule'
+  printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
+  TYPESAFE_API_KEY='' sw_in "$TMP_ROOT/droid-hint.screen" classify
+  assert_contains "$OUT" 'verdict=unsure' 'a stop hint alone is not decided by rule'
+  jev_says working 0.95
+  sw_in "$FIX/working.screen" classify
+  assert_contains "$OUT" 'verdict=working stalled=no source=jev' 'the classifier judges a busy footer'
+  assert_equals 1 "$(count curl)" 'one model call for the busy footer'
+  pass 'rendered activity: a busy footer reaches the classifier instead of a rule'
+}
+
+test_model_judge_maps_answers() {
+  local calls
+  reset_lab
+  jev_says idle_with_goals 0.92
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev confidence=0.92' 'a confident Jev answer maps to stalled'
+  assert_contains "$OUT" 'cost_usd=-' 'Jev reports no per-call cost'
+  assert_equals jev-latest "$(jq -r .model "$LOGS/curl.body.1")" 'the request names jev-latest'
+  assert_equals choice "$(jq -r .questions.verdict.type "$LOGS/curl.body.1")" 'the request is one Choice question'
+  assert_equals 10 "$(jq -r '.questions.verdict.criteria | length' "$LOGS/curl.body.1")" 'every reason is an option'
+  assert_equals false "$(jq -r '.state.agent | has("latest_status") or has("status")' "$LOGS/curl.body.1")" 'the request has no status field'
+  jev_says idle_done 0.4
+  sw_in "$FIX/idle-done.screen" classify
+  assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=jev' 'an answer below the floor is unsure'
+  assert_contains "$OUT" 'below-floor' 'the floor is named'
+  jev_says idle_done 0.95
+  sw_in "$FIX/idle-done.screen" classify
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev' 'a confident not-stalled answer is not stalled'
+  jev_says api_error 0.88
+  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev confidence=0.88' 'Jev judges an API error'
+  assert_contains "$OUT" 'jev-tokens=812/3' 'token usage is kept'
+  assert_contains "$(cat "$LOGS/curl.argv.4")" 'https://api.typesafe.ai/v1/systemone' 'Jev posts to the TypeSafe endpoint'
+  assert_not_contains "$(cat "$LOGS/curl.argv.4")" 'ts-test-key-123' 'the key never reaches argv'
+  assert_equals 'Authorization: Bearer ts-test-key-123' "$(cat "$LOGS/curl.header.4")" 'the key reaches curl through fd 3'
+  calls=$(count curl)
+  TYPESAFE_API_KEY='' sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'Jev without a key leaves ambiguity unknown'
+  assert_contains "$OUT" 'jev:no-key' 'the missing key is recorded'
+  assert_contains "$ERR" 'jev unavailable (no TypeSafe key' 'the missing key is logged'
+  assert_equals "$calls" "$(count curl)" 'a missing key makes no model call'
+  printf 'TYPESAFE_API_KEY=ts-env-file-key\nTYPESAFE_BASE=https://ts.example.test/\n' > "$LAB/.env"
+  TYPESAFE_API_KEY='' FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
+  assert_contains "$(cat "$LOGS/curl.argv.5")" 'https://ts.example.test/v1/systemone' 'TYPESAFE_BASE from .env is honored'
+  assert_equals 'Authorization: Bearer ts-env-file-key' "$(cat "$LOGS/curl.header.5")" 'the key from .env is used'
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed Jev call leaves ambiguity unknown'
+  assert_contains "$OUT" 'jev:jev-http-500' 'the HTTP failure is recorded'
+  assert_contains "$ERR" 'jev unavailable (jev-http-500)' 'the failed call is logged'
+  printf 'TYPESAFE_BASE=https://user:pw@ts.example.test\n' > "$LAB/.env"
+  sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'jev:jev-base-invalid' 'an invalid base is refused without a call'
+  assert_equals 5 "$(count curl)" 'nothing was posted to an invalid base'
+  rm -f "$LAB/.env"
+  printf '{"answers":{"verdict":{"choice":"sleeping","confidence":0.9}}}\n' > "$FM_TEST_CURL_REPLY"
+  sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'an unparseable Jev answer stays unknown'
+  assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
+  sw_in "$FIX/stalled.screen" classify --classifier grok
+  expect_code 2 "$RC" 'classify rejects the removed Grok option'
+  sw_in "$FIX/stalled.screen" classify --status 'private status prose'
+  expect_code 2 "$RC" 'classify rejects the removed status option'
+  jev_says idle_with_goals 0.9
+  printf 'classifier=grok\njev_model=other\n' > "$LAB/config/stall-watch"
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'unknown config keys do not change the classifier'
+  assert_equals jev-latest "$(jq -r .model "$LOGS/curl.body.$(count curl)")" 'unknown model override cannot change Jev'
+  rm -f "$LAB/config/stall-watch"
+  pass 'model judge: Jev alone handles answers, failures, floor, and secret key delivery'
+}
+
+test_jev_unavailable_takes_no_action() {
+  reset_lab
+  unset TYPESAFE_API_KEY
+  make_worker ju1 stalled.screen
+  sw check ju1; sw check ju1; sw check ju1
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'missing Jev leaves an unchanged screen unknown'
+  assert_contains "$OUT" 'action=none' 'unknown Jev result takes no action on repeated checks'
+  assert_equals 0 "$(count curl)" 'the unavailable Jev path makes no model call'
+  assert_equals 0 "$(count send)" 'the default check does not nudge'
+  assert_equals 0 "$(count failover)" 'the default check does not fail over'
+  assert_absent "$LAB/state/.wake-queue"
+  pass 'unavailable Jev: repeated ambiguity remains unknown without action'
+}
+
+test_jev_unavailable_reasons() {
+  local credential="$LAB/config/dispatch-credential-sources.json" reason expected_note
+  reset_lab
+  unset TYPESAFE_API_KEY
+  printf '{bad json\n' > "$credential"
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'note=jev:credential-source-unusable' 'a malformed declaration is named in the result'
+  assert_contains "$ERR" 'jev unavailable (the credential source declaration is unusable)' 'a malformed declaration is named in the log'
+  printf '%s\n' '{"typesafe":{"source":"macos-keychain","service":"test"}}' > "$credential"
+  cat > "$FAKEBIN/uname" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${FM_TEST_UNAME:-Darwin}"
+SH
+  cat > "$FAKEBIN/security" <<'SH'
+#!/usr/bin/env bash
+exit "${FM_TEST_SECURITY_RC:-1}"
+SH
+  chmod +x "$FAKEBIN/uname" "$FAKEBIN/security"
+  FM_TEST_UNAME=Linux sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'note=jev:credential-source-unsupported' 'an unsupported source is named in the result'
+  for reason in 124 1; do
+    expected_note='credential-source-empty'
+    [ "$reason" != 124 ] || expected_note='credential-source-timeout'
+    FM_TEST_SECURITY_RC=$reason sw_in "$FIX/stalled.screen" classify
+    assert_contains "$OUT" "note=jev:$expected_note" "credential source exit $reason has its own result note"
+    assert_contains "$ERR" 'jev unavailable (' "credential source exit $reason logs one unavailable line"
+  done
+  rm -f "$FAKEBIN/uname" "$FAKEBIN/security"
+  pass 'unavailable Jev: source failures keep distinct result notes'
+}
+
+test_jev_base_transport() {
+  local base calls
+  reset_lab
+  jev_says idle_with_goals 0.9
+  for base in http://127.0.0.1:8080 http://127.0.0.2 http://localhost:8080 'http://[::1]:8080'; do
+    TYPESAFE_BASE=$base sw_in "$FIX/stalled.screen" classify
+    assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' "loopback $base is accepted"
+  done
+  calls=$(count curl)
+  printf 'TYPESAFE_BASE=http://example.test\n' > "$LAB/.env"
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'non-loopback HTTP leaves ambiguity unknown'
+  assert_contains "$OUT" 'jev:jev-insecure-base' 'the insecure base is named'
+  assert_equals "$calls" "$(count curl)" 'an HTTP base from .env sends no screen or key'
+  TYPESAFE_BASE=HTTP://127.0.0.1.evil.test sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'jev:jev-insecure-base' 'a deceptive 127 hostname is rejected'
+  assert_equals "$calls" "$(count curl)" 'a deceptive host sends no request'
+  rm -f "$LAB/.env"
+  pass 'Jev transport: only HTTPS or loopback HTTP receives a screen'
+}
+
+test_stale_captain_endpoint_is_skipped() {
+  local stale
+  reset_lab
+  make_worker live1 stalled.screen
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  "$TMP_ROOT/claude" 600 &
+  stale=$!
+  write_captain_lock "$stale"
+  kill "$stale" 2>/dev/null || true
+  wait "$stale" 2>/dev/null || true
+  sw screen captain
+  expect_code 1 "$RC" 'screen refuses a stale captain endpoint'
+  sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=capture-failed stalled=unsure' 'a direct check cannot capture a stale captain endpoint'
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  sw tick
+  assert_equals 0 "$(ledger_rows captain)" 'tick skips a stale captain'
+  assert_equals 1 "$(ledger_rows live1)" 'tick still checks local workers'
+  assert_equals 0 "$(count send)" 'a stale captain receives no nudge'
+  assert_absent "$LOGS/captain-send"
+  pass 'captain endpoint: stale owner is not captured, checked, or nudged'
+}
+
+test_captain_api_error_without_open_work() {
+  reset_lab
+  cp "$FIX/api-error.screen" "$LAB/screens/captain.screen"
+  jev_says api_error 0.9
+  sw check captain; TYPESAFE_API_KEY=k sw check captain
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev' 'a terminal API error reaches Jev without overdue work'
+  assert_contains "$OUT" 'action=failover-switched' 'the captain API error reaches recovery'
+  assert_equals 'captain --reason api_error ' "$(cat "$LOGS/failover.argv.1")" 'recovery receives the API error class'
+  pass 'captain: a terminal API error reaches recovery without open work'
+}
+
+test_worker_turnover_suppresses_actions() {
+  reset_lab
+  make_worker oldfail api-error.screen
+  make_worker oldnudge stalled.screen
+  make_worker current api-error.screen
+  sw check oldfail; sw check oldnudge; sw check current
+  jev_says api_error 0.9
+  FM_TEST_TURNOVER_TARGET=oldfail sw check oldfail
+  assert_contains "$OUT" 'action=none' 'a relaunched worker is not failed over from an old verdict'
+  assert_contains "$OUT" 'runtime-changed' 'the stale verdict names the turnover'
+  assert_equals 0 "$(count failover)" 'the old runtime causes no failover'
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/oldfail.state")" 'the stale screen was not marked acted'
+  jev_says idle_with_goals 0.9
+  FM_TEST_TURNOVER_TARGET=oldnudge sw check oldnudge
+  assert_contains "$OUT" 'action=none' 'a relaunched worker is not nudged from an old verdict'
+  assert_contains "$OUT" 'runtime-changed' 'the stale nudge names the turnover'
+  assert_equals 0 "$(count send)" 'the old runtime receives no nudge'
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/oldnudge.state")" 'the stale nudge was not marked acted'
+  jev_says api_error 0.9
+  sw check current
+  assert_contains "$OUT" 'action=failover-switched' 'an unchanged runtime still acts on its verdict'
+  assert_equals 1 "$(count failover)" 'the unchanged worker alone fails over'
+  pass 'worker turnover: stale failover and nudge are suppressed'
+}
+
+test_runtime_turnover_resets_observation() {
+  reset_lab
+  make_worker renewed stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check renewed; sw check renewed
+  assert_contains "$OUT" 'action=nudged' 'the first worker runtime is nudged'
+  sed 's/^spawn_gen=.*/spawn_gen=s2.renewed/' "$LAB/state/renewed.meta" > "$TMP_ROOT/renewed.meta"
+  cp "$TMP_ROOT/renewed.meta" "$LAB/state/renewed.meta"
+  sw check renewed
+  assert_contains "$OUT" 'verdict=progress' 'a replacement with the same screen starts a new observation'
+  assert_contains "$OUT" 'runtime-changed' 'the old nudge is cleared by runtime turnover'
+  sw check renewed
+  assert_contains "$OUT" 'action=nudged' 'the replacement gets its own first nudge'
+  assert_equals 2 "$(count send)" 'each worker runtime is nudged once'
+  assert_equals 0 "$(count failover)" 'the replacement is not failed over on the old nudge'
+
+  make_worker acted1 api-error.screen
+  jev_says api_error 0.9
+  sw check acted1; sw check acted1
+  assert_contains "$OUT" 'action=failover-switched' 'the first runtime handles its error'
+  sed 's/^spawn_gen=.*/spawn_gen=s2.acted1/' "$LAB/state/acted1.meta" > "$TMP_ROOT/acted1.meta"
+  cp "$TMP_ROOT/acted1.meta" "$LAB/state/acted1.meta"
+  sw check acted1
+  assert_contains "$OUT" 'verdict=progress' 'old acted state does not suppress replacement progress'
+  sw check acted1
+  assert_contains "$OUT" 'action=failover-switched' 'the unchanged replacement screen gets a fresh verdict'
+  assert_equals 2 "$(count failover)" 'each runtime can handle its own error'
+
+  reset_lab
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received renewed-goal --summary 'open work' >/dev/null || fail 'fixture: captain goal'
+  jev_says idle_with_goals 0.9
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'action=nudged' 'the first captain session is nudged'
+  sed '1s/^test-session$/renewed-session/' "$LAB/state/.lock-session" > "$TMP_ROOT/renewed-session"
+  cp "$TMP_ROOT/renewed-session" "$LAB/state/.lock-session"
+  sw check captain
+  assert_contains "$OUT" 'verdict=progress' 'a new captain session starts a fresh observation'
+  sw check captain
+  assert_contains "$OUT" 'action=nudged' 'the new captain session gets its own nudge'
+  assert_equals 2 "$(wc -l < "$LOGS/captain-send" | tr -d ' ')" 'each captain session is nudged once'
+  pass 'runtime turnover: prior nudge and acted state do not carry over'
+}
+
+test_captain_turnover_suppresses_nudge() {
+  reset_lab
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received turnover-goal --summary 'open work' >/dev/null || fail 'fixture: captain goal'
+  sw check captain
+  jev_says idle_with_goals 0.9
+  FM_TEST_TURNOVER_TARGET=captain sw check captain
+  assert_contains "$OUT" 'action=none' 'a successor captain does not receive the predecessor nudge'
+  assert_contains "$OUT" 'runtime-changed' 'the captain turnover is recorded'
+  assert_absent "$LOGS/captain-send"
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/captain.state")" 'the stale captain screen was not marked acted'
+  pass 'captain turnover: an old verdict sends no nudge'
+}
+
+test_captain_overdue_probe_failure() {
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  jev_says idle_with_goals 0.9
+  sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a successful empty overdue probe allows healthy idle'
+  FM_DISPATCH_SLA_MINUTES=bad sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'a failed overdue probe keeps captain work unknown'
+  assert_not_contains "$OUT" 'verdict=idle_done' 'a failed overdue probe never declares healthy idle'
+  pass 'captain: overdue probe failure reaches the classifier'
+}
+
+test_fingerprint_preserves_error_status() {
+  reset_lab
+  make_worker fp1 api-error.screen
+  sw check fp1
+  TYPESAFE_API_KEY=k jev_says api_error 0.9
+  TYPESAFE_API_KEY=k sw check fp1
+  assert_contains "$OUT" 'action=failover-switched' 'the first error is handled'
+  sed 's/API Error: 500/API Error: 429/' "$FIX/api-error.screen" > "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_contains "$OUT" 'verdict=progress' 'a changed HTTP status changes the fingerprint'
+  printf 'Elapsed 4m 02s · 3.1k tokens\n' >> "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_contains "$OUT" 'verdict=progress' 'a newly shown counter changes the screen'
+  sed 's/Elapsed 4m 02s · 3.1k tokens/Elapsed 5m 03s · 4.2k tokens/' "$LAB/screens/fp1.screen" > "$TMP_ROOT/next.screen"
+  cp "$TMP_ROOT/next.screen" "$LAB/screens/fp1.screen"
+  sw check fp1
+  assert_not_contains "$OUT" 'verdict=progress' 'timer and token changes alone keep the fingerprint'
+  pass 'fingerprint: error status changes count as progress, timer counters do not'
+}
+
+test_classifier_never_sees_secrets() {
+  reset_lab
+  { secrets_screen; printf 'wrote %s/projects/notes.md\n' "$HOME"; } > "$TMP_ROOT/s.screen"
+  jev_says idle_with_goals 0.9
+  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$TMP_ROOT/s.screen" classify
+  assert_no_planted "$(cat "$LOGS/curl.body.1")" 'the jev request body'
+  assert_not_contains "$(cat "$LOGS/curl.body.1")" 'ts-test-key-123' 'the jev request body'
+  assert_equals false "$(jq -r '.state.agent | has("latest_status") or has("status")' "$LOGS/curl.body.1")" 'Jev receives no status field'
+  assert_contains "$(jq -r .state.agent.screen "$LOGS/curl.body.1")" 'GITHUB_TOKEN=<redacted>' 'Jev receives the redacted screen'
+  pass 'redaction boundary: Jev receives no planted secret or private path'
+}
+
+test_unchanged_screen_guard() {
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker w1 stalled.screen
+  jev_says idle_done 0.95
+  sw check w1
+  assert_contains "$OUT" 'verdict=progress stalled=no source=fingerprint' 'the first check only records the screen'
+  assert_equals 0 "$(count curl)" 'a new screen is never classified'
+  sw check w1
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev' 'an unchanged screen is classified'
+  assert_equals 1 "$(count curl)" 'one model call for the unchanged screen'
+  printf '\n• Started the third case.\n' >> "$LAB/screens/w1.screen"
+  sw check w1
+  assert_contains "$OUT" 'verdict=progress' 'a changed screen is progress'
+  printf 'working: third case [at=2]\n' >> "$LAB/state/w1.status"
+  sw check w1
+  assert_contains "$OUT" 'verdict=progress' 'a new status line is progress'
+  printf 'x\n' > "$TMP_ROOT/wt-w1/new.txt"
+  git -C "$TMP_ROOT/wt-w1" add new.txt >/dev/null 2>&1
+  git -C "$TMP_ROOT/wt-w1" -c user.name=t -c user.email=t@example.com commit -qm next >/dev/null 2>&1 || fail 'fixture: commit'
+  sw check w1
+  assert_contains "$OUT" 'verdict=progress' 'a new commit is progress'
+  assert_equals 1 "$(count curl)" 'progress never calls the model'
+  assert_equals 5 "$(ledger_rows w1)" 'one ledger row per check'
+  sw check w1 --dry-run
+  assert_contains "$OUT" 'action=dry-run' 'a dry run classifies'
+  assert_contains "$OUT" 'fingerprint=same' 'a dry run reports the guard'
+  assert_equals 5 "$(ledger_rows w1)" 'a dry run writes no row'
+  bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" w1 >/dev/null || fail 'fixture: arm'
+  sw check w1
+  assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a busy semantic record is working'
+  pass 'guard: only an unchanged screen, HEAD, and status reach the judge; busy is working'
+}
+
+test_actions() {
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker w2 api-error.screen
+  jev_says api_error 0.9
+  sw check w2; sw check w2
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev' 'the model judges the API error'
+  assert_contains "$OUT" 'action=failover-switched' 'a model-judged API error fails over'
+  assert_equals "worker w2 --reason api_error --state $LAB/state " "$(cat "$LOGS/failover.argv.1")" 'fm-failover.sh worker with the class'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'stall-w2-' 'the outcome is a check wake'
+  assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'check: w2 moved to the next runtime after the stall check judged it stopped (api_error per jev' 'the report names the judgment'
+  sw check w2
+  assert_contains "$OUT" 'verdict=already-handled' 'the same screen is handled once'
+  assert_equals 1 "$(count failover)" 'one failover per screen'
+  assert_equals 1 "$(count curl)" 'a handled screen is not classified again'
+
+  make_worker w3 stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check w3; sw check w3
+  assert_contains "$OUT" 'action=nudged' 'idle with open work is nudged first'
+  assert_equals w3 "$(head -n 1 "$LOGS/send.argv.1")" 'the nudge goes through fm-send to the task'
+  assert_contains "$(cat "$LOGS/send.argv.1")" 'Stall check:' 'the nudge text'
+  sw check w3
+  assert_contains "$OUT" 'action=failover-switched' 'still idle on the next check fails over'
+  assert_equals "worker w3 --reason stalled --state $LAB/state " "$(cat "$LOGS/failover.argv.2")" 'failover with --reason stalled'
+
+  make_worker w4 waiting-on-human.screen
+  jev_says waiting_on_human 0.9
+  sw check w4; sw check w4
+  assert_contains "$OUT" 'action=escalated' 'a worker waiting on a person escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'w4 is waiting on a person' 'the escalation wake'
+  sw check w4
+  assert_contains "$OUT" 'already-handled' 'one escalation per screen'
+
+  make_worker w5 rate-limited.screen
+  sw check w5; sw check w5
+  assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=rule' 'a rule refusal'
+  assert_contains "$OUT" 'action=watcher-owned' 'a rule refusal is left to the watcher failover'
+  assert_equals 2 "$(count failover)" 'no failover from the stall check for a rule refusal'
+
+  make_worker w6 idle-done.screen
+  jev_says idle_done 0.9
+  sw check w6; sw check w6
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev confidence=0.9 latency_ms=' 'idle done'
+  assert_contains "$OUT" 'action=none' 'idle done does nothing'
+
+  make_worker w7 stalled.screen
+  sw check w7
+  jev_says idle_with_goals 0.3
+  sw check w7
+  assert_contains "$OUT" 'action=wait' 'the first unsure check waits'
+  sw check w7
+  assert_contains "$OUT" 'action=escalated' 'the same screen unsure again escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'w7 may be stalled and the classifier could not tell twice' 'the unsure escalation wake'
+
+  make_worker w8 stalled.screen
+  printf 'done: PR opened [at=3]\n' >> "$LAB/state/w8.status"
+  rm -f "$LAB/screens/w8.screen"
+  sw check w8
+  assert_contains "$OUT" 'verdict=declared stalled=no source=status' 'a declared status is left to supervision'
+  assert_contains "$OUT" 'status=done' 'the declared word is named'
+
+  make_worker w9 api-error.screen
+  jev_says api_error 0.9
+  sw check w9
+  FM_TEST_FO_RC=5 sw check w9
+  assert_contains "$OUT" 'action=failover-locked' 'a held failover lock'
+  sw check w9
+  assert_contains "$OUT" 'action=failover-switched' 'a locked failover is retried on the next check'
+  pass 'actions: failover, nudge then failover, escalation, rule refusals left alone, once per screen'
+}
+
+test_actionful_checks_share_target_lock() {
+  local first i=0
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker concurrent stalled.screen
+  sw check concurrent
+  : > "$LOGS/send.hold"
+  FM_TEST_SEND_HOLD=1 bash "$SW" check concurrent > "$TMP_ROOT/first-check.out" 2> "$TMP_ROOT/first-check.err" &
+  first=$!
+  while [ ! -f "$LOGS/send.entered" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_present "$LOGS/send.entered"
+  sw check concurrent
+  expect_code 1 "$RC" 'a second direct check stops at the held target lock'
+  assert_contains "$ERR" 'check for concurrent is already running' 'the held direct check is named'
+  sw check concurrent --dry-run
+  assert_contains "$OUT" 'action=dry-run' 'a dry run remains available while the target lock is held'
+  sw tick
+  assert_contains "$ERR" 'check for concurrent is already running' 'the tick uses the same target lock'
+  assert_equals 1 "$(count send)" 'overlapping checks do not send another nudge'
+  rm -f "$LOGS/send.hold"
+  wait "$first" || fail 'the first check did not finish'
+  assert_contains "$(cat "$TMP_ROOT/first-check.out")" 'action=nudged' 'the first check finishes its action'
+  assert_equals 1 "$(count send)" 'exactly one nudge was delivered'
+  pass 'target lock: direct and tick checks cannot act concurrently'
+}
+
+test_captain_actions() {
+  local now
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker w1 working.screen
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain idle with workers running and nothing owed is waiting on its watcher'
+  assert_equals 0 "$(count curl)" 'a healthy idle captain never reaches the model'
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received g1 --summary 'a goal' >/dev/null || fail 'fixture: received'
+  cp "$FIX/api-error.screen" "$LAB/screens/captain.screen"
+  jev_says usage_limit 0.9
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'action=failover-switched' 'a model-judged refusal of a captain with an overdue goal fails over'
+  assert_equals 'captain --reason usage_limit ' "$(cat "$LOGS/failover.argv.1")" 'fm-failover.sh captain with the class'
+  assert_equals 1 "$(cat "$LOGS/failover.captain-env.1")" 'the watcher authorization is requested'
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  jev_says idle_with_goals 0.9
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'action=nudged' 'an idle captain with work owed is nudged'
+  assert_contains "$(cat "$LOGS/captain-send")" 'Stall check:' 'the captain typer received the nudge'
+  sw check captain
+  assert_contains "$OUT" 'action=escalated' 'a captain still idle after the nudge is escalated'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'captain is still idle with work waiting after a nudge' 'the escalation wake'
+  assert_equals 1 "$(count failover)" 'an idle captain is never failed over as stalled'
+  sw check captain
+  assert_contains "$OUT" 'already-handled' 'one escalation per screen'
+  cp "$FIX/waiting-on-human.screen" "$LAB/screens/captain.screen"
+  jev_says waiting_on_human 0.9
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'action=none' 'a captain waiting on its owner is only recorded'
+  assert_contains "$OUT" 'waiting-on-owner' 'the reason is named'
+  # The captain's backend reports its native busy state (hc's `get --json`).
+  cat > "$TMP_ROOT/hc" <<'SH'
+#!/usr/bin/env bash
+[ "$1" = get ] || exit 1
+printf '{"status":{"state":"%s"}}\n' "$FM_TEST_HC_STATE"
+SH
+  chmod +x "$TMP_ROOT/hc"
+  write_captain_lock "$CAPTAIN_OWNER"
+  cp "$FIX/working.screen" "$LAB/screens/captain.screen"
+  jev_says idle_with_goals 0.9
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
+  assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a natively busy captain is working without a model'
+  FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=idle sw check captain
+  assert_contains "$OUT" 'source=jev' 'a natively idle captain with work owed reaches the classifier'
+  rm -f "$LAB/state/dispatch-log.tsv"
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  printf '\n• Finished.\n' >> "$LAB/screens/captain.screen"
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'wakes queued within the interval are not work owed'
+  assert_contains "$OUT" 'action=none' 'an idle captain with nothing owed is left alone'
+  now=$(date +%s)
+  printf '%s\t%s\tcheck\told-key\tan old wake\n' "$((now - 5000))" 999 >> "$LAB/state/.wake-queue"
+  sw check captain
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'a wake left in the queue past one interval is work owed'
+  assert_contains "$OUT" 'action=nudged' 'and the idle captain is nudged'
+  pass 'captain: idle and owing nothing is healthy; owed work comes from overdue goals or old wakes; nudge then one escalation, never a stalled failover'
+}
+
+# A declared verb is read from the raw status line, while Jev receives only the screen.
+test_declared_status_reads_the_raw_verb() {
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker d1 stalled.screen
+  printf 'needs-decision: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d1.status"
+  sw check d1
+  assert_contains "$OUT" 'verdict=declared stalled=no source=status' 'a credential-like decision line is still declared'
+  assert_contains "$OUT" 'status=needs-decision' 'its verb survives redaction'
+  make_worker d2 stalled.screen
+  printf 'done: fixed the Authorization: header handling [at=3]\n  The follow-up is in the PR body.\n' >> "$LAB/state/d2.status"
+  sw check d2
+  assert_contains "$OUT" 'status=done' 'a withheld done line with continuation prose is still declared'
+  make_worker d3 stalled.screen
+  printf 'working: reviewing confidential offer for Alice [at=3]\n' >> "$LAB/state/d3.status"
+  jev_says idle_with_goals 0.9
+  sw check d3; sw check d3
+  assert_contains "$OUT" 'source=jev' 'an undeclared worker is judged'
+  assert_not_contains "$(cat "$LOGS/curl.body.1")" 'confidential offer for Alice' 'the classifier never receives status prose absent from the screen'
+  pass 'declared status: the verb stays local and status prose is not sent'
+}
+
+# A nudge ends only with real work: a new commit or status line. A screen
+# change alone, such as the nudge doorbell, keeps it, so idle again fails over.
+test_nudge_ends_with_work() {
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker n3 stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check n3; sw check n3
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  printf 'x\n' > "$TMP_ROOT/wt-n3/work.txt"
+  git -C "$TMP_ROOT/wt-n3" add work.txt >/dev/null 2>&1
+  git -C "$TMP_ROOT/wt-n3" -c user.name=t -c user.email=t@example.com commit -qm work >/dev/null 2>&1 || fail 'fixture: commit'
+  sw check n3
+  assert_contains "$OUT" 'verdict=progress' 'a commit is progress'
+  assert_contains "$OUT" 'worked-after-nudge' 'and it ends the nudge'
+  sw check n3
+  assert_contains "$OUT" 'action=nudged' 'the next idle spell starts with a nudge again'
+  assert_equals 0 "$(count failover)" 'work after a nudge never leads to a stalled failover'
+  printf '\n• doorbell\n' >> "$LAB/screens/n3.screen"
+  sw check n3
+  assert_contains "$OUT" 'nudged-at=' 'a screen change alone keeps the nudge'
+  sw check n3
+  assert_contains "$OUT" 'action=failover-switched' 'still idle after that fails over'
+  pass 'nudge: a commit or status line ends it; a screen change alone does not'
+}
+
+test_equal_length_status_change_ends_nudge() {
+  local old_size new_size
+  reset_lab
+  make_worker equal1 stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check equal1; sw check equal1
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  old_size=$(wc -c < "$LAB/state/equal1.status" | tr -d ' ')
+  sed 's/parser/solver/' "$LAB/state/equal1.status" > "$TMP_ROOT/equal1.status"
+  new_size=$(wc -c < "$TMP_ROOT/equal1.status" | tr -d ' ')
+  assert_equals "$old_size" "$new_size" 'the replacement has the same byte count'
+  cp "$TMP_ROOT/equal1.status" "$LAB/state/equal1.status"
+  sw check equal1
+  assert_contains "$OUT" 'verdict=progress' 'equal-length status content is progress'
+  assert_contains "$OUT" 'worked-after-nudge' 'status content change ends the nudge'
+  sw check equal1
+  assert_contains "$OUT" 'action=nudged' 'the next idle spell starts with a nudge'
+  assert_equals 0 "$(count failover)" 'a resumed worker is not failed over'
+  pass 'status content: equal-length changes reset the nudge'
+}
+
+# The watcher's failover skips a refusal row after an ordinary Claude stop, so
+# the stall check judges that screen instead of leaving it to the watcher.
+test_refusal_after_ordinary_stop_is_judged() {
+  local gen
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker r1 rate-limited.screen
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r1) || fail 'fixture: arm'
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
+  jev_says rate_limit 0.9
+  sw check r1; sw check r1
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'the classifier judges the screen, and a refusal answer is history'
+  assert_contains "$OUT" 'refusal-row-is-history' 'the remap is named'
+  assert_contains "$OUT" 'action=nudged' 'so the idle worker is nudged'
+  assert_equals 0 "$(count failover)" 'an old refusal row never fails a worker over'
+  make_worker r2 rate-limited.screen
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r2) || fail 'fixture: arm'
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r2 idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null || fail 'fixture: stop-failure'
+  sw check r2; sw check r2
+  assert_contains "$OUT" 'action=watcher-owned' 'after a stop-failure the row stays the watcher'"'"'s'
+  assert_equals 1 "$(count curl)" 'only the ordinary stop reached the classifier'
+  pass 'refusal rows: left to the watcher unless the Claude hook recorded an ordinary stop, which makes them history'
+}
+config_reports() { grep -l 'the stall check is not running' "$LAB/state/stall-watch"/.report.* 2>/dev/null | wc -l | tr -d ' '; }
+
+test_tick_schedule() {
+  local live_start
+  reset_lab
+  make_worker t1 stalled.screen
+  make_worker t2 working.screen
+  sw tick
+  assert_contains "$ERR" 'off (no config/stall-watch)' 'no config, no tick'
+  assert_absent "$LAB/state/stall-watch.tsv"
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  FM_STALL_WATCH_NOW=100000 sw tick
+  expect_code 0 "$RC" "tick: $ERR"
+  assert_equals 1 "$(ledger_rows t1)" 'the tick checks t1'
+  assert_equals 1 "$(ledger_rows t2)" 'the tick checks t2'
+  sw tick --force
+  expect_code 2 "$RC" 'tick rejects the removed force option'
+  FM_STALL_WATCH_NOW=100300 sw tick
+  assert_equals 1 "$(ledger_rows t1)" 'a tick before the interval does nothing'
+  FM_STALL_WATCH_NOW=100600 sw tick
+  assert_equals 2 "$(ledger_rows t1)" 'the next tick runs once the interval passed'
+  FM_STALL_WATCH_NOW=100601 sw tick
+  assert_equals 2 "$(ledger_rows t1)" 'a tick before the next interval still waits'
+  FM_STALL_WATCH_NOW=101200 sw tick
+  assert_equals 3 "$(ledger_rows t1)" 'the next eligible tick runs'
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  live_start=$(bash -c '. "$1"; fm_pid_start_time "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$$") || fail 'fixture: no tick holder start time'
+  printf '%s\n' "$$" > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '%s\n' "$live_start" > "$LAB/state/stall-watch/.tick.lock/pid-start"
+  FM_STALL_WATCH_NOW=200000 sw tick
+  assert_contains "$ERR" 'another tick is running' 'a live tick is single-flight'
+  assert_equals 3 "$(ledger_rows t1)" 'no check while another tick runs'
+  printf '%s\n' stale-instance > "$LAB/state/stall-watch/.tick.lock/pid-start"
+  FM_STALL_WATCH_NOW=200000 sw tick
+  assert_equals 4 "$(ledger_rows t1)" 'a reused live PID with the wrong start time does not hold the tick lock'
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  printf '999999\n' > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf 'stale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid-start"
+  FM_STALL_WATCH_NOW=200600 sw tick
+  assert_equals 5 "$(ledger_rows t1)" 'a dead holder also releases the tick lock'
+  printf 'interval=abc\n' > "$LAB/config/stall-watch"
+  sw tick
+  expect_code 2 "$RC" 'an invalid interval is a configuration error'
+  assert_equals 1 "$(config_reports)" 'a tick reports the invalid file'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'the stall check is not running because config/stall-watch interval must be' 'the report names the error'
+  sw tick
+  expect_code 2 "$RC" 'the same invalid file is still an error'
+  assert_equals 1 "$(config_reports)" 'the same file content is reported once'
+  printf 'interval=abc\nlines=61\n' > "$LAB/config/stall-watch"
+  sw check t1
+  expect_code 2 "$RC" 'check refuses the invalid file too'
+  assert_equals 1 "$(config_reports)" 'only a tick reports'
+  sw tick
+  assert_equals 2 "$(config_reports)" 'a changed invalid file is reported again'
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  FM_STALL_WATCH_NOW=300000 sw tick
+  expect_code 0 "$RC" "a fixed file ticks again: $ERR"
+  printf 'interval=abc\n' > "$LAB/config/stall-watch"
+  sw tick
+  assert_equals 3 "$(config_reports)" 'a valid tick clears the memory, so the old error is reported again'
+  pass 'tick: opt-in, interval, single-flight, config validation, and one report per invalid file'
+}
+
+test_successful_checks_release_locks() {
+  reset_lab
+  make_worker release1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  sw check release1
+  expect_code 0 "$RC" "direct check exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'unbound variable' 'direct check has no EXIT trap variable error'
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  FM_STALL_WATCH_NOW=200000 sw tick
+  expect_code 0 "$RC" "tick exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'unbound variable' 'tick has no EXIT trap variable error'
+  assert_absent "$LAB/state/stall-watch/.tick.lock"
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  FM_STALL_WATCH_NOW=200600 sw tick
+  expect_code 0 "$RC" "immediate second tick exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'another tick is running' 'a completed tick does not block its successor'
+  assert_absent "$LAB/state/stall-watch/.tick.lock"
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  pass 'successful checks: direct and tick EXIT handlers release their locks'
+}
+
+test_tick_lock_reclaim_is_single_flight() {
+  local first dead i=0
+  reset_lab
+  make_worker race1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  sw check race1
+  assert_equals 1 "$(ledger_rows race1)" 'the worker has one starting observation'
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  "$TMP_ROOT/claude" 1 &
+  dead=$!
+  printf '%s\n' "$dead" > "$LAB/state/stall-watch/.tick.lock/pid"
+  wait "$dead" 2>/dev/null || true
+  : > "$LOGS/curl.hold"
+  FM_TEST_CURL_HOLD=1 FM_STALL_WATCH_NOW=200000 bash "$SW" tick > "$TMP_ROOT/first-tick.out" 2> "$TMP_ROOT/first-tick.err" &
+  first=$!
+  while [ ! -f "$LOGS/curl.entered" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_present "$LOGS/curl.entered"
+  FM_STALL_WATCH_NOW=200000 sw tick
+  assert_contains "$ERR" 'another tick is running' 'the live first tick blocks the second'
+  assert_equals 1 "$(ledger_rows race1)" 'the second tick does not classify while the first holds the lock'
+  rm -f "$LOGS/curl.hold"
+  wait "$first" || fail 'the first tick did not finish'
+  assert_equals 2 "$(ledger_rows race1)" 'exactly one tick reclaimed the stale lock and checked the worker'
+  assert_equals 1 "$(count curl)" 'only one tick called Jev'
+  pass 'tick lock: concurrent stale reclaim is single-flight'
+}
+
+test_tick_lock_unpublished_owner_is_preserved() {
+  reset_lab
+  make_worker pending1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  FM_STALL_WATCH_NOW=200000 sw tick
+  assert_contains "$ERR" 'another tick is running' 'a fresh lock without an owner record is respected'
+  assert_equals 0 "$(ledger_rows pending1)" 'a pending owner prevents work from starting'
+  assert_present "$LAB/state/stall-watch/.tick.lock"
+  rm -rf "$LAB/state/stall-watch/.tick.lock"
+  pass 'tick lock: an unpublished fresh owner is not stolen'
+}
+
+test_invalid_timing_configuration() {
+  local key
+  reset_lab
+  make_worker badtime stalled.screen
+  for key in interval timeout; do
+    printf '%s=not-a-number\n' "$key" > "$LAB/config/stall-watch"
+    sw check badtime
+    expect_code 2 "$RC" "check rejects nonnumeric $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "check names invalid $key"
+    sw tick
+    expect_code 2 "$RC" "tick rejects nonnumeric $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "tick names invalid $key"
+    printf '%s=18446744073709551676\n' "$key" > "$LAB/config/stall-watch"
+    sw check badtime
+    expect_code 2 "$RC" "check rejects overflowing $key"
+    sw tick
+    expect_code 2 "$RC" "tick rejects overflowing $key"
+  done
+  assert_equals 0 "$(ledger_rows badtime)" 'invalid timing never checks a screen'
+  pass 'timing configuration: check and tick reject nonnumeric values'
+}
+
+launch_age() { perl -e 'print time - (stat $ARGV[0])[9]' "$1/state/stall-watch/.last-launch"; }
+
+test_watcher_starts_tick_and_delivers_reports() {
+  local dir pid i
+  dir=$(make_case watch-stall)
+  mkdir -p "$dir/config" "$dir/home"
+  printf '%s\n' "$(cat "$FIX/stalled.screen")" > "$dir/pane.txt"
+  fm_git_worktree "$dir/repo" "$dir/wt" fm/fo >/dev/null 2>&1 || fail 'fixture: no worktree'
+  fm_write_meta "$dir/state/fo.meta" window=test:fm-fo kind=ship harness=claude "worktree=$dir/wt" spawn_gen=s1.fo
+  printf 'working: wiring the parser\n' > "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  printf 'interval=1200\n' > "$dir/config/stall-watch"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
+    wait "$!" 2>/dev/null || true )
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -s "$dir/state/stall-watch.tsv" ]; do sleep 0.1; i=$((i + 1)); done
+  assert_present "$dir/state/stall-watch.tsv"
+  assert_contains "$(cat "$dir/state/stall-watch.tsv")" $'fo\tprogress\tno\tfingerprint' 'the watcher-started tick read the real pane through the backend'
+  # A launch touches .last-launch first, so its age shows whether one happened.
+  perl -e 'my $t = time - 30; utime $t, $t, $ARGV[0]' "$dir/state/stall-watch/.last-launch"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch1.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
+    wait "$!" 2>/dev/null || true )
+  [ "$(launch_age "$dir")" -ge 25 ] || fail 'a launch within the last minute must not launch again'
+  perl -e 'my $t = time - 120; utime $t, $t, $ARGV[0]' "$dir/state/stall-watch/.last-launch"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch1.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
+    wait "$!" 2>/dev/null || true )
+  [ "$(launch_age "$dir")" -lt 25 ] || fail 'a launch older than a minute must launch again'
+  printf 'check: fo looks stalled (test report)\n' > "$dir/state/stall-watch/.report.1.1"
+  ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
+    FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      watch_bg "$dir/state" "$dir/fakebin" "$dir/watch2.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt"
+    pid=$!
+    wait_for_exit "$pid" 300 >/dev/null 2>&1 || true )
+  assert_contains "$(cat "$dir/watch2.out")" 'check: fo looks stalled (test report)' 'the watcher wakes with the tick report'
+  assert_absent "$dir/state/stall-watch/.report.1.1"
+  pass 'watcher: starts the tick detached at most once a minute while opted in and delivers each report once'
+}
+
+# One case per remaining decision of cmd_check: escalations by class, model
+# refusals per class, an undeliverable or expired nudge, every failover exit,
+# and the targets a check skips.
+test_decided_scenarios() {
+  local id r rc
+  reset_lab
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  make_worker a1 stalled.screen
+  jev_says auth 0.9
+  sw check a1; sw check a1
+  assert_contains "$OUT" 'verdict=auth stalled=yes source=jev' 'auth is judged'
+  assert_contains "$OUT" 'action=escalated' 'auth escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'a1 looks signed out or its credentials were rejected' 'the auth wake'
+  make_worker c1 stalled.screen
+  jev_says crashed 0.9
+  sw check c1; sw check c1
+  assert_contains "$OUT" 'action=escalated' 'crashed escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'c1 looks crashed' 'the crashed wake'
+  assert_equals 0 "$(count failover)" 'escalations never fail over'
+
+  for r in rate_limit usage_limit billing; do
+    id="m-$r"
+    id=${id//_/-}
+    make_worker "$id" stalled.screen
+    jev_says "$r" 0.9
+    sw check "$id"; sw check "$id"
+    assert_contains "$OUT" "verdict=$r stalled=yes source=jev" "a model-judged $r"
+    assert_contains "$OUT" 'action=failover-switched' "a model-judged $r fails over"
+  done
+  assert_equals "worker m-billing --reason billing --state $LAB/state " "$(cat "$LOGS/failover.argv.3")" 'the worker failover carries the class'
+
+  make_worker n1 stalled.screen
+  jev_says idle_with_goals 0.9
+  FM_STALL_WATCH_NOW=1000 sw check n1
+  FM_TEST_SEND_RC=1 FM_STALL_WATCH_NOW=2000 sw check n1
+  assert_contains "$OUT" 'action=escalated' 'a nudge that could not be delivered escalates'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'n1 is idle with open work and could not be nudged' 'the undeliverable nudge wake'
+  make_worker n2 stalled.screen
+  FM_STALL_WATCH_NOW=1000 sw check n2
+  FM_STALL_WATCH_NOW=2000 sw check n2
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  FM_STALL_WATCH_NOW=5601 sw check n2
+  assert_contains "$OUT" 'action=nudged' 'a nudge older than three intervals nudges again instead of failing over'
+  FM_STALL_WATCH_NOW=5700 sw check n2
+  assert_contains "$OUT" 'action=failover-switched' 'a fresh nudge followed by idle fails over'
+
+  jev_says api_error 0.9
+  for rc in 1 1s 3 6 9; do
+    id="fo-$rc"
+    make_worker "$id" api-error.screen
+    sw check "$id"
+    case "$rc" in
+      1s) FM_TEST_FO_RC=1 FM_TEST_FO_SILENT=1 sw check "$id" ;;
+      *) FM_TEST_FO_RC=$rc sw check "$id" ;;
+    esac
+    case "$rc" in
+      1) assert_contains "$OUT" 'action=failover-none' 'exit 1 with its none line is no runtime'
+         assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'fo-1 looks stopped' 'the none report' ;;
+      1s) assert_contains "$OUT" 'action=failover-failed' 'exit 1 without a none line is a failure'
+          assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'automatic failover failed (exit 1)' 'the failure names the exit' ;;
+      3) assert_contains "$OUT" 'action=failover-bound' 'exit 3 is the attempt bound' ;;
+      6) assert_contains "$OUT" 'action=failover-not-needed' 'exit 6 needs no failover'
+         sw check "$id"
+         assert_contains "$OUT" 'already-handled' 'a not-needed failover is not retried on the same screen' ;;
+      9) assert_contains "$OUT" 'action=failover-failed' 'any other exit is a failure'
+         assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'automatic failover failed (exit 9)' 'the failure names exit 9' ;;
+    esac
+  done
+
+  fm_write_meta "$LAB/state/sm.meta" "window=fm:fm-sm" kind=secondmate harness=claude backend=tmux
+  sw check sm --dry-run
+  assert_equals 0 "$(ledger_rows sm)" 'a dry run of a skipped target writes no row'
+  sw check sm
+  assert_contains "$OUT" 'verdict=not-a-worker' 'a secondmate is not checked'
+  assert_equals 1 "$(ledger_rows sm)" 'a skipped non-worker still gets its ledger row'
+  make_worker rm1 stalled.screen
+  printf 'remote_host=h1\n' >> "$LAB/state/rm1.meta"
+  sw check rm1
+  assert_contains "$OUT" 'verdict=remote' 'a remote task is not checked'
+  assert_equals 1 "$(ledger_rows rm1)" 'a skipped remote task still gets its ledger row'
+  make_worker cf1 stalled.screen
+  rm -f "$LAB/screens/cf1.screen"
+  sw check cf1
+  expect_code 1 "$RC" 'an unreadable screen exits 1'
+  assert_contains "$OUT" 'verdict=capture-failed stalled=unsure' 'capture failure'
+  assert_equals 1 "$(ledger_rows cf1)" 'a capture failure gets its ledger row'
+  pass 'decisions: auth and crashed escalate, model refusals fail over, nudges expire, every failover exit maps, skipped targets are recorded'
+}
+
+fm_test_run \
+  test_screen_redacts_secrets_and_paths \
+  test_deterministic_pass_skips_the_model \
+  test_rendered_activity_is_not_a_rule \
+  test_decided_scenarios \
+  test_model_judge_maps_answers \
+  test_jev_unavailable_takes_no_action \
+  test_jev_unavailable_reasons \
+  test_jev_base_transport \
+  test_stale_captain_endpoint_is_skipped \
+  test_captain_api_error_without_open_work \
+  test_worker_turnover_suppresses_actions \
+  test_runtime_turnover_resets_observation \
+  test_captain_turnover_suppresses_nudge \
+  test_captain_overdue_probe_failure \
+  test_fingerprint_preserves_error_status \
+  test_classifier_never_sees_secrets \
+  test_unchanged_screen_guard \
+  test_actions \
+  test_actionful_checks_share_target_lock \
+  test_captain_actions \
+  test_declared_status_reads_the_raw_verb \
+  test_nudge_ends_with_work \
+  test_equal_length_status_change_ends_nudge \
+  test_refusal_after_ordinary_stop_is_judged \
+  test_tick_schedule \
+  test_successful_checks_release_locks \
+  test_tick_lock_reclaim_is_single_flight \
+  test_tick_lock_unpublished_owner_is_preserved \
+  test_invalid_timing_configuration \
+  test_watcher_starts_tick_and_delivers_reports

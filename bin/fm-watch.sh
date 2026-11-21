@@ -3673,6 +3673,44 @@ disk_retry_tick() {
   done
 }
 
+# Opt-in stall check (bin/fm-stall-watch.sh; docs/configuration.md "Stall
+# watch"): while config/stall-watch exists, start one tick at most once a
+# minute and single-flight, in its own process group like the disk retry scan,
+# so a model call or a failover never holds a poll and a watcher restart does
+# not cut one short; the tick keeps its own interval. This tick wakes with each
+# report file a tick left, even after the opt-in is removed. Off costs one glob
+# and one file test.
+STALL_WATCH_PID=
+STALL_WATCH_START=
+stall_watch_tick() {
+  local f stamp="$STATE/stall-watch/.last-launch" monitor=0 current
+  STALL_WATCH_REASON=
+  for f in "$STATE/stall-watch"/.report.*; do
+    [ -f "$f" ] || continue
+    STALL_WATCH_REASON=$(cat "$f" 2>/dev/null) || STALL_WATCH_REASON=
+    rm -f -- "$f" 2>/dev/null || true
+    [ -z "$STALL_WATCH_REASON" ] || break
+  done
+  [ -e "$CONFIG/stall-watch" ] || return 0
+  command -v fm_pid_start_time >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  if [ -n "$STALL_WATCH_PID" ] && [ -n "$STALL_WATCH_START" ]; then
+    current=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || current=''
+    [ "$current" != "$STALL_WATCH_START" ] || return 0
+  fi
+  STALL_WATCH_PID='' STALL_WATCH_START=''
+  [ "$(age_of "$stamp")" -ge 60 ] || return 0
+  mkdir -p "$STATE/stall-watch" 2>/dev/null && touch "$stamp" 2>/dev/null || return 0
+  case $- in *m*) monitor=1 ;; esac
+  set -m 2>/dev/null || true
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    nohup "$SCRIPT_DIR/fm-stall-watch.sh" tick </dev/null >/dev/null 2>&1 &
+  STALL_WATCH_PID=$!
+  STALL_WATCH_START=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || STALL_WATCH_START=
+  disown "$STALL_WATCH_PID" 2>/dev/null || true
+  [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
+}
+
 # Away decisions use the timed status fold. Without a council entrypoint every
 # overdue decision is a captain page; nothing authorizes an unattended decision.
 # The claim covers task, key and opening epoch, so a repeat scan or a new away
@@ -5669,6 +5707,10 @@ while :; do
   watch_stage disk-retry
   disk_retry_tick
   [ -z "$DISK_RETRY_REASON" ] || wake "$DISK_RETRY_REASON"
+
+  watch_stage stall-watch
+  stall_watch_tick
+  [ -z "$STALL_WATCH_REASON" ] || wake "$STALL_WATCH_REASON"
 
   away_decision_age_tick || {
     echo 'watcher: away decision age check failed' >&2
