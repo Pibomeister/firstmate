@@ -202,7 +202,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-supervisor-failover-lib.sh` | Successor quota preflight, supported failover runtimes, agy trust check, and the `SUPERVISOR v1` failover log shared by the handoff launcher and supervisor failover |
 | `fm-failover.sh` | Preflight configured provider runtimes and move a refused worker or primary to an eligible successor ([configuration](configuration.md#provider-failover-configfailover-order)) |
 | `fm-failover-lib.sh` | Shared provider failover order parsing and refusal records |
-| `fm-stall-watch.sh` | Opt-in built-in stall check: read and redact a worker's or the captain's screen, judge it by rule first and by Jev or Grok only when ambiguous, and fail over, nudge, or notify ([configuration](configuration.md#stall-watch-configstall-watch)) |
+| `fm-stall-watch.sh` | Opt-in built-in stall check: read and redact a worker's or the captain's screen, judge it by rule first and by Jev only when ambiguous, and fail over, nudge, or notify ([configuration](configuration.md#stall-watch-configstall-watch)) |
 | `fm-typesafe-lib.sh` | Shared TypeSafe base setting and validation and the bounded `/v1/systemone` POST used by `fm-dispatch-resolve.sh` and `fm-stall-watch.sh` |
 | `fm-handoff-ack.sh` | Successor-side acknowledgement of a handoff document that requests the nonce-bound lock transfer |
 | `fm-handoff-lib.sh` | Shared verified-handoff contract: pending claim, acknowledgement, completion record, and the `HANDOFF v1` watchdog event lines |

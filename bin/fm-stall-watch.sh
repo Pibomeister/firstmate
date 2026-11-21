@@ -728,26 +728,37 @@ sw_check_target() {  # <target> <dry-run>
   sw_line "$target" "$action"
 }
 # ---- tick --------------------------------------------------------------------
+sw_tick_pid_start() {
+  command -v fm_pid_start_time >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
+  fm_run_timed_fn 2 fm_pid_start_time "$1" 2>/dev/null
+}
+
 sw_lock_acquire() {
-  local lock="$SW_DIR/.tick.lock" pid
+  local lock="$SW_DIR/.tick.lock" pid recorded current
   mkdir -p "$SW_DIR" || return 1
   if mkdir "$lock" 2>/dev/null; then
-    printf '%s\n' "$$" > "$lock/pid"
+    current=$(sw_tick_pid_start "$$") || { rmdir "$lock" 2>/dev/null || true; return 1; }
+    printf '%s\n%s\n' "$$" "$current" > "$lock/pid"
     return 0
   fi
-  pid=$(cat "$lock/pid" 2>/dev/null || true)
+  pid=$(sed -n '1p' "$lock/pid" 2>/dev/null || true)
+  recorded=$(sed -n '2p' "$lock/pid" 2>/dev/null || true)
   case "$pid" in ''|*[!0-9]*) pid='' ;; esac
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    return 1
+  if [ -n "$pid" ] && [ -n "$recorded" ]; then
+    current=$(sw_tick_pid_start "$pid") || current=''
+    [ "$current" != "$recorded" ] || return 1
   fi
   rm -rf "${lock:?}"
   mkdir "$lock" 2>/dev/null || return 1
-  printf '%s\n' "$$" > "$lock/pid"
+  current=$(sw_tick_pid_start "$$") || { rmdir "$lock" 2>/dev/null || true; return 1; }
+  printf '%s\n%s\n' "$$" "$current" > "$lock/pid"
 }
 
 sw_lock_release() {
-  local lock="$SW_DIR/.tick.lock"
-  [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ] || return 0
+  local lock="$SW_DIR/.tick.lock" current
+  [ "$(sed -n '1p' "$lock/pid" 2>/dev/null || true)" = "$$" ] || return 0
+  current=$(sw_tick_pid_start "$$") || return 0
+  [ "$(sed -n '2p' "$lock/pid" 2>/dev/null || true)" = "$current" ] || return 0
   rm -rf "${lock:?}"
 }
 

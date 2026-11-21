@@ -3681,8 +3681,9 @@ disk_retry_tick() {
 # report file a tick left, even after the opt-in is removed. Off costs one glob
 # and one file test.
 STALL_WATCH_PID=
+STALL_WATCH_START=
 stall_watch_tick() {
-  local f stamp="$STATE/stall-watch/.last-launch" monitor=0
+  local f stamp="$STATE/stall-watch/.last-launch" monitor=0 current
   STALL_WATCH_REASON=
   for f in "$STATE/stall-watch"/.report.*; do
     [ -f "$f" ] || continue
@@ -3691,10 +3692,13 @@ stall_watch_tick() {
     [ -z "$STALL_WATCH_REASON" ] || break
   done
   [ -e "$CONFIG/stall-watch" ] || return 0
-  if [ -n "$STALL_WATCH_PID" ] && kill -0 "$STALL_WATCH_PID" 2>/dev/null; then
-    return 0
+  command -v fm_pid_start_time >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  if [ -n "$STALL_WATCH_PID" ] && [ -n "$STALL_WATCH_START" ]; then
+    current=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || current=''
+    [ "$current" != "$STALL_WATCH_START" ] || return 0
   fi
-  STALL_WATCH_PID=
+  STALL_WATCH_PID= STALL_WATCH_START=
   [ "$(age_of "$stamp")" -ge 60 ] || return 0
   mkdir -p "$STATE/stall-watch" 2>/dev/null && touch "$stamp" 2>/dev/null || return 0
   case $- in *m*) monitor=1 ;; esac
@@ -3702,6 +3706,7 @@ stall_watch_tick() {
   FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     nohup "$SCRIPT_DIR/fm-stall-watch.sh" tick </dev/null >/dev/null 2>&1 &
   STALL_WATCH_PID=$!
+  STALL_WATCH_START=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || STALL_WATCH_START=
   disown "$STALL_WATCH_PID" 2>/dev/null || true
   [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
 }

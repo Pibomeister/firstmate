@@ -704,6 +704,7 @@ test_refusal_after_ordinary_stop_is_judged() {
 config_reports() { grep -l 'the stall check is not running' "$LAB/state/stall-watch"/.report.* 2>/dev/null | wc -l | tr -d ' '; }
 
 test_tick_schedule() {
+  local live_start
   reset_lab
   make_worker t1 stalled.screen
   make_worker t2 working.screen
@@ -722,13 +723,18 @@ test_tick_schedule() {
   FM_STALL_WATCH_NOW=100601 sw tick --force
   assert_equals 3 "$(ledger_rows t1)" '--force ignores the interval'
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
-  printf '%s\n' "$$" > "$LAB/state/stall-watch/.tick.lock/pid"
+  live_start=$(bash -c '. "$1"; fm_pid_start_time "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$$") || fail 'fixture: no tick holder start time'
+  printf '%s\n%s\n' "$$" "$live_start" > "$LAB/state/stall-watch/.tick.lock/pid"
   FM_STALL_WATCH_NOW=200000 sw tick
   assert_contains "$ERR" 'another tick is running' 'a live tick is single-flight'
   assert_equals 3 "$(ledger_rows t1)" 'no check while another tick runs'
-  printf '999999\n' > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '%s\n%s\n' "$$" stale-instance > "$LAB/state/stall-watch/.tick.lock/pid"
   FM_STALL_WATCH_NOW=200000 sw tick
-  assert_equals 4 "$(ledger_rows t1)" 'a dead lock holder is replaced'
+  assert_equals 4 "$(ledger_rows t1)" 'a reused live PID with the wrong start time does not hold the tick lock'
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  printf '999999\nstale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid"
+  FM_STALL_WATCH_NOW=200001 sw tick --force
+  assert_equals 5 "$(ledger_rows t1)" 'a dead holder also releases the tick lock'
   printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
   sw tick
   expect_code 2 "$RC" 'an unknown classifier is a configuration error'
