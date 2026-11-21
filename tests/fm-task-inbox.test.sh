@@ -617,6 +617,41 @@ PY
   pass "inbox: a stale Orca prefix joined to the current draft is not submitted"
 }
 
+# A newline after a held doorbell puts the whole doorbell in the tail and the
+# new row in draft. A tail-only match must not submit that foreign draft.
+test_ring_does_not_submit_a_complete_orca_tail_plus_foreign_draft() {
+  local dir state rec doorbell log composer rc before
+  dir="$TMP_ROOT/ring-orca-tail-plus-foreign-draft"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_orca_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  printf '%s\nfoo' "$doorbell" > "$composer"
+  python3 - "$composer" "$doorbell" <<'PY' || fail "could not build a complete doorbell tail plus a foreign draft row"
+import subprocess, sys
+path, doorbell = sys.argv[1], sys.argv[2]
+chunks = subprocess.run(["fold", "-w", "56"], input=open(path, encoding="utf-8").read(), capture_output=True, text=True).stdout.splitlines()
+if not chunks or chunks[-1] != "foo":
+    sys.stderr.write("draft row is not the foreign text\n")
+    sys.exit(1)
+if "".join(chunks[:-1]) != doorbell:
+    sys.stderr.write("tail rows are not the complete doorbell\n")
+    sys.exit(1)
+PY
+  before=$(cat "$composer")
+  : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+    FM_SEND_RING_BUDGET=300 \
+    inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 1 ] || fail "a complete doorbell tail plus a foreign draft must not be submitted, got rc $rc:"$'\n'"$(cat "$log")"
+  [ ! -s "$log" ] || fail "a complete doorbell tail plus a foreign draft was submitted:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$before" ] || fail "the foreign composer was altered: $(cat "$composer")"
+  pass "inbox: a complete Orca doorbell tail plus a foreign draft is not submitted"
+}
+
 # A doorbell ring starts a Codex turn, and the ladder's .ring-state is deleted
 # once the worker files the message (whose mv keeps its enqueue time), so the
 # ring itself records the turn start the Codex busy classifier reads. Without
@@ -1898,6 +1933,7 @@ test_ring_submits_its_own_stuck_doorbell
 test_ring_submits_repeated_own_doorbells_only
 test_ring_submits_own_doorbell_split_into_orca_draft
 test_ring_does_not_submit_a_stale_orca_prefix_plus_current_draft
+test_ring_does_not_submit_a_complete_orca_tail_plus_foreign_draft
 test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_ring_records_a_codex_turn_start
 test_idempotent_write_dedups_exact_body

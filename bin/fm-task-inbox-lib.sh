@@ -578,9 +578,11 @@ _fm_task_inbox_b64d() {  # <base64>
 # a separate draft field, so a wrapped doorbell reads back split across the
 # two: the tail extraction alone is then a doorbell prefix, never whole copies,
 # and every re-ring skipped it as foreign pending text. The cursor sits at the
-# end of typed input, so the draft chunk follows the tail rows; only the
-# concatenation is judged, and anything else in either part still fails the
-# proof. Both parts come from one uncached read
+# end of typed input, so the draft chunk follows the tail rows. A nonempty
+# draft is judged only together with the tail, so a complete doorbell in the
+# tail does not match while the draft holds other text. An empty draft is
+# the tail alone. Anything else in either part still fails the proof.
+# Both parts come from one uncached read
 # (fm_backend_orca_composer_snapshot): a cached tail joined to a later draft
 # can match while the current composer holds foreign text.
 fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
@@ -603,11 +605,13 @@ fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
     held=$(_fm_task_inbox_b64d "$tail_b64") || return 1
     held=$(fm_composer_extract_selected_content styled=0 "$held") || return 1
     held=$(printf '%s' "$held" | tr -d '[:space:]')
-    _fm_task_inbox_is_doorbell_copies "$held" "$line" && return 0
     draft=$(_fm_task_inbox_b64d "$draft_b64") || return 1
     draft=$(printf '%s' "$draft" | tr -d '[:space:]')
-    [ -n "$draft" ] || return 1
-    _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
+    if [ -n "$draft" ]; then
+      _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
+      return $?
+    fi
+    _fm_task_inbox_is_doorbell_copies "$held" "$line"
     return $?
   fi
   cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
