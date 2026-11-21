@@ -194,7 +194,7 @@ FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit
 FM_WD_RATE_LIMIT_ERROR_RE='^[^a-z0-9+-]*(((api|stream) error|unexpected status)[^0-9]*(\(|[[:space:]]|[=_:])429([^0-9]|$)|(api|stream) error[[:space:]]*(:|\().*(rate[_ -]?limit|too many requests)|error[[:space:]]*:[[:space:]]*rate[_ -]?limit[_ -]?(exceeded|reached))'
 FM_WD_BILLING_ERROR_RE='^[^a-z0-9+-]*(credit balance (is )?too low[[:space:]]*([^a-z[:space:]]|$)|claude code can.t use your claude subscription|you( are|.{1,3}re) out of extra usage|your account is on hold|your org(anization)? is out of usage|((api|stream) )?error[[:space:]]*(:|\().*(insufficient_quota|exceeded your current quota)|((api|stream) error[[:space:]]*(:|\()|unexpected status).*(billing|credit balance|past due))'
 FM_WD_PROVIDER_LIMIT_HINT_RE='reset|try again|upgrade|purchase|more credits|extra.usage|rate-limit-options'
-FM_WD_PROVIDER_RETRY_RE='retrying in|\(attempt [0-9]+/[0-9]+\)'
+FM_WD_PROVIDER_RETRY_RE='retrying in|\(attempt [0-9]+/[0-9]+\)|retry succeeded|retry successful|request succeeded'
 
 fm_wd_user_bin_path() {  # <path> <home>
   local rest=$1 user_bin dir out='' sep='' placed=0 more=1
@@ -357,8 +357,12 @@ fm_wd_usage_limit_text() {  # <text>
 # Prints billing, usage_limit, or rate_limit for the first class any row of
 # <text> states, in that order, and returns 1 when no row states one.
 fm_wd_provider_error_class() {  # <text>
-  local t
-  t=$(fm_wd_lower "$1" | LC_ALL=C grep -Ev "$FM_WD_PROVIDER_RETRY_RE" || true)
+  local t='' raw line
+  raw=$(fm_wd_lower "$1")
+  while IFS= read -r line; do
+    if printf '%s\n' "$line" | LC_ALL=C grep -Eq "$FM_WD_PROVIDER_RETRY_RE"; then t=''; continue; fi
+    t="${t:+$t$'\n'}$line"
+  done <<< "$raw"
   [ -n "$t" ] || return 1
   if printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_BILLING_ERROR_RE"; then
     printf 'billing\n'

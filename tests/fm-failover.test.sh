@@ -174,32 +174,6 @@ no_lost_work() {  # <id> <label>
   [ "$(git -C "$wt" log --oneline | wc -l | tr -d ' ')" = 1 ] || fail "$2: the commits changed"
 }
 
-test_order_file() {
-  reset_lab
-  fo order
-  expect_code 0 "$RC" "the default order"
-  assert_contains "$OUT" $'entry=1 runtime=codex host=hetzner\nentry=2 runtime=codex\nentry=3 runtime=droid\nentry=4 runtime=claude@next\nsource=default' \
-    'without config/failover-order the host precedes codex, droid, and another Claude account'
-  printf '# night order\ncodex host=hz1\n\n  codex:gpt-5.5  \nclaude:opus@ordinary\nclaude@%s/acct\n' "$ACCTS" > "$LAB/config/failover-order"
-  fo order
-  expect_code 0 "$RC" "a configured order"
-  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nsource=' \
-    'every entry form parses in file order, comments and blanks ignored'
-  local bad
-  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 0' 'min-5h 101' 'min-5h 30 40' 'codex host=a b' 'off'; do
-    printf '%s\n' "$bad" > "$LAB/config/failover-order"
-    fo order
-    expect_code 2 "$RC" "a malformed line '$bad'"
-    assert_contains "$OUT" 'error: config/failover-order line 1' "the refusal of '$bad' names its line"
-  done
-  mkdir -p "$ACCTS/x/same" "$ACCTS/y/same"
-  printf 'claude@%s/x/same\nclaude@%s/y/same\n' "$ACCTS" "$ACCTS" > "$LAB/config/failover-order"
-  fo worker nobody
-  expect_code 2 "$RC" "two Claude accounts sharing a label"
-  assert_contains "$OUT" 'share the label claude@same' 'the refusal names the shared label'
-  pass 'order: the default, every entry form, and each malformed line'
-}
-
 test_refusal_detector() {
   local row want got
   # shellcheck source=bin/fm-watchdog-lib.sh
@@ -256,6 +230,10 @@ none|API Error: Request rejected (14290)
 ROWS
   got=$(fm_wd_provider_error_screen $'You\047ve hit your usage limit.\nResets at 3pm\n\n❯ ') || got=none
   [ "$got" = usage_limit ] || fail "adjacent limit and reset lines classed $got, expected usage_limit"
+  got=$(fm_wd_provider_error_screen $'API Error: Request rejected (429)\nRetrying in 1 second...\nRequest succeeded\n\n❯ ') || got=none
+  [ "$got" = none ] || fail "a successful retry retained an old refusal: $got"
+  got=$(fm_wd_provider_error_screen $'API Error: Request rejected (429)\nRetrying in 1 second...\nAPI Error: Request rejected (429)\n\n❯ ') || got=none
+  [ "$got" = rate_limit ] || fail "a new refusal after a retry was lost: $got"
   got=$(fm_wd_provider_error_screen "$(printf 'API Error: Request rejected (429)\n'; for row in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'later output %s\n' "$row"; done)") || got=none
   [ "$got" = none ] || fail "a refusal above the last 12 rows must not count, got $got"
   got=$(fm_wd_provider_error_screen "$(printf 'older\n\n⏺ Credit balance is too low\n\n❯ \n')") || got=none
@@ -404,7 +382,7 @@ test_worker_walks_the_order() {
   assert_contains "$OUT" 'none task=w3 from=claude reason=rate_limit why=every_relaunch_failed' 'no runtime took over'
   reset_lab
   make_worker w3 claude
-  FM_FAILOVER_DEADLINE=$(( $(date +%s) + 10 )) fo worker w3
+  FM_FAILOVER_DEADLINE=$(( $(date +%s) + 10 )) FM_FAILOVER_MIN_RELAUNCH_SECS=30 fo worker w3
   expect_code 1 "$RC" "a walk with less than the minimum relaunch time left"
   assert_contains "$OUT" 'none task=w3 from=claude reason=rate_limit why=deadline_before_codex' 'the walk stops before a relaunch it cannot finish'
   expect_code 0 "$(control_calls)" "relaunches started past the deadline"
@@ -697,6 +675,10 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
     'adjacent usage-limit and reset lines move the ship on its first idle poll'
 
+  dir=$(watch_case watch-recovered $'API Error: Request rejected (429)\nRetrying in 1 second...\nRequest succeeded\n\n❯ \n  ⏵⏵ auto mode on')
+  watch_once "$dir" FM_WATCH_ONCE=1
+  [ ! -e "$dir/control.calls" ] || fail 'a successful retry relaunched the worker from an old refusal'
+
   dir=$(watch_case watch-held $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
   before=$(cat "$dir/pane.txt")
   printf 'captain-held: awaiting decision\n' >> "$dir/state/fo.status"
@@ -740,8 +722,8 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
-  local dir class err owner start rc out owner_h from_label to_label
-  for class in rate_limit billing usage_limit; do
+  local dir class err owner start rc out owner_h from_label to_label gen
+  for class in rate_limit billing usage_limit recovered; do
     err='⏺ API Error: Request rejected (429)'
     owner_h=claude from_label=claude@ordinary to_label=codex
     if [ "$class" = billing ]; then
@@ -749,6 +731,8 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
       owner_h=codex from_label=codex to_label=claude@fallback
     elif [ "$class" = usage_limit ]; then
       err=$'You\047ve hit your usage limit.\nResets at 3pm'
+    elif [ "$class" = recovered ]; then
+      err=$'API Error: Request rejected (429)\nRetrying in 1 second...\nRequest succeeded'
     fi
     dir=$(watch_case "captain-$class" "$err"$'\n\n❯ \n  ⏵⏵ auto mode on')
     ln -s "$(command -v sleep)" "$dir/$owner_h"
@@ -769,7 +753,30 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
     rc=0
     out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
       FM_CAPTAIN_WATCHER_FAILOVER=1 bash "$FO" captain --reason "$class" 2>&1) || rc=$?
+    if [ "$class" = recovered ]; then
+      watch_once "$dir" FM_WATCH_ONCE=1 FM_TEST_HANDOFF_VERIFY_ACTOR=1
+      [ ! -e "$dir/home/handoff.n" ] || fail 'a recovered captain was handed off from an old refusal'
+      [ ! -e "$dir/control.calls" ] || fail 'a recovered screen relaunched the worker'
+      kill "$owner" 2>/dev/null || true
+      wait "$owner" 2>/dev/null || true
+      FAKE_OWNER=''
+      continue
+    fi
     expect_code 6 "$rc" 'a process outside the watcher cannot claim watcher authority'
+    if [ "$class" = rate_limit ]; then
+      sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+      mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+      printf 'mate\n' > "$dir/home/.fm-secondmate-home"
+      watch_once "$dir" FM_WATCH_ONCE=1 FM_TEST_HANDOFF_VERIFY_ACTOR=1
+      [ ! -e "$dir/state/.captain-failover-seen" ] || fail 'a skipped captain screen was marked seen'
+      [ ! -e "$dir/home/handoff.n" ] || fail 'a secondmate home started a captain successor'
+      rm "$dir/home/.fm-secondmate-home"
+      gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$dir/state" captain)
+      bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" captain busy --gen "$gen" --source claude-hook --event user-prompt-submit >/dev/null
+      watch_once "$dir" FM_WATCH_ONCE=1 FM_TEST_HANDOFF_VERIFY_ACTOR=1
+      [ ! -e "$dir/home/handoff.n" ] || fail 'a busy captain was handed off behind an old refusal'
+      bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" captain idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null
+    fi
     watch_once "$dir" FM_TEST_HANDOFF_VERIFY_ACTOR=1
     assert_contains "$(cat "$dir/watch.out")" "check: captain moved to the next runtime after a $class refusal" \
       "the watcher hands off a $class refusal from an idle captain pane"
@@ -812,7 +819,7 @@ test_watch_bounds_stay_inside_the_stale_grace() {
   quota_fixture codex 80 60 > "$QUOTA/codex.json"
   local dir
   dir=$(watch_case watch-grace $'⏺ API Error: Request rejected (429) · This request would exceed your account\'s rate limit.\n\n❯ \n  ⏵⏵ auto mode on')
-  watch_once "$dir" FM_WATCHER_STALE_GRACE=30 FM_FAILOVER_MIN_RELAUNCH_SECS=1
+  watch_once "$dir" FM_WATCHER_STALE_GRACE=30
   [ -s "$dir/control.bounds" ] || fail "the short-grace watcher never relaunched: $(cat "$dir/watch.out")"
   read -r r t < "$dir/control.bounds"
   [ "$r" -lt 30 ] || fail "the relaunch bound $r is not inside a 30s grace"
@@ -858,7 +865,6 @@ test_worker_account_identity_is_its_config_root() {
 }
 
 fm_test_run \
-  test_order_file \
   test_refusal_detector \
   test_stop_failure_record \
   test_worker_429_moves_to_the_next_runtime \

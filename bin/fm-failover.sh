@@ -5,7 +5,6 @@
 # past-due, subscription, or account-hold refusal.
 #
 # Usage:
-#   fm-failover.sh order
 #   fm-failover.sh plan
 #   fm-failover.sh preflight
 #   fm-failover.sh hook <task-id|captain> [--gen <token>] [--state <dir>]
@@ -16,8 +15,6 @@
 # owns the order file and the provider-error record, and docs/configuration.md
 # "Provider failover" owns the operator contract.
 #
-#   order      Prints the resolved order, one `entry=<n> runtime=<label>
-#              [host=<h>]` line per entry, then `source=<file|default>`.
 #   plan       The order with the newest preflight verdict of every runtime it
 #              expands to, one `plan runtime=<label> verdict=<eligible|
 #              excluded|unmeasured> ...` line each; this is the night plan, and
@@ -75,7 +72,7 @@
 # FM_FAILOVER_HANDOFF_TIMEOUT (900s), each preflight call
 # FM_FAILOVER_CALL_TIMEOUT (90s). FM_FAILOVER_DEADLINE (an epoch, set by the
 # watcher) caps each relaunch at the time left and starts none with less than
-# FM_FAILOVER_MIN_RELAUNCH_SECS (30s) left, so the whole walk ends on time.
+# FM_FAILOVER_MIN_RELAUNCH_SECS (up to 30s) left, so the whole walk ends on time.
 # FM_CONTROL_BIN overrides the fm-control.sh it calls, as for the watcher.
 # Test-only: FM_TEST_SEAM=1 enables FM_FAILOVER_TEST_BIN (a directory holding
 # the fm-control.sh, fm-handoff-launch.sh, and fm-ledger.sh to call),
@@ -91,7 +88,7 @@ die() { printf 'error: %s\n' "$1" >&2; exit 2; }
 CMD=${1:-}
 case "$CMD" in
   -h|--help) usage; exit 0 ;;
-  order|plan|preflight|hook|worker|captain) shift ;;
+  plan|preflight|hook|worker|captain) shift ;;
   *) usage >&2; exit 2 ;;
 esac
 TARGET=''
@@ -152,7 +149,13 @@ WINDOW_SECS=$(int_or "${FM_FAILOVER_WINDOW_SECS:-}" 3600)
 PREFLIGHT_MAX_AGE=$(int_or "${FM_FAILOVER_PREFLIGHT_MAX_AGE:-}" 43200)
 PREFLIGHT_FILE="$STATE/failover-preflight.tsv"
 DEADLINE=$(int_or "${FM_FAILOVER_DEADLINE:-}" '')
-MIN_RELAUNCH_SECS=$(int_or "${FM_FAILOVER_MIN_RELAUNCH_SECS:-}" 30)
+min_relaunch_default=30
+if [ -n "$DEADLINE" ]; then
+  min_relaunch_default=$(( (DEADLINE - $(now)) / 4 ))
+  [ "$min_relaunch_default" -ge 1 ] || min_relaunch_default=1
+  [ "$min_relaunch_default" -le 30 ] || min_relaunch_default=30
+fi
+MIN_RELAUNCH_SECS=$(int_or "${FM_FAILOVER_MIN_RELAUNCH_SECS:-}" "$min_relaunch_default")
 
 load_order() {
   local err
@@ -379,18 +382,7 @@ reason_or_record() {  # <id>
   fm_failover_record_class "$STATE" "$1" 2>/dev/null || printf 'rate_limit\n'
 }
 
-# --- order / plan --------------------------------------------------------------
-cmd_order() {
-  local i=0 entry h m a host
-  load_order
-  for entry in ${FM_FO_ENTRIES[@]+"${FM_FO_ENTRIES[@]}"}; do
-    i=$((i + 1))
-    IFS=$FM_FO_SEP read -r h m a host <<< "$entry"
-    printf 'entry=%s runtime=%s%s\n' "$i" "$(fm_failover_label "$h" "$m" "$a")" "${host:+ host=$host}"
-  done
-  printf 'source=%s\n' "$(tok "$FM_FO_SOURCE")"
-}
-
+# --- plan ---------------------------------------------------------------------
 cmd_plan() {
   local h m a host label pv rows
   load_order
@@ -762,7 +754,6 @@ cmd_captain() {
 }
 
 case "$CMD" in
-  order) cmd_order ;;
   plan) cmd_plan ;;
   preflight) cmd_preflight ;;
   hook) cmd_hook ;;

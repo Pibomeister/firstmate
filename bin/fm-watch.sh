@@ -696,13 +696,14 @@ hash_pane() {
 # `idle`, or `unknown codex-unverified`), so a caller can say what it saw.
 WINDOW_BUSY_VERDICT=
 window_is_busy() {  # <window> <tail40>
-  local w=$1 tail40=$2 task meta verdict
-  task=$(window_to_task "$w" "$STATE")
+  local w=$1 tail40=$2 task meta verdict harness=${4:-}
+  if [ "$#" -ge 3 ]; then task=$3; else task=$(window_to_task "$w" "$STATE"); fi
   meta="$STATE/$task.meta"
   if [ -n "$task" ] && [ -f "$meta" ]; then
     verdict=$(fm_busy_classify_meta "$meta" "$task" "$STATE" "$tail40")
   else
-    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$(window_harness "$w")" \
+    [ -n "$harness" ] || harness=$(window_harness "$w")
+    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$harness" \
       "${task:-unknown}" "$STATE" "$tail40")
   fi
   WINDOW_BUSY_VERDICT=$verdict
@@ -2413,7 +2414,7 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
 }
 
 captain_provider_failover_check() {
-  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason
+  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason owner_pid captain_h
   fm_supervision_needed "$STATE" || return 1
   [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
   backend=$(sed -n 's/^backend=//p' "$endpoint")
@@ -2421,6 +2422,16 @@ captain_provider_failover_check() {
   [ -n "$terminal" ] && [ "$terminal" != unknown ] || return 1
   watcher_capture "$backend" "$terminal" 40 || return 1
   screen=$WATCHER_CAPTURE
+  owner_pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  captain_h=$("$SCRIPT_DIR/fm-harness.sh" process "$owner_pid" 2>/dev/null) || captain_h=
+  captain_h=${captain_h##* }
+  if [ -z "$captain_h" ]; then
+    command -v fm_session_lock_recorded_owner_live >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+    fm_session_lock_recorded_owner_live "$STATE" || return 1
+    captain_h=${FM_SESSION_LOCK_OWNER_HARNESS:-}
+  fi
+  [ -n "$captain_h" ] || return 1
+  window_is_busy "$terminal" "$screen" captain "$captain_h" && return 1
   ! fm_failover_turn_end_known "$STATE" captain || return 1
   fm_wd_prompt_tail "$(printf '%s\n' "$screen" | tail -n 6)" | grep -q . || return 1
   class=$(fm_wd_provider_error_screen "$screen") || return 1
@@ -2435,7 +2446,7 @@ captain_provider_failover_check() {
     fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
     --reason "$class" </dev/null 2>&1) || rc=$?
   line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
-  [ "$rc" -ne 6 ] || return 1
+  if [ "$rc" -eq 6 ]; then rm -f "$seen"; return 1; fi
   key="failover-captain-$now"
   if [ "$rc" -eq 0 ]; then
     reason="check: captain moved to the next runtime after a $class refusal ($line)"
