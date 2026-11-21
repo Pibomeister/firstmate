@@ -43,6 +43,7 @@ provider='' profile=0
 while [ $# -gt 0 ]; do
   case "$1" in --provider) provider=$2; shift 2 ;; --profile-only) profile=1; shift ;; *) shift ;; esac
 done
+[ -z "${FM_TEST_QUOTA_CALL_LOG:-}" ] || printf '%s\n' "$provider" >> "$FM_TEST_QUOTA_CALL_LOG"
 if [ "$profile" = 1 ]; then cat "$CLAUDE_CONFIG_DIR/quota.json" 2>/dev/null || exit 1; exit 0; fi
 cat "$FM_TEST_QUOTA/$provider.json" 2>/dev/null || exit 1
 SH
@@ -83,11 +84,6 @@ done
 mkdir -p "$(dirname "$doc")"
 printf '# handoff\n%s\n' "$note" > "$doc"
 SH
-cat > "$DELEGATES/fm-on.sh" <<'SH'
-#!/usr/bin/env bash
-printf '%s %s %s\n' "$1" "$2" "$3" >> "$FM_HOME/remote.calls"
-echo 'entry=1 runtime=codex'
-SH
 chmod +x "$FAKEBIN"/* "$DELEGATES"/*
 
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
@@ -120,6 +116,16 @@ OUT='' RC=0
 fo() {  # <args...>: run the entry point, keeping its output and exit code
   RC=0
   OUT=$(bash "$FO" "$@" 2>&1) || RC=$?
+}
+
+record_class() {
+  RC=0
+  OUT=$(bash -c '. "$1/bin/fm-busy-lib.sh"; . "$1/bin/fm-failover-lib.sh"; fm_failover_record_class "$2" "$3"' _ "$ROOT" "$LAB/state" "$1") || RC=$?
+}
+
+pane_class() {
+  RC=0
+  OUT=$(bash -c '. "$1/bin/fm-watchdog-lib.sh"; fm_wd_provider_error_screen "$(cat "$2")"' _ "$ROOT" "$1") || RC=$?
 }
 
 control_calls() { cat "$LAB/control.n" 2>/dev/null || echo 0; }
@@ -258,21 +264,21 @@ test_stop_failure_record() {
   reset_lab
   make_worker w1 claude
   stop_failure_turn w1 "$(payload rate_limit 'API Error: Request rejected (429)')"
-  fo detect w1
+  record_class w1
   expect_code 0 "$RC" "a recorded 429"
-  assert_contains "$OUT" 'class=rate_limit source=record' 'the StopFailure 429 is recorded for this turn end'
+  assert_equals rate_limit "$OUT" 'the StopFailure 429 is recorded for this turn end'
   stop_failure_turn w1 "$(payload rate_limit "You've hit your limit · resets 3pm")"
-  fo detect w1
-  assert_contains "$OUT" 'class=usage_limit source=record' 'a rate_limit payload stating a usage limit records usage_limit'
+  record_class w1
+  assert_equals usage_limit "$OUT" 'a rate_limit payload stating a usage limit records usage_limit'
   stop_failure_turn w1 "$(payload billing_error 'Credit balance is too low')"
-  fo detect w1
-  assert_contains "$OUT" 'class=billing source=record' 'a billing_error payload records billing'
+  record_class w1
+  assert_equals billing "$OUT" 'a billing_error payload records billing'
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" w1 busy --gen "$GEN" --source claude-hook --event user-prompt-submit >/dev/null
-  fo detect w1
+  record_class w1
   expect_code 1 "$RC" "a record after the worker started a new turn"
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" w1 idle --gen "$GEN" --source claude-hook --event stop-failure >/dev/null
   bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" w1 >/dev/null
-  fo detect w1
+  record_class w1
   expect_code 1 "$RC" "a record from a replaced incarnation"
   rm -f "$LAB/state/w1.provider-error"
   local p
@@ -282,8 +288,8 @@ test_stop_failure_record() {
     [ ! -e "$LAB/state/w1.provider-error" ] || fail "payload '$p' must record nothing"
   done
   printf 'API Error: Request rejected (429)\n❯ \n' > "$TMP_ROOT/screen.txt"
-  fo detect w1 --screen-file "$TMP_ROOT/screen.txt"
-  assert_contains "$OUT" 'class=rate_limit source=pane' 'with no record the idle screen still classes the refusal'
+  pane_class "$TMP_ROOT/screen.txt"
+  assert_equals rate_limit "$OUT" 'with no record the idle screen still classes the refusal'
   printf '%s' "$(payload rate_limit)" | bash "$FO" hook captain
   [ ! -e "$LAB/state/captain.provider-error" ] || fail 'the captain hook outside a primary checkout must record nothing'
   pass 'record: the StopFailure hook records 429, usage-limit, and billing for the current turn end only, and nothing else'
@@ -292,10 +298,15 @@ test_stop_failure_record() {
 test_worker_429_moves_to_the_next_runtime() {
   reset_lab
   make_worker w1 claude
+  mkdir -p "$ACCTS/later"
+  touch "$ACCTS/later/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/later/quota.json"
+  printf '%s\n' "$ACCTS/later" > "$LAB/config/claude-accounts"
   lab_dispatch g-parser w1
   stop_failure_turn w1 "$(payload rate_limit 'API Error: Request rejected (429)')"
-  fo worker w1
+  FM_TEST_QUOTA_CALL_LOG="$LAB/quota.calls" fo worker w1
   expect_code 0 "$RC" "worker failover after a 429: $OUT"
+  assert_not_contains "$(cat "$LAB/quota.calls")" 'claude' 'later accounts are not measured before the first replacement starts'
   assert_contains "$OUT" 'candidate runtime=codex eligible verdict=ok' 'codex is measured and eligible'
   assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host route not configured' 'an absent host route is recorded before local failover'
   assert_contains "$OUT" 'switched task=w1 from=claude to=codex reason=rate_limit' 'the switch names both runtimes and the reason'
@@ -316,10 +327,10 @@ test_worker_429_moves_to_the_next_runtime() {
   no_lost_work w1 'a 429 failover'
   reset_lab
   make_worker w1 claude
-  : > "$LAB/data/secondmates.md"
-  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo worker w1 --reason rate_limit
-  expect_code 0 "$RC" "a configured remote route is probed before local failover: $OUT"
-  assert_contains "$(cat "$LAB/remote.calls")" 'hetzner fm-failover.sh order' 'the configured host was contacted through the remote transport'
+  printf '%s\n' '- hz - test (host: hetzner; root: /tmp/root; home: /tmp/home; scope: test; projects: none; added 2026-11-20)' > "$LAB/data/secondmates.md"
+  fo worker w1 --reason rate_limit
+  expect_code 0 "$RC" "a configured host is skipped before local failover: $OUT"
+  [ ! -e "$LAB/remote.calls" ] || fail 'host skip must not contact a remote route'
   assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree handoff not implemented' 'an available route without the task worktree is recorded'
   pass 'worker 429: relaunched on codex in the same local copy, branch, and gates, recorded, nothing lost'
 }
@@ -328,8 +339,8 @@ test_worker_billing_moves_past_its_own_runtime() {
   reset_lab
   make_worker w2 codex
   printf '■ error: insufficient_quota - You exceeded your current quota\n› \n' > "$TMP_ROOT/screen.txt"
-  fo detect w2 --screen-file "$TMP_ROOT/screen.txt"
-  assert_contains "$OUT" 'class=billing source=pane' 'the codex billing screen classes billing'
+  pane_class "$TMP_ROOT/screen.txt"
+  assert_equals billing "$OUT" 'the codex billing screen classes billing'
   fo worker w2 --reason billing
   expect_code 0 "$RC" "worker failover after a billing error: $OUT"
   assert_not_contains "$OUT" 'candidate runtime=codex eligible' 'the refused runtime is never the target'
@@ -471,11 +482,10 @@ captain_world() {
 
 test_captain_429_and_billing_start_a_successor() {
   captain_world
-  bash "$FO" record captain --class rate_limit --source claude-hook >/dev/null
   lab_dispatch g-night captain
-  fo captain
+  fo captain --reason rate_limit
   expect_code 0 "$RC" "captain failover after a 429: $OUT"
-  assert_contains "$OUT" 'candidate runtime=droid skip=refused' 'droid is not a primary runtime'
+  assert_not_contains "$OUT" 'candidate runtime=droid ' 'later runtimes are not checked after the first captain successor'
   assert_contains "$OUT" 'switched task=captain from=claude@ordinary to=codex reason=rate_limit' 'a codex successor takes over'
   local doc
   doc=$(sed -n 's/^handoff doc=//p' <<< "$OUT")
@@ -494,10 +504,10 @@ test_captain_429_and_billing_start_a_successor() {
     'the supervisor failover log records the replacement'
 
   captain_world
-  : > "$LAB/data/secondmates.md"
-  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo captain --reason rate_limit
-  expect_code 0 "$RC" "a configured host is checked before a captain successor: $OUT"
-  assert_contains "$(cat "$LAB/remote.calls")" 'hetzner fm-failover.sh order' 'the captain checks the host route'
+  printf '%s\n' '- hz - test (host: hetzner; root: /tmp/root; home: /tmp/home; scope: test; projects: none; added 2026-11-20)' > "$LAB/data/secondmates.md"
+  fo captain --reason rate_limit
+  expect_code 0 "$RC" "a configured host is skipped before a captain successor: $OUT"
+  [ ! -e "$LAB/remote.calls" ] || fail 'captain host skip must not contact a remote route'
   assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=captain from=claude@ordinary to=codex@hetzner reason=host worktree handoff not implemented' 'the captain host skip is recorded'
 
   captain_world
@@ -610,8 +620,13 @@ test_preflight_night_plan() {
   fo preflight --no-call
   expect_code 2 "$RC" 'the operational preflight rejects skipping provider calls'
   reset_lab
-  : > "$LAB/data/secondmates.md"
-  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo preflight
+  printf 'agy\n' > "$LAB/config/failover-order"
+  fo preflight
+  expect_code 0 "$RC" 'an unsupported provider probe is excluded'
+  assert_contains "$OUT" 'preflight runtime=agy verdict=excluded call=unsupported' 'unsupported never becomes night-plan eligible'
+  reset_lab
+  printf '%s\n' '- hz - test (host: hetzner; root: /tmp/root; home: /tmp/home; scope: test; projects: none; added 2026-11-20)' > "$LAB/data/secondmates.md"
+  fo preflight
   expect_code 0 "$RC" 'preflight with a configured host route'
   assert_contains "$OUT" 'preflight runtime=codex verdict=unmeasured call=skipped five_hour=unknown weekly=unknown why=host_worktree_handoff_not_implemented' 'preflight names the remote handoff limit'
   assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=captain from=preflight to=codex@hetzner reason=host worktree handoff not implemented' 'preflight records the configured host skip'
@@ -688,16 +703,17 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
-  local dir class err owner start rc out
+  local dir class err owner start rc out owner_h from_label to_label
   for class in rate_limit billing; do
     err='⏺ API Error: Request rejected (429)'
-    [ "$class" != billing ] || err='⏺ Credit balance is too low'
+    owner_h=claude from_label=claude@ordinary to_label=codex
+    if [ "$class" = billing ]; then
+      err='⏺ Credit balance is too low'
+      owner_h=codex from_label=codex to_label=claude@fallback
+    fi
     dir=$(watch_case "captain-$class" "$err"$'\n\n❯ \n  ⏵⏵ auto mode on')
-    cat > "$dir/claude" <<'PY'
-import time
-time.sleep(120)
-PY
-    python3 "$dir/claude" &
+    ln -s "$(command -v sleep)" "$dir/$owner_h"
+    "$dir/$owner_h" 120 &
     owner=$!
     FAKE_OWNER=$owner
     start=$(bash -c '. "$1/bin/fm-session-lock-lib.sh"; fm_session_process_start "$2"' _ "$ROOT" "$owner") || fail 'the owner process has no identity'
@@ -706,15 +722,19 @@ PY
     FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" received "g-$class" --summary 'open captain work' >/dev/null
     if [ "$class" = billing ]; then
       FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" dispatched "g-$class" --task fo >/dev/null
+      mkdir -p "$ACCTS/fallback"
+      touch "$ACCTS/fallback/signed-in"
+      quota_fixture claude 70 70 > "$ACCTS/fallback/quota.json"
+      printf '%s\n' "$ACCTS/fallback" > "$dir/config/claude-accounts"
     fi
     rc=0
     out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
-      FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_TEST_HARNESS=claude bash "$FO" captain --reason "$class" 2>&1) || rc=$?
+      FM_CAPTAIN_WATCHER_FAILOVER=1 bash "$FO" captain --reason "$class" 2>&1) || rc=$?
     expect_code 6 "$rc" 'a process outside the watcher cannot claim watcher authority'
-    watch_once "$dir" FM_FAILOVER_TEST_HARNESS=claude FM_TEST_HANDOFF_VERIFY_ACTOR=1
+    watch_once "$dir" FM_TEST_HANDOFF_VERIFY_ACTOR=1
     assert_contains "$(cat "$dir/watch.out")" "check: captain moved to the next runtime after a $class refusal" \
       "the watcher hands off a $class refusal from an idle captain pane"
-    assert_contains "$(cat "$dir/state/dispatch-log.tsv")" "task=captain from=claude@ordinary to=codex reason=$class" \
+    assert_contains "$(cat "$dir/state/dispatch-log.tsv")" "task=captain from=$from_label to=$to_label reason=$class" \
       "the captain switch is recorded"
     [ -s "$dir/home/data/handoffs/$(ls "$dir/home/data/handoffs" | head -n 1)" ] || fail 'the captain handoff is missing'
     kill "$owner" 2>/dev/null || true

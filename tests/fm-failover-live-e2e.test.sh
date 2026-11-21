@@ -16,6 +16,9 @@ set -u
 fm_live_gate default-on FM_FAILOVER_LIVE_E2E claude tmux jq python3
 
 FO="$ROOT/bin/fm-failover.sh"
+. "$ROOT/bin/fm-busy-lib.sh"
+. "$ROOT/bin/fm-failover-lib.sh"
+. "$ROOT/bin/fm-watchdog-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-failover-live)
 LAB=$(cd "$TMP_ROOT" && pwd -P)
 SOCK="fm-failover-live-$$"
@@ -75,7 +78,7 @@ start_endpoint() {  # <mode>
 # key (Claude records an approved key by its last 20 characters), and trusts
 # the work directory, so no dialog sits in front of the turn.
 KEY=fake-test-key-not-a-secret
-mkdir -p "$LAB/cfg" "$LAB/wd" "$LAB/home/state" "$LAB/home/config" "$LAB/home/data" "$LAB/no-records"
+mkdir -p "$LAB/cfg" "$LAB/wd" "$LAB/home/state" "$LAB/home/config" "$LAB/home/data"
 jq -n --arg wd "$LAB/wd" --arg key "$KEY" '{hasCompletedOnboarding: true, theme: "dark",
   customApiKeyResponses: {approved: [$key[-20:]], rejected: []},
   projects: {($wd): {hasTrustDialogAccepted: true}}}' > "$LAB/cfg/.claude.json"
@@ -121,8 +124,8 @@ screen_class() {  # <id> <want>: wait up to 30s for the idle pane to class <want
   local i=0 got=none
   while [ "$i" -lt 300 ]; do
     env -u TMUX -u TMUX_PANE tmux -L "$SOCK" capture-pane -p -t "$1" > "$LAB/screen-$1.txt" 2>/dev/null || true
-    got=$(FM_STATE_OVERRIDE="$LAB/no-records" bash "$FO" detect "$1" --screen-file "$LAB/screen-$1.txt" 2>/dev/null) || got=none
-    [ "$got" != "class=$2 source=pane" ] || return 0
+    got=$(fm_wd_provider_error_screen "$(cat "$LAB/screen-$1.txt")") || got=none
+    [ "$got" != "$2" ] || return 0
     sleep 0.1
     i=$((i + 1))
   done
@@ -133,8 +136,8 @@ start=$(date +%s)
 run_turn rl 429
 wait_record rl
 rl_secs=$(( $(date +%s) - start ))
-out=$(bash "$FO" detect rl) || fail_live "detect found no 429 record: $out"
-[ "$out" = 'class=rate_limit source=record' ] || fail_live "the 429 StopFailure recorded '$out', not rate_limit"
+out=$(fm_failover_record_class "$STATE" rl) || fail_live "the hook recorded no 429 refusal"
+[ "$out" = rate_limit ] || fail_live "the 429 StopFailure recorded '$out', not rate_limit"
 screen_class rl rate_limit
 pass "Claude $CLAUDE_VERSION: a 429 refusal fires StopFailure into a rate_limit record in ${rl_secs}s, and the idle pane classes rate_limit"
 
@@ -142,7 +145,7 @@ start=$(date +%s)
 run_turn bl billing
 wait_record bl
 bl_secs=$(( $(date +%s) - start ))
-out=$(bash "$FO" detect bl) || fail_live "detect found no billing record: $out"
-[ "$out" = 'class=billing source=record' ] || fail_live "the billing StopFailure recorded '$out', not billing"
+out=$(fm_failover_record_class "$STATE" bl) || fail_live "the hook recorded no billing refusal"
+[ "$out" = billing ] || fail_live "the billing StopFailure recorded '$out', not billing"
 screen_class bl billing
 pass "Claude $CLAUDE_VERSION: a credit-balance refusal fires StopFailure into a billing record in ${bl_secs}s, and the idle pane classes billing"

@@ -34,6 +34,7 @@
 #        fm-harness.sh ancestry [<pid>] print "<strength> <harness>" for the nearest
 #                                        harness process at or above <pid> (default this
 #                                        process), or nothing when the walk finds none.
+#        fm-harness.sh process <pid>      print the verdict for exactly this process.
 #                                        Ancestry evidence only, with no marker layer, so
 #                                        a real harness process can be asked what the walk
 #                                        makes of it (tests/fm-harness-liveness-drift-live-e2e.test.sh).
@@ -761,6 +762,16 @@ validate_native_effort() {
 
 case "${1:-}" in
   validate-native-effort) shift; validate_native_effort "$@" ;;
+  process)
+    case "${2:-}" in ''|*[!0-9]*) echo 'error: process needs a numeric pid' >&2; exit 2 ;; esac
+    process_verdict=$(harness_process_verdict "$2")
+    if [ -z "$process_verdict" ]; then
+      process_args=$(ps -o args= -p "$2" 2>/dev/null || true)
+      process_argv0=${process_args%% *}
+      case "${process_argv0##*/}" in claude|codex|agy) process_verdict="args ${process_argv0##*/}" ;; esac
+    fi
+    [ -z "$process_verdict" ] || printf '%s\n' "$process_verdict"
+    ;;
   ancestry)
     case "${2:-}" in
       ''|*[!0-9]*) [ -z "${2:-}" ] || { echo "error: ancestry takes a numeric pid" >&2; exit 2; } ;;

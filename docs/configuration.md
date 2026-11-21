@@ -608,7 +608,7 @@ An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
 The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
 Accounts compare by their config directory, so `ordinary` and a declared `$HOME/.claude` are one account.
 An unpinned Claude worker counts as running on the account the supervisor inherits, which holds only when the worker was spawned under that same `CLAUDE_CONFIG_DIR`.
-A `host=` entry probes the configured remote route; when the route is absent, the dispatch log records `host route not configured` before local candidates are considered.
+A `host=` entry checks whether a remote route is configured locally; when the route is absent, the dispatch log records `host route not configured` before local candidates are considered.
 The remote transport currently cannot relocate a local task worktree, so an available route is recorded as `host worktree handoff not implemented` and local candidates are considered.
 The line `min-5h <percent>` sets the preflight's five-hour floor, 30 by default.
 Without the file the order is `codex host=hetzner`, then local `codex`, `droid`, and `claude@next`.
@@ -623,7 +623,8 @@ claude@next
 min-5h 30
 ```
 
-`bin/fm-failover.sh preflight` makes one real one-line call through each runtime's own CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
+`bin/fm-failover.sh preflight` makes one real one-line call through each supported local runtime's CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
+Host entries stay unmeasured until worktree handoff is implemented, and a runtime with no supported probe is excluded.
 A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
 Only provider failover reads the night plan; ordinary dispatch does not consult it.
 An unreadable window is disclosed and does not exclude.

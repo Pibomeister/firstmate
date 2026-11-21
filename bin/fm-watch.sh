@@ -2429,6 +2429,7 @@ captain_provider_failover_check() {
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
   fm_watch_now now
   out=$(FM_HOME=$FM_HOME FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
     fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
     --reason "$class" </dev/null 2>&1) || rc=$?
   line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
