@@ -45,8 +45,10 @@
 # and neither is a nudge the watchdog finished without confirming progress.
 # The episode stays open while that condition is still evidenced. A primary's
 # episode is evidenced for FM_STALL_WD_EVIDENCE_SECS (1800) after its last
-# watchdog row, because no status line can show that the primary resumed. A later task
-# status line that shows the task working, or a captain record whose
+# watchdog row, because no status line can show that the primary resumed.
+# A later watchdog row after that lapse starts a new episode. An active
+# usage-limit auto-wait or quota hold keeps the episode evidenced past the lapse.
+# A later task status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
 # stays unverified. A fresh heartbeat does not end a usage-limit auto-wait,
 # and a page, suggestion, refusal, or failed row does not.
@@ -593,6 +595,39 @@ _fm_stall_status_resumed() { # <subject> <last-epoch> <detect> [state]
   printf '%s\n' "$at"
 }
 
+# 0: a current record shows the hold behind this symptom is still active, either
+# a usage-limit auto-wait or a quota status line for the named task.
+_fm_stall_wd_held() { # <symptom> <subject> [state]
+  local symptom=$1 task=$2 state=${3:-$STATE} file stat_task
+  case "$symptom" in
+    usage-limit-autowait|frozen|timer-loop|usage-limit)
+      file=$state/watchdog/captain
+      [ -f "$file" ] && [ ! -L "$file" ] || return 1
+      _fm_stall_wd_lib || return 1
+      [ "$(fm_wd_conf_get "$file" usage_limit_autowait '')" = 1 ]
+      ;;
+    quota|quota:*)
+      stat_task=$task
+      case "$symptom" in quota:*) stat_task=${symptom#quota:} ;; esac
+      case "$stat_task" in ''|-|*[!A-Za-z0-9._-]*) return 1 ;; esac
+      file=$state/$stat_task.status
+      [ -f "$file" ] && [ ! -L "$file" ] || return 1
+      _fm_stall_wd_lib || return 1
+      fm_wd_quota_status_line "$(tail -n 1 "$file" 2>/dev/null || true)"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# A primary's episode has lapsed when its last watchdog row is older than
+# FM_STALL_WD_EVIDENCE_SECS at <epoch> and no active hold still evidences it.
+_fm_stall_wd_lapsed() { # <subject> <symptom> <last-epoch> <epoch> <state>
+  [ "$1" = - ] || return 1
+  _fm_stall_is_num "$3" || return 1
+  [ $(($4 - $3)) -gt "$FM_STALL_WD_EVIDENCE_SECS" ] || return 1
+  ! _fm_stall_wd_held "$2" "$1" "$5"
+}
+
 # 0 and an epoch: the condition ended at that epoch, after detect.
 # 2: it ended before this episode was a stall. 1: still unverified or active.
 _fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect> [state]
@@ -696,6 +731,15 @@ _fm_stall_watchdog() {
     _fm_stall_is_num "$estart" || estart=$start
     _fm_stall_is_num "$edetect" || edetect=$epoch
     _fm_stall_is_num "$elast" || elast=$epoch
+    # A row after the primary's episode lapsed is a new stall, so the lapsed
+    # episode closes and this row starts its own.
+    source_state=$ehome/state
+    [ "$ehome" != "$FM_HOME" ] || source_state=$STATE
+    if _fm_stall_wd_lapsed "$etask" "$esymptom" "$elast" "$epoch" "$source_state"; then
+      printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" "$task" > "$key" || return 1
+      continue
+    fi
     [ "$start" -lt "$estart" ] && estart=$start
     [ "$epoch" -lt "$edetect" ] && edetect=$epoch
     [ "$epoch" -gt "$elast" ] && elast=$epoch
@@ -725,8 +769,7 @@ _fm_stall_watchdog() {
     # A primary has no status line to show it resumed, so its episode lapses
     # FM_STALL_WD_EVIDENCE_SECS after the last watchdog row. The close still
     # needs a current heartbeat, which the reconcile checks.
-    if [ "$etask" = - ] && _fm_stall_is_num "$elast" \
-      && [ $((FM_STALL_NOW - elast)) -gt "$FM_STALL_WD_EVIDENCE_SECS" ]; then
+    if _fm_stall_wd_lapsed "$etask" "$esymptom" "$elast" "$FM_STALL_NOW" "$source_state"; then
       printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
       continue
     fi

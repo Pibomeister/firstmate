@@ -423,6 +423,48 @@ test_unconfirmed_nudge_is_not_recovery() {
   pass "an unconfirmed nudge keeps the stall open and a confirmed one closes it"
 }
 
+# A later stall on the same primary after its episode lapsed is its own stall.
+test_watchdog_primary_stall_after_lapse_reopens() {
+  local home ledger actions tag
+  home=$(new_home wd-relapse)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  tag=${home##*/}
+  mkdir -p "$home/state/watchdog"
+  observe_fresh "$home" "$((T0 - 100))" "$((T0 - 100))" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$T0" "$home" "$tag" > "$actions"
+  observe_fresh "$home" "$T0" "$((T0 + 4800))" 600
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the first primary episode did not lapse"
+  printf '%s\twd2\t%s\t%s\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$((T0 + 9000))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$((T0 + 9000))" "$((T0 + 10800))" 600
+  assert_equals 2 "$(count_rows "$ledger" stall-open -)" "the later primary stall was not recorded: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the later primary stall closed while the watchdog still evidenced it"
+  pass "a later primary stall after a lapse opens its own episode"
+}
+
+# An active usage-limit auto-wait keeps the primary's episode open past the lapse.
+test_watchdog_primary_autowait_holds_past_lapse() {
+  local home ledger actions recover
+  home=$(new_home wd-autowait-lapse)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$T0" > "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$((T0 + 800))" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((T0 + 700))" "$((T0 + 4200))" 700
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "the auto-wait did not open one stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close)" "the lapse closed an active auto-wait: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  recover=$((T0 + 4500))
+  printf 'usage_limit_autowait=0\nchecked_at=%s\n' "$recover" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((T0 + 4900))" "$((T0 + 4900))" 600
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $3 == "primary" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the ended auto-wait did not close at checked_at: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  pass "an active primary auto-wait stays open past the lapse and closes when it ends"
+}
+
 test_observe_secondmate_progress_closes_as_agentkit() {
   local home mate other ledger start
   home=$(new_home progress)
@@ -1065,6 +1107,8 @@ fm_test_run \
   test_observe_watchdog_closes_only_on_done \
   test_watchdog_primary_evidence_lapses \
   test_unconfirmed_nudge_is_not_recovery \
+  test_watchdog_primary_stall_after_lapse_reopens \
+  test_watchdog_primary_autowait_holds_past_lapse \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
   test_window_maps_chicago_kickoff \
