@@ -1145,6 +1145,278 @@ test_intent_reaches_the_prompt_the_receipt_binds() {
   pass "the stated intent is part of the stored prompt each receipt is bound to"
 }
 
+# A stand-in AgentKit `ak` for convergence=shadow. <stub>/ak.mode selects it:
+#   old     the installed release before the review engine: every review
+#           command prints usage and exits 2 (the default)
+#   engine  the plan's interface: `review ledger add` appends one row per new
+#           seat review, `review decide` prints {"verdict": ...} from
+#           <stub>/ak.verdict (default approved) or the raw text in
+#           <stub>/ak.decide-output, and `delegation --stage merge` copies the
+#           project record it was given to <stub>/ak.project-seen and prints
+#           {"class": ...} from <stub>/ak.class (default green), or exits 2
+#           when <stub>/ak.class is "fail"
+# Each call appends "<cwd>|<arguments>" to <stub>/ak.calls.
+write_ak_stub() {  # <fakebin>
+  cat > "$1/ak" <<'SH'
+#!/usr/bin/env bash
+stub=$FM_TEST_REVIEW_STUB
+printf '%s|%s\n' "$PWD" "$*" >> "$stub/ak.calls"
+mode=$(cat "$stub/ak.mode" 2>/dev/null || echo old)
+if [ "$mode" = old ]; then
+  echo 'Usage: ak doctor [--json] | ak delegation <ticket> --project <path> [--stage merge --base <rev>]' >&2
+  exit 2
+fi
+opt() {  # <flag> <args...>
+  local want=$1 prev='' a
+  shift
+  for a in "$@"; do
+    [ "$prev" != "$want" ] || { printf '%s\n' "$a"; return 0; }
+    prev=$a
+  done
+  return 1
+}
+case "$1 ${2:-}" in
+  'review ledger')
+    [ "${3:-}" = add ] || exit 2
+    ledger=$(opt --ledger "$@") || exit 2
+    seat=$(opt --seat "$@") || exit 2
+    head=$(opt --head "$@") || exit 2
+    review=$(opt --review "$@") || exit 2
+    [ -s "$review" ] || exit 1
+    ! grep -qF "\"seat\":\"$seat\",\"head\":\"$head\"" "$ledger" 2>/dev/null || exit 0
+    printf '{"seat":"%s","head":"%s"}\n' "$seat" "$head" >> "$ledger"
+    ;;
+  'review decide')
+    opt --ledger "$@" >/dev/null || exit 2
+    opt --head "$@" >/dev/null || exit 2
+    if [ -f "$stub/ak.decide-output" ]; then
+      cat "$stub/ak.decide-output"
+    else
+      printf '{"verdict":"%s","round":1}\n' "$(cat "$stub/ak.verdict" 2>/dev/null || echo approved)"
+    fi
+    ;;
+  delegation*)
+    class=$(cat "$stub/ak.class" 2>/dev/null || echo green)
+    [ "$class" != fail ] || { echo 'ticket does not exist' >&2; exit 2; }
+    project=$(opt --project "$@") || exit 2
+    cp "$project" "$stub/ak.project-seen"
+    printf '{"class":"%s"}\n' "$class"
+    ;;
+  *) exit 2 ;;
+esac
+SH
+  chmod +x "$1/ak"
+}
+
+# Put a project record on the base branch and change it on the head, so a
+# test can tell which revision the tier lookup read.
+put_project_record_on_base() {
+  git -C "$REPO" checkout -q --detach origin/main
+  printf '{"revision":"base"}\n' > "$REPO/ak.project.json"
+  git -C "$REPO" add ak.project.json
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm record
+  git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse HEAD)"
+  printf 'the feature\n' > "$REPO/feature.txt"
+  printf '{"revision":"head"}\n' > "$REPO/ak.project.json"
+  git -C "$REPO" add feature.txt ak.project.json
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm feature
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+pr_dir() {
+  printf '%s/data/merge-review/github/github.com/example/repo/7\n' "$HOME_DIR"
+}
+
+legacy_approved_line() {
+  printf 'merge-review: approved head=%s approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=%s\n' \
+    "$HEAD_SHA" "$PR_URL"
+}
+
+test_convergence_off_keeps_the_legacy_line_and_calls_no_engine() {
+  local rc=0 config
+  for config in 'convergence=off' ''; do
+    make_case "conv-off${config:+-key}" "${TWO_SEATS[@]}" ${config:+"$config"}
+    write_ak_stub "$FAKEBIN"
+    echo engine > "$STUB/ak.mode"
+    rc=0
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 0 "$rc" "conv-off [$config]: run ($(cat "$CASE/stderr"))"
+    assert_equals "$(legacy_approved_line)" "$(tail -1 "$CASE/stdout")" "conv-off [$config]: run changed the verdict line"
+    rc=0
+    run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+    expect_code 0 "$rc" "conv-off [$config]: check"
+    assert_equals "$(legacy_approved_line)" "$(cat "$CASE/stdout")" "conv-off [$config]: check changed the verdict line"
+    assert_equals 0 "$(calls ak)" "conv-off [$config]: the review engine was called"
+    assert_absent "$(pr_dir)/ledger.jsonl" "conv-off [$config]: a ledger was written"
+    assert_absent "$(store_dir)/converge.record" "conv-off [$config]: a shadow verdict was recorded"
+  done
+  pass "convergence=off and an absent key keep the legacy line byte for byte and never call ak"
+}
+
+test_convergence_on_is_refused_until_enforcement_is_approved() {
+  local rc=0 value
+  for value in on maybe; do
+    make_case "conv-$value" "${TWO_SEATS[@]}" "convergence=$value"
+    write_ak_stub "$FAKEBIN"
+    rc=0
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 2 "$rc" "conv-$value: run"
+    rc=0
+    run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+    expect_code 2 "$rc" "conv-$value: check"
+    assert_equals 0 "$(calls claude)" "conv-$value: a reviewer was called"
+    assert_equals 0 "$(calls ak)" "conv-$value: ak was called"
+  done
+  assert_grep "convergence=on is not available" "$CASE/../conv-on/stderr" "conv-on: the refusal did not name the setting"
+  assert_grep "7-day shadow report" "$CASE/../conv-on/stderr" "conv-on: the refusal did not say what enables it"
+  assert_grep "convergence must be off or shadow" "$CASE/stderr" "conv-maybe: the refusal did not list the values"
+  pass "convergence=on and unknown values refuse before any reviewer or ak call"
+}
+
+test_shadow_without_the_review_engine_reports_unavailable_and_records_nothing() {
+  local rc=0 line
+  make_case shadow-old "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-old: run keeps the legacy exit status ($(cat "$CASE/stderr"))"
+  line=$(tail -1 "$CASE/stdout")
+  assert_equals "$(legacy_approved_line) converge=unavailable" "${line%% converge_reason=*}" \
+    "shadow-old: run did not append converge=unavailable to the legacy line"
+  assert_contains "$line" 'converge_reason="ak review ledger add exited 2' "shadow-old: run did not say why"
+  assert_absent "$(pr_dir)/ledger.jsonl" "shadow-old: a ledger was written without the engine"
+  assert_absent "$(store_dir)/converge.record" "shadow-old: a shadow verdict was recorded without the engine"
+  : > "$STUB/ak.calls"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "shadow-old: check keeps the legacy exit status"
+  assert_equals 1 "$(wc -l < "$CASE/stdout" | tr -d ' ')" "shadow-old: check must print exactly one line"
+  assert_equals "$(legacy_approved_line) converge=unavailable converge_reason=\"no shadow verdict is recorded for this review batch\"" \
+    "$(cat "$CASE/stdout")" "shadow-old: check line"
+  assert_equals 0 "$(calls ak)" "shadow-old: check called ak"
+  pass "shadow with an AgentKit that has no review engine appends converge=unavailable and records nothing"
+}
+
+test_shadow_appends_the_engine_verdict_without_changing_the_legacy_verdict() {
+  local rc=0 base
+  make_case shadow-engine "${TWO_SEATS[@]}" 'convergence=shadow'
+  put_project_record_on_base
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo blocked > "$STUB/ak.verdict"
+  echo yellow-owner > "$STUB/ak.class"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-engine: the legacy approval still decides the exit status ($(cat "$CASE/stderr"))"
+  assert_equals "$(legacy_approved_line) converge=blocked tier=yellow-owner" "$(tail -1 "$CASE/stdout")" \
+    "shadow-engine: run line"
+  assert_equals 2 "$(wc -l < "$(pr_dir)/ledger.jsonl" | tr -d ' ')" "shadow-engine: the ledger does not hold one row per seat review"
+  assert_grep '"revision":"base"' "$STUB/ak.project-seen" "shadow-engine: the tier was not scored from the merge base's project record"
+  base=$(git -C "$REPO" rev-parse origin/main)
+  grep -Eq "\|delegation --project [^ ]+ --stage merge --base $base --head $HEAD_SHA\$" "$STUB/ak.calls" \
+    || fail "shadow-engine: the tier lookup did not score the reviewed range"
+  assert_equals "$(cd "$REPO" && pwd -P)" "$(grep 'delegation ' "$STUB/ak.calls" | cut -d'|' -f1)" \
+    "shadow-engine: the tier lookup ran outside the repository"
+  assert_grep "review decide --ledger $(pr_dir)/ledger.jsonl --head $HEAD_SHA --tier yellow-owner" "$STUB/ak.calls" \
+    "shadow-engine: decide did not get the ledger, head and tier"
+  : > "$STUB/ak.calls"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "shadow-engine: check keeps the legacy exit status"
+  assert_equals "$(legacy_approved_line) converge=blocked tier=yellow-owner" "$(cat "$CASE/stdout")" "shadow-engine: check line"
+  assert_equals 0 "$(calls ak)" "shadow-engine: check called ak"
+
+  make_case shadow-engine-block "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo block > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-engine-block: an engine approval must not clear a legacy block"
+  grep -Eq "^merge-review: blocked head=$HEAD_SHA .* url=$PR_URL converge=approved tier=unavailable\$" "$CASE/stdout" \
+    || fail "shadow-engine-block: run line"
+  assert_grep "review decide --ledger" "$STUB/ak.calls" "shadow-engine-block: decide was not called"
+  ! grep -Eq "review decide .*--tier" "$STUB/ak.calls" \
+    || fail "shadow-engine-block: decide got a tier with no project record at the base"
+  pass "shadow appends the engine's verdict and tier while the legacy rule keeps the state word and exit status"
+}
+
+test_shadow_ledger_takes_only_reviews_the_legacy_rule_counts() {
+  local rc=0 store
+  make_case shadow-unposted "${TWO_SEATS[@]}" 'post=on' 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  : > "$STUB/gh.fail"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-unposted: run while the forge refuses comments"
+  assert_no_grep "review ledger add" "$STUB/ak.calls" "shadow-unposted: an unposted approval reached the shadow ledger"
+  rm -f "$STUB/gh.fail"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-unposted: rerun once the forge accepts comments ($(cat "$CASE/stdout"))"
+  assert_equals 2 "$(wc -l < "$(pr_dir)/ledger.jsonl" | tr -d ' ')" \
+    "shadow-unposted: the posted approvals did not reach the shadow ledger"
+
+  make_case shadow-unposted-block "${TWO_SEATS[@]}" 'post=on' 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo block > "$STUB/agy.mode"
+  : > "$STUB/gh.fail-block"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-unposted-block: the blocking run"
+  assert_grep "--seat google.agy.gemini-test-high --head $HEAD_SHA" "$STUB/ak.calls" \
+    "shadow-unposted-block: an unposted block, which still blocks, did not reach the shadow ledger"
+
+  make_case shadow-stale-block "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo block > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-stale-block: the blocking run"
+  store=$(store_dir)
+  sed "s/^base=.*$/base=$OTHER_HEAD/" "$store/google.agy.gemini-test-high.receipt" > "$CASE/r" \
+    && cp "$CASE/r" "$store/google.agy.gemini-test-high.receipt"
+  : > "$STUB/ak.calls"
+  echo approve > "$STUB/agy.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "shadow-stale-block: rerun must not approve at the new scope"
+  assert_no_grep "--seat google.agy.gemini-test-high" "$STUB/ak.calls" \
+    "shadow-stale-block: a block reviewed at another merge base was stamped with the live base"
+  assert_grep "--seat anthropic.claude.claude-test-1 --head $HEAD_SHA" "$STUB/ak.calls" \
+    "shadow-stale-block: the live approval did not reach the shadow ledger"
+  pass "the shadow ledger takes exactly the reviews the legacy rule counts at the live merge base"
+}
+
+test_shadow_drops_a_malformed_or_foreign_engine_verdict() {
+  local rc=0 record
+  make_case shadow-bad "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  echo 'verdict: probably fine' > "$STUB/ak.decide-output"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-bad: run ($(cat "$CASE/stderr"))"
+  assert_contains "$(tail -1 "$CASE/stdout")" "$(legacy_approved_line) converge=unavailable converge_reason=\"ak review decide gave no verdict" \
+    "shadow-bad: a malformed engine answer was shown as a verdict"
+  assert_absent "$(store_dir)/converge.record" "shadow-bad: a malformed engine answer was recorded"
+
+  make_case shadow-foreign "${TWO_SEATS[@]}" 'convergence=shadow'
+  write_ak_stub "$FAKEBIN"
+  echo engine > "$STUB/ak.mode"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "shadow-foreign: run ($(cat "$CASE/stderr"))"
+  record="$(store_dir)/converge.record"
+  assert_present "$record" "shadow-foreign: no shadow verdict was recorded"
+  sed 's/^batch=.*/batch=0000000000000000000000000000000000000000000000000000000000000000/' "$record" > "$record.new" && mv "$record.new" "$record"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "shadow-foreign: check"
+  assert_equals "$(legacy_approved_line) converge=unavailable converge_reason=\"no shadow verdict is recorded for this review batch\"" \
+    "$(cat "$CASE/stdout")" "shadow-foreign: a verdict from another review batch was shown"
+  pass "shadow shows no verdict for a malformed engine answer or a record from another review batch"
+}
+
 fm_test_run \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
@@ -1193,4 +1465,10 @@ fm_test_run \
   test_stale_receipt_base_refreshes_approvals \
   test_stale_spare_approval_is_dropped_before_the_run_starts \
   test_stale_block_at_another_base_is_not_replaced \
-  test_intent_reaches_the_prompt_the_receipt_binds
+  test_intent_reaches_the_prompt_the_receipt_binds \
+  test_convergence_off_keeps_the_legacy_line_and_calls_no_engine \
+  test_convergence_on_is_refused_until_enforcement_is_approved \
+  test_shadow_without_the_review_engine_reports_unavailable_and_records_nothing \
+  test_shadow_appends_the_engine_verdict_without_changing_the_legacy_verdict \
+  test_shadow_drops_a_malformed_or_foreign_engine_verdict \
+  test_shadow_ledger_takes_only_reviews_the_legacy_rule_counts

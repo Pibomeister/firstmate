@@ -91,6 +91,33 @@
 # URL; a valid BLOCK still blocks if posting fails. Posting is implemented for
 # GitHub only, so other forges cannot approve with post=on.
 #
+# Convergence shadow (convergence=shadow in config/merge-review). The rule
+# above still decides the state word and the exit status. After a batch, run
+# also gives AgentKit's review engine exactly the seat reviews the rule above
+# counts at this head and the live merge base, and records the engine's
+# verdict beside the receipts; check then appends that verdict to the line:
+#   ... url=<pr-url> converge=<approved|blocked|incomplete|owner-hold>
+#     tier=<green|yellow-agent|yellow-owner|red|unavailable>
+#   ... url=<pr-url> converge=unavailable converge_reason="<text>"
+# The engine interface (AgentKit plan T3/T4) is:
+#   ak review ledger add --ledger <file> --seat <id> --head <sha> --base <sha>
+#     --review <file>     exit 0 when the review is in the ledger, and a no-op
+#                         for a seat review the ledger already holds
+#   ak delegation --project <file> --stage merge --base <sha> --head <sha>
+#                         run in the repository; prints JSON with .class
+#   ak review decide --ledger <file> --head <sha> [--tier <class>]
+#                         prints JSON with .verdict
+# The project record is ak.project.json read from the merge base, never from
+# the head under review, so a change cannot pick its own tier. With no record
+# or no score the tier is unavailable and decide gets no --tier. Each ak call
+# is bounded to 120 seconds. When the engine is absent, older, slow, or gives
+# no verdict, the line says converge=unavailable and nothing is recorded; the
+# legacy verdict is never changed. check never calls ak: it reads
+# converge.record, key=value, format=fm-merge-review-converge-v1: batch (the
+# .complete digest it belongs to), verdict, tier. The ledger is one file per
+# pull request, next to the head directories: <number>/ledger.jsonl.
+# convergence=on is refused until enforcement is approved.
+#
 # docs/configuration.md "Merge review (config/merge-review)" owns the config
 # keys. The ship-landing skill owns when a supervisor dispatches the worker.
 #
@@ -120,6 +147,10 @@ MR_CONFIG="$FM_HOME/config/merge-review"
 MR_CONFIGURED=0
 MR_POST=off
 MR_TIMEOUT=1800
+MR_CONVERGENCE=off
+MR_AK_TIMEOUT=120
+MR_CONVERGE_FORMAT=fm-merge-review-converge-v1
+MR_SHADOW_NOTE=
 MR_REQUIRE_N=0
 MR_REQUIRE=()
 MR_SEAT_N=0
@@ -230,6 +261,13 @@ mr_config_load() {
         case "$val" in
           on | off) MR_POST=$val ;;
           *) mr_die "config/merge-review line $n: post must be on or off" ;;
+        esac
+        ;;
+      convergence)
+        case "$val" in
+          off | shadow) MR_CONVERGENCE=$val ;;
+          on) mr_die "config/merge-review line $n: convergence=on is not available; enforcement turns on only after the 7-day shadow report and an explicit approval, so use off or shadow" ;;
+          *) mr_die "config/merge-review line $n: convergence must be off or shadow" ;;
         esac
         ;;
       timeout)
@@ -488,10 +526,101 @@ mr_check() {
       *) reason='approving reviews come from one model family; two are required' ;;
     esac
   fi
-  printf 'merge-review: %s head=%s approvals=%s blocks=%s%s%s url=%s\n' \
+  printf 'merge-review: %s head=%s approvals=%s blocks=%s%s%s url=%s%s\n' \
     "$state" "$MR_HEAD" "${approvals:-none}" "${blocks:-none}" \
-    "${reason:+ reason=\"$reason\"}" "${invalid:+ invalid=\"$invalid\"}" "$FM_PR_URL"
+    "${reason:+ reason=\"$reason\"}" "${invalid:+ invalid=\"$invalid\"}" "$FM_PR_URL" \
+    "$(mr_shadow_fields "$store" "$complete_after")"
   [ "$state" = approved ]
+}
+
+# Print the convergence shadow fields for the check line: empty unless
+# convergence=shadow. A record counts only for the batch it names.
+mr_shadow_fields() {  # <store> <complete-digest>
+  local record="$1/converge.record" verdict tier
+  [ "$MR_CONVERGENCE" = shadow ] || return 0
+  if [ -f "$record" ] && [ ! -L "$record" ] &&
+    [ "$(mr_receipt_get "$record" format)" = "$MR_CONVERGE_FORMAT" ] &&
+    [[ "$2" =~ ^[0-9a-f]{64}$ ]] && [ "$(mr_receipt_get "$record" batch)" = "$2" ]; then
+    verdict=$(mr_receipt_get "$record" verdict)
+    tier=$(mr_receipt_get "$record" tier)
+    if mr_shadow_verdict_valid "$verdict" && mr_shadow_tier_valid "$tier"; then
+      printf ' converge=%s tier=%s' "$verdict" "$tier"
+      return 0
+    fi
+  fi
+  printf ' converge=unavailable converge_reason="%s"' "${MR_SHADOW_NOTE:-no shadow verdict is recorded for this review batch}"
+}
+
+mr_shadow_verdict_valid() {  # <word>
+  case "$1" in approved | blocked | incomplete | owner-hold) return 0 ;; esac
+  return 1
+}
+
+mr_shadow_tier_valid() {  # <word>
+  case "$1" in green | yellow-agent | yellow-owner | red | unavailable) return 0 ;; esac
+  return 1
+}
+
+# Run one ak call bounded by MR_AK_TIMEOUT; stdout goes to <out>, stderr is
+# dropped. Returns ak's exit status.
+mr_ak() {  # <out> <cwd> <ak arguments...>
+  local out=$1 cwd=$2 rc=0
+  shift 2
+  (cd "$cwd" && fm_run_timed "$MR_AK_TIMEOUT" ak "$@") > "$out" 2>/dev/null || rc=$?
+  return "$rc"
+}
+
+# convergence=shadow: hand this head's seat reviews to the review engine and
+# record its verdict in <records>/converge.record for batch <digest>. Never
+# changes the legacy verdict; on any failure it records nothing and leaves the
+# reason in MR_SHADOW_NOTE for the line run prints.
+mr_shadow_record() {  # <repo> <records-dir> <batch-digest>
+  local repo=$1 records=$2 batch=$3 ledger out i rc=0 tier=unavailable verdict project counted
+  local saved_base=$MR_EXPECTED_BASE
+  ledger="$(dirname "$MR_STORE")/ledger.jsonl"
+  out="$MR_WORK/ak.out"
+  command -v ak >/dev/null 2>&1 || { MR_SHADOW_NOTE='ak is not installed'; return 0; }
+  i=0
+  while [ "$i" -lt "$MR_SEAT_N" ]; do
+    # The ledger takes exactly the reviews the legacy rule counts at this
+    # merge base: posted when post=on, and never one reviewed at another base.
+    counted=0
+    MR_EXPECTED_BASE=$MR_BASE
+    [ ! -f "$MR_STORE/${MR_SEAT_ID[$i]}.receipt" ] || ! mr_receipt_valid "$MR_STORE/${MR_SEAT_ID[$i]}.receipt" || counted=1
+    MR_EXPECTED_BASE=$saved_base
+    if [ "$counted" = 1 ]; then
+      rc=0
+      mr_ak "$out" "$MR_WORK" review ledger add --ledger "$ledger" --seat "${MR_SEAT_ID[$i]}" \
+        --head "$MR_HEAD" --base "$MR_BASE" --review "$MR_STORE/${MR_SEAT_ID[$i]}.review.md" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        MR_SHADOW_NOTE="ak review ledger add exited $rc; the installed AgentKit has no usable review engine"
+        return 0
+      fi
+    fi
+    i=$((i + 1))
+  done
+  project="$MR_WORK/ak.project.json"
+  if git --no-replace-objects -C "$repo" cat-file -e "$MR_BASE:ak.project.json" 2>/dev/null &&
+    git --no-replace-objects -C "$repo" cat-file blob "$MR_BASE:ak.project.json" > "$project" 2>/dev/null &&
+    mr_ak "$out" "$repo" delegation --project "$project" --stage merge --base "$MR_BASE" --head "$MR_HEAD"; then
+    tier=$(jq -r 'if type == "object" and (.class | type) == "string" then .class else empty end' "$out" 2>/dev/null) || tier=
+    mr_shadow_tier_valid "$tier" || tier=unavailable
+  fi
+  rc=0
+  if [ "$tier" = unavailable ]; then
+    mr_ak "$out" "$MR_WORK" review decide --ledger "$ledger" --head "$MR_HEAD" || rc=$?
+  else
+    mr_ak "$out" "$MR_WORK" review decide --ledger "$ledger" --head "$MR_HEAD" --tier "$tier" || rc=$?
+  fi
+  verdict=$(jq -r 'if type == "object" and (.verdict | type) == "string" then .verdict else empty end' "$out" 2>/dev/null) || verdict=
+  if [ "$rc" -ne 0 ] || ! mr_shadow_verdict_valid "$verdict"; then
+    MR_SHADOW_NOTE="ak review decide gave no verdict (exit $rc)"
+    return 0
+  fi
+  if ! printf 'format=%s\nbatch=%s\nverdict=%s\ntier=%s\n' "$MR_CONVERGE_FORMAT" "$batch" "$verdict" "$tier" \
+    > "$records/converge.record" || ! mv "$records/converge.record" "$MR_STORE/converge.record"; then
+    MR_SHADOW_NOTE='cannot record the shadow verdict'
+  fi
 }
 
 mr_covers() {
@@ -929,7 +1058,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   fi
   MR_LOCK="$MR_STORE/.run.lock"
   printf '%s\n' "$$" > "$MR_LOCK/pid"
-  rm -f "$MR_STORE/.complete" || mr_die 'cannot reset the review batch completion marker'
+  rm -f "$MR_STORE/.complete" "$MR_STORE/converge.record" || mr_die 'cannot reset the review batch completion marker'
   MR_RECORDS=$(mktemp -d "$MR_LOCK/records.XXXXXX") || mr_die 'cannot create review records directory'
   printf '%s\n' "$MR_RECORDS" > "$MR_LOCK/generation"
   fm_lock_release "$MR_RECLAIM"
@@ -1039,6 +1168,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
 
   mr_run_owns_lock || mr_die 'the review run generation changed; refusing to finalize'
   complete_sha=$(mr_sha256 "$MR_LOCK/generation") || mr_die 'cannot hash the completed review batch'
+  [ "$MR_CONVERGENCE" != shadow ] || mr_shadow_record "$repo" "$MR_RECORDS" "$complete_sha"
   if ! printf '%s\n' "$complete_sha" > "$MR_RECORDS/complete" ||
     ! mv "$MR_RECORDS/complete" "$MR_STORE/.complete"; then
     mr_die 'cannot record the completed review batch'
