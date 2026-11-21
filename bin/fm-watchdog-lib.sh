@@ -329,7 +329,7 @@ fm_wd_nm_awaiting_approval() {  # <text>
   # The token alone does not prove a pipeline step: a plain merge decision can
   # mention it. Require a named step beside the token, or the nm-<run>-<step>
   # decision key a gate escalation carries.
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])((test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_-]+step|test)[[:space:]_:-]+awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_:-]*(step[[:space:]_:-]+)?awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
 }
 
 fm_wd_human_only() {  # <text>
@@ -344,7 +344,7 @@ fm_wd_human_only() {  # <text>
 fm_wd_known_unreachable_timing_flake() {  # <text>
   local view
   view=$(_fm_wd_guard_view "$1")
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load-sensitive|load shaped' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load-sensitive|load[- ]shaped' || return 1
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'flake|flaky' || return 1
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable'
 }

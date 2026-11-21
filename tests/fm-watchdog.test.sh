@@ -1711,7 +1711,7 @@ council-seats=claude:haiku,agy:flash'
 }
 
 test_awaiting_approval_reaches_council_despite_merge_word() {
-  local out
+  local out step seats off
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
   fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
@@ -1763,6 +1763,16 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 130 council --task t1 --key ship-600 --record-file "$H/record.txt" 2>&1) || fail "no-mistakes plain merge council failed: $out"
   assert_contains "$out" "council=held answer=none" "a plain merge decision that only mentions no-mistakes stays held: $out"
   assert_equals 4 "$(seat_calls)" "no seat saw the no-mistakes plain merge record"
+  seats=4
+  off=140
+  for step in review document lint push pr ci intent rebase; do
+    printf '%s\n' "PR #577 no-mistakes ${step} awaiting_approval. A approve the step so the PR can merge when gate-green, or B hold for the owner?" > "$H/record.txt"
+    out=$(run_wd "$off" council --task t1 --key "other-$step" --record-file "$H/record.txt" 2>&1) || fail "$step awaiting council failed: $out"
+    assert_contains "$out" "council=ruled answer=PROCEED A" "a ${step} awaiting_approval record reaches the council even when it names the merge: $out"
+    seats=$((seats + 2))
+    assert_equals "$seats" "$(seat_calls)" "both seats saw the ${step} awaiting_approval record"
+    off=$((off + 10))
+  done
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
@@ -1788,6 +1798,17 @@ council-seats=claude:haiku,agy:flash'
   printf '%s\n' 'A (recommended) flat keys, or B nested keys?' > "$H/record.txt"
   out=$(run_wd 10 council --task t1 --key plain-layout --record-file "$H/record.txt" 2>&1) || fail "plain council failed: $out"
   assert_no_grep "known unreachable timing flake" "$H/prompt.log" "an ordinary record gets no flake default"
+  : > "$H/prompt.log"
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-shaped flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 15 council --task t1 --key nm-flake-shaped --record-file "$H/record.txt" 2>&1) || fail "load-shaped flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a load-shaped flake still reaches the council: $out"
+  assert_grep "approved, not clean" "$H/prompt.log" "a load-shaped flake gets the not-clean default"
+  : > "$H/prompt.log"
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load shaped flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key nm-flake-shaped-space --record-file "$H/record.txt" 2>&1) || fail "load shaped flake council failed: $out"
+  assert_contains "$out" "council=ruled answer=PROCEED A" "a load shaped flake still reaches the council: $out"
+  assert_grep "approved, not clean" "$H/prompt.log" "a load shaped flake gets the not-clean default"
   pass "council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean"
 }
 
