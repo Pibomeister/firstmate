@@ -434,17 +434,20 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
 # composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
-# Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# other than our own doorbell (the watcher re-rings later), 2 the backend send
+# Returns 0 rang, 1 skipped (the watcher re-rings later), 2 the backend send
 # failed, 3 skipped because the endpoint is positively dead or missing (nothing
-# typed; recovery owns the record). No return value is delivery proof; the
-# acknowledgement move is the only delivery signal.
-# The skip is deliberately narrow: only an exact `pending` verdict can defer,
-# because there our Enter could submit someone's real half-typed content.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
-# CONSTANT line the worker recovers semantically, while skipping on ambiguous
-# verdicts would starve a harness whose idle screen the classifier cannot
-# positively identify (that classifier is advisory here by design).
+# typed; recovery owns the record). Return 1 covers three skips: a `pending`
+# composer on a busy non-Codex pane, a `pending` composer that does not hold
+# only our doorbell, and, on every backend except T3 Code, a composer that
+# holds only our doorbell while the pane is busy and not Codex. No return value
+# is delivery proof; the acknowledgement move is the only delivery signal.
+# The skip is deliberately narrow: a composer not proved to hold only our
+# doorbell defers only on an exact `pending` verdict, because there our Enter
+# could submit someone's real half-typed content.
+# `pending-unproven` and `unknown` still ring in that case - the worst outcome
+# is a garbled CONSTANT line the worker recovers semantically, while skipping
+# on ambiguous verdicts would starve a harness whose idle screen the classifier
+# cannot positively identify (that classifier is advisory here by design).
 # A pending composer holding only whole copies of our own doorbell line is
 # earlier rings whose Enter never landed (later rings concatenate onto it), so
 # on an agent not reported busy it is submitted rather than skipped; skipping
@@ -454,7 +457,7 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # too. The same ownership proof runs before a fresh copy is typed, so a
 # composer whose shape the classifier cannot prove pending (a typed Claude
 # composer on a plain-capture backend reads `unknown`) is submitted rather
-# than concatenated onto. A paste placeholder
+# than concatenated onto, and a busy non-Codex pane keeps the skip. A paste placeholder
 # such as Codex's `[Pasted Content N chars]` is opaque and never proves
 # ownership, whatever its size. On both paths a lost first Enter gets one
 # retry, and only while the composer still holds exactly the owned copies.
