@@ -156,6 +156,10 @@
 #       the away daemon named in its daemon-acks file
 #       (bin/fm-supervise-daemon.sh). Prints nothing and returns 1 when there is
 #       none.
+#   fm_wd_restart_prompt <handoff> <home> <script-dir> <token>
+#       Prints the primary restart prompt. It names the handoff by path and
+#       does not include the document. A document longer than the handoff
+#       line cap warns on stderr; bin/fm-handoff-lib.sh owns that cap.
 #   fm_wd_user_bin_path <path> <home>
 #       Prints <path> with <home>/.local/bin ahead of /opt/homebrew/bin and
 #       /usr/local/bin, where a self-updated tool such as `herdr update` installs,
@@ -711,6 +715,20 @@ fm_wd_supervisor_gap_rows() {  # <home> <now> <published-epoch>
   [ "$age" -ge 0 ] || return 1
   [ "$age" -le 600 ] || printf '%s\t%s\theartbeat_age=%s\n' "$now" "$home" "$age"
   printf '%s\tobserved\t%s\n' "$now" "$home"
+}
+
+# Names the handoff by path. Warns through fm-handoff-lib.sh when the file
+# exceeds that lib's line cap, and still prints only the path.
+fm_wd_restart_prompt() { # <handoff> <home> <script-dir> <token>
+  local lib
+  if ! declare -F fm_handoff_warn_line_cap >/dev/null 2>&1; then
+    lib=${BASH_SOURCE[0]%/*}
+    # shellcheck source=bin/fm-handoff-lib.sh
+    . "$lib/fm-handoff-lib.sh"
+  fi
+  fm_handoff_warn_line_cap "$1"
+  printf 'Watchdog restart of this firstmate home. Read %s first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=%s %s/fm-watchdog.sh pickup %s' \
+    "$1" "$2" "$3" "$4"
 }
 
 fm_wd_last_wake_ack() {  # <wake-ledger> <now> [daemon-acks]

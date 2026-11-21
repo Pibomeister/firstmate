@@ -510,6 +510,9 @@ When an order is missing or the check cannot read the document or the order stor
 The session then rewrites the handoff with `bin/fm-ledger.sh handoff` or `bin/fm-order.sh handoff --doc` and launches again.
 Before any claim, the launcher reads the successor's own quota: an exhausted pool refuses before anything launches and the predecessor keeps the lock, while an unmeasured pool is disclosed and does not block.
 The successor reads the handoff and acknowledges it before running session start.
+The launch prompt names that document by path and does not include its text.
+A document longer than 60 lines warns, and the launch still passes only the path.
+`bin/fm-handoff-lib.sh` owns that line cap.
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
