@@ -218,22 +218,18 @@ guard
 expect_rc 0 'a tool call does not reset an exhausted reservation budget'
 pass 'tool use does not clear an exhausted reservation budget'
 
-# The first observation stores the worker-status digest and does not clear a
-# seeded full ledger. One later status change may continue once. Further
-# status lines, including one per poll, still stop.
+# A worker status line is not a captain wake. Seeing one, or a new line on
+# every poll, does not continue past an exhausted budget and does not clear it.
 seed_full worker-cap
 turn worker-cap 'baseline worker status'
 guard
 expect_rc 0 'first worker-status observation does not clear a full budget'
-continues=0
 for n in 1 2 3 4 5; do
   printf 'working [at=%s]: worker poll\n' "$n" >> "$LAB/state/task.status"
   turn worker-cap "worker status poll $n"
   guard
-  if [ "$RC" -eq 2 ]; then continues=$((continues + 1)); fi
-  [ "$RC" -eq 0 ] || [ "$RC" -eq 2 ] || fail "worker status poll $n: expected rc 0 or 2, got $RC"
+  expect_rc 0 "worker status poll $n still stops at the cap"
 done
-[ "$continues" -le 1 ] || fail "worker status changes kept waking: $continues"
 printf 'working [at=9]: worker poll\n' >> "$LAB/state/task.status"
 turn worker-cap 'worker status poll final'
 guard
