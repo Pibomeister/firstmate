@@ -216,7 +216,7 @@
 #       name the current directory, keep their places too. An empty home or a
 #       home with no such directory prints <path> unchanged.
 
-FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])forced?[[:space:]-]?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])forced?.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
@@ -320,16 +320,16 @@ fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
 }
 
-FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|forced?[[:space:]-]?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
 fm_wd_nm_awaiting_approval() {  # <text>
   local view
   view=$(_fm_wd_guard_view "$1")
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval' || return 1
   # The token alone does not prove a pipeline step: a plain merge decision can
-  # mention it. Require a no-mistakes or named-step context, including the
-  # nm-<run>-<step> decision key a gate escalation carries.
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'no-mistakes|(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]-]*step|step[[:space:]]+awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
+  # mention it. Require a named step beside the token, or the nm-<run>-<step>
+  # decision key a gate escalation carries.
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])((test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_-]+step|test)[[:space:]_:-]+awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
 }
 
 fm_wd_human_only() {  # <text>

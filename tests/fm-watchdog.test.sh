@@ -449,7 +449,7 @@ test_stall_proof_and_text_guards() {
   ! lib fm_wd_text_allowed "Deploy to prod" || fail "deploy must be refused"
   lib fm_wd_text_allowed "emerge from the wake queue" || fail "emerge is not merge"
   local word
-  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push -uf origin main" "git push origin +main" "git push origin +main:main" "git push origin +HEAD:refs/heads/main" 'git push origin "+main"'; do
+  for word in "redeploy the staging service" "gh pr merge 5" "enable automerge on PR 5" "cut a prerelease" "republish the package" "REDEPLOY now" "remerge it" "premerge it" "undeploy it" "git push --force origin main" "git push -f origin main" "git push origin main --force-with-lease" "git push -uf origin main" "git push origin +main" "git push origin +main:main" "git push origin +HEAD:refs/heads/main" 'git push origin "+main"' "a forced push now" "git config alias.force_push" "force.push now"; do
     ! lib fm_wd_text_allowed "$word" || fail "text guard let through: $word"
     lib fm_wd_reserved "$word" || fail "reserved check let through: $word"
   done
@@ -1759,6 +1759,10 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 120 council --task t1 --key nm-forced-push --record-file "$H/record.txt" 2>&1) || fail "forced-push council failed: $out"
   assert_contains "$out" "council=held answer=none" "a forced push awaiting_approval stays the owner's: $out"
   assert_equals 4 "$(seat_calls)" "no seat saw the forced-push record"
+  printf '%s\n' 'no-mistakes run green; PR #600 awaiting approval to merge. A merge now, B wait' > "$H/record.txt"
+  out=$(run_wd 130 council --task t1 --key ship-600 --record-file "$H/record.txt" 2>&1) || fail "no-mistakes plain merge council failed: $out"
+  assert_contains "$out" "council=held answer=none" "a plain merge decision that only mentions no-mistakes stays held: $out"
+  assert_equals 4 "$(seat_calls)" "no seat saw the no-mistakes plain merge record"
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
