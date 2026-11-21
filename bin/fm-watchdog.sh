@@ -2129,7 +2129,11 @@ wd_handle_human_step() {  # <kind>
     fi
     return 0
   fi
-  if [ "$(wd_mode)" != act ]; then wd_rec "$id" human-step page dry-run "would page the owner; $kind step since $(fm_wd_iso "$since")"; return 0; fi
+  if [ "$(wd_mode)" != act ]; then
+    wd_rec "$id" human-step page dry-run "would page the owner; $kind step since $(fm_wd_iso "$since")"
+    wd_gap "human-only $kind step on $who for $((age / 60))m; would page the owner, nothing is typed into it"
+    return 0
+  fi
   wd_rec "$id" human-step page pending "$kind step since $(fm_wd_iso "$since")"
   summary="Firstmate watchdog: a human-only $kind step has waited $((age / 60)) minutes on $who, and only a person can complete it. Nothing was typed into it. The record is $O_HOME/state/watchdog/human-steps.tsv."
   out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \

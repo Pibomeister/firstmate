@@ -6587,6 +6587,26 @@ test_human_step_overnight_reports_only_what_it_recorded() {
   pass "human-only step: overnight, the status names a dry run or a failed write, never a record that was not written"
 }
 
+test_human_step_daytime_dry_run_names_the_page_it_would_send() {
+  local BASE
+  BASE=$(hs_base day)
+  make_home "$HS_LOGIN" 'mode=dry-run'
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1 || fail "the first daytime dry-run pass failed"
+  run_wd 600 once >/dev/null 2>&1 || fail "the ten-minute daytime dry-run pass failed"
+  assert_grep "would page the owner" "$H/data/watchdog/status.md" "a daytime dry run names the page it would send"
+  assert_no_grep "its escalation is retried after nudge-secs" "$H/data/watchdog/status.md" "a daytime dry run that never paged claims a retry"
+  assert_equals 1 "$(ledger_rows human-step page dry-run)" "the dry run is on the ledger: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger_rows human-step page pending)" "a dry run opened a page: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(ledger_rows human-step page "done")" "a dry run delivered a page: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "a daytime dry run paged the owner: $(cat "$H/paged.log")"
+  sleep 1
+  [ ! -s "$H/typed.log" ] || fail "a daytime dry run typed into the step: $(cat "$H/typed.log")"
+  pass "human-only step: a daytime dry run names the page it would send and sends none"
+}
+
 test_human_step_overnight_goes_to_the_morning_handoff() {
   local BASE
   BASE=$(hs_base night)
@@ -6926,6 +6946,7 @@ fm_test_run \
   test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step \
   test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into \
   test_human_step_overnight_reports_only_what_it_recorded \
+  test_human_step_daytime_dry_run_names_the_page_it_would_send \
   test_human_step_overnight_goes_to_the_morning_handoff \
   test_human_step_overnight_handoff_is_paged_by_day_unless_briefed \
   test_human_step_removed_worker_closes_its_handoff \
