@@ -685,8 +685,7 @@ A timer that only counts up is digits, so such a screen still counts as unchange
 
 **Classifier**
 
-The issue that asked for this check named a cheap classifier called "JEV" without defining it, and its author could not be reached to clarify.
-It is interpreted as TypeSafe Jev (`jev-latest`), so `classifier=jev` is the default.
+The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`), so `classifier=jev` is the default.
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
 It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is honored and validated the same way, and the key reaches `curl` only through a file descriptor, never its arguments.
 With no key, or when the call fails, the check logs one line saying so and asks the Grok fast tier through the installed `grok` CLI instead.
