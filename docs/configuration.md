@@ -655,9 +655,8 @@ The file holds `key=value` lines; blank lines and lines that start with `#` are 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `interval` | `1200` | Seconds between checks, at least 60. |
-| `classifier` | `jev` | `jev` or an explicit opt-in to `grok`. |
+| `classifier` | `jev` | The only accepted value is `jev`. |
 | `jev_model` | `jev-latest` | The TypeSafe model `jev` asks. |
-| `grok_model` | `grok-4.7-build-fast` | The Grok model an explicit `classifier=grok` asks. |
 | `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
 | `confidence_floor` | `0.6` | A model answer below it is `unsure`. |
 | `timeout` | `90` | Seconds allowed for one model call, at least 5. |
@@ -696,8 +695,7 @@ It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environ
 With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
 The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
 This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
-An explicit `classifier=grok` asks Grok only, with web search, tools, memory, and subagents off and a JSON schema that admits only the ten reasons.
-An answer below `confidence_floor`, or no usable answer from an explicitly selected Grok classifier, is `unsure`, which counts as possibly stalled: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
+An answer below `confidence_floor` is `unsure`: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
 
 The reasons are `working` and `idle_done`, which are not stalled, and `rate_limit`, `usage_limit`, `billing`, `api_error`, `auth`, `crashed`, `idle_with_goals`, and `waiting_on_human`, which are stalled.
 

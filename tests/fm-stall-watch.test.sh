@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # tests/fm-stall-watch.test.sh - the built-in stall check
 # (bin/fm-stall-watch.sh): redaction of the screen and of everything a
-# classifier receives, the deterministic first pass, the Jev and Grok judges
+# classifier receives, the deterministic first pass, the Jev judge
 # and their unavailable verdicts, the unchanged-screen guard, the failover, nudge, and
 # escalation actions, the tick schedule, and the watcher starting the tick and
 # delivering its reports. The screens are recorded fixtures under
-# tests/fixtures/stall-watch; grok, curl, fm-failover.sh, fm-send.sh, and the
+# tests/fixtures/stall-watch; curl, fm-failover.sh, fm-send.sh, and the
 # captain typer are stand-ins that record what they were given, while every
 # decision is the real script's.
 set -u
@@ -25,21 +25,6 @@ ln -s "$(command -v sleep)" "$TMP_ROOT/claude"
 "$TMP_ROOT/claude" 600 &
 CAPTAIN_OWNER=$!
 
-# grok stand-in: keeps the prompt file it was given and answers with the
-# reply file, or fails with FM_TEST_GROK_RC.
-cat > "$FAKEBIN/grok" <<'SH'
-#!/usr/bin/env bash
-n=$(( $(cat "$FM_TEST_LOGS/grok.n" 2>/dev/null || echo 0) + 1 ))
-echo "$n" > "$FM_TEST_LOGS/grok.n"
-printf '%s\n' "$@" > "$FM_TEST_LOGS/grok.argv.$n"
-prev=''
-for a in "$@"; do
-  [ "$prev" != --prompt-file ] || cp "$a" "$FM_TEST_LOGS/grok.prompt.$n"
-  prev=$a
-done
-[ "${FM_TEST_GROK_RC:-0}" = 0 ] || exit "$FM_TEST_GROK_RC"
-cat "$FM_TEST_GROK_REPLY"
-SH
 # curl stand-in: keeps argv, the body, and the fd-3 header; writes the reply
 # file to -o and prints FM_TEST_CURL_HTTP.
 cat > "$FAKEBIN/curl" <<'SH'
@@ -90,15 +75,16 @@ chmod +x "$FAKEBIN"/* "$DELEGATES"/*
 
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
 export FM_TEST_SEAM=1 FM_STALL_WATCH_TEST_SCREENS="$LAB/screens" FM_STALL_WATCH_TEST_BIN="$DELEGATES"
-export FM_TEST_LOGS="$LOGS" FM_TEST_GROK_REPLY="$TMP_ROOT/grok.reply" FM_TEST_CURL_REPLY="$TMP_ROOT/curl.reply"
+export FM_TEST_LOGS="$LOGS" FM_TEST_CURL_REPLY="$TMP_ROOT/curl.reply"
 export HOME="$TMP_ROOT/user" PATH="$FAKEBIN:$PATH"
-unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_GROK_RC FM_TEST_CURL_HTTP FM_TEST_FO_RC FM_TEST_FO_SILENT FM_TEST_SEND_RC FM_STALL_WATCH_NOW
+unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_CURL_HTTP FM_TEST_FO_RC FM_TEST_FO_SILENT FM_TEST_SEND_RC FM_STALL_WATCH_NOW
 
 reset_lab() {
   rm -rf "${LAB:?}" "${LOGS:?}"
   mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/screens" "$LOGS"
   write_captain_lock "$CAPTAIN_OWNER"
-  grok_says idle_with_goals 0.9
+  export TYPESAFE_API_KEY=k
+  jev_says idle_with_goals 0.9
 }
 
 write_captain_lock() {
@@ -106,10 +92,6 @@ write_captain_lock() {
   start=$(bash -c '. "$1"; fm_session_process_start "$2"' _ "$ROOT/bin/fm-session-lock-lib.sh" "$owner") || fail 'fixture: no captain owner identity'
   printf '%s\n' "$owner" > "$LAB/state/.lock"
   printf 'test-session\nanchor_pid=%s\nanchor_start=%s\nbackend=hc\nterminal=default:t1\n' "$owner" "$start" > "$LAB/state/.lock-session"
-}
-
-grok_says() {  # <reason> <confidence>
-  jq -cn --arg r "$1" --argjson c "$2" '{structuredOutput: {reason: $r, confidence: $c}, total_cost_usd: 0.0581}' > "$FM_TEST_GROK_REPLY"
 }
 
 jev_says() {  # <choice> <confidence>
@@ -241,20 +223,20 @@ test_screen_redacts_secrets_and_paths() {
 
 test_deterministic_pass_skips_the_model() {
   reset_lab
-  sw_in "$FIX/rate-limited.screen" classify --classifier grok
+  sw_in "$FIX/rate-limited.screen" classify
   assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=rule' 'a recognized 429 is classed by rule'
   printf 'Allow this command?\n\n❯ 1. Yes\n  2. No\n\nEnter to confirm · Esc to cancel\n' > "$TMP_ROOT/dialog.screen"
-  sw_in "$TMP_ROOT/dialog.screen" classify --classifier grok
+  sw_in "$TMP_ROOT/dialog.screen" classify
   assert_contains "$OUT" 'verdict=waiting_on_human stalled=yes source=rule' 'a recognized dialog waits on a person by rule'
   printf 'Which plan should I follow?\n ❯ 1. Plan A (Recommended)\n   2. Plan B\n\nEnter to select · ↑/↓ to navigate · Esc to cancel\n' > "$TMP_ROOT/question.screen"
-  sw_in "$TMP_ROOT/question.screen" classify --classifier grok
+  sw_in "$TMP_ROOT/question.screen" classify
   assert_contains "$OUT" 'verdict=waiting_on_human stalled=yes source=rule' 'a question picker waits on a person by rule'
   printf 'You hit your weekly limit.\n ❯ 1. Wait\n   2. Stop\n\nEnter to confirm · Esc to cancel\n' > "$TMP_ROOT/limit.screen"
-  sw_in "$TMP_ROOT/limit.screen" classify --classifier grok
+  sw_in "$TMP_ROOT/limit.screen" classify
   assert_contains "$OUT" 'verdict=usage_limit stalled=yes source=rule' 'a usage-limit picker is a usage limit by rule'
-  sw_in "$FIX/stalled.screen" classify --classifier grok --kind captain --open-work no
+  sw_in "$FIX/stalled.screen" classify --kind captain --open-work no
   assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain with no open work is idle_done without a model'
-  assert_equals 0 "$(count grok)" 'no deterministic verdict called the model'
+  assert_equals 0 "$(count curl)" 'no deterministic verdict called the model'
   assert_equals 0 "$(count curl)" 'no deterministic verdict called Jev'
   pass 'deterministic pass: rule refusals, dialogs, and no open work never reach a model'
 }
@@ -264,99 +246,81 @@ test_deterministic_pass_skips_the_model() {
 # (test_unchanged_screen_guard) is the deterministic working signal.
 test_rendered_activity_is_not_a_rule() {
   reset_lab
-  sw_in "$FIX/working.screen" classify
+  TYPESAFE_API_KEY= sw_in "$FIX/working.screen" classify
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a busy footer alone is not decided by rule'
   printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
-  sw_in "$TMP_ROOT/droid-hint.screen" classify
+  TYPESAFE_API_KEY= sw_in "$TMP_ROOT/droid-hint.screen" classify
   assert_contains "$OUT" 'verdict=unsure' 'a stop hint alone is not decided by rule'
-  grok_says working 0.95
-  sw_in "$FIX/working.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=working stalled=no source=grok' 'the classifier judges a busy footer'
-  assert_equals 1 "$(count grok)" 'one model call for the busy footer'
+  jev_says working 0.95
+  sw_in "$FIX/working.screen" classify
+  assert_contains "$OUT" 'verdict=working stalled=no source=jev' 'the classifier judges a busy footer'
+  assert_equals 1 "$(count curl)" 'one model call for the busy footer'
   pass 'rendered activity: a busy footer reaches the classifier instead of a rule'
 }
 
 test_model_judge_maps_answers() {
-  local g
+  local calls
   reset_lab
-  grok_says idle_with_goals 0.92
-  sw_in "$FIX/stalled.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok confidence=0.92' 'a confident grok answer maps to stalled'
-  assert_contains "$OUT" 'cost_usd=0.0581' 'the reported cost is kept'
-  assert_contains "$(cat "$LOGS/grok.argv.1")" 'grok-4.7-build-fast' 'the Grok fast tier is the default model'
-  grok_says idle_done 0.4
-  sw_in "$FIX/idle-done.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=grok' 'a not-stalled answer below the floor is unsure'
-  assert_contains "$OUT" 'below-floor' 'the floor is named'
-  grok_says idle_done 0.95
-  sw_in "$FIX/idle-done.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=idle_done stalled=no source=grok' 'a confident not-stalled answer is not stalled'
-  FM_TEST_GROK_RC=1 sw_in "$FIX/stalled.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed grok call is unsure'
-  assert_contains "$OUT" 'grok-exit-1' 'the failure is named'
-  printf '{"structuredOutput":{"reason":"sleeping","confidence":0.9}}\n' > "$FM_TEST_GROK_REPLY"
-  sw_in "$FIX/stalled.screen" classify --classifier grok
-  assert_contains "$OUT" 'verdict=unsure' 'an answer outside the reasons is unsure'
+  jev_says idle_with_goals 0.92
   sw_in "$FIX/stalled.screen" classify
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'unavailable Jev leaves an ambiguous screen unsure'
-  sw_in "$FIX/stalled.screen" classify --classifier none
-  expect_code 2 "$RC" 'classifier none is no longer an accepted option'
-  printf 'classifier=none\n' > "$LAB/config/stall-watch"
-  sw_in "$FIX/stalled.screen" classify
-  expect_code 2 "$RC" 'classifier none is no longer accepted in config'
-  rm -f "$LAB/config/stall-watch"
-
-  jev_says api_error 0.88
-  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$FIX/api-error.screen" classify
-  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev confidence=0.88' 'jev is the default classifier when a key exists'
-  assert_contains "$OUT" 'jev-tokens=812/3' 'token usage is kept'
-  assert_contains "$(cat "$LOGS/curl.argv.1")" 'https://api.typesafe.ai/v1/systemone' 'jev posts to the TypeSafe systemone endpoint'
-  assert_not_contains "$(cat "$LOGS/curl.argv.1")" 'ts-test-key-123' 'the key never reaches argv'
-  assert_equals 'Authorization: Bearer ts-test-key-123' "$(cat "$LOGS/curl.header.1")" 'the key reaches curl through fd 3'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev confidence=0.92' 'a confident Jev answer maps to stalled'
+  assert_contains "$OUT" 'cost_usd=-' 'Jev reports no per-call cost'
   assert_equals jev-latest "$(jq -r .model "$LOGS/curl.body.1")" 'the request names jev-latest'
   assert_equals choice "$(jq -r .questions.verdict.type "$LOGS/curl.body.1")" 'the request is one Choice question'
   assert_equals 10 "$(jq -r '.questions.verdict.criteria | length' "$LOGS/curl.body.1")" 'every reason is an option'
-
-  g=$(count grok)
-  sw_in "$FIX/api-error.screen" classify
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'jev with no key leaves an ambiguous screen unknown'
+  jev_says idle_done 0.4
+  sw_in "$FIX/idle-done.screen" classify
+  assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=jev' 'an answer below the floor is unsure'
+  assert_contains "$OUT" 'below-floor' 'the floor is named'
+  jev_says idle_done 0.95
+  sw_in "$FIX/idle-done.screen" classify
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev' 'a confident not-stalled answer is not stalled'
+  jev_says api_error 0.88
+  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev confidence=0.88' 'Jev judges an API error'
+  assert_contains "$OUT" 'jev-tokens=812/3' 'token usage is kept'
+  assert_contains "$(cat "$LOGS/curl.argv.4")" 'https://api.typesafe.ai/v1/systemone' 'Jev posts to the TypeSafe endpoint'
+  assert_not_contains "$(cat "$LOGS/curl.argv.4")" 'ts-test-key-123' 'the key never reaches argv'
+  assert_equals 'Authorization: Bearer ts-test-key-123' "$(cat "$LOGS/curl.header.4")" 'the key reaches curl through fd 3'
+  calls=$(count curl)
+  TYPESAFE_API_KEY= sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'Jev without a key leaves ambiguity unknown'
   assert_contains "$OUT" 'jev:no-key' 'the missing key is recorded'
   assert_contains "$ERR" 'jev unavailable (no TypeSafe key' 'the missing key is logged'
-  assert_equals "$g" "$(count grok)" 'a missing key never calls grok automatically'
+  assert_equals "$calls" "$(count curl)" 'a missing key makes no model call'
   printf 'TYPESAFE_API_KEY=ts-env-file-key\nTYPESAFE_BASE=https://ts.example.test/\n' > "$LAB/.env"
-  FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
-  assert_contains "$(cat "$LOGS/curl.argv.2")" 'https://ts.example.test/v1/systemone' 'TYPESAFE_BASE from .env is honored'
-  assert_equals 'Authorization: Bearer ts-env-file-key' "$(cat "$LOGS/curl.header.2")" 'the key from .env is used'
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed jev call leaves an ambiguous screen unknown'
+  TYPESAFE_API_KEY= FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
+  assert_contains "$(cat "$LOGS/curl.argv.5")" 'https://ts.example.test/v1/systemone' 'TYPESAFE_BASE from .env is honored'
+  assert_equals 'Authorization: Bearer ts-env-file-key' "$(cat "$LOGS/curl.header.5")" 'the key from .env is used'
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed Jev call leaves ambiguity unknown'
   assert_contains "$OUT" 'jev:jev-http-500' 'the HTTP failure is recorded'
   assert_contains "$ERR" 'jev unavailable (jev-http-500)' 'the failed call is logged'
-  assert_equals "$g" "$(count grok)" 'a failed jev call never calls grok automatically'
   printf 'TYPESAFE_BASE=https://user:pw@ts.example.test\n' > "$LAB/.env"
-  TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
+  sw_in "$FIX/api-error.screen" classify
   assert_contains "$OUT" 'jev:jev-base-invalid' 'an invalid base is refused without a call'
-  assert_equals 2 "$(count curl)" 'nothing was posted to an invalid base'
+  assert_equals 5 "$(count curl)" 'nothing was posted to an invalid base'
   rm -f "$LAB/.env"
-  g=$(count grok)
-  jev_says idle_done 0.3
-  TYPESAFE_API_KEY=k sw_in "$FIX/idle-done.screen" classify
-  assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=jev' 'a jev answer below the floor is unsure'
-  assert_contains "$OUT" 'below-floor' 'the floor is named for jev'
-  assert_equals "$g" "$(count grok)" 'a usable jev answer below the floor never asks grok'
   printf '{"answers":{"verdict":{"choice":"sleeping","confidence":0.9}}}\n' > "$FM_TEST_CURL_REPLY"
-  TYPESAFE_API_KEY=k sw_in "$FIX/api-error.screen" classify
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'an unparseable jev answer stays unknown'
+  sw_in "$FIX/api-error.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'an unparseable Jev answer stays unknown'
   assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
-  assert_equals "$g" "$(count grok)" 'an unparseable jev answer never calls grok automatically'
-  pass 'model judge: jev by default, explicit grok, floors, failures, and the key kept out of argv'
+  sw_in "$FIX/stalled.screen" classify --classifier grok
+  expect_code 2 "$RC" 'classify rejects the removed Grok option'
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  sw_in "$FIX/stalled.screen" classify
+  expect_code 2 "$RC" 'config rejects the removed Grok option'
+  rm -f "$LAB/config/stall-watch"
+  pass 'model judge: Jev alone handles answers, failures, floor, and secret key delivery'
 }
 
 test_jev_unavailable_takes_no_action() {
   reset_lab
+  unset TYPESAFE_API_KEY
   make_worker ju1 stalled.screen
   sw check ju1; sw check ju1; sw check ju1
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'missing Jev leaves an unchanged screen unknown'
   assert_contains "$OUT" 'action=none' 'unknown Jev result takes no action on repeated checks'
-  assert_equals 0 "$(count grok)" 'the default check never calls Grok'
+  assert_equals 0 "$(count curl)" 'the unavailable Jev path makes no model call'
   assert_equals 0 "$(count send)" 'the default check does not nudge'
   assert_equals 0 "$(count failover)" 'the default check does not fail over'
   assert_absent "$LAB/state/.wake-queue"
@@ -366,6 +330,7 @@ test_jev_unavailable_takes_no_action() {
 test_jev_unavailable_reasons() {
   local credential="$LAB/config/dispatch-credential-sources.json" reason expected
   reset_lab
+  unset TYPESAFE_API_KEY
   printf '{bad json\n' > "$credential"
   sw_in "$FIX/stalled.screen" classify
   assert_contains "$OUT" 'note=jev:credential-source-unusable' 'a malformed declaration is named in the result'
@@ -428,13 +393,13 @@ test_captain_api_error_without_open_work() {
 
 test_captain_overdue_probe_failure() {
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   sw check captain --dry-run
   assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a successful empty overdue probe allows healthy idle'
   FM_DISPATCH_SLA_MINUTES=bad sw check captain --dry-run
-  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'a failed overdue probe keeps captain work unknown'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'a failed overdue probe keeps captain work unknown'
   assert_not_contains "$OUT" 'verdict=idle_done' 'a failed overdue probe never declares healthy idle'
   pass 'captain: overdue probe failure reaches the classifier'
 }
@@ -462,29 +427,26 @@ test_fingerprint_preserves_error_status() {
 test_classifier_never_sees_secrets() {
   reset_lab
   { secrets_screen; printf 'wrote %s/projects/notes.md\n' "$HOME"; } > "$TMP_ROOT/s.screen"
-  sw_in "$TMP_ROOT/s.screen" classify --classifier grok --status "working: token=FAKEstatusSecret99 in /Users/alice/x"
-  assert_present "$LOGS/grok.prompt.1"
-  assert_no_planted "$(cat "$LOGS/grok.prompt.1")" 'the grok prompt'
-  assert_not_contains "$(cat "$LOGS/grok.prompt.1")" 'FAKEstatusSecret99' 'the grok prompt status line'
-  assert_contains "$(cat "$LOGS/grok.prompt.1")" 'GITHUB_TOKEN=<redacted>' 'the grok prompt carries the redacted screen'
   jev_says idle_with_goals 0.9
-  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$TMP_ROOT/s.screen" classify
+  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$TMP_ROOT/s.screen" classify --status "working: token=FAKEstatusSecret99 in /Users/alice/x"
   assert_no_planted "$(cat "$LOGS/curl.body.1")" 'the jev request body'
   assert_not_contains "$(cat "$LOGS/curl.body.1")" 'ts-test-key-123' 'the jev request body'
-  pass 'redaction boundary: neither classifier receives a planted secret or private path'
+  assert_not_contains "$(cat "$LOGS/curl.body.1")" 'FAKEstatusSecret99' 'Jev receives the redacted status'
+  assert_contains "$(jq -r .state.agent.screen "$LOGS/curl.body.1")" 'GITHUB_TOKEN=<redacted>' 'Jev receives the redacted screen'
+  pass 'redaction boundary: Jev receives no planted secret or private path'
 }
 
 test_unchanged_screen_guard() {
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker w1 stalled.screen
-  grok_says idle_done 0.95
+  jev_says idle_done 0.95
   sw check w1
   assert_contains "$OUT" 'verdict=progress stalled=no source=fingerprint' 'the first check only records the screen'
-  assert_equals 0 "$(count grok)" 'a new screen is never classified'
+  assert_equals 0 "$(count curl)" 'a new screen is never classified'
   sw check w1
-  assert_contains "$OUT" 'verdict=idle_done stalled=no source=grok' 'an unchanged screen is classified'
-  assert_equals 1 "$(count grok)" 'one model call for the unchanged screen'
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev' 'an unchanged screen is classified'
+  assert_equals 1 "$(count curl)" 'one model call for the unchanged screen'
   printf '\n• Started the third case.\n' >> "$LAB/screens/w1.screen"
   sw check w1
   assert_contains "$OUT" 'verdict=progress' 'a changed screen is progress'
@@ -496,7 +458,7 @@ test_unchanged_screen_guard() {
   git -C "$TMP_ROOT/wt-w1" -c user.name=t -c user.email=t@example.com commit -qm next >/dev/null 2>&1 || fail 'fixture: commit'
   sw check w1
   assert_contains "$OUT" 'verdict=progress' 'a new commit is progress'
-  assert_equals 1 "$(count grok)" 'progress never calls the model'
+  assert_equals 1 "$(count curl)" 'progress never calls the model'
   assert_equals 5 "$(ledger_rows w1)" 'one ledger row per check'
   sw check w1 --dry-run
   assert_contains "$OUT" 'action=dry-run' 'a dry run classifies'
@@ -510,22 +472,22 @@ test_unchanged_screen_guard() {
 
 test_actions() {
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker w2 api-error.screen
-  grok_says api_error 0.9
+  jev_says api_error 0.9
   sw check w2; sw check w2
-  assert_contains "$OUT" 'verdict=api_error stalled=yes source=grok' 'the model judges the API error'
+  assert_contains "$OUT" 'verdict=api_error stalled=yes source=jev' 'the model judges the API error'
   assert_contains "$OUT" 'action=failover-switched' 'a model-judged API error fails over'
   assert_equals "worker w2 --reason api_error --state $LAB/state " "$(cat "$LOGS/failover.argv.1")" 'fm-failover.sh worker with the class'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'stall-w2-' 'the outcome is a check wake'
-  assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'check: w2 moved to the next runtime after the stall check judged it stopped (api_error per grok' 'the report names the judgment'
+  assert_contains "$(cat "$LAB/state/stall-watch"/.report.*)" 'check: w2 moved to the next runtime after the stall check judged it stopped (api_error per jev' 'the report names the judgment'
   sw check w2
   assert_contains "$OUT" 'verdict=already-handled' 'the same screen is handled once'
   assert_equals 1 "$(count failover)" 'one failover per screen'
-  assert_equals 1 "$(count grok)" 'a handled screen is not classified again'
+  assert_equals 1 "$(count curl)" 'a handled screen is not classified again'
 
   make_worker w3 stalled.screen
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   sw check w3; sw check w3
   assert_contains "$OUT" 'action=nudged' 'idle with open work is nudged first'
   assert_equals w3 "$(head -n 1 "$LOGS/send.argv.1")" 'the nudge goes through fm-send to the task'
@@ -535,7 +497,7 @@ test_actions() {
   assert_equals "worker w3 --reason stalled --state $LAB/state " "$(cat "$LOGS/failover.argv.2")" 'failover with --reason stalled'
 
   make_worker w4 waiting-on-human.screen
-  grok_says waiting_on_human 0.9
+  jev_says waiting_on_human 0.9
   sw check w4; sw check w4
   assert_contains "$OUT" 'action=escalated' 'a worker waiting on a person escalates'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'w4 is waiting on a person' 'the escalation wake'
@@ -549,16 +511,17 @@ test_actions() {
   assert_equals 2 "$(count failover)" 'no failover from the stall check for a rule refusal'
 
   make_worker w6 idle-done.screen
-  grok_says idle_done 0.9
+  jev_says idle_done 0.9
   sw check w6; sw check w6
-  assert_contains "$OUT" 'verdict=idle_done stalled=no source=grok confidence=0.9 latency_ms=' 'idle done'
+  assert_contains "$OUT" 'verdict=idle_done stalled=no source=jev confidence=0.9 latency_ms=' 'idle done'
   assert_contains "$OUT" 'action=none' 'idle done does nothing'
 
   make_worker w7 stalled.screen
   sw check w7
-  FM_TEST_GROK_RC=1 sw check w7
+  jev_says idle_with_goals 0.3
+  sw check w7
   assert_contains "$OUT" 'action=wait' 'the first unsure check waits'
-  FM_TEST_GROK_RC=1 sw check w7
+  sw check w7
   assert_contains "$OUT" 'action=escalated' 'the same screen unsure again escalates'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'w7 may be stalled and the classifier could not tell twice' 'the unsure escalation wake'
 
@@ -570,7 +533,7 @@ test_actions() {
   assert_contains "$OUT" 'status=done' 'the declared word is named'
 
   make_worker w9 api-error.screen
-  grok_says api_error 0.9
+  jev_says api_error 0.9
   sw check w9
   FM_TEST_FO_RC=5 sw check w9
   assert_contains "$OUT" 'action=failover-locked' 'a held failover lock'
@@ -582,7 +545,7 @@ test_actions() {
 test_actionful_checks_share_target_lock() {
   local first i=0
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker concurrent stalled.screen
   sw check concurrent
   : > "$LOGS/send.hold"
@@ -608,21 +571,21 @@ test_actionful_checks_share_target_lock() {
 test_captain_actions() {
   local now
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker w1 working.screen
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   sw check captain; sw check captain
   assert_contains "$OUT" 'verdict=idle_done stalled=no source=supervision' 'a captain idle with workers running and nothing owed is waiting on its watcher'
-  assert_equals 0 "$(count grok)" 'a healthy idle captain never reaches the model'
+  assert_equals 0 "$(count curl)" 'a healthy idle captain never reaches the model'
   FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received g1 --summary 'a goal' >/dev/null || fail 'fixture: received'
   cp "$FIX/api-error.screen" "$LAB/screens/captain.screen"
-  grok_says usage_limit 0.9
+  jev_says usage_limit 0.9
   sw check captain; sw check captain
   assert_contains "$OUT" 'action=failover-switched' 'a model-judged refusal of a captain with an overdue goal fails over'
   assert_equals 'captain --reason usage_limit ' "$(cat "$LOGS/failover.argv.1")" 'fm-failover.sh captain with the class'
   assert_equals 1 "$(cat "$LOGS/failover.captain-env.1")" 'the watcher authorization is requested'
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   sw check captain; sw check captain
   assert_contains "$OUT" 'action=nudged' 'an idle captain with work owed is nudged'
   assert_contains "$(cat "$LOGS/captain-send")" 'Stall check:' 'the captain typer received the nudge'
@@ -633,7 +596,7 @@ test_captain_actions() {
   sw check captain
   assert_contains "$OUT" 'already-handled' 'one escalation per screen'
   cp "$FIX/waiting-on-human.screen" "$LAB/screens/captain.screen"
-  grok_says waiting_on_human 0.9
+  jev_says waiting_on_human 0.9
   sw check captain; sw check captain
   assert_contains "$OUT" 'action=none' 'a captain waiting on its owner is only recorded'
   assert_contains "$OUT" 'waiting-on-owner' 'the reason is named'
@@ -646,12 +609,12 @@ SH
   chmod +x "$TMP_ROOT/hc"
   write_captain_lock "$CAPTAIN_OWNER"
   cp "$FIX/working.screen" "$LAB/screens/captain.screen"
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
   assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a natively busy captain is working without a model'
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=idle sw check captain
-  assert_contains "$OUT" 'source=grok' 'a natively idle captain with work owed reaches the classifier'
+  assert_contains "$OUT" 'source=jev' 'a natively idle captain with work owed reaches the classifier'
   rm -f "$LAB/state/dispatch-log.tsv"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   printf '\n• Finished.\n' >> "$LAB/screens/captain.screen"
@@ -661,7 +624,7 @@ SH
   now=$(date +%s)
   printf '%s\t%s\tcheck\told-key\tan old wake\n' "$((now - 5000))" 999 >> "$LAB/state/.wake-queue"
   sw check captain
-  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'a wake left in the queue past one interval is work owed'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'a wake left in the queue past one interval is work owed'
   assert_contains "$OUT" 'action=nudged' 'and the idle captain is nudged'
   pass 'captain: idle and owing nothing is healthy; owed work comes from overdue goals or old wakes; nudge then one escalation, never a stalled failover'
 }
@@ -670,7 +633,7 @@ SH
 # ever receives its redacted copy.
 test_declared_status_reads_the_raw_verb() {
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker d1 stalled.screen
   printf 'needs-decision: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d1.status"
   sw check d1
@@ -682,10 +645,10 @@ test_declared_status_reads_the_raw_verb() {
   assert_contains "$OUT" 'status=done' 'a withheld done line with continuation prose is still declared'
   make_worker d3 stalled.screen
   printf 'working: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d3.status"
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   sw check d3; sw check d3
-  assert_contains "$OUT" 'source=grok' 'an undeclared worker is judged'
-  assert_not_contains "$(cat "$LOGS/grok.prompt.1")" "$P_PASS" 'the classifier never receives the raw status line'
+  assert_contains "$OUT" 'source=jev' 'an undeclared worker is judged'
+  assert_not_contains "$(cat "$LOGS/curl.body.1")" "$P_PASS" 'the classifier never receives the raw status line'
   pass 'declared status: the verb comes from the raw line; the classifier gets the redacted copy'
 }
 
@@ -693,9 +656,9 @@ test_declared_status_reads_the_raw_verb() {
 # change alone, such as the nudge doorbell, keeps it, so idle again fails over.
 test_nudge_ends_with_work() {
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker n3 stalled.screen
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   sw check n3; sw check n3
   assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
   printf 'x\n' > "$TMP_ROOT/wt-n3/work.txt"
@@ -720,13 +683,13 @@ test_nudge_ends_with_work() {
 test_refusal_after_ordinary_stop_is_judged() {
   local gen
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker r1 rate-limited.screen
   gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r1) || fail 'fixture: arm'
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
-  grok_says rate_limit 0.9
+  jev_says rate_limit 0.9
   sw check r1; sw check r1
-  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'the classifier judges the screen, and a refusal answer is history'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'the classifier judges the screen, and a refusal answer is history'
   assert_contains "$OUT" 'refusal-row-is-history' 'the remap is named'
   assert_contains "$OUT" 'action=nudged' 'so the idle worker is nudged'
   assert_equals 0 "$(count failover)" 'an old refusal row never fails a worker over'
@@ -735,7 +698,7 @@ test_refusal_after_ordinary_stop_is_judged() {
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r2 idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null || fail 'fixture: stop-failure'
   sw check r2; sw check r2
   assert_contains "$OUT" 'action=watcher-owned' 'after a stop-failure the row stays the watcher'"'"'s'
-  assert_equals 1 "$(count grok)" 'only the ordinary stop reached the classifier'
+  assert_equals 1 "$(count curl)" 'only the ordinary stop reached the classifier'
   pass 'refusal rows: left to the watcher unless the Claude hook recorded an ordinary stop, which makes them history'
 }
 config_reports() { grep -l 'the stall check is not running' "$LAB/state/stall-watch"/.report.* 2>/dev/null | wc -l | tr -d ' '; }
@@ -861,15 +824,15 @@ test_watcher_starts_tick_and_delivers_reports() {
 test_decided_scenarios() {
   local id r rc
   reset_lab
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
   make_worker a1 stalled.screen
-  grok_says auth 0.9
+  jev_says auth 0.9
   sw check a1; sw check a1
-  assert_contains "$OUT" 'verdict=auth stalled=yes source=grok' 'auth is judged'
+  assert_contains "$OUT" 'verdict=auth stalled=yes source=jev' 'auth is judged'
   assert_contains "$OUT" 'action=escalated' 'auth escalates'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'a1 looks signed out or its credentials were rejected' 'the auth wake'
   make_worker c1 stalled.screen
-  grok_says crashed 0.9
+  jev_says crashed 0.9
   sw check c1; sw check c1
   assert_contains "$OUT" 'action=escalated' 'crashed escalates'
   assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'c1 looks crashed' 'the crashed wake'
@@ -879,15 +842,15 @@ test_decided_scenarios() {
     id="m-$r"
     id=${id//_/-}
     make_worker "$id" stalled.screen
-    grok_says "$r" 0.9
+    jev_says "$r" 0.9
     sw check "$id"; sw check "$id"
-    assert_contains "$OUT" "verdict=$r stalled=yes source=grok" "a model-judged $r"
+    assert_contains "$OUT" "verdict=$r stalled=yes source=jev" "a model-judged $r"
     assert_contains "$OUT" 'action=failover-switched' "a model-judged $r fails over"
   done
   assert_equals "worker m-billing --reason billing --state $LAB/state " "$(cat "$LOGS/failover.argv.3")" 'the worker failover carries the class'
 
   make_worker n1 stalled.screen
-  grok_says idle_with_goals 0.9
+  jev_says idle_with_goals 0.9
   FM_STALL_WATCH_NOW=1000 sw check n1
   FM_TEST_SEND_RC=1 FM_STALL_WATCH_NOW=2000 sw check n1
   assert_contains "$OUT" 'action=escalated' 'a nudge that could not be delivered escalates'
@@ -901,7 +864,7 @@ test_decided_scenarios() {
   FM_STALL_WATCH_NOW=5700 sw check n2
   assert_contains "$OUT" 'action=failover-switched' 'a fresh nudge followed by idle fails over'
 
-  grok_says api_error 0.9
+  jev_says api_error 0.9
   for rc in 1 1s 3 6 9; do
     id="fo-$rc"
     make_worker "$id" api-error.screen
