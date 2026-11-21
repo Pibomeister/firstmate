@@ -608,8 +608,8 @@ An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
 The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
 Accounts compare by their config directory, so `ordinary` and a declared `$HOME/.claude` are one account.
 An unpinned Claude worker counts as running on the account the supervisor inherits, which holds only when the worker was spawned under that same `CLAUDE_CONFIG_DIR`.
-A `host=` entry checks whether a remote route is configured locally; when the route is absent, the dispatch log records `host route not configured` before local candidates are considered.
-The remote transport currently cannot relocate a local task worktree, so an available route is recorded as `host worktree handoff not implemented` and local candidates are considered.
+A `host=` entry is recorded as `host worktree handoff not implemented` in the dispatch log, and local candidates are considered.
+The remote transport currently cannot relocate a local task worktree.
 Preflight excludes accounts below 30% five-hour remaining.
 Without the file the order is `codex host=hetzner`, then local `codex`, `droid`, and `claude@next`.
 Example:

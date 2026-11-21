@@ -173,7 +173,7 @@ FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|
 # A row that opens by stating the limit. Used by the pane picker, by paused or
 # blocked status lines, and by fm_wd_provider_error_class. Do not add another
 # detector for these phrases.
-FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? hit your ([a-z0-9-]+ ){0,2}limit|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
+FM_WD_USAGE_LIMIT_RE='^[^a-z]*(you( have|.{1,3}ve)? (hit your ([a-z0-9-]+ ){0,2}limit|reached your ([a-z0-9-]+ ){0,5}usage limit)|([a-z0-9-]+ )?(usage|rate)[- ]?limit (hit|reached|reset)|(you( are|.{1,3}re) )?out of credits|waiting on a rate[- ]limit)'
 FM_WD_MODEL_SWITCH_RE='^[^a-z]*(switch (to )?((a|another) )?model|switch to another account)'
 FM_WD_QUOTA_STATUS_RE='quota (floor|exhausted|is exhausted|at 0|limit|wall)|(hit|reached|at) (the |a |its )?quota|rate.?limited|rate limit (hit|reached)|usage limit (hit|reached)|out of (credits|quota)|credits (are )?(exhausted|at 0|empty)'
 # Rows that open by reporting a provider refusal the agent cannot work through:
@@ -362,7 +362,7 @@ fm_wd_provider_error_class() {  # <text>
   [ -n "$t" ] || return 1
   if printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_BILLING_ERROR_RE"; then
     printf 'billing\n'
-  elif printf '%s\n' "$t" | LC_ALL=C grep -E "$FM_WD_USAGE_LIMIT_RE" | LC_ALL=C grep -Eq "$FM_WD_PROVIDER_LIMIT_HINT_RE"; then
+  elif printf '%s\n' "$t" | LC_ALL=C grep -E -A1 "$FM_WD_USAGE_LIMIT_RE" | LC_ALL=C grep -Eq "$FM_WD_PROVIDER_LIMIT_HINT_RE"; then
     printf 'usage_limit\n'
   elif printf '%s\n' "$t" | LC_ALL=C grep -Eq "$FM_WD_RATE_LIMIT_ERROR_RE"; then
     printf 'rate_limit\n'

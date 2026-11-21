@@ -229,6 +229,7 @@ usage_limit|You've hit your limit · resets 3pm (Europe/Madrid)
 usage_limit|⎿ Usage limit reached ∙ resets 9pm
 usage_limit|Claude usage limit reached. Your limit will reset at 5pm
 usage_limit|■ You've hit your usage limit. Upgrade to Pro or try again in 2 hours.
+usage_limit|You've reached your 5-hour Droid Core usage limit (resets in 1h 9min).
 none|API Error: 529 overloaded
 none|I fixed the rate limit handling and the 429 path in the API error code
 none|12 + API Error: Request rejected (429)
@@ -253,6 +254,8 @@ none|Credit balance too low responses now map to billing
 none|  ⎿  API Error (429 {"type":"error"}) · Retrying in 5 seconds… (attempt 2/10)
 none|API Error: Request rejected (14290)
 ROWS
+  got=$(fm_wd_provider_error_screen $'You\047ve hit your usage limit.\nResets at 3pm\n\n❯ ') || got=none
+  [ "$got" = usage_limit ] || fail "adjacent limit and reset lines classed $got, expected usage_limit"
   got=$(fm_wd_provider_error_screen "$(printf 'API Error: Request rejected (429)\n'; for row in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'later output %s\n' "$row"; done)") || got=none
   [ "$got" = none ] || fail "a refusal above the last 12 rows must not count, got $got"
   got=$(fm_wd_provider_error_screen "$(printf 'older\n\n⏺ Credit balance is too low\n\n❯ \n')") || got=none
@@ -308,7 +311,7 @@ test_worker_429_moves_to_the_next_runtime() {
   expect_code 0 "$RC" "worker failover after a 429: $OUT"
   assert_not_contains "$(cat "$LAB/quota.calls")" 'claude' 'later accounts are not measured before the first replacement starts'
   assert_contains "$OUT" 'candidate runtime=codex eligible verdict=ok' 'codex is measured and eligible'
-  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host route not configured' 'an absent host route is recorded before local failover'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree handoff not implemented' 'the host handoff limit is recorded before local failover'
   assert_contains "$OUT" 'switched task=w1 from=claude to=codex reason=rate_limit' 'the switch names both runtimes and the reason'
   expect_code 1 "$(control_calls)" "one relaunch"
   assert_equals "w1 relaunch --harness codex --provider-failover --note" "$(control_arg 1 0) $(control_arg 1 1) $(control_arg 1 2) $(control_arg 1 3) $(control_arg 1 4) $(control_arg 1 5)" 'the relaunch goes through fm-control in place'
@@ -602,8 +605,8 @@ test_preflight_night_plan() {
   printf 'API Error: Request rejected (429)\n' > "$QUOTA/droid.probe"
   fo preflight
   expect_code 0 "$RC" "the preflight: $OUT"
-  assert_contains "$OUT" 'preflight runtime=codex verdict=unmeasured call=skipped five_hour=unknown weekly=unknown why=host_route_not_configured' 'an absent host route stays unmeasured'
-  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host route not configured' 'preflight records the host skip'
+  assert_contains "$OUT" 'preflight runtime=codex verdict=unmeasured call=skipped five_hour=unknown weekly=unknown why=host_worktree_handoff_not_implemented' 'the host stays unmeasured'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree handoff not implemented' 'preflight records the host skip'
   assert_contains "$OUT" 'preflight runtime=codex verdict=eligible call=ok five_hour=80 weekly=60' 'a working runtime with headroom is eligible'
   assert_contains "$OUT" 'preflight runtime=droid verdict=excluded call=fail:rate_limit' 'a runtime whose real call is refused is excluded'
   assert_contains "$OUT" 'preflight runtime=claude@pA verdict=excluded call=ok five_hour=20 weekly=80 why=five_hour_below_30' 'an account under the five-hour floor is excluded'
@@ -689,6 +692,11 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a billing refusal' \
     'a billing record from the StopFailure hook moves the ship on its first idle poll'
 
+  dir=$(watch_case watch-usage $'You\047ve hit your usage limit.\nResets at 3pm\n\n❯ \n  ⏵⏵ auto mode on')
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
+    'adjacent usage-limit and reset lines move the ship on its first idle poll'
+
   dir=$(watch_case watch-prose $'I fixed the API error path that returned 429 for rate limits.\n\n❯ \n  ⏵⏵ auto mode on')
   watch_once "$dir"
   [ ! -e "$dir/control.calls" ] || fail "prose about a 429 must not relaunch: $(cat "$dir/control.calls")"
@@ -706,12 +714,14 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
   local dir class err owner start rc out owner_h from_label to_label
-  for class in rate_limit billing; do
+  for class in rate_limit billing usage_limit; do
     err='⏺ API Error: Request rejected (429)'
     owner_h=claude from_label=claude@ordinary to_label=codex
     if [ "$class" = billing ]; then
       err='⏺ Credit balance is too low'
       owner_h=codex from_label=codex to_label=claude@fallback
+    elif [ "$class" = usage_limit ]; then
+      err=$'You\047ve hit your usage limit.\nResets at 3pm'
     fi
     dir=$(watch_case "captain-$class" "$err"$'\n\n❯ \n  ⏵⏵ auto mode on')
     ln -s "$(command -v sleep)" "$dir/$owner_h"
@@ -743,7 +753,7 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
     wait "$owner" 2>/dev/null || true
     FAKE_OWNER=''
   done
-  pass 'watcher: idle captain 429 and billing screens with open goals hand off in one poll'
+  pass 'watcher: idle captain 429, billing, and usage-limit screens with open goals hand off in one poll'
 }
 
 # Every stale grace, from the floor to well past the default, and explicit

@@ -366,26 +366,8 @@ dispatch_skip() {
 
 host_skip() {
   local task=$1 from=$2 label=$3 host=$4
-  if host_route_configured "$host"; then
-    FM_HOST_SKIP_REASON='host worktree handoff not implemented'
-  else
-    FM_HOST_SKIP_REASON='host route not configured'
-  fi
+  FM_HOST_SKIP_REASON='host worktree handoff not implemented'
   dispatch_skip "$task" "$from" "$label@$host" "$FM_HOST_SKIP_REASON"
-}
-
-host_route_configured() {
-  local host=$1 line count=0
-  [ -f "$DATA/secondmates.md" ] && [ ! -L "$DATA/secondmates.md" ] || return 1
-  # shellcheck source=bin/fm-secondmate-registry-lib.sh
-  . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
-  while IFS= read -r line; do
-    case "$line" in '- '*) ;; *) continue ;; esac
-    secondmate_registry_parse_line "$line" || return 1
-    [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ] && [ "$SECONDMATE_REGISTRY_HOST" = "$host" ] || continue
-    count=$((count + 1))
-  done < "$DATA/secondmates.md"
-  [ "$count" -eq 1 ]
 }
 
 reason_or_record() {  # <id>
