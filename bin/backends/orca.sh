@@ -496,24 +496,6 @@ process.exit((r.terminal || r).draft ? 0 : 1);
 '
 }
 
-# fm_backend_orca_draft_text: the draft text itself, on a fresh read like the
-# probe above. Prints nothing for an empty draft; fails when the read or its
-# payload cannot be trusted. Composer ownership uses
-# fm_backend_orca_composer_snapshot, not this single field.
-fm_backend_orca_draft_text() {  # <terminal-id>
-  local out
-  out=$(FM_ORCA_CLI_CACHE=0 fm_backend_orca_blip_read fm_orca_cli terminal read --terminal "$1" --limit "$FM_COMPOSER_CAPTURE_LINES" --json 2>/dev/null) || return 1
-  printf '%s' "$out" | node -e '
-let data;
-try { data = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (err) { process.exit(1); }
-if (!data || data.ok === false) process.exit(1);
-const r = data.result || {};
-const draft = (r.terminal || r).draft;
-if (typeof draft !== "string") process.exit(1);
-process.stdout.write(draft);
-'
-}
-
 # One uncached terminal read, as two base64 lines (tail, then draft) and a
 # trailing ".". Tail selection matches fm_backend_orca_json_text. A missing
 # draft is empty; any other non-string draft fails the read.
