@@ -1,0 +1,13 @@
+1795303787	wd1795303787a91165	{run-worktree}/.test-phase-lab	.test-phase-lab	human-step	handoff	pending	sign-in step since 2026-11-21T23:27:34Z
+1795303787	wd1795303787a91165	{run-worktree}/.test-phase-lab	.test-phase-lab	human-step	handoff	done	recorded for the morning handoff; not paged
+1795303793	wd1795303793547f73	{run-worktree}/.test-phase-lab	.test-phase-lab	human-step	page	pending	sign-in step since 2026-11-21T23:27:34Z
+1795303794	wd1795303793547f73	{run-worktree}/.test-phase-lab	.test-phase-lab	human-step	page	done	owner paged
+1795303806	wd179530380654838a	{run-worktree}/.test-phase-lab	worker:auth	permission-prompt	report	done	blocked [key=permission-prompt-hardstop]: worker auth shows a sign-in prompt; nothing was answered, and the watchdog never answers credential, sign-in, spend, destructive, or reserved prompts
+1795303813	wd1795303813a1d154	{run-worktree}/.test-phase-lab	worker:auth	permission-prompt	report	done	resolved [key=permission-prompt-hardstop]
+1795303813	wd1795303813367ce9	{run-worktree}/.test-phase-lab	worker:auth	human-step	page	pending	sign-in step since 2026-11-21T23:30:13Z
+1795303813	wd1795303813367ce9	{run-worktree}/.test-phase-lab	worker:auth	human-step	page	done	owner paged
+1795303999	wd1795303999488226	{run-worktree}/.test-phase-lab	worker:auth	human-step	handoff	pending	otp step since 2026-11-21T23:33:18Z
+1795304000	wd1795303999488226	{run-worktree}/.test-phase-lab	worker:auth	human-step	handoff	done	recorded for the morning handoff; not paged
+1795304039	wd1795304039fcb7e0	{run-worktree}/.test-phase-lab	worker:auth	human-step	page	pending	verification-code step since 2026-11-21T23:33:59Z
+1795304040	wd1795304039fcb7e0	{run-worktree}/.test-phase-lab	worker:auth	human-step	page	failed	no alert channel delivered the page (exit 2); retried after nudge-secs
+1795304040	wd1795304039fcb7e0	{run-worktree}/.test-phase-lab	worker:auth	human-step	handoff	failed	the human-steps record could not be written

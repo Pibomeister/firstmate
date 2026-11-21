@@ -1,0 +1,17 @@
+human-step-key-council-held exit 0
+return-enter-away exit 0
+return-human-only-does-not-hold exit 0
+PASS real return command publishes the handoff, marks it briefed, and allows independent work
+return-ordinary-blocker-holds exit 3
+Traceback (most recent call last):
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-return.py", line 47, in <module>
+    assert 'firstmate-actionable blocker: other [key=ordinary-dependency]' in result
+AssertionError
+Read the gate diagnostic on stderr as well as the return brief on stdout.
+return-ordinary-blocker-holds exit 3
+return-resolved-blocker-clears exit 0
+Traceback (most recent call last):
+  File "<stdin>", line 4, in <module>
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-return.py", line 35, in <module>
+    result = run(['bash', 'bin/fm-afk-return.sh', 'begin'], 'return-human-only-does-not-hold')
+AssertionError

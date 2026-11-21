@@ -1,0 +1,31 @@
+$ bash bin/fm-afk-return.sh begin
+=== Return brief (away 2026-11-21T23:37:17Z -> 2026-11-21T23:37:27Z, 10s) ===
+Supervisor health:
+  - GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+Your instructions:
+  your words at entry:
+    Continue independent local work while authentication waits.
+  the away session took no action under them.
+Waiting on you:
+  human-only steps recorded by the watchdog (nothing was typed into them):
+    - worker:auth: verification-code step waiting since 2026-11-21T23:33:59Z; only a person can complete it
+  - auth [key=human-step-auth] human-only step, other work continues: human-only step: sign in to the test service
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 2 task(s) live at return.
+catch-up health: GAP: the away daemon was not running at return (the away flag stood with no live daemon)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: auth [key=human-step-auth] blocked: human-only step: sign in to the test service
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+fm-afk-launch: away-posture record archived at {run-worktree}/.test-phase-lab/state/afk-contracts/1795304237.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+WARNING: watcher still down (same stale episode; last beat: 11s ago, grace 300s; down 97s) - full banner already printed this episode.
+
+exit=0

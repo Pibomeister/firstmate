@@ -1,0 +1,48 @@
+real-cli-weekend-handoff completed
+real-cli-daytime-fallback-page completed
+real-cli-page-deduplicated completed
+PASS real Claude picker: default grace, quiet handoff, local page, redaction, deduplication, no keys
+worker-tool-approval completed
+worker-transition-to-login completed
+Traceback (most recent call last):
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-watchdog.py", line 129, in <module>
+    assert 'resolved [key=permission-prompt-hardstop]' in text('state/auth.status')
+AssertionError
+Resume after correcting driver assertion for the documented optional [at=...] status field.
+PASS worker approval becomes login: stale blocker clears and independent worker remains observed
+PASS scan multiline-draft none
+PASS scan cropped-long-draft none
+PASS scan status-and-conversation none
+PASS scan numbered-draft none
+PASS scan expired-login sign-in
+PASS scan expired-oauth sign-in
+PASS scan otp otp
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-watchdog.py", line 115, in <module>
+    
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-watchdog.py", line 74, in screen
+    raise AssertionError('terminal did not draw: ' + session)
+AssertionError: terminal did not draw: auth
+Resume verification-code input after correcting driver readiness comparison for tmux trailing-space trimming.
+PASS scan verification-code verification-code
+PASS scan captcha captcha
+PASS scan approval approval
+worker-reset-between-episodes completed
+worker-weekend-handoff completed
+closure-write-failure completed
+closure-write-recovered completed
+page-and-handoff-write-failure completed
+page-failed-handoff-recovered completed
+page-channel-recovered completed
+PASS append failure retains closure; undelivered page and failed append recover with real permissions
+orphan-before-removal completed
+orphan-after-removal completed
+PASS removed worker closes its handoff
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "~/.no-mistakes/evidence/01M8038T7GV59P4S4C4H7SYECH/drive-local-watchdog.py", line 159, in <module>
+    no_keys('auth')
+AssertionError
+Read the emitted brief.md public artifact; CLI stdout is the scaffold receipt.
+PASS generated ship and scout brief interfaces

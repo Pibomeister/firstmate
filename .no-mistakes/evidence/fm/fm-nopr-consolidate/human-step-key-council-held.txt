@@ -1,0 +1,4 @@
+$ bash bin/fm-watchdog.sh council --task auth --key human-step-auth
+council=held answer=none record=none prior=0 seats=none
+
+exit=0

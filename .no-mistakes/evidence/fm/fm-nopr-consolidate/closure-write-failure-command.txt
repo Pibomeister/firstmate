@@ -1,0 +1,4 @@
+$ bash bin/fm-watchdog.sh once
+bin/fm-watchdog.sh: line 2047: {run-worktree}/.test-phase-lab/state/watchdog/human-steps.tsv: Permission denied
+
+exit=0

@@ -1,0 +1,25 @@
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-21T23:34:27Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-21T23:45:27Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- .test-phase-lab: NO-ACTIVITY-SOURCE, owed 0, ctx unknown; captain pid 73408 live on tmux:%0, moved 2026-11-21T23:27:21Z
+
+## Actions since last read (2026-11-21T22:34:27Z)
+- 23:29 .test-phase-lab page human-step done
+- 23:30 worker:auth report permission-prompt done
+- 23:30 worker:auth report permission-prompt done
+- 23:30 worker:auth page human-step done
+- 23:33 worker:auth handoff human-step done
+- 23:34 worker:auth page human-step failed
+- 23:34 worker:auth handoff human-step failed
+- 23:34 worker:auth page human-step failed
+- 23:34 worker:auth page human-step done
+- 23:34 worker:orphan handoff human-step done
+
+## Open gaps
+- .test-phase-lab: human-only captcha step on .test-phase-lab worker orphan for 0m; recorded for the morning handoff, not paged
+- .test-phase-lab: human-only verification-code step on .test-phase-lab worker auth for 0m; escalated, nothing is typed into it
+- .test-phase-lab: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- no model configured; judged symptoms are reported only

@@ -1,0 +1,4 @@
+$ bash bin/fm-brief.sh evidence-ship example --mode local-only
+scaffolded: {run-worktree}/.test-phase-lab/data/evidence-ship/brief.md (ship, mode=local-only; replace {TASK} and {FIRSTMATE_SPEC})
+
+exit=0

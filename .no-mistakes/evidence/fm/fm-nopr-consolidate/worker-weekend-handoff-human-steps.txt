@@ -1,0 +1,5 @@
+1795303787	.test-phase-lab	sign-in	1795303654	morning-handoff
+1795303794	.test-phase-lab	sign-in	1795303654	page
+1795303803	.test-phase-lab	sign-in	1795303654	cleared
+1795303813	worker:auth	sign-in	1795303813	page
+1795304000	worker:auth	otp	1795303998	morning-handoff

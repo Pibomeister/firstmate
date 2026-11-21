@@ -1,0 +1,7 @@
+{
+  "private_tmux_server": "stopped",
+  "recorded_lab_socket": "removed by fm-lab-home teardown",
+  "owned_processes": "absent",
+  "lab_home": "removed",
+  "source_changes": false
+}

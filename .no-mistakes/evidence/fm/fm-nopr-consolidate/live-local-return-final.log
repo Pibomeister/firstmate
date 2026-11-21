@@ -1,0 +1,7 @@
+human-step-key-council-held exit 0
+return-enter-away exit 0
+return-human-only-does-not-hold exit 0
+PASS real return command publishes the handoff, marks it briefed, and allows independent work
+return-ordinary-blocker-holds exit 3
+return-resolved-blocker-clears exit 0
+PASS ordinary blockers still hold the return gate until resolved

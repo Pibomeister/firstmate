@@ -1,0 +1,22 @@
+1..20
+ok - human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not
+ok - dialogs need their structure, and each kind is told apart
+ok - dialog: the kind comes from the dialog, not the conversation above it
+ok - dialog: reserved words hold unless a rule proves they sit outside the dialog
+ok - permission prompt: a Codex approval naming an OTP command on a worker is a hard stop, not a human-only step
+ok - human-only step: replacing a tool approval resolves its permission blocker without typing into the worker
+ok - human-only step: a wrapped composer draft that mentions a sign-in is unsent input, not a step
+ok - human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged
+ok - human-only step: overnight, the status names a dry run or a failed write, never a record that was not written
+ok - human-only step: a daytime dry run names the page it would send and sends none
+ok - human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page
+ok - human-only step: an overnight handoff still showing by day is paged once, unless the away return brief showed it
+ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row
+ok - human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel
+ok - human-only step: a failed daytime handoff reports the write failure and retries after recovery
+ok - human-only step: a failed handoff closure keeps its episode and retries until the closure is written
+ok - human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled
+ok - decisions: a worker's human-step key is the owner's, never nudged or put to council; an ordinary decision still settles
+ok - quota guard: an act check never nudges a pane showing a human-only step
+ok - boundary: never types into a pane on the do-not-touch list
+FM_TEST_COMPLETE

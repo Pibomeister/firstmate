@@ -1,0 +1,4 @@
+$ bash bin/fm-brief.sh evidence-scout example --scout
+scaffolded: {run-worktree}/.test-phase-lab/data/evidence-scout/brief.md (scout; replace {TASK} and {FIRSTMATE_SPEC})
+
+exit=0

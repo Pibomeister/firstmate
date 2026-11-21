@@ -1,0 +1,38 @@
+Working on tests
+────────────────────────────
+❯ check auth
+
+ Also update 2FA tests
+────────────────────────────
+  ? for shortcuts
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

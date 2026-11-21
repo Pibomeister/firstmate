@@ -1,0 +1,29 @@
+$ bash bin/fm-afk-return.sh check
+=== Return brief ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 14s old at return)
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  human-only steps recorded by the watchdog (nothing was typed into them):
+    - worker:auth: verification-code step waiting since 2026-11-21T23:33:59Z; only a person can complete it
+  - auth [key=human-step-auth] human-only step, other work continues: human-only step: sign in to the test service
+Tried and failed, or could not be fixed:
+  - other [key=ordinary-dependency] still blocked, firstmate remediates before ordinary work: firstmate must repair the local dependency
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 2 task(s) live at return.
+WARNING: watcher still down (same stale episode; last beat: 18s ago, grace 300s; down 105s) - full banner already printed this episode.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 14s old at return)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: auth [key=human-step-auth] blocked: human-only step: sign in to the test service
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+firstmate-actionable blocker: other [key=ordinary-dependency] firstmate must repair the local dependency
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+exit=3

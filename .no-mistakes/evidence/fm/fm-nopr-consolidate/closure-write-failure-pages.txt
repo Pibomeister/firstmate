@@ -1,0 +1,2 @@
+Firstmate watchdog: a human-only sign-in step has waited 2 minutes on .test-phase-lab, and only a person can complete it. Nothing was typed into it. The record is {run-worktree}/.test-phase-lab/state/watchdog/human-steps.tsv.
+Firstmate watchdog: a human-only sign-in step has waited 0 minutes on .test-phase-lab worker auth, and only a person can complete it. Nothing was typed into it. The record is {run-worktree}/.test-phase-lab/state/watchdog/human-steps.tsv.

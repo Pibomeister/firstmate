@@ -1,0 +1,16 @@
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-21T23:29:54Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-21T23:40:54Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- .test-phase-lab: HUMAN-STEP, owed 0, ctx unknown; captain pid 79843 live on tmux:%0, moved 2026-11-21T23:27:21Z
+
+## Actions since last read (2026-11-21T22:29:54Z)
+- 23:29 .test-phase-lab handoff human-step done
+- 23:29 .test-phase-lab page human-step done
+
+## Open gaps
+- .test-phase-lab: human-only sign-in step on .test-phase-lab for 2m; the owner was paged, nothing is typed into it
+- .test-phase-lab: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- no model configured; judged symptoms are reported only

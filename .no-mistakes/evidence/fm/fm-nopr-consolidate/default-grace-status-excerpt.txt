@@ -1,0 +1,2 @@
+Initial real-CLI probe printed this line from data/watchdog/status.md (retained in the tool transcript):
+- .test-phase-lab: human-only sign-in step on .test-phase-lab for 0m; nothing is typed into it, and it is escalated after 10m

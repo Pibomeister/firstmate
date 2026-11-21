@@ -1,0 +1,17 @@
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-21T23:30:07Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-21T23:41:07Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- .test-phase-lab: NO-ACTIVITY-SOURCE, owed 0, ctx unknown; captain pid 73408 live on tmux:%0, moved 2026-11-21T23:27:21Z
+
+## Actions since last read (2026-11-21T22:30:07Z)
+- 23:29 .test-phase-lab handoff human-step done
+- 23:29 .test-phase-lab page human-step done
+- 23:30 worker:auth report permission-prompt done
+
+## Open gaps
+- .test-phase-lab: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- .test-phase-lab: permission prompt waiting on worker auth; the watchdog does not answer it
+- no model configured; judged symptoms are reported only

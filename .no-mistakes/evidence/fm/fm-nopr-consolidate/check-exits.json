@@ -1,0 +1,10 @@
+{
+  "revision": "262b515b26b462c91840c9d90537720a1ffc04dd",
+  "watchdog-targeted": 0,
+  "permission-prompt": 0,
+  "afk-return": 0,
+  "brief": 0,
+  "classify-decision-key": 0,
+  "live-watchdog-stages": "passed after evidence-driver corrections",
+  "live-return-final": 0
+}
