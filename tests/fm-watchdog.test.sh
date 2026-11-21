@@ -6836,6 +6836,36 @@ test_codex_approval_on_a_worker_is_a_hard_stop_not_a_human_step() {
   pass "permission prompt: a Codex approval naming an OTP command on a worker is a hard stop, not a human-only step"
 }
 
+test_worker_permission_blocker_clears_on_a_human_step() {
+  local BASE pane open screen off=0 approval=$'  Would you like to run the following command?\n\n  $ gh auth login\n\n  › 1. Yes, proceed (y)\n    2. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel'
+  BASE=$(hs_base day)
+  make_home $'Captain session\n❯ \n  ? for shortcuts' 'human-step-secs=0'
+  transcript 100 "Working."
+  worker_pane cx ship "$approval"
+  pane=$WP
+  printf 'harness=codex\n' >> "$H/state/cx.meta"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  sleep 0.5
+  run_wd 0 once >/dev/null 2>&1 || fail "the tool-approval pass failed"
+  grep -Eq '^blocked .*\[key=permission-prompt-hardstop\]' "$H/state/cx.status" || fail "the sign-in command did not create a permission hard stop"
+
+  for screen in "$HS_OTP" $'Sign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel'; do
+    off=$((off + 1))
+    printf '%s\n' "$screen" > "$H/worker-cx.txt"
+    "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$pane" "$H/worker-cx.sh"
+    sleep 0.5
+    run_wd "$off" once >/dev/null 2>&1 || fail "the human-step pass failed"
+    grep -Eq '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/cx.status" || fail "the obsolete permission hard stop was not resolved"
+    open=$(bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" "$H/state/cx.status") || fail "the worker status could not be read"
+    assert_equals "" "$open" "the human-only step left an open blocker: $open"
+  done
+  assert_equals 1 "$(ledger | awk -F'\t' '$4 == "worker:cx" && $5 == "human-step" && $6 == "page" && $7 == "done"' | wc -l | tr -d ' ')" "the human-only step was not escalated"
+  assert_grep "human-only otp step" "$H/paged.log" "the device-code page was not delivered"
+  sleep 1
+  [ ! -s "$H/worker-cx.typed" ] || fail "the watchdog typed into the approval or device-code step: $(cat "$H/worker-cx.typed")"
+  pass "human-only step: replacing a tool approval resolves its permission blocker without typing into the worker"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6987,6 +7017,7 @@ fm_test_run \
   test_primary_ordinary_idle_is_not_paged \
   test_human_step_detection \
   test_codex_approval_on_a_worker_is_a_hard_stop_not_a_human_step \
+  test_worker_permission_blocker_clears_on_a_human_step \
   test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step \
   test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into \
   test_human_step_overnight_reports_only_what_it_recorded \

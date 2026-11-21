@@ -1930,7 +1930,7 @@ wd_permission_prompt() {
   WD_PP_STOPPED=
   WD_PP_REASON=
   [ "$(wd_permission_mode)" != off ] || return 2
-  if ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
+  if fm_wd_human_step "$screen" >/dev/null || ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     # No verdict and no reported prompt leaves nothing to write.
     [ -e "$(wd_pp_mark "$id").open" ] || return 2
     kind=none
@@ -1965,7 +1965,7 @@ wd_permission_prompt() {
     case "$kind" in hardstop|hold) WD_PP_STOPPED=1 ;; esac
     return 1
   fi
-  if ! verdict=$(fm_pp_classify "$live" "$harness" "${live_dialog:-none}"); then
+  if fm_wd_human_step "$live" >/dev/null || ! verdict=$(fm_pp_classify "$live" "$harness" "${live_dialog:-none}"); then
     wd_pp_clear "$id"
     wd_pp_unlock "$id"
     return 2
@@ -2728,7 +2728,10 @@ wd_visit_worker_dialogs() {
     fi
     # A human-only step outranks the worker's dialog: it is escalated, and no key is sent.
     if [ -n "$step" ]; then
+      O_BACKEND=$backend
+      O_TARGET=$target
       O_REC_SUBJECT="worker:$id"
+      wd_permission_prompt "$id" "$harness" "$screen" "${dialog:-none}" || true
       wd_handle_human_step "$step"
       unset O_REC_SUBJECT
       continue
