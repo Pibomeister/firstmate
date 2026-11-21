@@ -255,11 +255,11 @@ evaluate() {
       break
     fi
   done <<< "$rows"
-  index=0
+  if [ "$current" -gt 0 ]; then
+    rows=$(printf '%s\n' "$rows" | awk -v c="$current" 'NR > c { print } NR <= c { earlier[NR] = $0 } END { for (i = 1; i <= c; i++) print earlier[i] }')
+  fi
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
-    index=$((index + 1))
-    [ "$index" -gt "$current" ] || continue
     if [ -f "$ledger" ] && awk -F '\t' -v l="$label" -v c="$(( $(now) - WINDOW_SECS ))" \
       '$1 >= c && (($2 == "attempt" && ($3 == l || $4 == l)) || ($2 == "failed" && $4 == l)) { found = 1 } END { exit !found }' "$ledger"; then
       printf 'candidate runtime=%s skip=refused_in_window\n' "$label"

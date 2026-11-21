@@ -2414,7 +2414,7 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
 }
 
 captain_provider_failover_check() {
-  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason owner_pid captain_h
+  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason owner_pid captain_h rows prompt before after
   fm_supervision_needed "$STATE" || return 1
   [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
   backend=$(sed -n 's/^backend=//p' "$endpoint")
@@ -2433,8 +2433,13 @@ captain_provider_failover_check() {
   [ -n "$captain_h" ] || return 1
   window_is_busy "$terminal" "$screen" captain "$captain_h" && return 1
   ! fm_failover_turn_end_known "$STATE" captain || return 1
-  fm_wd_prompt_tail "$(printf '%s\n' "$screen" | tail -n 6)" | grep -q . || return 1
-  class=$(fm_wd_provider_error_screen "$screen") || return 1
+  rows=$(_fm_wd_tail_rows "$screen" 12)
+  prompt=$(printf '%s\n' "$rows" | awk -v glyph="$FM_WD_PROMPT_RE" '$0 ~ glyph { n = NR } END { print n + 0 }')
+  [ "$prompt" -gt 1 ] || return 1
+  before=$(printf '%s\n' "$rows" | head -n "$((prompt - 1))")
+  after=$(printf '%s\n' "$rows" | tail -n "+$((prompt + 1))")
+  printf '%s\n%s\n' "$before" "$after" | LC_ALL=C grep -Eiq '^[^a-z]*(working|thinking|processing|connecting|retrying|esc to interrupt)' && return 1
+  class=$(fm_wd_provider_error_class "$before") || return 1
   hash=$(printf '%s' "$screen" | hash_pane)
   seen="$STATE/.captain-failover-seen"
   [ "$(cat "$seen" 2>/dev/null || true)" != "$hash" ] || return 1

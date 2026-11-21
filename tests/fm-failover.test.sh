@@ -501,6 +501,21 @@ test_captain_429_and_billing_start_a_successor() {
   assert_contains "$OUT" 'switched task=captain from=droid to=claude@after-droid' 'a captain failure never returns to codex'
 
   captain_world
+  mkdir -p "$ACCTS/final-claude"
+  touch "$ACCTS/final-claude/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/final-claude/quota.json"
+  printf '%s\n' "$ACCTS/final-claude" > "$LAB/config/claude-accounts"
+  CLAUDE_CONFIG_DIR="$ACCTS/final-claude" fo captain --reason rate_limit
+  expect_code 0 "$RC" "the last Claude account wraps to the first available captain runtime: $OUT"
+  assert_contains "$OUT" 'switched task=captain from=claude@final-claude to=codex' 'captain order wraps past its final entry'
+  captain_world
+  printf '%s\n' "$ACCTS/final-claude" > "$LAB/config/claude-accounts"
+  printf '%s\tattempt\tclaude@final-claude\tcodex\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-captain"
+  CLAUDE_CONFIG_DIR="$ACCTS/final-claude" fo captain --reason rate_limit
+  expect_code 1 "$RC" 'the wrapped captain order excludes an attempted target'
+  assert_contains "$OUT" 'candidate runtime=codex skip=refused_in_window' 'captain wrap does not retry Codex'
+
+  captain_world
   mkdir -p "$ACCTS/after-timeout"
   touch "$ACCTS/after-timeout/signed-in"
   quota_fixture claude 70 70 > "$ACCTS/after-timeout/quota.json"
@@ -722,7 +737,7 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
-  local dir class err owner start rc out owner_h from_label to_label gen
+  local dir class err owner start rc out owner_h from_label to_label
   for class in rate_limit billing usage_limit recovered; do
     err='⏺ API Error: Request rejected (429)'
     owner_h=claude from_label=claude@ordinary to_label=codex
@@ -771,11 +786,10 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
       [ ! -e "$dir/state/.captain-failover-seen" ] || fail 'a skipped captain screen was marked seen'
       [ ! -e "$dir/home/handoff.n" ] || fail 'a secondmate home started a captain successor'
       rm "$dir/home/.fm-secondmate-home"
-      gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$dir/state" captain)
-      bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" captain busy --gen "$gen" --source claude-hook --event user-prompt-submit >/dev/null
+      printf '⏺ API Error: Request rejected (429)\n\n❯ \nWorking (2s · esc to interrupt)\n' > "$dir/pane.txt"
       watch_once "$dir" FM_WATCH_ONCE=1 FM_TEST_HANDOFF_VERIFY_ACTOR=1
       [ ! -e "$dir/home/handoff.n" ] || fail 'a busy captain was handed off behind an old refusal'
-      bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" captain idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null
+      printf '⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on\n' > "$dir/pane.txt"
     fi
     watch_once "$dir" FM_TEST_HANDOFF_VERIFY_ACTOR=1
     assert_contains "$(cat "$dir/watch.out")" "check: captain moved to the next runtime after a $class refusal" \
@@ -861,6 +875,16 @@ test_worker_account_identity_is_its_config_root() {
   rm -f "$LAB/control.n"
   fo worker w8c
   assert_contains "$OUT" 'switched task=w8c from=codex to=claude@.claude' 'a codex worker has no Claude account to exclude'
+  rm -f "$LAB/config/failover-order"
+  make_worker w8last claude "$ACCTS/D"
+  fo worker w8last --reason rate_limit
+  expect_code 0 "$RC" "the last Claude account wraps to a local worker runtime: $OUT"
+  assert_contains "$OUT" 'switched task=w8last from=claude@D to=codex' 'worker order wraps past its final entry'
+  make_worker w8last2 claude "$ACCTS/D"
+  printf '%s\tattempt\tclaude@D\tcodex\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w8last2"
+  fo worker w8last2 --reason rate_limit
+  expect_code 0 "$RC" 'the wrapped worker order excludes an attempted target'
+  assert_contains "$OUT" 'switched task=w8last2 from=claude@D to=droid' 'worker wrap skips attempted Codex'
   pass 'account identity: ordinary, the home config root, and a trailing slash are one account'
 }
 
