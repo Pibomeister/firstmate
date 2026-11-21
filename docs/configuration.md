@@ -646,7 +646,7 @@ It reads each agent's screen, judges it deterministically first, asks a cheap cl
 
 It is off until the optional local `config/stall-watch` exists.
 While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
-Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain when this home records a session endpoint and each local ship or scout.
+Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain only while its recorded session owner is live and checks each local ship or scout.
 A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
 A screen counts as unchanged only when its redacted rows with timer and counter text normalized, the task's worktree HEAD, and its status file are all the same, so a new commit, status line, or HTTP error code is progress.
 
@@ -655,7 +655,7 @@ The file holds `key=value` lines; blank lines and lines that start with `#` are 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `interval` | `1200` | Seconds between checks, at least 60. |
-| `classifier` | `jev` | `jev`, `grok`, or `none`. |
+| `classifier` | `jev` | `jev` or an explicit opt-in to `grok`. |
 | `jev_model` | `jev-latest` | The TypeSafe model `jev` asks. |
 | `grok_model` | `grok-4.7-build-fast` | The Grok model an explicit `classifier=grok` asks. |
 | `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
@@ -693,9 +693,9 @@ The "JEV" classifier the stall check was specified with is interpreted as TypeSa
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
 It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is honored and validated the same way, and the key reaches `curl` only through a file descriptor, never its arguments.
 With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
+The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
 This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
 An explicit `classifier=grok` asks Grok only, with web search, tools, memory, and subagents off and a JSON schema that admits only the ten reasons.
-`none` asks no model.
 An answer below `confidence_floor`, or no usable answer from an explicitly selected Grok classifier, is `unsure`, which counts as possibly stalled: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
 
 The reasons are `working` and `idle_done`, which are not stalled, and `rate_limit`, `usage_limit`, `billing`, `api_error`, `auth`, `crashed`, `idle_with_goals`, and `waiting_on_human`, which are stalled.

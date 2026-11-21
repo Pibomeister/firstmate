@@ -11,6 +11,7 @@ The Jev API facts the stall watch relies on (the `POST /v1/systemone` Choice sha
 Run 2026-11-21 on macOS (Darwin 25.5.0) with `grok 1.0.92 (b06756fd6256) [stable]`, no TypeSafe key, `classifier=jev` (the default), and `grok_model=grok-4.7-build-fast`.
 This run predates the removal of automatic Grok fallback and its reported cost motivated that removal.
 Current `classifier=jev` leaves ambiguous screens `unsure` without an action when Jev is unavailable; Grok can be selected only with explicit `classifier=grok`.
+The optional config file accepts only `jev` and explicit `grok`; removing that file turns the periodic stall watch off.
 Each recorded screen in `tests/fixtures/stall-watch/` was judged from the repository root with this command, adding `--status '<line>'` where the table names one:
 
 ```sh

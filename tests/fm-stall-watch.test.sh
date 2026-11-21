@@ -12,7 +12,8 @@ set -u
 # shellcheck source=tests/watch-triage-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 TMP_ROOT=$(fm_test_tmproot fm-stall-watch)
-trap 'fm_test_cleanup' EXIT
+CAPTAIN_OWNER=''
+trap '[ -z "$CAPTAIN_OWNER" ] || { kill "$CAPTAIN_OWNER" 2>/dev/null || true; wait "$CAPTAIN_OWNER" 2>/dev/null || true; }; fm_test_cleanup' EXIT
 SW="$ROOT/bin/fm-stall-watch.sh"
 FIX="$ROOT/tests/fixtures/stall-watch"
 LAB="$TMP_ROOT/home"
@@ -20,6 +21,9 @@ FAKEBIN="$TMP_ROOT/fakebin"
 DELEGATES="$TMP_ROOT/delegates"
 LOGS="$TMP_ROOT/logs"
 mkdir -p "$FAKEBIN" "$DELEGATES" "$LOGS" "$TMP_ROOT/user"
+ln -s "$(command -v sleep)" "$TMP_ROOT/claude"
+"$TMP_ROOT/claude" 600 &
+CAPTAIN_OWNER=$!
 
 # grok stand-in: keeps the prompt file it was given and answers with the
 # reply file, or fails with FM_TEST_GROK_RC.
@@ -89,7 +93,15 @@ unset TYPESAFE_API_KEY TYPESAFE_BASE FM_TEST_GROK_RC FM_TEST_CURL_HTTP FM_TEST_F
 reset_lab() {
   rm -rf "${LAB:?}" "${LOGS:?}"
   mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/screens" "$LOGS"
+  write_captain_lock "$CAPTAIN_OWNER"
   grok_says idle_with_goals 0.9
+}
+
+write_captain_lock() {
+  local owner=$1 start
+  start=$(bash -c '. "$1"; fm_session_process_start "$2"' _ "$ROOT/bin/fm-session-lock-lib.sh" "$owner") || fail 'fixture: no captain owner identity'
+  printf '%s\n' "$owner" > "$LAB/state/.lock"
+  printf 'test-session\nanchor_pid=%s\nanchor_start=%s\nbackend=hc\nterminal=default:t1\n' "$owner" "$start" > "$LAB/state/.lock-session"
 }
 
 grok_says() {  # <reason> <confidence>
@@ -248,10 +260,10 @@ test_deterministic_pass_skips_the_model() {
 # (test_unchanged_screen_guard) is the deterministic working signal.
 test_rendered_activity_is_not_a_rule() {
   reset_lab
-  sw_in "$FIX/working.screen" classify --classifier none
+  sw_in "$FIX/working.screen" classify
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a busy footer alone is not decided by rule'
   printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
-  sw_in "$TMP_ROOT/droid-hint.screen" classify --classifier none
+  sw_in "$TMP_ROOT/droid-hint.screen" classify
   assert_contains "$OUT" 'verdict=unsure' 'a stop hint alone is not decided by rule'
   grok_says working 0.95
   sw_in "$FIX/working.screen" classify --classifier grok
@@ -281,8 +293,14 @@ test_model_judge_maps_answers() {
   printf '{"structuredOutput":{"reason":"sleeping","confidence":0.9}}\n' > "$FM_TEST_GROK_REPLY"
   sw_in "$FIX/stalled.screen" classify --classifier grok
   assert_contains "$OUT" 'verdict=unsure' 'an answer outside the reasons is unsure'
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'unavailable Jev leaves an ambiguous screen unsure'
   sw_in "$FIX/stalled.screen" classify --classifier none
-  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'classifier none leaves an ambiguous screen unsure'
+  expect_code 2 "$RC" 'classifier none is no longer an accepted option'
+  printf 'classifier=none\n' > "$LAB/config/stall-watch"
+  sw_in "$FIX/stalled.screen" classify
+  expect_code 2 "$RC" 'classifier none is no longer accepted in config'
+  rm -f "$LAB/config/stall-watch"
 
   jev_says api_error 0.88
   TYPESAFE_API_KEY=ts-test-key-123 sw_in "$FIX/api-error.screen" classify
@@ -339,6 +357,58 @@ test_jev_unavailable_takes_no_action() {
   assert_equals 0 "$(count failover)" 'the default check does not fail over'
   assert_absent "$LAB/state/.wake-queue"
   pass 'unavailable Jev: repeated ambiguity remains unknown without action'
+}
+
+test_jev_unavailable_reasons() {
+  local credential="$LAB/config/dispatch-credential-sources.json" reason expected
+  reset_lab
+  printf '{bad json\n' > "$credential"
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'note=jev:credential-source-unusable' 'a malformed declaration is named in the result'
+  assert_contains "$ERR" 'jev unavailable (the credential source declaration is unusable)' 'a malformed declaration is named in the log'
+  printf '%s\n' '{"typesafe":{"source":"macos-keychain","service":"test"}}' > "$credential"
+  cat > "$FAKEBIN/uname" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "${FM_TEST_UNAME:-Darwin}"
+SH
+  cat > "$FAKEBIN/security" <<'SH'
+#!/usr/bin/env bash
+exit "${FM_TEST_SECURITY_RC:-1}"
+SH
+  chmod +x "$FAKEBIN/uname" "$FAKEBIN/security"
+  FM_TEST_UNAME=Linux sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'note=jev:credential-source-unsupported' 'an unsupported source is named in the result'
+  for reason in 124 1; do
+    expected=credential-source-empty
+    [ "$reason" != 124 ] || expected=credential-source-timeout
+    FM_TEST_SECURITY_RC=$reason sw_in "$FIX/stalled.screen" classify
+    assert_contains "$OUT" "note=jev:$expected" "credential source exit $reason has its own result note"
+    assert_contains "$ERR" 'jev unavailable (' "credential source exit $reason logs one unavailable line"
+  done
+  rm -f "$FAKEBIN/uname" "$FAKEBIN/security"
+  pass 'unavailable Jev: source failures keep distinct result notes'
+}
+
+test_stale_captain_endpoint_is_skipped() {
+  local stale
+  reset_lab
+  make_worker live1 stalled.screen
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  "$TMP_ROOT/claude" 600 &
+  stale=$!
+  write_captain_lock "$stale"
+  kill "$stale" 2>/dev/null || true
+  wait "$stale" 2>/dev/null || true
+  sw screen captain
+  expect_code 1 "$RC" 'screen refuses a stale captain endpoint'
+  sw check captain --dry-run
+  assert_contains "$OUT" 'verdict=capture-failed stalled=unsure' 'a direct check cannot capture a stale captain endpoint'
+  sw tick --force
+  assert_equals 0 "$(ledger_rows captain)" 'tick skips a stale captain'
+  assert_equals 1 "$(ledger_rows live1)" 'tick still checks local workers'
+  assert_equals 0 "$(count send)" 'a stale captain receives no nudge'
+  assert_absent "$LOGS/captain-send"
+  pass 'captain endpoint: stale owner is not captured, checked, or nudged'
 }
 
 test_captain_api_error_without_open_work() {
@@ -531,7 +601,7 @@ test_captain_actions() {
 printf '{"status":{"state":"%s"}}\n' "$FM_TEST_HC_STATE"
 SH
   chmod +x "$TMP_ROOT/hc"
-  printf 'backend=hc\nterminal=default:t1\n' > "$LAB/state/.lock-session"
+  write_captain_lock "$CAPTAIN_OWNER"
   cp "$FIX/working.screen" "$LAB/screens/captain.screen"
   grok_says idle_with_goals 0.9
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=working sw check captain
@@ -539,7 +609,7 @@ SH
   assert_contains "$OUT" 'verdict=working stalled=no source=busy' 'a natively busy captain is working without a model'
   FM_HC_BIN="$TMP_ROOT/hc" FM_TEST_HC_STATE=idle sw check captain
   assert_contains "$OUT" 'source=grok' 'a natively idle captain with work owed reaches the classifier'
-  rm -f "$LAB/state/.lock-session" "$LAB/state/dispatch-log.tsv"
+  rm -f "$LAB/state/dispatch-log.tsv"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   printf '\n• Finished.\n' >> "$LAB/screens/captain.screen"
   sw check captain; sw check captain
@@ -634,7 +704,7 @@ test_tick_schedule() {
   sw tick
   assert_contains "$ERR" 'off (no config/stall-watch)' 'no config, no tick'
   assert_absent "$LAB/state/stall-watch.tsv"
-  printf 'interval=600\nclassifier=none\n' > "$LAB/config/stall-watch"
+  printf 'interval=600\nclassifier=jev\n' > "$LAB/config/stall-watch"
   FM_STALL_WATCH_NOW=100000 sw tick
   expect_code 0 "$RC" "tick: $ERR"
   assert_equals 1 "$(ledger_rows t1)" 'the tick checks t1'
@@ -667,7 +737,7 @@ test_tick_schedule() {
   assert_equals 1 "$(config_reports)" 'only a tick reports'
   sw tick
   assert_equals 2 "$(config_reports)" 'a changed invalid file is reported again'
-  printf 'interval=600\nclassifier=none\n' > "$LAB/config/stall-watch"
+  printf 'interval=600\nclassifier=jev\n' > "$LAB/config/stall-watch"
   FM_STALL_WATCH_NOW=300000 sw tick
   expect_code 0 "$RC" "a fixed file ticks again: $ERR"
   printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
@@ -687,7 +757,7 @@ test_watcher_starts_tick_and_delivers_reports() {
   fm_write_meta "$dir/state/fo.meta" window=test:fm-fo kind=ship harness=claude "worktree=$dir/wt" spawn_gen=s1.fo
   printf 'working: wiring the parser\n' > "$dir/state/fo.status"
   printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
-  printf 'classifier=none\n' > "$dir/config/stall-watch"
+  printf 'classifier=jev\n' > "$dir/config/stall-watch"
   ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
     FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
       watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
@@ -816,6 +886,8 @@ fm_test_run \
   test_decided_scenarios \
   test_model_judge_maps_answers \
   test_jev_unavailable_takes_no_action \
+  test_jev_unavailable_reasons \
+  test_stale_captain_endpoint_is_skipped \
   test_captain_api_error_without_open_work \
   test_fingerprint_preserves_error_status \
   test_classifier_never_sees_secrets \

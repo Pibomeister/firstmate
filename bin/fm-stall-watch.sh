@@ -7,7 +7,7 @@
 # Usage:
 #   fm-stall-watch.sh screen <task-id|captain> [--lines <n>]
 #   fm-stall-watch.sh classify [--kind worker|captain] [--open-work yes|no]
-#                              [--status <line>] [--classifier jev|grok|none]
+#                              [--status <line>] [--classifier jev|grok]
 #   fm-stall-watch.sh check <task-id|captain> [--dry-run]
 #   fm-stall-watch.sh tick [--force] [--dry-run]
 #
@@ -81,6 +81,8 @@ CONF="$CONFIG/stall-watch"
 . "$SCRIPT_DIR/fm-typesafe-lib.sh"
 # shellcheck source=bin/fm-timing-lib.sh
 . "$SCRIPT_DIR/fm-timing-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 usage() { sed -n '2,${/^#/!q;p;}' "$0" | sed 's/^# \{0,1\}//'; }
 die() { printf 'error: %s\n' "$1" >&2; exit 2; }
@@ -126,7 +128,7 @@ sw_config_error() {  # <message>
 }
 
 sw_check_config() {
-  case "$CLASSIFIER" in jev|grok|none) ;; *) sw_config_error "config/stall-watch classifier must be jev, grok, or none" ;; esac
+  case "$CLASSIFIER" in jev|grok) ;; *) sw_config_error "config/stall-watch classifier must be jev or grok" ;; esac
   case "$GROK_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch grok_model is not a model name" ;; esac
   case "$JEV_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch jev_model is not a model name" ;; esac
   awk -v f="$FLOOR" 'BEGIN { exit !(f ~ /^(0(\.[0-9]+)?|1(\.0+)?)$/) }' \
@@ -231,6 +233,9 @@ sw_captain_endpoint() {  # sets CAP_BACKEND CAP_TERMINAL; 1 when none
   local f="$STATE/.lock-session"
   CAP_BACKEND='' CAP_TERMINAL=''
   [ -f "$f" ] && [ ! -L "$f" ] || return 1
+  [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
+  [ -n "$(sed -n 's/^anchor_start=//p' "$f" | head -n 1)" ] || return 1
+  fm_session_lock_recorded_owner_live "$STATE" || return 1
   CAP_BACKEND=$(sed -n 's/^backend=//p' "$f" | head -n 1)
   CAP_TERMINAL=$(sed -n 's/^terminal=//p' "$f" | head -n 1)
   [ -n "$CAP_BACKEND" ] && [ -n "$CAP_TERMINAL" ] && [ "$CAP_TERMINAL" != unknown ]
@@ -246,13 +251,13 @@ sw_capture_worker() {  # <task> <lines>
 
 sw_capture() {  # <target> <lines> -> raw screen
   local target=$1 n=$2
+  [ "$target" != captain ] || sw_captain_endpoint || return 1
   if [ "$SEAM" = 1 ] && [ -n "${FM_STALL_WATCH_TEST_SCREENS:-}" ]; then
     cat "$FM_STALL_WATCH_TEST_SCREENS/$target.screen" 2>/dev/null
     return
   fi
   sw_load_backend || return 1
   if [ "$target" = captain ]; then
-    sw_captain_endpoint || return 1
     fm_run_timed_fn "$CAPTURE_TIMEOUT" fm_backend_capture "$CAP_BACKEND" "$CAP_TERMINAL" "$n" </dev/null
   else
     fm_run_timed_fn "$CAPTURE_TIMEOUT" sw_capture_worker "$target" "$n" </dev/null
@@ -266,7 +271,7 @@ sw_valid_target() {
 
 # ---- classifiers -------------------------------------------------------------
 M_REASON='' M_CONF='' M_LAT='' M_COST='' M_NOTE=''
-JEV_WHY=''
+JEV_WHY='' JEV_NOTE=''
 
 sw_jev_key() {
   local v rc
@@ -274,11 +279,11 @@ sw_jev_key() {
     "$CONFIG/dispatch-credential-sources.json" typesafe typesafe openrouter); rc=$?
   case "$rc" in
     0) TYPESAFE_API_KEY_PRIVATE=$v; return 0 ;;
-    1) JEV_WHY='no TypeSafe key in the environment, .env, or a declared source' ;;
-    2) JEV_WHY='the credential source declaration is unusable' ;;
-    3) JEV_WHY='the declared TypeSafe source cannot run on this host' ;;
-    4) JEV_WHY='the declared TypeSafe source did not answer in time' ;;
-    *) JEV_WHY='the declared TypeSafe source holds no key' ;;
+    1) JEV_WHY='no TypeSafe key in the environment, .env, or a declared source'; JEV_NOTE=no-key ;;
+    2) JEV_WHY='the credential source declaration is unusable'; JEV_NOTE=credential-source-unusable ;;
+    3) JEV_WHY='the declared TypeSafe source cannot run on this host'; JEV_NOTE=credential-source-unsupported ;;
+    4) JEV_WHY='the declared TypeSafe source did not answer in time'; JEV_NOTE=credential-source-timeout ;;
+    *) JEV_WHY='the declared TypeSafe source holds no key'; JEV_NOTE=credential-source-empty ;;
   esac
   return 1
 }
@@ -412,7 +417,7 @@ sw_judge() {
       fi
     else
       log "jev unavailable ($JEV_WHY)"
-      V_NOTE='jev:no-key'
+      V_NOTE="jev:$JEV_NOTE"
     fi
   fi
   if [ "$choice" = grok ]; then
@@ -425,7 +430,6 @@ sw_judge() {
   fi
   if [ -z "$M_REASON" ]; then
     V_REASON=unsure V_STALLED=unsure V_SOURCE=none
-    [ "$choice" != none ] || V_NOTE="${V_NOTE:+$V_NOTE,}classifier-none"
     V_LAT=${M_LAT:--}
     return 0
   fi
@@ -546,12 +550,12 @@ sw_nudge() {  # <target> -> 0 when the nudge was delivered
     FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE fm_run_timed "$SEND_TIMEOUT" "$bin" "$1" "$NUDGE_TEXT" </dev/null >/dev/null 2>&1
     return
   fi
+  sw_captain_endpoint || return 1
   if [ -n "$TEST_BIN" ] && [ -x "$TEST_BIN/captain-send" ]; then
     "$TEST_BIN/captain-send" "$NUDGE_TEXT" </dev/null >/dev/null 2>&1
     return
   fi
   sw_load_backend || return 1
-  sw_captain_endpoint || return 1
   # A draft, a dialog, or an unreadable composer never receives the line.
   [ "$(fm_run_timed_fn "$CAPTURE_TIMEOUT" fm_backend_composer_state "$CAP_BACKEND" "$CAP_TERMINAL" 2>/dev/null || printf unknown)" = empty ] || return 1
   verdict=$(fm_run_timed_fn "$SEND_TIMEOUT" fm_backend_send_text_submit "$CAP_BACKEND" "$CAP_TERMINAL" "$NUDGE_TEXT" 2 0.4 0.3 2>/dev/null) || return 1
@@ -801,7 +805,7 @@ cmd_tick() {  # <force> <dry-run>
     return 0
   fi
   [ "$dry" = 1 ] || printf '%s\n' "$now" > "$SW_DIR/.last-tick"
-  if [ -f "$STATE/.lock-session" ] || { [ "$SEAM" = 1 ] && [ -f "${FM_STALL_WATCH_TEST_SCREENS:-/nonexistent}/captain.screen" ]; }; then
+  if sw_captain_endpoint; then
     ( cmd_check captain "$dry" ) || true
   fi
   sw_load_backend || return 1
@@ -850,7 +854,7 @@ case "$CMD" in
         --kind) case "${2:-}" in worker|captain) kind=$2 ;; *) die '--kind must be worker or captain' ;; esac; shift 2 ;;
         --open-work) case "${2:-}" in yes|no) open=$2 ;; *) die '--open-work must be yes or no' ;; esac; shift 2 ;;
         --status) [ $# -ge 2 ] || die '--status needs a value'; status=$(printf '%s\n' "$2" | sw_clean 1); shift 2 ;;
-        --classifier) case "${2:-}" in jev|grok|none) CLASSIFIER=$2 ;; *) die '--classifier must be jev, grok, or none' ;; esac; shift 2 ;;
+        --classifier) case "${2:-}" in jev|grok) CLASSIFIER=$2 ;; *) die '--classifier must be jev or grok' ;; esac; shift 2 ;;
         *) die "unexpected argument: $1" ;;
       esac
     done
