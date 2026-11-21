@@ -1035,7 +1035,7 @@ wd_council_record() {
 # only when the new record publishes, and is otherwise left in place.
 wd_council() {
   local task=$1 key=$2 summary=$3 prior=${4:-} archive=${5:-} cur seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
-  local WD_CALL_MAX_USD WD_CALL_TIMEOUT
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec=''
   if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
     printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
     return 0
@@ -1052,9 +1052,26 @@ wd_council() {
   if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
   cur=$(wd_council_record "$task" "$key" | cut -f3)
   if [ "$cur" != "$prior" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  # A second revisit can pass the caller's evidence check before this lock,
+  # then arrive after the first publish. The record path is stable, so the
+  # path check above still matches. Same evidence is already decided: return
+  # that ruling and do not convene again.
+  if [ -n "$prior" ] && [ -n "$cur" ]; then
+    locked_evidence=$(wd_council_normalize_evidence "$(wd_council_prior_evidence "$cur")")
+    if [ -n "$locked_evidence" ] && [ "$(wd_council_normalize_evidence "$summary")" = "$locked_evidence" ]; then
+      rec=$(wd_council_record "$task" "$key")
+      fm_lock_release "$lock"
+      case "$(printf '%s' "$rec" | cut -f1)" in
+        ruled) printf 'unanimous\t%s\t%s\t%s\n' "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" "$(printf '%s' "$rec" | cut -f4)" ;;
+        no-ruling) printf 'no-ruling\t%s\t%s\t%s\n' "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" "$(printf '%s' "$rec" | cut -f4)" ;;
+        *) printf 'busy\t\t\t\n' ;;
+      esac
+      return 0
+    fi
+  fi
   tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   if fm_wd_known_unreachable_timing_flake "$summary"; then
-    flake_note='This record describes a known unreachable timing flake: default to PROCEED A (approve the park, labeled approved, not clean) when A is the approve option, unless the record also names a human-only category in the line above.
+    flake_note='This record describes a known unreachable timing flake: default to the option that approves the park, labeled approved, not clean, whichever label that option has, unless the record also names a human-only category in the line above.
 '
   fi
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:

@@ -38,7 +38,7 @@ It stops at the finding, routes the decision to firstmate, and applies only the 
 
 A no-mistakes step parked at `awaiting_approval` is a council or captain decision by default, answered with `no-mistakes axi respond --action approve` or a hold.
 The merge or release that approving would unblock does not by itself make the step human-only.
-It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push, spend, secrets, production or shared-database writes, PII, messages to people, deletion, or sign-in.
+It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push or a forced push, spend, secrets, production or shared-database writes, PII, messages to people, deletion, or sign-in.
 When a once-rerun fails only on a known load-sensitive timing test the PR cannot reach, default to approve the park and label it "approved, not clean".
 The alternative to approving is a scheduled low-load rerun, never a hold for the human on that evidence alone.
 A failed once-rerun does not by itself bar approving, and an extra isolated green run is evidence to weigh, not fishing that disqualifies it.
