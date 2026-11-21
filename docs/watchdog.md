@@ -270,6 +270,7 @@ The one documented exception is that revisit: `fm-watchdog.sh council --revisit`
 Re-asking on contradicting evidence is a revisit, never a silent re-roll, and an automatic pass never revisits on its own.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
 A record that describes a known unreachable timing flake - a timing word, a flake word, and an unreachable word - is put to the seats with a default: approve the park, labeled approved, not clean, on whichever option approves it.
+Unanimous rulings on these records retain that qualification in the persisted ruling, command output, ledger, status and ruling nudge, including replay and revisits.
 [`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when that default applies to a parked test step.
 
 `fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.

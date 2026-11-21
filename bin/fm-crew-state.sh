@@ -705,11 +705,6 @@ nm_gate_findings_count() {
   case "$rest" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' "$rest"
 }
-# The parked question's structured parts for the visible status line: the PR
-# number from the run's own PR URL, the failing findings' ids from the gate
-# table's `id` column, and the parked duration the run itself reports. Only
-# short validated scalars are printed, never a finding's free text, so nothing
-# the run reports can mint another component or leak prose into the line.
 nm_parked_pr_number() {
   local url num
   url=$(strip_quotes "$(nm_field pr)")
@@ -729,6 +724,15 @@ nm_gate_finding_ids() {
 $ids
 EOF
   printf '%s' "$out"
+}
+nm_gate_question() {
+  {
+    strip_quotes "$(nm_field summary)"
+    printf '\n'
+    fm_nm_table_column "$RUN_OUT" findings description
+  } | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' |
+    tr '\t\r' '  ' | sed "s/${SEP}/ ; /g" |
+    awk 'NF { if (n++) printf "; "; printf "%s", $0 }'
 }
 nm_parked_duration() {
   local line dur
@@ -1433,20 +1437,14 @@ if [ "$HAVE_RUN" = 1 ]; then
       if nm_gate_awaits_human_decision; then
         RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_HUMAN_DECISION"
       fi
-      # The exact parked question, in structured parts, on this visible line:
-      # its PR by number, the failing finding ids, how long it has waited,
-      # and (for an awaiting_approval step) its options. The run id already
-      # closes the line below, so a supervisor never has to open a handoff
-      # file to learn what is being asked.
       parked_pr=$(nm_parked_pr_number)
       [ -z "$parked_pr" ] || RUN_DETAIL="$RUN_DETAIL${SEP}pr: #$parked_pr"
       parked_ids=$(nm_gate_finding_ids)
       [ -z "$parked_ids" ] || RUN_DETAIL="$RUN_DETAIL${SEP}findings: $parked_ids"
+      parked_question=$(nm_gate_question)
+      [ -z "$parked_question" ] || RUN_DETAIL="$RUN_DETAIL${SEP}question: $parked_question"
       parked_dur=$(nm_parked_duration)
       [ -z "$parked_dur" ] || RUN_DETAIL="$RUN_DETAIL${SEP}parked: $parked_dur"
-      if [ "$gate_status" = awaiting_approval ] || [ "$status" = awaiting_approval ]; then
-        RUN_DETAIL="$RUN_DETAIL${SEP}options: approve or hold"
-      fi
     else
       case "$status" in
         ci)             RUN_STATE=working; RUN_DETAIL="ci running" ;;

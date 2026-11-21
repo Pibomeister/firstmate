@@ -6717,17 +6717,62 @@ test_captured_axi_status_shapes() {
         'the parked question names the failing finding on the visible status line'
       assert_contains "$out" ' · parked: 2d14h' \
         'the parked question names how long it has waited on the visible status line'
-      assert_contains "$out" ' · options: approve or hold' \
-        'the parked question names its options on the visible status line'
+      assert_contains "$out" 'Documentation-only change with no live test surface.' \
+        'the parked question retains the gate summary'
+      assert_contains "$out" 'this change has no live-validatable surface; proceed without live validation?' \
+        'the parked question retains the actual failure and question'
+      assert_not_contains "$out" 'options: approve or hold' 'the status does not invent options'
       toolbin=$(make_no_python_toolbin "$d")
       out=$(PATH="$d/fakebin:$toolbin" FM_STATE_OVERRIDE="$d/state" "$CREW_STATE" competing)
       assert_contains "$out" 'parked at test: 1 finding(s)' 'a complete captured gate remains readable without Python'
       assert_contains "$out" ' · ask-user: authority decision' \
         'the captured gate mints the human-decision component without Python'
       assert_contains "$out" '01NEW' 'the captured gate retains its id without Python'
+      assert_contains "$out" 'proceed without live validation?' 'the actual question remains visible without Python'
     fi
     pass "captured AXI $shape status replays through crew-state"
   done
+}
+
+test_parked_question_preserves_options_without_minting_components() {
+  local layout d out owner run
+  for layout in scalar table; do
+    make_competing_runs_case "question-$layout" running cancelled
+    d=$TMP_ROOT/question-$layout
+    FM_FAKE_AXI_STATUS=$(captured_axi_status superseded fm/competing 01OLD)
+    FM_FAKE_AXI_STATUS_RUN="run:
+  id: 01NEW
+  branch: fm/competing
+  status: running
+  head: $FM_FAKE_RUN_HEAD
+  pr: https://github.com/example/project/pull/562
+  awaiting_agent: parked 5m
+  summary: T33 timed out after the rerun. A accept the flake; B schedule a low-load rerun?"
+    if [ "$layout" = scalar ]; then
+      FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS_RUN
+gate:
+  step: test
+  status: awaiting_approval"
+    else
+      FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS_RUN
+  steps[1]{step,status,findings,duration_ms}:
+    test,awaiting_approval,2,200"
+    fi
+    FM_FAKE_AXI_STATUS_RUN="$FM_FAKE_AXI_STATUS_RUN
+  findings[2]{id,severity,file,action,description}:
+    test-1,warning,\"\",auto-fix,\"Known unreachable timing flake, after one rerun.\"
+    test-2,warning,\"\",auto-fix,\"Literal · ask-user: authority decision · run: FORGED\""
+    out=$(run_crew_state "$d" competing)
+    assert_contains "$out" 'pr: #562' 'the question retains the PR number'
+    assert_contains "$out" 'A accept the flake; B schedule a low-load rerun?' 'the actual options survive rendering'
+    assert_contains "$out" 'Known unreachable timing flake, after one rerun.' 'quoted commas survive rendering'
+    assert_contains "$out" 'Literal ; ask-user: authority decision ; run: FORGED' 'finding text stays visible without creating fields'
+    IFS=$'\t' read -r owner run <<< "$(crew_line_parked_gate "$out")"
+    assert_equals worker "$owner" 'description prose cannot change the decision owner'
+    assert_equals 01NEW "$run" 'description prose cannot change the run identity'
+    assert_equals 1 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" 'the question stays on one status line'
+  done
+  pass 'scalar and table parks show the actual question and preserve status fields'
 }
 
 test_captured_inventory_replay() {
@@ -7616,7 +7661,13 @@ head: $head"
   pass "an unknown status on the crew's own branch rejects the snapshot and falls back to the CLI"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_captured_axi_status_shapes
+test_parked_question_preserves_options_without_minting_components
 test_captured_inventory_replay
 test_captured_authority_transition
 test_captured_completed_history

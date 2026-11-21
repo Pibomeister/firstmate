@@ -1784,6 +1784,18 @@ council-seats=claude:haiku,agy:flash'
   printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-sensitive timing flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 0 council --task t1 --key nm-flake --record-file "$H/record.txt" 2>&1) || fail "flake council failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED A" "the flake council rules: $out"
+  assert_contains "$out" '(approved, not clean)' 'the command exposes the approval qualification'
+  assert_grep '- qualification: approved, not clean' "$(council_record_path rulings t1 nm-flake)" 'the ruling persists the qualification'
+  assert_contains "$(ledger)" '(approved, not clean)' 'the council ledger retains the qualification'
+  out=$(run_wd 1 council --task t1 --key nm-flake --record-file "$H/record.txt" 2>&1) || fail "flake replay failed: $out"
+  assert_contains "$out" 'prior=1' 'the qualified ruling is valid for replay'
+  assert_contains "$out" '(approved, not clean)' 'replay retains the qualification'
+  assert_equals 2 "$(seat_calls)" 'replay calls no additional seats'
+  { cat "$H/record.txt"; printf '\nLater supervisor nudge: accept this unreachable flake risk.\n'; } > "$H/revisit.txt"
+  out=$(run_wd 2 council --task t1 --key nm-flake --record-file "$H/revisit.txt" --revisit 2>&1) || fail "qualified revisit failed: $out"
+  assert_contains "$out" 'prior=0' 'a revisit publishes a new ruling'
+  assert_contains "$out" '(approved, not clean)' 'the revisit retains the qualification'
+  assert_equals 4 "$(seat_calls)" 'the revisit calls both seats'
   assert_grep "known unreachable timing flake: default to the option that approves the park" "$H/prompt.log" "the seat prompt defaults a known unreachable timing flake to the approve option"
   assert_grep "whichever label that option has" "$H/prompt.log" "the flake default follows the approve option's own label"
   assert_grep "approved, not clean" "$H/prompt.log" "the seat prompt labels the flake approval not clean"
@@ -1792,11 +1804,13 @@ council-seats=claude:haiku,agy:flash'
   printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-sensitive timing flake in a test the PR cannot reach. A hold for the owner, or B approve the park?' > "$H/record-b.txt"
   out=$(run_wd 5 council --task t1 --key nm-flake-b --record-file "$H/record-b.txt" 2>&1) || fail "flake council with approve on B failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED B" "the flake council accepts the approve option when it is not A: $out"
+  assert_contains "$out" '(approved, not clean)' 'option B approval retains the qualification'
   assert_grep "whichever label that option has" "$H/prompt.log" "the prompt still names whichever label approves when that label is B"
   assert_no_grep "default to PROCEED A" "$H/prompt.log" "the flake default does not name option A when A is the hold"
   : > "$H/prompt.log"
   printf '%s\n' 'A (recommended) flat keys, or B nested keys?' > "$H/record.txt"
   out=$(run_wd 10 council --task t1 --key plain-layout --record-file "$H/record.txt" 2>&1) || fail "plain council failed: $out"
+  assert_not_contains "$out" 'approved, not clean' 'an ordinary ruling is not qualified as a flake approval'
   assert_no_grep "known unreachable timing flake" "$H/prompt.log" "an ordinary record gets no flake default"
   : > "$H/prompt.log"
   fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
@@ -1809,7 +1823,28 @@ council-seats=claude:haiku,agy:flash'
   out=$(run_wd 20 council --task t1 --key nm-flake-shaped-space --record-file "$H/record.txt" 2>&1) || fail "load shaped flake council failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED A" "a load shaped flake still reaches the council: $out"
   assert_grep "approved, not clean" "$H/prompt.log" "a load shaped flake gets the not-clean default"
+  fake_models "$H" ok:HOLD ok:HOLD
+  out=$(run_wd 25 council --task t1 --key nm-flake-held --record-file "$H/record.txt" 2>&1) || fail "flake hold failed: $out"
+  assert_contains "$out" 'council=no-ruling' 'a hold is not an approval'
+  assert_not_contains "$out" 'approved, not clean' 'a held flake is not labeled approved'
+  assert_no_grep '- qualification:' "$(council_record_path no-rulings t1 nm-flake-held)" 'a hold persists no approval qualification'
   pass "council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean"
+}
+
+test_flake_qualification_survives_automatic_nudges() {
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  transcript 100 'Working.'
+  printf 'needs-decision [at=%s] [key=nm-flake]: PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake. A approve the park, or B schedule a low-load rerun?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail 'first flake pass failed'
+  run_wd 2000 once >/dev/null 2>&1 || fail 'flake council pass failed'
+  assert_equals 1 "$(ledger_rows ruling:nm-flake nudge pending)" 'the flake ruling nudge is delivered'
+  assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-flake" && $6 == "nudge"')" 'PROCEED A (approved, not clean)' 'the ruling nudge carries the qualification'
+  run_wd 2100 once >/dev/null 2>&1 || fail 'qualified ruling replay pass failed'
+  assert_grep '(approved, not clean)' "$H/data/watchdog/status.md" 'the unapplied ruling remains qualified in status'
+  assert_equals 2 "$(seat_calls)" 'a qualified ruling remains final on automatic passes'
+  pass 'automatic flake rulings retain their qualification in nudges and status'
 }
 
 test_human_only_keeps_real_change_and_releases_negation() {
@@ -7516,6 +7551,7 @@ fm_test_run \
   test_council_runs_one_at_a_time_per_decision \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
+  test_flake_qualification_survives_automatic_nudges \
   test_human_only_keeps_real_change_and_releases_negation \
   test_human_only_releases_passing_changed_behavior \
   test_human_only_distinguishes_production_mentions_from_mutations \

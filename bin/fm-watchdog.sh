@@ -988,11 +988,12 @@ wd_council_record() {
         /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
         /^- ruling: / { r++; ruling=substr($0,11); next }
         /^- seats: / { s++; seats=substr($0,10); next }
+        /^- qualification: approved, not clean$/ { qualification++; if (ENVIRON["FM_WD_RECORD_KIND"] != "ruled") bad=1; next }
         /^- seat models: .+$/ { model_fields++; next }
         /^- at: .+$/ { at_fields++; next }
         { bad=1 }
         END {
-          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1) exit 1
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1 || qualification > 1) exit 1
           kind=ENVIRON["FM_WD_RECORD_KIND"]
           if (kind == "ruled") {
             if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
@@ -1035,7 +1036,7 @@ wd_council_record() {
 # only when the new record publishes, and is otherwise left in place.
 wd_council() {
   local task=$1 key=$2 summary=$3 prior=${4:-} archive=${5:-} cur seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
-  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec=''
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec='' qualification=''
   if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
     printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
     return 0
@@ -1071,6 +1072,7 @@ wd_council() {
   fi
   tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   if fm_wd_known_unreachable_timing_flake "$summary"; then
+    qualification='approved, not clean'
     flake_note='This record describes a known unreachable timing flake: default to the option that approves the park, labeled approved, not clean, whichever label that option has, unless the record also names a human-only category in the line above.
 '
   fi
@@ -1108,7 +1110,8 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   if {
     if [ "$unanimous" = 1 ]; then
       printf '# Watchdog council ruling\n\n' &&
-      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i"
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i" &&
+      { [ -z "$qualification" ] || printf -- '- qualification: %s\n' "$qualification"; }
     else
       printf '# Watchdog council record - no ruling\n\n' &&
       printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: none (not unanimous, %s blind seats; held for the owner)\n' "$O_HOME" "$task" "$key" "$i"
@@ -1145,7 +1148,7 @@ Reply with exactly one line: PROCEED <label> or HOLD."
 # One ledger row for a council result, closing the pending row of the same id.
 wd_council_ledger() {  # <id> <task> <key> <result>
   case "$4" in
-    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)" ;;
+    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)$(wd_council_qualification "$(printf '%s' "$4" | cut -f3)")" ;;
     no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
     refused*) wd_rec "$1" "decision:$3" council refused "$(printf '%s' "$4" | cut -f4)" ;;
     busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
@@ -1154,7 +1157,14 @@ wd_council_ledger() {  # <id> <task> <key> <result>
 }
 
 wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
-  printf 'council=%s answer=%s record=%s prior=%s seats=%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}"
+  local qualification
+  qualification=$(wd_council_qualification "$3")
+  printf 'council=%s answer=%s record=%s prior=%s seats=%s%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}" "${qualification:+ qualification=${qualification# }}"
+}
+
+wd_council_qualification() {
+  [ -f "$1" ] || return 0
+  sed -n '/^Record:$/q;s/^- qualification: approved, not clean$/ (approved, not clean)/p' "$1"
 }
 
 wd_council_normalize_evidence() {  # <text>
@@ -2299,7 +2309,7 @@ wd_handle_decisions() {
       ruled*)
         ruled=$((ruled + 1))
         pr_label=$(fm_wd_pr_label "$summary")
-        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key${pr_label:+ ($pr_label)}" ;;
+        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key${pr_label:+ ($pr_label)}$(wd_council_qualification "$(printf '%s' "$rec" | cut -f3)")" ;;
     esac
     aged=$((aged + 1))
     # Name work by its PR number when the record carries one, so a nudge is
@@ -2337,7 +2347,7 @@ wd_handle_decisions() {
     case "$res" in
       unanimous*)
         pr_label=$(fm_wd_pr_label "$summary")
-        wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task${pr_label:+ ($pr_label)}. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
+        wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2)$(wd_council_qualification "$(printf '%s' "$res" | cut -f3)") on decision $key from $task${pr_label:+ ($pr_label)}. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
       no-ruling*)
         pr_label=$(fm_wd_pr_label "$summary")
         wd_gap "council gave no ruling on $task $key${pr_label:+ ($pr_label)}; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
