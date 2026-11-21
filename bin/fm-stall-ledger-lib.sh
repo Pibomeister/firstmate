@@ -46,8 +46,9 @@
 # The episode stays open while that condition is still evidenced. A primary's
 # episode is evidenced for FM_STALL_WD_EVIDENCE_SECS (1800) after its last
 # watchdog row, because no status line can show that the primary resumed.
-# A later watchdog row after that lapse starts a new episode. An active
-# usage-limit auto-wait or quota hold keeps the episode evidenced past the lapse.
+# A later watchdog row after that lapse starts a new episode.
+# An active usage-limit auto-wait or quota hold keeps an open episode evidenced past the lapse.
+# A row past that lapse starts a new episode when that ref is already closed.
 # A later task status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
 # stays unverified. A fresh heartbeat does not end a usage-limit auto-wait,
@@ -149,6 +150,17 @@ _fm_stall_ref_exists() {
   [ -f "$FM_STALL_LEDGER" ] || return 1
   awk -F '\t' -v r="$ref" '
     NF == 10 && $10 == r { found = 1; exit }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
+# 0 when a stall-close row already names this ref.
+# An open row alone does not.
+_fm_stall_ref_closed() { # <ref>
+  local ref=$1
+  [ -f "$FM_STALL_LEDGER" ] || return 1
+  awk -F '\t' -v r="$ref" '
+    NF == 10 && $2 == "stall-close" && $10 == r { found = 1; exit }
     END { exit !found }
   ' "$FM_STALL_LEDGER"
 }
@@ -733,10 +745,17 @@ _fm_stall_watchdog() {
     _fm_stall_is_num "$elast" || elast=$epoch
     # A row after the primary's episode lapsed is a new stall, so the lapsed
     # episode closes and this row starts its own.
+    # A hold keeps that episode only while its ref is still open.
     source_state=$ehome/state
     [ "$ehome" != "$FM_HOME" ] || source_state=$STATE
     if _fm_stall_wd_lapsed "$etask" "$esymptom" "$elast" "$epoch" "$source_state"; then
       printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" "$task" > "$key" || return 1
+      continue
+    fi
+    if [ "$etask" = "-" ] \
+      && [ $((epoch - elast)) -gt "$FM_STALL_WD_EVIDENCE_SECS" ] \
+      && _fm_stall_ref_closed "$cls:$sub:$estart"; then
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" "$task" > "$key" || return 1
       continue
     fi

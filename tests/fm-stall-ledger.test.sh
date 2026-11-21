@@ -465,6 +465,89 @@ test_watchdog_primary_autowait_holds_past_lapse() {
   pass "an active primary auto-wait stays open past the lapse and closes when it ends"
 }
 
+# A later watchdog row more than 30 minutes after a closed primary ref is its
+# own stall, even while a usage-limit auto-wait hold is active. The same hold
+# keeps a not-yet-closed episode on its original ref.
+test_watchdog_closed_primary_reopens_under_hold() {
+  local home ledger actions recover later first second
+  home=$(new_home wd-closed-autowait)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$T0" > "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$((T0 + 800))" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((T0 + 700))" "$((T0 + 700))" 600
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "the first auto-wait did not open"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "the first auto-wait closed while the flag was on"
+  recover=$((T0 + 900))
+  printf 'usage_limit_autowait=0\nchecked_at=%s\n' "$recover" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$recover" "$recover" 600
+  awk -F '\t' -v recover="$recover" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "-" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "checked_at did not close the first auto-wait: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  later=$((T0 + 4000))
+  printf '%s\tid2\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$later" >> "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$later" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((later + 700))" "$((later + 700))" 600
+  first=$((T0 - 600))
+  second=$((later - 600))
+  assert_equals 2 "$(count_rows "$ledger" stall-open -)" "the later auto-wait was not recorded: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the later auto-wait closed while the hold was active: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  awk -F '\t' -v first="$first" -v second="$second" -v ref="primary:-:$second" '
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == first { old = 1 }
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == second { neu = 1 }
+    $2 == "stall-close" && $10 == ref { closed = 1 }
+    END { exit !(old && neu && !closed) }
+  ' "$ledger" || fail "the later auto-wait did not open its own ref: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+
+  home=$(new_home wd-closed-frozen)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\twd1\t\tprimary\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$T0" > "$actions"
+  observe_fresh "$home" "$((T0 + 2400))" "$((T0 + 2400))" 600
+  first=$((T0 - 720))
+  awk -F '\t' -v end="$((T0 + 1800))" -v first="$first" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $5 == first && $8 == end { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the frozen primary did not lapse at its last row plus 30 minutes: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  later=$((T0 + 4000))
+  printf '%s\tid2\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$later" >> "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$later" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((later + 700))" "$((later + 700))" 600
+  second=$((later - 600))
+  assert_equals 2 "$(count_rows "$ledger" stall-open -)" "the auto-wait after a lapsed frozen episode was not recorded: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the auto-wait after a lapsed frozen episode closed while the hold was active: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  awk -F '\t' -v second="$second" -v ref="primary:-:$second" '
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == second { neu = 1 }
+    $2 == "stall-close" && $10 == ref { closed = 1 }
+    END { exit !(neu && !closed) }
+  ' "$ledger" || fail "the auto-wait after a lapsed frozen episode did not open its own ref: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+
+  home=$(new_home wd-open-hold-row)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\n' "$T0" > "$home/state/.stall-ledger-born"
+  printf '%s\tid1\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$T0" > "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$((T0 + 800))" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((T0 + 700))" "$((T0 + 700))" 600
+  later=$((T0 + 4000))
+  printf '%s\tid2\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$later" >> "$actions"
+  observe_fresh "$home" "$((later + 700))" "$((later + 700))" 600
+  first=$((T0 - 600))
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "a later row split an auto-wait that was still open: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "a later row closed an auto-wait that was still held: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  awk -F '\t' -v first="$first" '
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == first { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the open auto-wait did not keep its original ref: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  pass "a closed primary ref reopens under a hold, and an open hold stays one episode"
+}
+
 test_observe_secondmate_progress_closes_as_agentkit() {
   local home mate other ledger start
   home=$(new_home progress)
@@ -1109,6 +1192,7 @@ fm_test_run \
   test_unconfirmed_nudge_is_not_recovery \
   test_watchdog_primary_stall_after_lapse_reopens \
   test_watchdog_primary_autowait_holds_past_lapse \
+  test_watchdog_closed_primary_reopens_under_hold \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
   test_window_maps_chicago_kickoff \
