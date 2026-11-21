@@ -1,0 +1,11 @@
+1..15
+ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
+ok - declining-cursor dialogs: imports, bypass, hook review, and a moved cursor are held, and their fixed text names no stop
+ok - hard stops: credential, sign-in, spend, destructive, and release prompts are named and never routed
+ok - structure, not words: conversation above a prompt and phrases inside a command never change its verdict
+ok - Antigravity trust: its recorded screen is read before the dialog detector, and is held
+ok - decline cap: failed declines count toward the hourly cap
+not ok - the rewrite instruction is recorded: worker:ok	permission-prompt	decline	pending	press Escape on a claude tool-approval prompt
+worker:ok	permission-prompt	decline	done	the prompt left the pane
+worker:ok	permission-prompt	steer	failed	the rewrite instruction could not be recorded
+worker:ok	permission-prompt	report	done	blocked [key=permission-prompt-held]: worker ok had a tool-approval prompt declined, but the rewrite instruction could not be recorded, so it may wait at its composer (expected '1', got '0')

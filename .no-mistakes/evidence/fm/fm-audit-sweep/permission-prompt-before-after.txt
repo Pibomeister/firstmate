@@ -1,0 +1,16 @@
+== before tree (/tmp/fm-before.m3Zx5V/bin/fm-permission-prompt.sh)
+  command 'export'         -> route tool-approval
+  command 'declare -p'     -> route tool-approval
+  command 'typeset -p'     -> route tool-approval
+  command 'export | cat'   -> route tool-approval
+  command 'export FOO=bar' -> route tool-approval
+  heredoc rm -rf + 2 rules + dashed -> route tool-approval
+  heredoc cat + 2 rules + dashed    -> route tool-approval
+== after tree ({run-worktree}/bin/fm-permission-prompt.sh)
+  command 'export'         -> hardstop credential
+  command 'declare -p'     -> hardstop credential
+  command 'typeset -p'     -> hardstop credential
+  command 'export | cat'   -> hardstop credential
+  command 'export FOO=bar' -> route tool-approval
+  heredoc rm -rf + 2 rules + dashed -> hardstop destructive
+  heredoc cat + 2 rules + dashed    -> hold unproven

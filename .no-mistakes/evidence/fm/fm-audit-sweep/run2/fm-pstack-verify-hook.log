@@ -1,0 +1,16 @@
+ok - a STATUS_APPEND command injects principle-prove-it-works
+ok - a loop's closing done line or a quoted done outside a status write is not a completion
+ok - Cursor postToolUse Shell STATUS_APPEND injects principle-prove-it-works
+ok - Write content holding a done line injects principle-prove-it-works
+ok - done: merge it on a captain prompt does not inject principle-prove-it-works
+ok - this is faster than main injects principle-explain-the-number
+ok - a working: line does not inject principle-prove-it-works
+ok - are the checks green yet? does not inject principle-prove-it-works
+ok - working: checks green so far does not inject principle-prove-it-works
+ok - is the implementation complete? does not inject principle-prove-it-works
+ok - The PR is ready for review does not inject principle-prove-it-works
+ok - blocked: wait for my review does not inject principle-prove-it-works
+ok - blocked: via STATUS_APPEND Shell/Bash does not inject principle-prove-it-works
+ok - blocked: via a *.status Write does not inject principle-prove-it-works
+ok - needs-decision: pick a design does not inject principle-prove-it-works
+ok - writing a test file injects principle-test-behavior-not-implementation

@@ -1,0 +1,4 @@
+1..18
+ok - observe records would-act rows for rungs 1-4, then later_self_progressed=yes, with zero actions
+ok - a worker that dies closes its episode with later_self_progressed=no
+Terminated: 15

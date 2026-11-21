@@ -1,0 +1,6 @@
+1..169
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback claim: competing stale recovery preserves the fresh owner
+ok - feedback claim: legacy owners are recovered only after they exit
+ok - feedback claim: release preserves another live owner
+Terminated: 15

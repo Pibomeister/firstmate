@@ -1,0 +1,8 @@
+ok - fm-afk-start.sh fails before daemon startup when the afk flag cannot be written
+ok - fm-afk-start.sh ignores stale pidfile-only live pids
+ok - fm-afk-start.sh refuses tern as an away-mode supervisor backend (unsupported; documented in docs/tern-backend.md)
+ok - fm-afk-start.sh refuses an Orca home with no Orca terminal instead of falling back to firstmate:0
+ok - fm-afk-start.sh refuses an inherited Orca terminal marker instead of falling back to firstmate:0
+ok - fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches
+ok - supervise daemon state root is scoped by FM_HOME
+ok - routine signal self-handles

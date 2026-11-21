@@ -1,0 +1,5 @@
+fm-stall-ledger exit=0 secs=660
+fm-herdr-lab exit=1 secs=721
+fm-herdr-owned-xdg exit=1 secs=843
+fm-memory-guard exit=0 secs=932
+fm-permission-prompt exit=1 secs=1088

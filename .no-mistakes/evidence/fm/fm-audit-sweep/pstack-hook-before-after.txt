@@ -1,0 +1,8 @@
+== before tree
+  for a in 1 2; do;  echo "$a";done                            -> principle-prove-it-works 
+  echo "done"                                                  -> principle-prove-it-works 
+  echo "done [at=1731880000]: shipped the export" >> /tmp/task.status && true -> principle-prove-it-works 
+== after tree
+  for a in 1 2; do;  echo "$a";done                            -> <silent>
+  echo "done"                                                  -> <silent>
+  echo "done [at=1731880000]: shipped the export" >> /tmp/task.status && true -> principle-prove-it-works 

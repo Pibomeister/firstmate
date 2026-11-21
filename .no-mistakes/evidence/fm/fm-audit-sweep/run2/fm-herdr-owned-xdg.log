@@ -1,0 +1,5 @@
+ok - fm-herdr-lab fixture: create clears inherited Herdr identity and cleanup removes only the owned directory
+ok - fm-herdr-lab fixture: CLI refuses foreign paths, session names, and server stop
+ok - fm-herdr-lab fixture: stop refuses a live process that is not this fixture's herdr
+ok - fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid with the wrong start time
+ok - fm-herdr-lab fixture: stop and cleanup refuse a herdr-named pid without this fixture's XDG_CONFIG_HOME
