@@ -1,0 +1,10 @@
+1..10
+ok - human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not
+ok - human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged
+ok - human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page
+ok - human-only step: an overnight handoff still showing by day is paged once, unless the away return brief showed it
+ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row
+ok - human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel
+ok - human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not

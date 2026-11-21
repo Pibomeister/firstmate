@@ -1,0 +1,9 @@
+edit dialog auth/mfa.ts                       => human_step=(none) dialog=permission
+create dialog otp-verify.ts                   => human_step=(none) dialog=permission
+bash dialog npm test auth/mfa.test.ts         => human_step=(none) dialog=permission
+browser sign-in wait                          => human_step=sign-in dialog=(none)
+6-digit code prompt                           => human_step=(none) dialog=(none)
+otp prompt                                    => human_step=(none) dialog=(none)
+captcha                                       => human_step=captcha dialog=(none)
+device approval picker                        => human_step=approval dialog=question
+ordinary idle composer                        => human_step=(none) dialog=(none)

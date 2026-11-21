@@ -1,0 +1,9 @@
+browser sign-in page => sign-in
+6-digit code prompt => verification-code
+captcha => captcha
+numbered echo + sign-in reply (round-2 false positive) => (none)
+permission dialog for mfa test (round-1 false positive) => otp
+status line branch fm/fm-mfa-enroll => (none)
+edit dialog for auth/mfa.ts => otp
+create dialog for otp-verify.ts => otp
+real device-approval dialog => approval
