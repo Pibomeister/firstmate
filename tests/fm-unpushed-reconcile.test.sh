@@ -327,7 +327,9 @@ assert_equals 2 "$rc" 'an invalid deadline was accepted'
 pass 'a caller deadline bounds the scan from where its timer starts'
 
 new_world stray-group
-group_work="$TMP_ROOT/stray-group-work"
+# A space and a literal backslash in the path must not hide the scan from its
+# own replay.
+group_work="$TMP_ROOT/stray group\\tw"
 mkdir -m 700 "$group_work"
 rm -f "$TMP_ROOT/gh.pid"
 # The caller's kill reaches only the scanner, as when a stage bound fires
@@ -357,9 +359,36 @@ fi
 assert_contains "$out" 'branch=fm/task' 'the replay lost the discovered branch'
 pass 'replaying a cut-short scan ends the timed scan its caller could not reach'
 
-# A recorded group that is not this work directory's live scan is never ended.
-printf '%s\n' "$(ps -o pgid= -p $$ | tr -d ' ')" > "$group_work/group"
-bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+# A recorded group that is not this work directory's live scan is never ended,
+# nor is the caller's own group even when a member of it carries the token.
+[ -s "$group_work/token" ] || fail 'the cut-short scan left no token for its replay'
+token=$(cat "$group_work/token")
+mkdir -p "$TMP_ROOT/decoy"
+printf '#!/usr/bin/env bash\nsleep 30\n' > "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh"
+if command -v perl >/dev/null 2>&1; then
+  # The caller runs in a group of its own here, so a replay that wrongly ends its
+  # caller's group ends only this probe.
+  own_out=$(perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' bash -c '
+    bash "$1" --scan "$2" "$3" &
+    member=$!
+    for _ in $(seq 1 50); do
+      ps -o command= -p "$member" 2>/dev/null | grep -qF -- "$3" && break
+      sleep 0.1
+    done
+    ps -o command= -p "$member" 2>/dev/null | grep -qF -- "$3" || { echo member-missing; exit 0; }
+    ps -o pgid= -p $$ | tr -d " " > "$2/group"
+    bash "$4" pending --work-dir "$2" >/dev/null
+    if kill -0 "$member" 2>/dev/null; then echo caller-group-kept; fi
+    kill "$member" 2>/dev/null
+    wait "$member" 2>/dev/null
+    exit 0
+  ' _ "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" "$group_work" "$token" "$ROOT/bin/fm-unpushed-reconcile.sh") || true
+  case "$own_out" in
+    *member-missing*) fail 'the token-carrying member of the caller group never started' ;;
+    *caller-group-kept*) ;;
+    *) fail 'the replay ended its own caller group' ;;
+  esac
+fi
 if command -v perl >/dev/null 2>&1; then
   perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec "sleep", "30"' &
   other=$!
@@ -369,24 +398,25 @@ if command -v perl >/dev/null 2>&1; then
   kill -0 "$other" 2>/dev/null || fail 'the replay ended an unrelated process group'
   kill "$other" 2>/dev/null || true
   wait "$other" 2>/dev/null || true
-  # A live scan of another work directory whose path starts with this one does
-  # not belong to this work directory, even when the recorded id is its group.
-  mkdir -p "$TMP_ROOT/decoy"
-  printf '#!/usr/bin/env bash\nsleep 30\n' > "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh"
-  perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' \
-    bash "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" --scan "$group_work-other" &
-  other=$!
-  for _ in $(seq 1 50); do
-    ps -o command= -p "$other" 2>/dev/null | grep -q -- "--scan $group_work-other" && break
-    sleep 0.1
+  # A live scan of another work directory whose path starts with this one, with
+  # or without a separating space, does not belong to this work directory, even
+  # when the recorded id is its group.
+  for neighbour in "$group_work-other" "$group_work other"; do
+    perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' \
+      bash "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" --scan "$neighbour" 0123456789abcdef01234567 &
+    other=$!
+    for _ in $(seq 1 50); do
+      ps -o command= -p "$other" 2>/dev/null | grep -qF -- "--scan $neighbour" && break
+      sleep 0.1
+    done
+    ps -o command= -p "$other" 2>/dev/null | grep -qF -- "--scan $neighbour" \
+      || fail 'the decoy scan of the neighbouring work directory never started'
+    printf '%s\n' "$other" > "$group_work/group"
+    bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+    kill -0 "$other" 2>/dev/null || fail 'the replay ended the scan of a neighbouring work directory'
+    kill "$other" 2>/dev/null || true
+    wait "$other" 2>/dev/null || true
   done
-  ps -o command= -p "$other" 2>/dev/null | grep -q -- "--scan $group_work-other" \
-    || fail 'the decoy scan of the neighbouring work directory never started'
-  printf '%s\n' "$other" > "$group_work/group"
-  bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
-  kill -0 "$other" 2>/dev/null || fail 'the replay ended the scan of a neighbouring work directory'
-  kill "$other" 2>/dev/null || true
-  wait "$other" 2>/dev/null || true
 fi
 pass 'the replay never ends its own or an unrelated process group'
 
