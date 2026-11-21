@@ -1,0 +1,23 @@
+ak on PATH: ~/.local/bin/ak
+ak has review engine? no
+
+=== S1 shadow + real ak, two approvals
+--- run (rc=0)
+seat google.agy.gemini-test-high: APPROVE
+seat anthropic.claude.claude-test-1: APPROVE
+merge-review: approved head=7e2da94ed24399f665ddc6627294e13be82acd5f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="ak review ledger add exited 2; the installed AgentKit has no usable review engine"
+7e2da94ed24399f665ddc6627294e13be82acd5f
+no ledger written
+no converge.record
+--- check (rc=0)
+merge-review: approved head=7e2da94ed24399f665ddc6627294e13be82acd5f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7 converge=unavailable converge_reason="no shadow verdict is recorded for this review batch"
+
+=== S2 same fixture, convergence=off: legacy line only
+--- run (rc=0)
+seat anthropic.claude.claude-test-1: APPROVE
+seat google.agy.gemini-test-high: APPROVE
+merge-review: approved head=3fefea791a4ba5c0bb12cad9b7d1288e342fb72f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7
+--- check (rc=0)
+merge-review: approved head=3fefea791a4ba5c0bb12cad9b7d1288e342fb72f approvals=anthropic.claude.claude-test-1:APPROVE,google.agy.gemini-test-high:APPROVE blocks=none url=https://github.com/example/repo/pull/7
+
+=== S3 shadow + real ak, one BLOCK seat: still blocked
