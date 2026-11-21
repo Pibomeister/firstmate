@@ -213,12 +213,13 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-external-review-lib.sh` | Shared readers for the forge=external review tool adapter, ready-URL pattern, backup remote, and remote URLs |
 | `fm-pr-merge.sh`         | Record PR metadata, merge a task's canonical full GitHub, GitLab, or Forgejo URL, refuse a Gerrit change because firstmate never submits one, then refuse an outcome it cannot prove landed or queued |
 | `fm-merge-review.sh`     | Run the two-model merge review at one exact head in a background worker, and print the one verdict line a supervisor and `fm-pr-merge.sh` read |
+| `fm-self-land.sh`        | Opt-in: let a lane owner land its own approved pull request through `fm-pr-merge.sh`, only for a repository `config/self-land` names, with no waiver option (see [configuration.md](configuration.md#self-landing-configself-land)) |
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
 | `fm-self-heal-issue.sh`  | Label and file a failure-class root-cause issue on an approved repository, or comment with new evidence on the open issue for that class |
 | `fm-secret-lib.sh`       | Shared credential-pattern detection for self-heal issue input and watchdog judge evidence |
 | `fm-merge-outcome-lib.sh` | Publish a confirmed merge's durable, role-routed supervision outcome                 |
-| `fm-merge-authority-lib.sh` | Resolve merge authority at the gate, persist it against the accepted canonical PR, and identity-check its later poll consumption |
+| `fm-merge-authority-lib.sh` | Resolve merge authority at the gate, persist it against the accepted canonical PR, identity-check its later poll consumption, and load the self-landing grant and pending record |
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, write the ship instructions carrying that mode's definition of done, and supersede the task's brief so a later relaunch cannot revive stale scout delivery text |
 | `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, close Orca terminals in the task worktree once their session is proved dead or missing, close the task's recorded terminal when another host is running it, count path-only remote matches for that host's own cleanup, require completed scout deliverables, retire secondmate homes |

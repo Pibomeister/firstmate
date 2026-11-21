@@ -34,6 +34,30 @@
 # so it cannot interleave with that consumption transaction, and removes any
 # remaining record.
 #
+# Self-landing is the one standing authority this file also owns. The local
+# config/self-land file is the owner's opt-in: its allow lines name the only
+# repositories a lane owner may land through bin/fm-self-land.sh, and an absent
+# file means self-landing is off. The grant adds no authority value: a
+# self-landed merge is still recorded as away or attended by the answer above.
+# Before the merge gate starts the wrapper publishes its intent as:
+#   state/self-land/<provider>/<host>/<path>/pending
+#   fm-self-land-pending-v1
+#   <task-id>
+#   <pr-url>
+#   <head>
+#   <authority>                 away | attended
+#   <epoch>                     of the last state change
+#   <state>                     armed | sent | queued
+#   <run>                       token of the run that wrote the record
+#   <sender>                    `-`, or the process id and start time of the
+#                               process that sends the merge command
+# The record is mode 0600 and atomically published. It names the one merge this
+# home may have sent for that repository, so a later run can read the pull
+# request back and settle the record without sending a second merge. The
+# states and the rule that changes them are described at the functions below.
+# bin/fm-self-land.sh owns every gate and the reconciliation rule; the functions
+# here only load the grant and store that record.
+#
 # Sourced by those scripts and by tests. No side effects on source beyond its
 # sourced libraries.
 
@@ -189,4 +213,271 @@ fm_merge_authority_remove_if_matches() {  # <state> <task-id> <provider> <host> 
   fi
   fm_lock_release "$lock" || status=1
   return "$status"
+}
+
+# --- Self-landing: the standing grant and the pending-merge record -----------
+
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_ALLOW=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_ERROR=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_ID=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_URL=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_HEAD=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_AUTHORITY=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_EPOCH=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_STATE=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_RUN=
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+FM_SELF_LAND_PENDING_SENDER=
+
+_fm_self_land_trim() {  # <text>
+  local text=$1
+  text=${text#"${text%%[![:space:]]*}"}
+  text=${text%"${text##*[![:space:]]}"}
+  printf '%s' "$text"
+}
+
+_fm_self_land_lower() {  # <text>
+  printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'
+}
+
+# Load the grant. FM_SELF_LAND_ALLOW receives one lowercase repository per
+# line. Returns 0 when the file was read, 1 when it is
+# absent (self-landing is off), and 2 with FM_SELF_LAND_ERROR set when it cannot
+# be trusted, so a typing mistake never widens the grant.
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+fm_self_land_config_load() {  # <config-file>
+  local config=${1-} line key val n=0
+  local LC_ALL=C
+  FM_SELF_LAND_ALLOW=
+  FM_SELF_LAND_ERROR=
+  if [ -z "$config" ]; then
+    FM_SELF_LAND_ERROR='no config/self-land path was given'
+    return 2
+  fi
+  if [ ! -e "$config" ] && [ ! -L "$config" ]; then
+    return 1
+  fi
+  if [ ! -f "$config" ] || [ ! -r "$config" ]; then
+    FM_SELF_LAND_ERROR='config/self-land is not a readable file'
+    return 2
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    line=$(_fm_self_land_trim "$line")
+    case "$line" in
+      '' | '#'*) continue ;;
+      *=*) ;;
+      *)
+        FM_SELF_LAND_ERROR="config/self-land line $n: expected key=value"
+        return 2
+        ;;
+    esac
+    key=$(_fm_self_land_trim "${line%%=*}")
+    val=$(_fm_self_land_lower "$(_fm_self_land_trim "${line#*=}")")
+    case "$key" in
+      allow)
+        if ! [[ "$val" =~ ^[a-z0-9.-]+/[a-z0-9._-]+/[a-z0-9._-]+$ ]]; then
+          FM_SELF_LAND_ERROR="config/self-land line $n: allow needs <host>/<owner>/<repository>, with no wildcard"
+          return 2
+        fi
+        FM_SELF_LAND_ALLOW="${FM_SELF_LAND_ALLOW:+$FM_SELF_LAND_ALLOW
+}$val"
+        ;;
+      *)
+        FM_SELF_LAND_ERROR="config/self-land line $n: unknown key \"$key\""
+        return 2
+        ;;
+    esac
+  done < "$config"
+  return 0
+}
+
+# True when the loaded grant names <host>/<path>, without regard to letter case.
+fm_self_land_repo_allowed() {  # <host> <path>
+  local want
+  [ -n "${1-}" ] && [ -n "${2-}" ] || return 1
+  [ -n "$FM_SELF_LAND_ALLOW" ] || return 1
+  want=$(_fm_self_land_lower "$1/$2")
+  printf '%s\n' "$FM_SELF_LAND_ALLOW" | grep -qxF -- "$want"
+}
+
+# Print the directory that holds one repository's self-landing records.
+fm_self_land_repo_dir() {  # <state> <provider> <host> <path>
+  [ -n "${1-}" ] && [ -n "${2-}" ] && [ -n "${3-}" ] && [ -n "${4-}" ] || return 1
+  case "$2/$3/$4" in
+    *..* | *[[:space:]]*) return 1 ;;
+  esac
+  printf '%s/self-land/%s/%s\n' "$1" "$2" "$(_fm_self_land_lower "$3/$4")"
+}
+
+# The states of the pending-merge record of one repository, <repo-dir>/pending:
+#   armed   written before bin/fm-pr-merge.sh starts. No merge was sent.
+#   sent    the merge command is about to reach the forge, or reached it.
+#   queued  the forge holds the merge: the pull request waits in its merge
+#           queue, or auto-merge is armed for it.
+# The record also names its sender: `-` until a merge command is sent, then
+# the process id and the start time of the process that sends it, so a later
+# run can tell that the command is still running.
+# A state change is one read, compare, and write under <repo-dir>/pending.lock,
+# so two processes never both act on the state they read. The lock functions
+# come from bin/fm-wake-lib.sh, which the caller sources.
+
+_fm_self_land_sender_valid() {  # <process id, one space, start time>
+  [[ "${1-}" =~ ^[0-9]+\ [A-Za-z0-9\ :=-]+$ ]]
+}
+
+# Name process <pid> as a sender: its id and its start time, which an exec
+# keeps. Prints `-` when the start time cannot be read. The process functions
+# come from bin/fm-wake-lib.sh, which the caller sources.
+fm_self_land_sender_of() {  # <pid>
+  local start
+  if start=$(fm_pid_start_time "${1-}" 2>/dev/null) && _fm_self_land_sender_valid "${1-} $start"; then
+    printf '%s %s\n' "$1" "$start"
+  else
+    printf '%s\n' -
+  fi
+}
+
+# Succeed when the sender a record names is still the same live process.
+fm_self_land_sender_alive() {  # <sender>
+  local pid start
+  _fm_self_land_sender_valid "${1-}" || return 1
+  pid=${1%% *}
+  start=${1#* }
+  fm_pid_alive "$pid" || return 1
+  [ "$(fm_pid_start_time "$pid" 2>/dev/null)" = "$start" ]
+}
+
+_fm_self_land_pending_valid() {  # <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender>
+  fm_pr_task_id_valid "${1-}" || return 1
+  fm_pr_head_valid "${3-}" || return 1
+  case "${4-}" in away | attended) ;; *) return 1 ;; esac
+  case "${2-}" in
+    *[[:space:]]*) return 1 ;;
+    https://*) ;;
+    *) return 1 ;;
+  esac
+  case "${5-}" in '' | *[!0-9]*) return 1 ;; esac
+  case "${6-}" in armed | sent | queued) ;; *) return 1 ;; esac
+  case "${7-}" in '' | *[!A-Za-z0-9.-]*) return 1 ;; esac
+  [ "${8-}" = - ] || _fm_self_land_sender_valid "${8-}" || return 1
+  return 0
+}
+
+_fm_self_land_pending_store() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender>
+  local dir=${1-} tmp
+  [ -n "$dir" ] || return 1
+  shift
+  _fm_self_land_pending_valid "$@" || return 1
+  (umask 077 && mkdir -p -- "$dir") || return 1
+  [ -d "$dir" ] && [ ! -L "$dir" ] || return 1
+  tmp=$(umask 077 && mktemp "$dir/.pending.XXXXXX") || return 1
+  if printf '%s\n' fm-self-land-pending-v1 "$@" > "$tmp" \
+    && chmod 0600 "$tmp" \
+    && mv -f -- "$tmp" "$dir/pending"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+# Write the armed record of one run. The caller holds the repository lock and
+# has settled every earlier record.
+fm_self_land_pending_write() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <run>
+  local epoch
+  epoch=$(date +%s) || return 1
+  _fm_self_land_pending_store "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "$epoch" armed "${6-}" -
+}
+
+# Read one repository's pending record into FM_SELF_LAND_PENDING_*. Returns 0
+# when a valid record was read, 1 when none exists, and 2 when a record exists
+# that cannot be trusted.
+# shellcheck disable=SC2034 # Public results consumed by sourcing callers.
+fm_self_land_pending_read() {  # <repo-dir>
+  local record="${1-}/pending" version id url head authority epoch state run sender extra
+  FM_SELF_LAND_PENDING_ID=
+  FM_SELF_LAND_PENDING_URL=
+  FM_SELF_LAND_PENDING_HEAD=
+  FM_SELF_LAND_PENDING_AUTHORITY=
+  FM_SELF_LAND_PENDING_EPOCH=
+  FM_SELF_LAND_PENDING_STATE=
+  FM_SELF_LAND_PENDING_RUN=
+  FM_SELF_LAND_PENDING_SENDER=
+  [ -n "${1-}" ] || return 2
+  if [ ! -e "$record" ] && [ ! -L "$record" ]; then
+    return 1
+  fi
+  [ -f "$record" ] && [ ! -L "$record" ] && [ -r "$record" ] || return 2
+  exec 8< "$record" || return 2
+  IFS= read -r version <&8 || { exec 8<&-; return 2; }
+  IFS= read -r id <&8 || { exec 8<&-; return 2; }
+  IFS= read -r url <&8 || { exec 8<&-; return 2; }
+  IFS= read -r head <&8 || { exec 8<&-; return 2; }
+  IFS= read -r authority <&8 || { exec 8<&-; return 2; }
+  IFS= read -r epoch <&8 || { exec 8<&-; return 2; }
+  IFS= read -r state <&8 || { exec 8<&-; return 2; }
+  IFS= read -r run <&8 || { exec 8<&-; return 2; }
+  IFS= read -r sender <&8 || { exec 8<&-; return 2; }
+  if IFS= read -r extra <&8; then
+    exec 8<&-
+    return 2
+  fi
+  exec 8<&-
+  [ "$version" = fm-self-land-pending-v1 ] || return 2
+  _fm_self_land_pending_valid "$id" "$url" "$head" "$authority" "$epoch" "$state" "$run" "$sender" || return 2
+  FM_SELF_LAND_PENDING_ID=$id
+  FM_SELF_LAND_PENDING_URL=$url
+  FM_SELF_LAND_PENDING_HEAD=$head
+  FM_SELF_LAND_PENDING_AUTHORITY=$authority
+  FM_SELF_LAND_PENDING_EPOCH=$epoch
+  FM_SELF_LAND_PENDING_STATE=$state
+  FM_SELF_LAND_PENDING_RUN=$run
+  FM_SELF_LAND_PENDING_SENDER=$sender
+  return 0
+}
+
+# Change the record of run <run> from state <from> to state <to> and restart
+# its clock. With <to> given as `none`, remove it instead. With [sender] given,
+# the record names that sender from now on; otherwise it keeps the one it has.
+# Returns 0 when the change was made, 1 when the record is absent, belongs to
+# another run, or is in another state, and 2 when it could not be locked, read,
+# or written.
+fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender]
+  local dir=${1-} run=${2-} from=${3-} to=${4-} sender=${5-} lock rc=0 epoch
+  [ -n "$dir" ] && [ -n "$run" ] && [ -n "$from" ] && [ -n "$to" ] || return 2
+  lock="$dir/pending.lock"
+  fm_lock_acquire_wait_max "$lock" 30 || return 2
+  fm_self_land_pending_read "$dir" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    if [ "$FM_SELF_LAND_PENDING_RUN" != "$run" ] || [ "$FM_SELF_LAND_PENDING_STATE" != "$from" ]; then
+      rc=1
+    elif [ "$to" = none ]; then
+      rm -f -- "$dir/pending" || rc=2
+    elif epoch=$(date +%s) && _fm_self_land_pending_store "$dir" \
+        "$FM_SELF_LAND_PENDING_ID" "$FM_SELF_LAND_PENDING_URL" "$FM_SELF_LAND_PENDING_HEAD" \
+        "$FM_SELF_LAND_PENDING_AUTHORITY" "$epoch" "$to" "$run" \
+        "${sender:-$FM_SELF_LAND_PENDING_SENDER}"; then
+      :
+    else
+      rc=2
+    fi
+  fi
+  fm_lock_release "$lock" || true
+  return "$rc"
+}
+
+# Remove the record without a state check. Only the run that holds the
+# repository lock and knows the outcome of the record's merge calls this.
+fm_self_land_pending_clear() {  # <repo-dir>
+  [ -n "${1-}" ] || return 1
+  rm -f -- "$1/pending"
 }
