@@ -76,6 +76,19 @@
 #   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
 #       Returns 0 for a bounded pending handoff claim for that lock owner;
 #       bin/fm-handoff-lib.sh owns the claim format.
+#   fm_wd_human_step <screen>
+#       Prints `captcha`, `otp`, `verification-code`, `approval`, or `sign-in`
+#       when the last 14 non-blank rows show that human-only step, else nothing
+#       (exit 1). On a proven dialog, whose cursor row is a numbered option
+#       and whose last non-blank row is the picker footer (`Esc to cancel` and
+#       the like), only the paragraph just above the options counts, and a
+#       tool permission dialog (fm_wd_pane_dialog `permission`) never counts. Otherwise only the rows below
+#       the last composer prompt row count, down to the composer's bottom border
+#       or first blank row, so the footer and status line never do; with no
+#       prompt row either, as on a full-screen sign-in view, every one of those
+#       rows counts. Conversation above a prompt row does not count, except a
+#       row among the 4 just above it that opens by stating a sign-in error
+#       such as `Not logged in` or `Please run /login`.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -402,6 +415,8 @@ fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
   printf '%s\n' "${spec#*$'\t'}"
 }
 
+FM_WD_PICKER_FOOTER_RE='(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑/↓ to (navigate|select)|Tab:next answer)'
+
 fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
@@ -413,10 +428,10 @@ fm_wd_pane_dialog() {  # <screen> [<harness>]
   # A picker: its last non-blank row is the recorded footer and a selected
   # row sits above it. Claude Code 2.1.316's folder-trust picker has no
   # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
-  printf '%s\n' "$tail" | awk '
+  printf '%s\n' "$tail" | awk -v footer="$FM_WD_PICKER_FOOTER_RE" '
     /(❯|›)[ \t]*[^ \t]/ || />[ \t]*[0-9]+[.)][ \t]/ { selected = 1 }
     NF { last = $0 }
-    END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
+    END { exit !(selected && last ~ footer) }
   ' || return 1
   if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
@@ -464,6 +479,61 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
       }
       for (i = top; i <= stop; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
+}
+
+# Human-only steps, matched on lowercased rows. The order is the order the
+# kinds are tried, so a row naming a one-time code is `otp` before it is a code.
+FM_WD_HS_CAPTCHA_RE='captcha|verify (that )?you.{0,4}(are|re) (a )?human|i.{0,3}m not a robot'
+FM_WD_HS_OTP_RE='one.?time (pass(word|code)|code)|(^|[^a-z0-9])(otp|2fa|mfa)([^a-z0-9]|$)|two.?factor|multi.?factor|authenticator app'
+FM_WD_HS_CODE_RE='(verification|confirmation|security|authori[sz]ation|device|login|sign.?in|pairing) code|(^|[^a-z])(enter|paste|type|input) (the |your |this )?([0-9]+.digit )?code|code sent to'
+FM_WD_HS_APPROVAL_RE='waiting for (your |the )?approval|approve (this|the|your) (sign.?in|log.?in|login|request|device|session|connection)|(sign.?in|log.?in|login|device) approval|approval (is )?required|(check|open) your (phone|device|email|inbox|app) to (approve|confirm|continue|sign)'
+FM_WD_HS_SIGNIN_RE='(^|[^a-z])(sign|log).?in (to|with|required|again|via|using)|(^|[^a-z])signing in|(not|no longer) (signed|logged) in|log.?in required|authenticat(e|ion) (is )?required|authenticate to continue|waiting for (the )?(browser )?(authentication|auth|sign.?in|log.?in)|select (a |your )?login method|run /login'
+FM_WD_HS_AUTH_ERROR_RE='^[^a-z]*(not logged in|invalid api key|oauth token (has )?expired|please run /login|api error: 401|authentication (error|failed))'
+
+fm_wd_human_step() {  # <screen>
+  local tag row kind re
+  [ -n "${1-}" ] || return 1
+  # A tool permission dialog names the command or file it asks about, and that
+  # text is not a human-only step; permission handling owns it.
+  [ "$(fm_wd_pane_dialog "$1")" != permission ] || return 1
+  while IFS=$'\t' read -r tag row; do
+    row=$(fm_wd_lower "$row")
+    if [ "$tag" = above ]; then
+      printf '%s' "$row" | LC_ALL=C grep -Eq "$FM_WD_HS_AUTH_ERROR_RE" && { printf 'sign-in\n'; return 0; }
+      continue
+    fi
+    for kind in captcha otp verification-code approval sign-in; do
+      case "$kind" in
+        captcha) re=$FM_WD_HS_CAPTCHA_RE ;;
+        otp) re=$FM_WD_HS_OTP_RE ;;
+        verification-code) re=$FM_WD_HS_CODE_RE ;;
+        approval) re=$FM_WD_HS_APPROVAL_RE ;;
+        *) re=$FM_WD_HS_SIGNIN_RE ;;
+      esac
+      printf '%s' "$row" | LC_ALL=C grep -Eq "$re" && { printf '%s\n' "$kind"; return 0; }
+    done
+  done < <(printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v glyph="$FM_WD_PROMPT_RE" -v footer="$FM_WD_PICKER_FOOTER_RE" '
+    function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
+    { row[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && row[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (row[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      if (row[last] ~ footer) for (i = last; i >= floor; i--) if (row[i] ~ /(❯|›|>)[ \t]*[0-9]+[.)][ \t]/) { opt = i; break }
+      if (opt) {
+        for (i = opt; i >= floor; i--) if (row[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { opt = i; break }
+        i = opt - 1
+        while (i >= floor && blank(row[i])) i--
+        for (; i >= floor && !blank(row[i]); i--) print "rows\t" row[i]
+        exit
+      }
+      for (i = last; i >= floor; i--) if (row[i] ~ glyph) { g = i; break }
+      if (!g) { for (i = floor; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]; exit }
+      for (i = g - 1; i >= floor && n < 4; i--) if (row[i] ~ /[^ \t]/) { print "above\t" row[i]; n++ }
+      for (i = g + 1; i <= last && !blank(row[i]); i++) print "below\t" row[i]
+    }')
+  return 1
 }
 
 fm_wd_dialog_options() {  # <screen>

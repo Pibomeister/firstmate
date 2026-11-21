@@ -26,8 +26,12 @@
 # THE AWAY RETURN BRIEF (stdout, on begin and every away check) uses durable
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
-# (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), and the
-# status logs. Its order is fixed: supervisor health across the away window
+# (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
+# status logs, and the watchdog's human-only-step record
+# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh). An open
+# `human-step-<slug>` keyed blocker is a worker's human-only step: it is listed
+# under what is waiting on the captain and never holds the catch-up. Its order
+# is fixed: supervisor health across the away window
 # first, then the captain's away instructions - their words verbatim, including
 # superseded in-session mandates - followed by the away session's account of
 # every visible action it took under them (each non-silent outcome-store row
@@ -212,7 +216,13 @@ scan_open_blockers() {  # -> tab-separated blocker rows
     while IFS="$(printf '\t')" read -r key verb summary; do
       [ "$verb" = blocked ] || continue
       clean_summary=$(printf '%s' "$summary" | clean_field)
-      printf 'blocker\t%s\t%s\t%s\n' "$id" "$key" "$clean_summary"
+      # A worker's human-only step stays open until a person completes it, but
+      # the worker keeps working, so it is listed for the captain and never
+      # holds the catch-up gate.
+      case "$key" in
+        human-step-*) printf 'human-step\t%s\t%s\t%s\n' "$id" "$key" "$clean_summary" ;;
+        *) printf 'blocker\t%s\t%s\t%s\n' "$id" "$key" "$clean_summary" ;;
+      esac
     done <<EOF
 $open
 EOF
@@ -618,6 +628,31 @@ scan_landed_awaiting_cleanup() {  # -> <task>\t<url> rows
   done
 }
 
+# A morning-handoff row from bin/fm-watchdog.sh stays open, however old, until
+# a later `cleared` row names the same subject. Each open row shown here gets a
+# `briefed` row once, queued in $HUMAN_STEPS_BRIEFED and appended only after the
+# brief is published, so the watchdog does not page it again by day.
+open_human_steps() {  # <human-steps.tsv>
+  [ -r "$1" ] || return 0
+  awk -F '\t' '
+    $1 !~ /^[0-9]+$/ { next }
+    $5 == "cleared" { delete open_at[$2]; next }
+    $5 == "briefed" { briefed[$2 SUBSEP $4] = 1; next }
+    $5 == "morning-handoff" { open_at[$2] = $1; kind[$2] = $3; since[$2] = $4; order[++n] = $2 }
+    END {
+      for (i = 1; i <= n; i++) {
+        s = order[i]
+        if (!(s in open_at) || (s in shown)) continue
+        shown[s] = 1
+        printf "%s\t%s\t%s\t%d\n", s, kind[s], since[s], ((s SUBSEP since[s]) in briefed)
+      }
+    }' "$1" | while IFS="$(printf '\t')" read -r subject kind since briefed; do
+      printf '    - %s: %s step waiting since %s; only a person can complete it\n' \
+        "$subject" "$kind" "$(epoch_to_iso "$since")"
+      [ "$briefed" = 1 ] || [ -z "${HUMAN_STEPS_BRIEFED:-}" ] || printf '%s\t%s\t%s\t%s\tbriefed\n' "$(date +%s)" "$subject" "$kind" "$since" >> "$HUMAN_STEPS_BRIEFED" 2>/dev/null || :
+    done
+}
+
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
   local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp
   local tag task key summary count routine routine_visible captain visible_outcomes live held_err last verb rows status url drained=0 pointer
@@ -712,6 +747,19 @@ EOF
     printf '  escalated by the away session:\n'
     printf '%s\n' "$rows" | sed 's/^/  /'
   fi
+  # Human-only steps the watchdog recorded and has not seen cleared.
+  rows=$(open_human_steps "$STATE/watchdog/human-steps.tsv")
+  if [ -n "$rows" ]; then
+    count=$((count + 1))
+    printf '  human-only steps recorded by the watchdog (nothing was typed into them):\n'
+    printf '%s\n' "$rows"
+  fi
+  # Human-only steps a worker reported; it keeps working while they wait.
+  while IFS="$(printf '\t')" read -r tag task key summary; do
+    [ "$tag" = human-step ] || continue
+    count=$((count + 1))
+    printf '  - %s [key=%s] human-only step, other work continues: %s\n' "$task" "$key" "$summary"
+  done < "$blockers"
   [ "$count" -gt 0 ] || printf '  (nothing)\n'
 
   # 4. tried and failed, or could not be fixed.
@@ -938,12 +986,17 @@ EOF
   # Render to a file before publishing: failed stdout writes can leave Bash's
   # buffered output in later command substitutions and corrupt numeric fields.
   brief=$(mktemp "$STATE/.afk-return-brief.XXXXXX") || { rm -f "$evidence" "$blockers" "$drain_err"; return 1; }
+  HUMAN_STEPS_BRIEFED=$brief.briefed
+  : > "$HUMAN_STEPS_BRIEFED" 2>/dev/null || HUMAN_STEPS_BRIEFED=
   if ! render_return_brief "$evidence" "$blockers" "$since" "$drain_ok" > "$brief" \
      || ! cat "$brief"; then
     append_evidence lifecycle 'recovery evidence publication failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
+  elif [ -s "$HUMAN_STEPS_BRIEFED" ]; then
+    cat "$HUMAN_STEPS_BRIEFED" >> "$STATE/watchdog/human-steps.tsv" 2>/dev/null || :
   fi
-  rm -f "$brief"
+  rm -f "$brief" "$brief.briefed"
+  HUMAN_STEPS_BRIEFED=
   if [ "$HELD_READ_FAILED" -eq 1 ]; then
     append_evidence lifecycle "held set unreadable: $HELD_READ_PATH; catch-up stays gated" "$evidence"
     lifecycle_ok=0

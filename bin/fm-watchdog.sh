@@ -35,6 +35,8 @@
 #   state/watchdog/permission/<home-basename>-<path-cksum>-<task>.open      key and prompt checksum of the
 #                                worker prompt this watchdog reported as blocked and has not yet resolved.
 #   state/watchdog/permission/<home-basename>-<path-cksum>-<task>.declined  checksums of the worker prompts it declined.
+#   state/watchdog/human-step/<home-basename>-<path-cksum>[-worker_<id>]  epoch TAB kind
+#                                of the first pass that saw the human-only step still showing.
 #   state/watchdog/last-read     epoch of the last ack-read.
 #   state/night-score/supervisor-gap.tsv  append-only supervisor-gap record of every watched home; docs/watchdog.md owns its rows.
 #   state/night-score/supervisor-activity.tsv  append-only activity-source record of every watched home; docs/watchdog.md owns its rows.
@@ -51,6 +53,12 @@
 # A restarted session writes <its home>/state/watchdog/pickups/<token>.
 #   <watched home>/state/watchdog/captain  key=value record of that home's live
 #                                captain, rewritten each pass and by pickup.
+#   <watched home>/state/watchdog/human-steps.tsv  append-only escalation record of
+#                                human-only steps: epoch subject kind since channel, where
+#                                channel is page, morning-handoff, briefed, or cleared.
+#                                A morning-handoff row stays open until a later cleared row;
+#                                bin/fm-afk-return.sh lists the open ones and writes a briefed
+#                                row for each one it showed.
 #   <watched home>/state/monitor-status  one-line record of that home's monitor
 #                                unit status, rewritten atomically each pass and by monitor-read.
 #
@@ -114,6 +122,8 @@ export PATH
 . "$SCRIPT_DIR/fm-context-reading-lib.sh"
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
+# shellcheck source=bin/fm-quiet-hours-lib.sh
+. "$SCRIPT_DIR/fm-quiet-hours-lib.sh"
 
 die() { printf 'fm-watchdog: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -529,7 +539,7 @@ wd_observe() {
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
   O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
-  O_PANE='' O_HERDR_MISMATCH='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
+  O_PANE='' O_HERDR_MISMATCH='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_HUMAN_STEP='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown O_ACT_AGE=unknown O_ACT_SRC=''
   C_BACKEND='' C_TARGET='' C_MOVED=''
   O_LOOP=none O_LOOP_N=0 O_EVENTS='' O_RESTART_REQ=0 O_OWED_N=0 O_OWED_AGE=0
@@ -637,6 +647,7 @@ EOF
     if fm_wd_usage_limit_autowait "$view"; then
       if [ "$parent" = - ]; then O_AUTOWAIT=1; else O_LIMIT_FOOTER=1; fi
     fi
+    O_HUMAN_STEP=$(fm_wd_human_step "$view") || O_HUMAN_STEP=''
     wd_read_composer
     O_TURN=$(wd_turn_running "$O_BACKEND" "$O_TARGET" "$O_PANE")
     [ -n "$footer_text" ] || { footer_text=$(_fm_wd_tail_rows "$O_PANE" 10); footer_src=pane; }
@@ -701,7 +712,7 @@ wd_print_observation() {
   printf '%s\n' "subject $O_TAG ($O_HOME)" \
     "  endpoint=${O_BACKEND:-none}:${O_TARGET:-none} session=${O_SESSION:-none} lock_pid=${O_LOCK_PID:-none} alive=$O_ALIVE instance=$O_INSTANCE owner=$O_OWNER" \
     "  captain=${C_BACKEND:-none}:${C_TARGET:-none} moved_at=${C_MOVED:-none}" \
-    "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY" \
+    "  pane_static=${O_PANE_STATIC}s dialog=${O_DIALOG:-none} usage_limit_autowait=$O_AUTOWAIT composer=$O_COMPOSER turn_running=$O_TURN cpu_busy=$O_CPU_BUSY human_step=${O_HUMAN_STEP:-none}" \
     "  activity_age=${O_ACT_AGE}s${O_ACT_SRC:+ ($O_ACT_SRC)} loop=$O_LOOP/$O_LOOP_N restart_requested=$O_RESTART_REQ ctx=${O_CTX:-unknown}${O_CTX_SRC:+ ($O_CTX_SRC)}${O_CTX_READING:+ [$O_CTX_READING]}${O_CTX_RESET:+ reset=$O_CTX_RESET}" \
     "  owed=$O_OWED_N oldest=${O_OWED_AGE}s afk=$O_AFK daemon=$O_DAEMON heartbeat_age=${O_HB_AGE}s"
   [ -z "$O_HERDR_MISMATCH" ] || printf '  %s\n' "$O_HERDR_MISMATCH"
@@ -2013,6 +2024,126 @@ wd_handle_captain_autowait() {
   wd_quota_guard_warning
 }
 
+# --- human-only steps ------------------------------------------------------------
+# A sign-in, verification-code, OTP, approval, or captcha prompt waits on a person.
+# Nothing is typed into that pane, so the prompt is never answered or held by the
+# watchdog. Once it has shown on every pass for human-step-secs, it is escalated
+# once per episode: paged by day, or written to the home's human-steps.tsv for
+# the morning handoff overnight, never paged then. A handed-off step still
+# showing by day is paged once, unless the away return brief already showed it
+# (a `briefed` row). A page no channel delivered
+# is recorded there too and stays pending, retried once per nudge-secs while the
+# step still shows. O_REC_SUBJECT names a worker.
+
+wd_human_step_file() {
+  local w=''
+  [ -z "${O_REC_SUBJECT:-}" ] || w=-$(printf '%s' "$O_REC_SUBJECT" | tr -c 'A-Za-z0-9._-' '_')
+  printf '%s/human-step/%s%s' "$WD" "$O_KEY" "$w"
+}
+
+wd_human_step_record() {  # <kind> <since> <channel>
+  local rec=$O_HOME/state/watchdog/human-steps.tsv
+  mkdir -p "${rec%/*}" || return 1
+  printf '%s\t%s\t%s\t%s\t%s\n' "$(wd_now)" "${O_REC_SUBJECT:-$O_TAG}" "$1" "$2" "$3" >> "$rec"
+}
+
+# Whether the human-steps record already holds a <channel> row for this
+# subject's episode that began at <since>.
+wd_human_step_recorded() {  # <since> <channel>
+  local rec=$O_HOME/state/watchdog/human-steps.tsv
+  [ -r "$rec" ] || return 1
+  awk -F '\t' -v s="${O_REC_SUBJECT:-$O_TAG}" -v since="$1" -v ch="$2" \
+    '$2 == s && $4 == since && $5 == ch { found = 1 } END { exit !found }' "$rec"
+}
+
+# Overnight: the quiet-hours clock of the home's config/escalation is inside a
+# window. Away or quiet mode by day is still daytime, so the step is paged. An
+# unreadable clock is daytime too.
+wd_human_step_overnight() {
+  local r
+  r=$(FM_CONFIG_OVERRIDE=$O_HOME/config fm_quiet_hours_at "$(wd_now)" 2>/dev/null) || return 1
+  case "$r" in quiet=1*) return 0 ;; esac
+  return 1
+}
+
+# The step left the pane: end the episode, and close its morning-handoff row.
+wd_human_step_clear() {
+  local f kind since
+  f=$(wd_human_step_file)
+  [ -f "$f" ] || return 0
+  IFS=$'\t' read -r since kind < "$f" || true
+  if wd_human_step_recorded "${since:-0}" morning-handoff; then
+    wd_human_step_record "${kind:-unknown}" "${since:-0}" cleared
+  fi
+  rm -f "$f"
+}
+
+wd_handle_human_step() {  # <kind>
+  local kind=$1 f since='' prev_kind now age secs who subject last id summary out rc overnight=0
+  subject=${O_REC_SUBJECT:-$O_TAG}
+  who=$O_TAG
+  [ -z "${O_REC_SUBJECT:-}" ] || who="$O_TAG worker ${O_REC_SUBJECT#worker:}"
+  now=$(wd_now)
+  f=$(wd_human_step_file)
+  [ ! -f "$f" ] || IFS=$'\t' read -r since prev_kind < "$f" || true
+  case "$since" in ''|*[!0-9]*)
+    since=$now
+    mkdir -p "${f%/*}" && printf '%s\t%s\n' "$since" "$kind" > "$f" ;;
+  esac
+  age=$((now - since))
+  secs=$(cfgi human-step-secs 600)
+  if [ "$age" -lt "$secs" ]; then
+    wd_gap "human-only $kind step on $who for $((age / 60))m; nothing is typed into it, and it is escalated after $((secs / 60))m"
+    return 0
+  fi
+  wd_human_step_overnight && overnight=1
+  # By day a morning handoff counts only once the away return brief showed it;
+  # otherwise the step that is still showing is paged once.
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step page '^done$' "$subject")
+  if { [ -z "$last" ] || [ "$last" -lt "$since" ]; } && { [ "$overnight" = 1 ] || wd_human_step_recorded "$since" briefed; }; then
+    last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step handoff '^done$' "$subject")
+  fi
+  if [ -n "$last" ] && [ "$last" -ge "$since" ]; then
+    wd_gap "human-only $kind step on $who for $((age / 60))m; escalated, nothing is typed into it"
+    return 0
+  fi
+  last=$(fm_wd_last_epoch "$LEDGER" "$O_HOME" human-step '*' '^(pending|dry-run|refused|failed)$' "$subject")
+  if [ -n "$last" ] && [ "$last" -ge "$since" ] && [ $((now - last)) -lt "$(cfgi nudge-secs 900)" ]; then
+    wd_gap "human-only $kind step on $who for $((age / 60))m; its escalation is retried after nudge-secs"
+    return 0
+  fi
+  id=$(wd_id)
+  if [ "$overnight" = 1 ]; then
+    wd_gap "human-only $kind step on $who for $((age / 60))m; recorded for the morning handoff, not paged"
+    if [ "$(wd_mode)" != act ]; then wd_rec "$id" human-step handoff dry-run "would record a $kind step for the morning handoff"; return 0; fi
+    wd_rec "$id" human-step handoff pending "$kind step since $(fm_wd_iso "$since")"
+    if wd_human_step_record "$kind" "$since" morning-handoff; then
+      wd_rec "$id" human-step handoff "done" "recorded for the morning handoff; not paged"
+    else
+      wd_rec "$id" human-step handoff failed "the human-steps record could not be written"
+    fi
+    return 0
+  fi
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" human-step page dry-run "would page the owner; $kind step since $(fm_wd_iso "$since")"; return 0; fi
+  wd_rec "$id" human-step page pending "$kind step since $(fm_wd_iso "$since")"
+  summary="Firstmate watchdog: a human-only $kind step has waited $((age / 60)) minutes on $who, and only a person can complete it. Nothing was typed into it. The record is $O_HOME/state/watchdog/human-steps.tsv."
+  out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
+  rc=$?
+  case "$rc:$out" in
+    '0:page: sent')
+      wd_human_step_record "$kind" "$since" page
+      wd_rec "$id" human-step page "done" "owner paged"
+      wd_gap "human-only $kind step on $who for $((age / 60))m; the owner was paged, nothing is typed into it" ;;
+    *)
+      # An undelivered page is not an escalation: it stays pending and is retried
+      # after nudge-secs, and the record keeps the step visible meanwhile.
+      wd_rec "$id" human-step page failed "no alert channel delivered the page (exit $rc); retried after nudge-secs"
+      wd_human_step_recorded "$since" morning-handoff || wd_human_step_record "$kind" "$since" morning-handoff || true
+      wd_gap "human-only $kind step on $who not paged (exit $rc); recorded, and the page is retried after nudge-secs" ;;
+  esac
+}
+
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
@@ -2526,7 +2657,7 @@ wd_worker_metas() {  # <home>
 # other key. mode=print reports the read and does not act. A gone endpoint is
 # not a dialog.
 wd_visit_worker_dialogs() {
-  local mode=$1 id meta backend target harness screen dialog mismatch prompt
+  local mode=$1 id meta backend target harness screen dialog mismatch prompt step workers f
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
   local saved_composer saved_composer_text saved_composer_above saved_draft
   saved_pane=$O_PANE
@@ -2540,8 +2671,10 @@ wd_visit_worker_dialogs() {
   saved_composer_text=${O_COMPOSER_TEXT:-}
   saved_composer_above=${O_COMPOSER_ABOVE:-}
   saved_draft=${O_DRAFT:-}
+  workers=' '
   while IFS=$'\t' read -r id meta; do
     [ -n "$id" ] || continue
+    workers="$workers$id "
     # A stop reason belongs to one worker's pass, including its page, never
     # to the next pane.
     WD_PP_REASON=
@@ -2573,15 +2706,25 @@ wd_visit_worker_dialogs() {
         wd_gap "worker $id pane could not be read: $mismatch"
       else
         wd_gap "worker $id endpoint is gone; its pane is not read"
+        O_REC_SUBJECT="worker:$id" wd_human_step_clear
       fi
       continue
     fi
     screen=$(wd_capture "$backend" "$target" 60) || screen=''
     dialog=$(wd_observe_dialog "$backend" "$target" "fm-$id" "${harness:-unknown}") || dialog=''
+    step=$(fm_wd_human_step "$screen") || step=''
     if [ "$mode" = print ]; then
-      printf '  worker %s endpoint=%s:%s dialog=%s\n' "$id" "$backend" "$target" "${dialog:-none}"
+      printf '  worker %s endpoint=%s:%s dialog=%s human_step=%s\n' "$id" "$backend" "$target" "${dialog:-none}" "${step:-none}"
       continue
     fi
+    # A human-only step outranks the worker's dialog: it is escalated, and no key is sent.
+    if [ -n "$step" ]; then
+      O_REC_SUBJECT="worker:$id"
+      wd_handle_human_step "$step"
+      unset O_REC_SUBJECT
+      continue
+    fi
+    [ -z "$screen" ] || O_REC_SUBJECT="worker:$id" wd_human_step_clear
     wd_rearm_feedback_dialog "$backend" "$target" "${harness:-unknown}" "$screen" "fm-$id"
     if [ -z "$dialog" ] && fm_wd_usage_limit_autowait "$screen"; then
       O_REC_SUBJECT="worker:$id"
@@ -2654,6 +2797,16 @@ wd_visit_worker_dialogs() {
         ;;
     esac
   done < <(wd_worker_metas "$O_HOME")
+  # A worker no longer recorded in the home cannot show its step again: end its episode.
+  if [ "$mode" != print ]; then
+    for f in "$WD/human-step/$O_KEY-worker_"*; do
+      [ -f "$f" ] || continue
+      id=${f##*/}
+      id=${id#"$O_KEY"-worker_}
+      case "$workers" in *" $id "*) continue ;; esac
+      O_REC_SUBJECT="worker:$id" wd_human_step_clear
+    done
+  fi
   O_PANE=$saved_pane
   O_DIALOG_PANE=$saved_dialog_pane
   O_BACKEND=$saved_backend
@@ -2696,6 +2849,10 @@ wd_handle_subject() {
     else
       wd_gap "lock holder is dead; restart needs ${frozen}s of activity quiet; nothing typed"
     fi
+  elif [ -n "$O_HUMAN_STEP" ]; then
+    # A person must complete it: no key, nudge, Enter, or restart reaches this pane.
+    symptom='human-step'
+    wd_handle_human_step "$O_HUMAN_STEP"
   elif [ "$O_PARENT" = - ] && [ "$O_AUTOWAIT" = 1 ]; then
     symptom='usage-limit-autowait'
     wd_handle_captain_autowait
@@ -2737,7 +2894,8 @@ wd_handle_subject() {
   fi
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
-  if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ]; then reachable=0; fi
+  if [ -z "$O_HUMAN_STEP" ] && [ -n "$O_PANE" ] && [ "$O_DIALOG" != unknown ]; then wd_human_step_clear; fi
+  if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ] || [ "$symptom" = human-step ]; then reachable=0; fi
   if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
@@ -2750,7 +2908,7 @@ wd_handle_subject() {
     wd_handle_quota
   fi
   # Recurrence: three real or would-be actions on one symptom in a day files an issue.
-  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
+  if [ -n "$symptom" ] && [ "$symptom" != usage-limit-autowait ] && [ "$symptom" != human-step ] && [ "$(fm_wd_count_since "$LEDGER" "$O_HOME" "$symptom" '*' '^(pending|dry-run)$' "$(( $(wd_now) - 86400 ))")" -ge 3 ]; then
     wd_self_heal "$symptom" "Watchdog: $symptom recurs on $O_TAG" "$symptom handled 3 or more times in 24h"
   fi
   WD_SYMPTOM=${symptom:-ok}

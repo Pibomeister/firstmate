@@ -827,6 +827,17 @@ SHARED_NO_CD_RULE=${SHARED_NO_CD_RULE%$'\n'}
 # One shared string keeps the ship and scout test-queue rule identical;
 # bin/fm-test-queue.sh owns the queue contract.
 TEST_QUEUE_RULE="9. Run heavy test suites only through the machine-wide test line, \`$(shell_quote "$FM_ROOT/bin/fm-test-queue.sh") run -- <command>\`, which waits for your turn, a free slot, and a low load; run targeted tests directly."
+# One shared string keeps the ship and scout human-only-step rule identical;
+# bin/fm-watchdog.sh escalates a prompt still showing after 10 minutes.
+IFS= read -r -d '' HUMAN_STEP_RULE <<'EOF' || true
+11. A human-only step - a sign-in, verification code, OTP, approval, or captcha - is the one blocker you report without stopping.
+   Within 10 minutes of meeting one, close or cancel the interactive prompt rather than leave it open, and append
+   `blocked [key=human-step-<slug>] [at=<epoch>]: human-only step: {what a person must do, and where}`.
+   That key keeps the step visible to firstmate and the captain but never holds the away return; append `resolved [key=human-step-<slug>] [at=<epoch>]: {how}` only once a person has completed the step or it is no longer needed, never just to clear it.
+   Never enter a credential or code yourself, and never hold a PR, a deploy, or other work on it.
+   Keep working on everything that does not depend on it; firstmate escalates it, and overnight it goes into the morning handoff.
+EOF
+HUMAN_STEP_RULE=${HUMAN_STEP_RULE%$'\n'}
 LEDGER_NEXT_RULE="10. To see the next ready backlog item without firstmate, run the read-only \`FM_HOME=$(shell_quote "$FM_HOME") $(shell_quote "$FM_ROOT/bin/fm-ledger.sh") next --project $(shell_quote "$REPO")\`."
 
 if [ -n "$PR_BRANCH" ]; then
@@ -891,6 +902,7 @@ $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
 $LEDGER_NEXT_RULE
+$HUMAN_STEP_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 
@@ -978,6 +990,7 @@ $SHARED_INFRA_RULE
 $SHARED_NO_CD_RULE
 $TEST_QUEUE_RULE
 $LEDGER_NEXT_RULE
+$HUMAN_STEP_RULE
 
 $WAIT_BLOCK$INBOX_SECTION
 

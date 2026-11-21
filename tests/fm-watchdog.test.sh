@@ -6407,6 +6407,276 @@ restart-command=/bin/false'
   pass "heartbeat recovery preserves main's verified activity-source requirement"
 }
 
+# --- human-only steps ----------------------------------------------------------
+
+HS_LOGIN=$'Claude Code can be used with your Claude subscription or billed based on API usage.\n\nSelect login method:\n\n ❯ 1. Claude account with subscription\n   2. Anthropic Console account\n   3. 3rd-party platform'
+HS_OTP=$'! First copy your one-time code: 8F3A-21C4\nPress Enter to open github.com in your browser...'
+HS_CODE=$'We sent a code to your email.\nEnter verification code: '
+
+# hs_base <day|night>: the next Wednesday after today at 12:00 or 23:30 in the
+# default quiet-hours zone (America/Costa_Rica, UTC-6 all year), so the day and
+# night cases never depend on when the suite runs.
+hs_base() {
+  local d
+  d=$(( $(date +%s) / 86400 + 1 ))
+  while [ $(( (d + 4) % 7 )) -ne 3 ]; do d=$((d + 1)); done
+  case "$1" in
+    day) printf '%s\n' $((d * 86400 + 18 * 3600)) ;;
+    weekend) printf '%s\n' $(((d + 3) * 86400 + 18 * 3600)) ;;
+    *) printf '%s\n' $((d * 86400 + 29 * 3600 + 1800)) ;;
+  esac
+}
+
+# hs_screen <text>: replace what the home pane shows.
+hs_screen() {
+  printf '%s\n' "$1" > "$H/screen.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/agent.sh"
+  sleep 0.5
+}
+
+hs_rows() {  # <subject> <channel>
+  awk -F'\t' -v s="$1" -v c="$2" '$2 == s && $5 == c' "$H/state/watchdog/human-steps.tsv" 2>/dev/null | wc -l | tr -d ' '
+}
+
+test_human_step_detection() {
+  assert_equals sign-in "$(lib fm_wd_human_step "$HS_LOGIN")" "the Claude login picker is a sign-in step"
+  assert_equals otp "$(lib fm_wd_human_step "$HS_OTP")" "a one-time device code is an OTP step"
+  assert_equals verification-code "$(lib fm_wd_human_step "$HS_CODE")" "a verification-code prompt"
+  assert_equals verification-code "$(lib fm_wd_human_step $'Browser did not open? Use the url below to sign in\nPaste code here if prompted > ')" "the pasted sign-in code prompt"
+  assert_equals captcha "$(lib fm_wd_human_step $'Please verify you are human.\nComplete the CAPTCHA to continue.')" "a captcha"
+  assert_equals approval "$(lib fm_wd_human_step $'Waiting for approval on your other device...\nCheck your phone to approve this sign-in.')" "a device approval wait"
+  assert_equals sign-in "$(lib fm_wd_human_step $'API Error: 401 · Please run /login\n❯ \n  ? for shortcuts')" "a sign-in error above the composer"
+  assert_equals "" "$(lib fm_wd_human_step $'I updated the sign in to GitHub docs and the OTP section.\nThe verification code flow is unchanged.\n❯ \n  ? for shortcuts')" "conversation that mentions a sign-in is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Captain session\n❯ \n  ? for shortcuts')" "a plain composer is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Do you want to proceed?\n ❯ 1. Yes\n   2. No\n\nEsc to cancel')" "a permission dialog is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Bash command\n\n  npm test -- auth/mfa.test.ts\n  Run the 2FA tests\n\nDo you want to proceed?\n ❯ 1. Yes\n   2. Yes, and don\'t ask again for npm test commands in /w/fm-2fa-flow\n   3. No\n\nEsc to cancel')" "a permission dialog for an MFA command is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Edit file\n  auth/mfa.ts\n  1 export const x = 1\nDo you want to make this edit to mfa.ts?\n ❯ 1. Yes\n   2. Yes, allow all edits during this session (shift+tab)\n   3. No, and tell Claude what to do differently (esc)\n\nEsc to cancel')" "an edit dialog for an MFA file is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Create file\n  otp-verify.ts\n  1 export {}\nDo you want to create otp-verify.ts?\n ❯ 1. Yes\n   2. Yes, allow all edits during this session (shift+tab)\n   3. No, and tell Claude what to do differently (esc)\n\nEsc to cancel')" "a create dialog for an OTP file is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'Working on the MFA enrolment.\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  fm/fm-mfa-enroll · ~/w/fm-2fa-flow · ? for shortcuts')" "a branch name in the status line is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'GitHub needs you to sign in to continue before the push.\n> 1. merge the PR\n  2. then clean up')" "an echoed numbered prompt under a sign-in reply is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'The 2FA and otp checks pass now.\n> 1. merge it')" "a numbered composer draft under a 2FA reply is not a step"
+  pass "human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not"
+}
+
+test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into() {
+  local BASE off
+  BASE=$(hs_base day)
+  make_home "$HS_LOGIN" $'restart=on\nrestart-command=true\nissue-repo=example.invalid/owner/repo'
+  transcript 3000 "Working."
+  owe_input 3000
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  for off in 0 300 540; do
+    run_wd "$off" once >/dev/null 2>&1 || fail "human-step pass at +${off}s failed"
+  done
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 == "human-step"' | wc -l | tr -d ' ')" "a step under ten minutes was escalated: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "a step under ten minutes paged the owner: $(cat "$H/paged.log")"
+  assert_grep "human-only sign-in step" "$H/data/watchdog/status.md" "the waiting step is a reported gap"
+  assert_grep "HUMAN-STEP" "$H/data/watchdog/status.md" "the health line does not read the step as normal work"
+  assert_no_grep ": ok," "$H/data/watchdog/status.md" "a pane waiting on a human step read as ok"
+
+  run_wd 600 once >/dev/null 2>&1 || fail "the ten-minute pass failed"
+  assert_equals 1 "$(ledger_rows human-step page pending)" "a step over ten minutes is escalated: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger_rows human-step page "done")" "the escalation page was delivered: $(ledger | cut -f4-8)"
+  assert_grep "human-only sign-in step has waited 10 minutes" "$H/paged.log" "the page names the step and its wait"
+  assert_no_grep "Select login method" "$H/paged.log" "the page carries no pane text"
+  assert_equals 1 "$(hs_rows "$(basename "$H")" page)" "the escalation is recorded: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
+
+  for off in 700 1700 4000 9000; do
+    FM_WD_TEST_COMPOSER=pending run_wd "$off" once >/dev/null 2>&1 || fail "pass at +${off}s failed"
+  done
+  assert_equals 1 "$(ledger_rows human-step page pending)" "one episode is escalated once: $(ledger | cut -f4-8)"
+  sleep 1
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into a human-only step: $(cat "$H/typed.log")"
+  assert_equals 0 "$(ledger | awk -F'\t' '$6 ~ /^(nudge|key|restart|council|self-heal)$/' | wc -l | tr -d ' ')" "a key, nudge, restart, council, or issue reached the step: $(ledger | cut -f4-8)"
+  wd_pid_alive_check "$LOCKPID" || fail "the session holding the step was killed"
+  pass "human-only step: escalated once after ten minutes by day, never typed into, restarted, or nudged"
+}
+
+test_human_step_overnight_goes_to_the_morning_handoff() {
+  local BASE
+  BASE=$(hs_base night)
+  make_home "$HS_OTP"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_grep "recorded for the morning handoff" "$H/data/watchdog/status.md" "the handoff is reported"
+  run_wd 1800 once >/dev/null 2>&1
+  [ ! -e "$H/paged.log" ] || fail "a step in quiet hours paged the owner: $(cat "$H/paged.log")"
+  assert_equals 0 "$(ledger_rows human-step page pending)" "quiet hours sent a page: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger_rows human-step handoff "done")" "the step went into the morning handoff once: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(hs_rows "$(basename "$H")" morning-handoff)" "the morning-handoff row was written"
+
+  hs_screen $'Captain session\n❯ \n  ? for shortcuts'
+  run_wd 2000 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows "$(basename "$H")" cleared)" "a step that left the pane closes its handoff row"
+  hs_screen "$HS_OTP"
+  run_wd 2100 once >/dev/null 2>&1
+  run_wd 2800 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows human-step handoff "done")" "a new episode is escalated again: $(ledger | cut -f4-8)"
+
+  # Saturday noon is inside the weekend quiet window, so it is overnight too.
+  BASE=$(hs_base weekend)
+  make_home "$HS_CODE"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  [ ! -e "$H/paged.log" ] || fail "a weekend step paged the owner: $(cat "$H/paged.log")"
+  assert_equals 1 "$(ledger_rows human-step handoff "done")" "a weekend step went into the morning handoff: $(ledger | cut -f4-8)"
+
+  # Away or quiet mode by day is not overnight: the step is still paged.
+  local mode
+  for mode in away quiet; do
+    BASE=$(hs_base day)
+    make_home "$HS_CODE"
+    transcript 100 "Working."
+    printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+    printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+    if [ "$mode" = quiet ]; then printf 'quiet\n' > "$H/state/.afk"; else : > "$H/state/.afk"; fi
+    run_wd 0 once >/dev/null 2>&1
+    run_wd 600 once >/dev/null 2>&1
+    assert_grep "human-only verification-code step" "$H/paged.log" "a daytime step in $mode mode paged the owner"
+    assert_equals 1 "$(ledger_rows human-step page "done")" "a daytime step in $mode mode was paged once: $(ledger | cut -f4-8)"
+    assert_equals 0 "$(ledger_rows human-step handoff "done")" "a daytime step in $mode mode was held for the morning: $(ledger | cut -f4-8)"
+    [ ! -s "$H/typed.log" ] || fail "the watchdog typed into a step in $mode mode: $(cat "$H/typed.log")"
+  done
+  pass "human-only step: overnight and weekend steps are recorded for the morning handoff and never paged; daytime away and quiet still page"
+}
+
+test_human_step_overnight_handoff_is_paged_by_day_unless_briefed() {
+  local BASE since
+  BASE=$(hs_base night)
+  make_home "$HS_OTP"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows human-step handoff "done")" "the overnight step went into the morning handoff: $(ledger | cut -f4-8)"
+  [ ! -e "$H/paged.log" ] || fail "an overnight step paged the owner: $(cat "$H/paged.log")"
+  # 08:30 the next morning, outside away mode: nobody has seen the handoff.
+  run_wd 32400 once >/dev/null 2>&1
+  assert_grep "human-only otp step" "$H/paged.log" "a handed-off step still showing by day was never paged"
+  assert_equals 1 "$(ledger_rows human-step page "done")" "the morning page was not recorded: $(ledger | cut -f4-8)"
+  run_wd 33400 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows human-step page pending)" "the morning page was sent again: $(ledger | cut -f4-8)"
+
+  # A handoff the away return brief already showed counts as delivered.
+  make_home "$HS_OTP"
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  since=$(awk -F'\t' '$5 == "morning-handoff" { print $4 }' "$H/state/watchdog/human-steps.tsv")
+  printf '%s\t%s\totp\t%s\tbriefed\n' "$((BASE + 30000))" "$(basename "$H")" "$since" >> "$H/state/watchdog/human-steps.tsv"
+  run_wd 32400 once >/dev/null 2>&1
+  [ ! -e "$H/paged.log" ] || fail "a briefed handoff was paged again: $(cat "$H/paged.log")"
+  assert_equals 0 "$(ledger_rows human-step page pending)" "a briefed handoff was paged: $(ledger | cut -f4-8)"
+  pass "human-only step: an overnight handoff still showing by day is paged once, unless the away return brief showed it"
+}
+
+test_human_step_removed_worker_closes_its_handoff() {
+  local BASE
+  BASE=$(hs_base night)
+  make_home $'Captain session\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  worker_pane auth ship "$HS_OTP"
+  sleep 0.5
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows worker:auth morning-handoff)" "the worker step went into the morning handoff: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
+  [ -e "$H/state/watchdog/human-step/$(home_key)-worker_auth" ] || fail "the worker episode was not recorded"
+  rm -f "$H/state/auth.meta"
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows worker:auth cleared)" "a removed worker left its handoff open: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
+  [ ! -e "$H/state/watchdog/human-step/$(home_key)-worker_auth" ] || fail "a removed worker left its episode behind"
+  run_wd 800 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows worker:auth cleared)" "the removed worker's handoff was closed twice"
+  pass "human-only step: a worker no longer recorded in the home closes its morning-handoff row"
+}
+
+test_human_step_undelivered_page_falls_back_to_the_record() {
+  local BASE subject
+  BASE=$(hs_base day)
+  make_home "$HS_CODE"
+  subject=$(basename "$H")
+  transcript 100 "Working."
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf 'off\n' > "$H/config/wedge-alarm"
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 600 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows human-step page failed)" "the undelivered page is recorded: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(( $(ledger_rows human-step page "done") + $(ledger_rows human-step handoff "done") ))" "an undelivered page counted as an escalation: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "the step was recorded so it stays visible"
+  assert_grep "not paged" "$H/data/watchdog/status.md" "the unpaged step is a reported gap"
+  run_wd 700 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows human-step page pending)" "the page was retried inside nudge-secs: $(ledger | cut -f4-8)"
+  run_wd 1500 once >/dev/null 2>&1
+  assert_equals 2 "$(ledger_rows human-step page failed)" "the page was not retried after nudge-secs: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "a retry duplicated the record"
+
+  # The channel recovers: the next retry delivers the page, and the record
+  # stays open until the step leaves the pane.
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  run_wd 2500 once >/dev/null 2>&1
+  assert_grep "human-only verification-code step" "$H/paged.log" "the recovered channel was never used"
+  assert_equals 1 "$(ledger_rows human-step page "done")" "the delivered page was not recorded: $(ledger | cut -f4-8)"
+  run_wd 3500 once >/dev/null 2>&1
+  assert_equals 3 "$(ledger_rows human-step page pending)" "a delivered page was sent again: $(ledger | cut -f4-8)"
+  assert_equals 0 "$(hs_rows "$subject" cleared)" "the record closed while the step still showed"
+  hs_screen $'Captain session\n❯ \n  ? for shortcuts'
+  run_wd 3600 once >/dev/null 2>&1
+  assert_equals 1 "$(hs_rows "$subject" cleared)" "the record stayed open after the step left the pane"
+  [ ! -s "$H/typed.log" ] || fail "the watchdog typed into the step: $(cat "$H/typed.log")"
+  pass "human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel"
+}
+
+test_worker_human_step_keeps_other_work_moving() {
+  local BASE perm_pane dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
+  BASE=$(hs_base day)
+  make_home $'Captain session\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  worker_pane auth ship "$HS_OTP"
+  worker_pane perm ship "$dialog"
+  perm_pane=$WP
+  worker_pane plain scout $'work output\n> '
+  sleep 0.5
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf 'needs-decision [at=%s] [key=cache-layout]: A or B?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1 || fail "the first worker pass failed"
+  assert_equals 1 "$(ledger_rows dialog page "done")" "another worker's permission dialog still pages: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger_rows decisions nudge pending)" "the home's decision nudge still goes out: $(ledger | cut -f4-8)"
+  assert_grep "human-only otp step on $(basename "$H") worker auth" "$H/data/watchdog/status.md" "the worker step is a reported gap"
+  run_wd 600 once >/dev/null 2>&1 || fail "the ten-minute worker pass failed"
+  assert_grep "human-only otp step has waited 10 minutes on $(basename "$H") worker auth" "$H/paged.log" "a daytime away worker step was not paged"
+  assert_equals 0 "$(hs_rows worker:auth morning-handoff)" "a daytime away worker step was held for the morning: $(cat "$H/state/watchdog/human-steps.tsv" 2>/dev/null)"
+  sleep 1
+  [ ! -s "$H/worker-auth.typed" ] || fail "the watchdog typed into the worker step: $(cat "$H/worker-auth.typed")"
+  [ ! -s "$H/worker-plain.typed" ] || fail "the watchdog typed into a plain worker pane: $(cat "$H/worker-plain.typed")"
+  [ ! -e "$H/state/auth.status" ] || fail "the watchdog wrote a status that could hold the worker's PR: $(cat "$H/state/auth.status")"
+  assert_equals 0 "$(ledger | awk -F'\t' '$4 == "worker:auth" && $6 != "page"' | wc -l | tr -d ' ')" "the worker step got an action other than its page: $(ledger | cut -f4-8)"
+  assert_no_grep "merge\|deploy\|hold" "$H/state/watchdog/human-steps.tsv" "the record names no merge, deploy, or hold"
+
+  rm -f "$H/state/.afk"
+  printf '%s\n' "$HS_CODE" > "$H/worker-perm.txt"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$perm_pane" "$H/worker-perm.sh"
+  sleep 0.5
+  run_wd 700 once >/dev/null 2>&1
+  run_wd 1300 once >/dev/null 2>&1
+  assert_grep "human-only verification-code step has waited 10 minutes on $(basename "$H") worker perm" "$H/paged.log" "a worker step is paged by day: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(ledger | awk -F'\t' '$4 == "worker:perm" && $5 == "human-step" && $6 == "page" && $7 == "done"' | wc -l | tr -d ' ')" "the day worker page is recorded once: $(ledger | cut -f4-8)"
+  pass "human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6554,6 +6824,13 @@ fm_test_run \
   test_primary_autowait_side_checks_type_nothing_and_file_no_issue \
   test_primary_quoted_autowait_is_not_paged \
   test_primary_ordinary_idle_is_not_paged \
+  test_human_step_detection \
+  test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into \
+  test_human_step_overnight_goes_to_the_morning_handoff \
+  test_human_step_overnight_handoff_is_paged_by_day_unless_briefed \
+  test_human_step_removed_worker_closes_its_handoff \
+  test_human_step_undelivered_page_falls_back_to_the_record \
+  test_worker_human_step_keeps_other_work_moving \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \
   test_no_activity_source_is_not_reported_ok \
