@@ -1180,7 +1180,7 @@ test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence() {
   expect_verify_field 'head_result=red' "verify introduced"
   expect_verify_field "base=$base" "verify introduced"
   expect_verify_field 'base_result=green' "verify introduced"
-  expect_verify_field "repro_sha256=$(shasum -a 256 "$CASE/repro.sh" | awk '{print $1}')" "verify introduced"
+  expect_verify_field "repro_sha256=$({ shasum -a 256 "$CASE/repro.sh" 2>/dev/null || sha256sum "$CASE/repro.sh"; } | awk '{print $1}')" "verify introduced"
   assert_grep 'defect reproduced' "$CASE/evidence/head.log" "verify introduced: the head log is not kept as evidence"
   assert_equals "$(verify_line)" "$(cat "$CASE/evidence/result")" "verify introduced: the result line is not recorded with the logs"
   assert_equals 0 "$(git -C "$REPO" status --porcelain | grep -c .)" "verify introduced: the reproduction touched the source repository"
@@ -1326,6 +1326,135 @@ test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors() {
   pass "verify-finding refuses paths outside a new tests/*.test.sh file, supervisor sessions, and replaced evidence"
 }
 
+# Commit the case repository's index as it stands.
+commit_case_index() {  # <message>
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm "$1"
+}
+
+test_verify_finding_refuses_a_tests_link_or_a_case_collision() {
+  local rc=0
+  make_case verify-tests-link
+  mkdir -p "$CASE/outside"
+  ln -s "$CASE/outside" "$REPO/tests"
+  git -C "$REPO" add tests
+  commit_case_index 'tests is a link'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  write_repro repro.sh 'exit 1'
+  run_verify repro.sh tests/repro.test.sh --out "$CASE/link" || rc=$?
+  expect_code 2 "$rc" "verify tests link"
+  assert_absent "$CASE/outside/repro.test.sh" "verify tests link: the reproduction was written through the committed link"
+  assert_absent "$CASE/link/head.log" "verify tests link: it ran the reproduction"
+
+  make_case verify-case-collision
+  mkdir -p "$REPO/tests"
+  printf 'exit 0\n' > "$REPO/tests/kept.test.sh"
+  git -C "$REPO" add tests/kept.test.sh
+  commit_case_index 'add a test'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  write_repro repro.sh 'exit 1'
+  rc=0
+  run_verify repro.sh tests/Kept.test.sh --out "$CASE/collide" || rc=$?
+  expect_code 2 "$rc" "verify case collision"
+  assert_absent "$CASE/collide/head.log" "verify case collision: it ran the reproduction over a committed test"
+  pass "verify-finding refuses a committed tests link and a path that differs from a committed test only by case"
+}
+
+test_verify_finding_permission_changes_outside_tests_are_outside_writes() {
+  local rc=0
+  make_case verify-modes
+  write_repro hide.sh 'chmod 000 feature.txt; exit 1'
+  run_verify hide.sh tests/repro-hide.test.sh --out "$CASE/hide" || rc=$?
+  expect_code 0 "$rc" "verify unreadable outside file ($(cat "$CASE/stderr"))"
+  expect_verify_field 'head_result=wrote-outside' "verify unreadable outside file"
+  expect_verify_field 'no-evidence' "verify unreadable outside file"
+
+  rc=0
+  write_repro exec.sh 'chmod +x feature.txt; exit 1'
+  run_verify exec.sh tests/repro-exec.test.sh --out "$CASE/exec" || rc=$?
+  expect_code 0 "$rc" "verify mode flip"
+  expect_verify_field 'head_result=wrote-outside' "verify mode flip"
+  pass "verify-finding: a permission change outside the test directory is an outside write, never evidence"
+}
+
+test_verify_finding_removes_a_locked_fixture_directory() {
+  local rc=0
+  make_case verify-locked
+  mkdir -p "$CASE/tmp"
+  write_repro locked.sh 'mkdir -p tests/tmp/locked/inner; chmod 500 tests/tmp/locked; exit 1'
+  TMPDIR="$CASE/tmp" run_verify locked.sh tests/repro-locked.test.sh --out "$CASE/locked" || rc=$?
+  expect_code 0 "$rc" "verify locked fixture ($(cat "$CASE/stderr"))"
+  assert_equals '' "$(ls "$CASE/tmp")" "verify locked fixture: the scratch directory leaked"
+  pass "verify-finding removes a reproduction's locked fixture directory with its scratch"
+}
+
+test_verify_finding_refuses_a_dangling_evidence_link() {
+  local rc=0
+  make_case verify-dangle
+  write_repro repro.sh 'exit 1'
+  mkdir -p "$CASE/dangle"
+  ln -s "$CASE/nowhere" "$CASE/dangle/base.log"
+  rc=0
+  run_verify repro.sh tests/repro-dangle.test.sh --out "$CASE/dangle" || rc=$?
+  expect_code 2 "$rc" "verify dangling evidence link"
+  assert_absent "$CASE/nowhere" "verify dangling evidence link: the link was followed"
+  pass "verify-finding refuses an evidence directory holding a dangling link"
+}
+
+test_verify_finding_removes_its_scratch_on_a_signal() {
+  local rc=0 pid i
+  make_case verify-signal
+  mkdir -p "$CASE/sig"
+  write_repro slow.sh "echo \$\$ > '$CASE/repro.pid'; sleep 120; exit 1"
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_TASK_ID=review-w1 FM_TEST_REVIEW_STUB="$STUB" \
+    PATH="$FAKEBIN:$PATH" TMPDIR="$CASE/sig" \
+    "$MERGE_REVIEW" verify-finding --repo "$REPO" --head "$HEAD_SHA" --repro "$CASE/slow.sh" \
+    --path tests/repro-slow.test.sh --out "$CASE/sig-out" > "$CASE/stdout" 2> "$CASE/stderr" &
+  pid=$!
+  for i in $(seq 1 600); do
+    [ ! -s "$CASE/repro.pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$CASE/repro.pid" ] || fail "verify interrupted: the reproduction never started"
+  kill -TERM "$pid"
+  # A run that defers the signal until the reproduction ends would hold on
+  # for the reproduction's whole lifetime; the signal must stop it promptly.
+  for i in $(seq 1 200); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$(cat "$CASE/repro.pid")" "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "verify interrupted: the run kept going for 20s after SIGTERM"
+  fi
+  rc=0
+  wait "$pid" || rc=$?
+  [ "$rc" -ne 0 ] || fail "verify interrupted: a terminated run reported success"
+  for i in $(seq 1 50); do
+    [ -n "$(ls "$CASE/sig")" ] || break
+    sleep 0.1
+  done
+  assert_equals '' "$(ls "$CASE/sig")" "verify interrupted: the scratch directory leaked on SIGTERM"
+  for i in $(seq 1 50); do
+    kill -0 "$(cat "$CASE/repro.pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$(cat "$CASE/repro.pid")" 2>/dev/null || fail "verify interrupted: the reproduction outlived the run"
+  pass "verify-finding stops the reproduction and removes its scratch on a signal"
+}
+
+test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope() {
+  local rc=0
+  make_case verify-scrub
+  # shellcheck disable=SC2016 # the reproduction, not this test, must expand these
+  write_repro scrub.sh '[ -z "${FM_STATE_OVERRIDE:-}${FM_CONFIG_OVERRIDE:-}${FM_TASK_INBOX:-}${AK_LIFECYCLE_POLICY:-}" ] || { env | grep -E "^(FM_|AK_)"; exit 1; }'
+  FM_STATE_OVERRIDE="$CASE/live-state" FM_CONFIG_OVERRIDE="$CASE/live-config" FM_TASK_INBOX="$CASE/inbox" \
+    AK_LIFECYCLE_POLICY=unattended run_verify scrub.sh tests/repro-scrub.test.sh --out "$CASE/scrub" || rc=$?
+  expect_code 0 "$rc" "verify scrub"
+  expect_verify_field 'head_result=green' "verify scrub ($(cat "$CASE/scrub/head.log" 2>/dev/null))"
+  pass "verify-finding runs the reproduction without the caller's Firstmate home, task or lifecycle scope"
+}
+
 fm_test_run \
   test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
   test_verify_finding_red_at_both_keeps_the_finding_blocking \
@@ -1382,4 +1511,10 @@ fm_test_run \
   test_stale_receipt_base_refreshes_approvals \
   test_stale_spare_approval_is_dropped_before_the_run_starts \
   test_stale_block_at_another_base_is_not_replaced \
-  test_intent_reaches_the_prompt_the_receipt_binds
+  test_intent_reaches_the_prompt_the_receipt_binds \
+  test_verify_finding_refuses_a_tests_link_or_a_case_collision \
+  test_verify_finding_permission_changes_outside_tests_are_outside_writes \
+  test_verify_finding_removes_a_locked_fixture_directory \
+  test_verify_finding_refuses_a_dangling_evidence_link \
+  test_verify_finding_removes_its_scratch_on_a_signal \
+  test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope
