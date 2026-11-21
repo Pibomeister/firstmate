@@ -26,6 +26,17 @@
 . "$FM_BACKEND_LIB_DIR/fm-agent-process-lib.sh"
 # shellcheck source=bin/fm-env-scrub.sh
 . "$FM_BACKEND_LIB_DIR/fm-env-scrub.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+command -v fm_run_timed >/dev/null 2>&1 || . "$FM_BACKEND_LIB_DIR/fm-timeout-lib.sh"
+
+# Run <cmd> under the remaining relaunch wait. A zero remaining bound is a
+# refusal, never `timeout 0`, which would disable the deadline.
+fm_backend_tmux_run() {  # <deadline> <cmd...>
+  local left=$(($1 - SECONDS))
+  shift
+  [ "$left" -gt 0 ] || return 1
+  fm_run_timed "$left" "$@"
+}
 
 # fm_backend_tmux_resolve_bare_selector: the live-window-listing fallback for a
 # selector that is neither an explicit target nor a task selector routed
@@ -196,27 +207,230 @@ fm_backend_tmux_send_literal() {  # <target> <text>
   tmux send-keys -t "$1" -l "$2"
 }
 
-# Wait for the pane's original shell to regain the foreground before a
-# relaunch types into it. Clear any interrupted composer line and redraw the
-# prompt so zsh's termination notice cannot become launch input.
-fm_backend_tmux_prepare_relaunch() {  # <target>
-  local target=$1 pane_pid shell current i
-  pane_pid=$(tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null) || return 1
-  case "$pane_pid" in ''|*[!0-9]*) return 1 ;; esac
-  shell=$(ps -p "$pane_pid" -o comm= 2>/dev/null) || return 1
-  shell=${shell##*/}
-  shell=${shell#-}
-  [ -n "$shell" ] || return 1
-  for ((i = 0; i < 100; i++)); do
-    current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || return 1
-    if [ "$current" = "$shell" ]; then
+# The shell must own the pane tty's foreground process group. Both readings
+# name live process identities, even when a child has the same executable.
+fm_backend_tmux_shell_is_foreground() {  # <pane-pid> <shell-pid> [deadline]
+  local deadline=${3:-$((SECONDS + 10))}
+  local shell_pgid foreground_pgid ancestors ancestor members member member_stat permitted
+  shell_pgid=$(fm_backend_tmux_run "$deadline" ps -p "$2" -o pgid=) || return 1
+  foreground_pgid=$(fm_backend_tmux_run "$deadline" ps -p "$1" -o tpgid=) || return 1
+  shell_pgid=${shell_pgid//[[:space:]]/}
+  foreground_pgid=${foreground_pgid//[[:space:]]/}
+  case "$shell_pgid:$foreground_pgid" in *[!0-9:]*|:*|*:|0:*|*:0) return 1 ;; esac
+  [ "$shell_pgid" = "$foreground_pgid" ] || return 1
+  # With job control disabled, another live process can share the shell's
+  # foreground group. Only the shell and its ancestor wrappers may be there.
+  ancestors=$2
+  ancestor=$2
+  while [ "$ancestor" != "$1" ]; do
+    ancestor=$(fm_backend_tmux_run "$deadline" ps -p "$ancestor" -o ppid=) || return 1
+    ancestor=${ancestor//[[:space:]]/}
+    case "$ancestor" in ''|*[!0-9]*|0|1) return 1 ;; esac
+    ancestors="$ancestors $ancestor"
+  done
+  members=$(fm_backend_tmux_run "$deadline" pgrep -g "$foreground_pgid") || return 1
+  for member in $members; do
+    member_stat=$(fm_backend_tmux_run "$deadline" ps -p "$member" -o stat=) || return 1
+    member_stat=${member_stat//[[:space:]]/}
+    case "$member_stat" in Z*) continue ;; esac
+    permitted=0
+    for ancestor in $ancestors; do
+      [ "$member" != "$ancestor" ] || { permitted=1; break; }
+    done
+    [ "$permitted" = 1 ] || return 1
+  done
+  return 0
+}
+
+fm_backend_tmux_wait_for_foreground() {  # <pane-pid> <shell-pid> <deadline>
+  while [ "$SECONDS" -lt "$3" ]; do
+    if fm_backend_tmux_shell_is_foreground "$1" "$2" "$3"; then
       sleep 0.1
-      current=$(tmux display-message -p -t "$target" '#{pane_current_command}' 2>/dev/null) || return 1
-      if [ "$current" = "$shell" ]; then
-        tmux send-keys -t "$target" C-u C-l
-        return $?
-      fi
+      fm_backend_tmux_shell_is_foreground "$1" "$2" "$3" &&
+        [ "$SECONDS" -lt "$3" ] && return 0
+      continue
     fi
+    sleep 0.1
+  done
+  return 1
+}
+
+# Return 0 for an interactive shell, 1 for a known wrapper, 2 when a known
+# shell's flattened argv is ambiguous, and 3 when the process is not a shell.
+# Ambiguity must never license a child shell. A non-shell sibling must not
+# stop the walk to a real shell child.
+fm_backend_tmux_interactive_shell() {  # <pid>
+  local comm args arg i stdin_mode=0
+  local -a argv
+  comm=$(ps -p "$1" -o comm= 2>/dev/null) || return 2
+  comm=${comm##*/}
+  comm=${comm#-}
+  case "$comm" in
+    sh|bash|zsh|fish|ksh|dash|csh|tcsh) ;;
+    reattach-to-user-namespace|reattach-to-use) return 1 ;;
+    *) return 3 ;;
+  esac
+  args=$(ps -ww -p "$1" -o args= 2>/dev/null) || return 2
+  read -r -a argv <<< "$args"
+  [ "${#argv[@]}" -gt 0 ] || return 2
+  arg=${argv[0]##*/}
+  arg=${arg#-}
+  [ "$arg" = "$comm" ] || return 2
+  for ((i = 1; i < ${#argv[@]}; i++)); do
+    arg=${argv[i]}
+    case "$arg" in
+      --rcfile|-o|-O) return 2 ;;
+      --norc|--no-rcs|--noprofile|--login|--posix) ;;
+      --command|--command=*) return 1 ;;
+      --*) return 2 ;;
+      -*)
+        case "${arg#-}" in
+          *c*) return 1 ;;
+          *[!ilefxs]*) return 2 ;;
+          *s*) case "${arg#-}" in *i*) stdin_mode=1 ;; *) return 2 ;; esac ;;
+        esac ;;
+      +*) return 2 ;;
+      *) [ "$stdin_mode" = 0 ] || return 2; return 1 ;;
+    esac
+  done
+  return 0
+}
+
+# Wait for the pane's shell process group to regain the foreground before a
+# relaunch types into it. The pane pid can be a shell wrapper, so find its
+# shell descendant and compare process groups rather than executable names.
+fm_backend_tmux_prepare_relaunch() {  # <target> [wait-only|no-wait]
+  local target=$1 mode=${2:-prepare} pane_pid shell_pid candidates next child depth deadline probe probe_id visible cursor_y current_line input_start clean_x clean_y current_x shell_state after_y leftover
+  case "$mode" in prepare|wait-only|no-wait) ;; *) return 1 ;; esac
+  deadline=$((SECONDS + 10))
+  pane_pid=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{pane_pid}') || return 1
+  case "$pane_pid" in ''|*[!0-9]*) return 1 ;; esac
+  # Prefer the pane pid when it is an interactive shell. A wrapper can keep
+  # the actual prompt as a descendant; choose the nearest interactive shell.
+  shell_pid=
+  if fm_backend_tmux_interactive_shell "$pane_pid"; then
+    shell_pid=$pane_pid
+  else
+    shell_state=$?
+    [ "$shell_state" -eq 1 ] || return 1
+  fi
+  candidates=$(fm_backend_tmux_run "$deadline" pgrep -P "$pane_pid" || true)
+  for ((depth = 0; depth < 4; depth++)); do
+    [ -z "$shell_pid" ] || break
+    [ -n "$candidates" ] || break
+    next=
+    for child in $candidates; do
+      if fm_backend_tmux_interactive_shell "$child"; then
+        shell_pid=$child
+        break
+      else
+        shell_state=$?
+        [ "$shell_state" -eq 1 ] || [ "$shell_state" -eq 3 ] || return 1
+      fi
+      next="$next $(fm_backend_tmux_run "$deadline" pgrep -P "$child" || true)"
+    done
+    [ -z "$shell_pid" ] || break
+    candidates=$next
+  done
+  [ -n "$shell_pid" ] || return 1
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if fm_backend_tmux_shell_is_foreground "$pane_pid" "$shell_pid" "$deadline"; then
+      sleep 0.1
+      if fm_backend_tmux_shell_is_foreground "$pane_pid" "$shell_pid" "$deadline"; then
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        if [ "$mode" = wait-only ]; then
+          # wait-only must not type. Leftover editor text is a refusal so a
+          # later launch cannot append to it and a later refusal cannot have
+          # sent keys.
+          cursor_y=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_y}') || return 1
+          case "$cursor_y" in ''|*[!0-9]*) return 1 ;; esac
+          input_start=$cursor_y
+          [ "$cursor_y" -ge 2 ] && input_start=$((cursor_y - 2))
+          current_line=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target" -S "$input_start" -E "$cursor_y") || return 1
+          current_line=${current_line//$'\n'/}
+          leftover=$current_line
+          case "$current_line" in
+            *'%# '*) leftover=${current_line##*%# } ;;
+            *'% '*) leftover=${current_line##*% } ;;
+            *'$ '*) leftover=${current_line##*'$ '} ;;
+            *'# '*) leftover=${current_line##*'# '} ;;
+            *'> '*) leftover=${current_line##*'> '} ;;
+            *)
+              echo "error: tmux pane $target still has typed input" >&2
+              return 1
+              ;;
+          esac
+          case "$leftover" in
+            *[![:space:]]*)
+              echo "error: tmux pane $target still has typed input" >&2
+              return 1
+              ;;
+          esac
+          return 0
+        fi
+        # Signal the shell directly before any line-editor key is sent. A
+        # custom ^U binding must never be able to submit stale input.
+        kill -INT "$shell_pid" || return 1
+        fm_backend_tmux_wait_for_foreground "$pane_pid" "$shell_pid" "$deadline" || return 1
+        probe_id="${RANDOM}${RANDOM}"
+        probe=": #__fm_relaunch_clear_$$_${probe_id}__"
+        fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" -l "$probe" || return 1
+        sleep 0.1
+        visible=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target") || return 1
+        visible=${visible//$'\n'/}
+        case "$visible" in *"$probe"*) ;; *) echo "error: tmux pane $target did not echo relaunch signal probe" >&2; return 1 ;; esac
+        cursor_y=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_y}') || return 1
+        case "$cursor_y" in ''|*[!0-9]*) return 1 ;; esac
+        input_start=$cursor_y
+        [ "$cursor_y" -ge 2 ] && input_start=$((cursor_y - 2))
+        current_line=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target" -S "$input_start" -E "$cursor_y") || return 1
+        current_line=${current_line//$'\n'/}
+        case "$current_line" in *"$probe_id"*) ;; *) echo "error: tmux pane $target did not show relaunch signal probe on its input line" >&2; return 1 ;; esac
+        kill -INT "$shell_pid" || return 1
+        fm_backend_tmux_wait_for_foreground "$pane_pid" "$shell_pid" "$deadline" || return 1
+        cursor_y=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_y}') || return 1
+        case "$cursor_y" in ''|*[!0-9]*) return 1 ;; esac
+        current_line=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target" -S "$cursor_y" -E "$cursor_y") || return 1
+        current_line=${current_line//$'\n'/}
+        case "$current_line" in *"$probe_id"*) echo "error: tmux pane $target did not discard relaunch input after SIGINT" >&2; return 1 ;; esac
+        fm_backend_tmux_wait_for_foreground "$pane_pid" "$shell_pid" "$deadline" || return 1
+        fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" C-e C-u C-l || return 1
+        sleep 0.1
+        clean_x=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_x}') || return 1
+        case "$clean_x" in ''|*[!0-9]*) return 1 ;; esac
+        clean_y=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_y}') || return 1
+        case "$clean_y" in ''|*[!0-9]*) return 1 ;; esac
+        # A custom ^U binding can leave input intact. Prove that this pane's
+        # binding clears typed input before sending the replacement launch.
+        probe_id="${RANDOM}${RANDOM}"
+        probe=": #__fm_relaunch_clear_$$_${probe_id}__"
+        fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" -l "$probe" || return 1
+        sleep 0.1
+        visible=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target") || return 1
+        visible=${visible//$'\n'/}
+        case "$visible" in *"$probe"*) ;; *) echo "error: tmux pane $target did not echo relaunch clear probe" >&2; return 1 ;; esac
+        fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" C-u || return 1
+        sleep 0.1
+        after_y=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_y}') || return 1
+        [ "$after_y" = "$clean_y" ] || { echo "error: tmux pane $target submitted relaunch input instead of clearing it" >&2; return 1; }
+        fm_backend_tmux_run "$deadline" tmux send-keys -t "$target" C-l || return 1
+        sleep 0.1
+        visible=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target") || return 1
+        visible=${visible//$'\n'/}
+        case "$visible" in *"$probe"*) echo "error: tmux pane $target did not clear relaunch input" >&2; return 1 ;; esac
+        current_x=$(fm_backend_tmux_run "$deadline" tmux display-message -p -t "$target" '#{cursor_x}') || return 1
+        [ "$current_x" = "$clean_x" ] || { echo "error: tmux pane $target still has relaunch input after cleanup" >&2; return 1; }
+        fm_backend_tmux_wait_for_foreground "$pane_pid" "$shell_pid" "$deadline" || return 1
+        visible=$(fm_backend_tmux_run "$deadline" tmux capture-pane -p -J -t "$target") || return 1
+        visible=${visible//$'\n'/}
+        case "$visible" in *'zsh: terminated'*|*'Terminated'*) echo "error: tmux pane $target still shows a termination notice" >&2; return 1 ;; esac
+        [ "$SECONDS" -lt "$deadline" ] || return 1
+        return 0
+      fi
+      [ "$mode" != no-wait ] || return 1
+      continue
+    fi
+    [ "$mode" != no-wait ] || return 1
     sleep 0.1
   done
   echo "error: tmux pane $target did not return to its shell before relaunch" >&2
