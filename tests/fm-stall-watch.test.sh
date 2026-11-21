@@ -246,10 +246,10 @@ test_deterministic_pass_skips_the_model() {
 # (test_unchanged_screen_guard) is the deterministic working signal.
 test_rendered_activity_is_not_a_rule() {
   reset_lab
-  TYPESAFE_API_KEY= sw_in "$FIX/working.screen" classify
+  TYPESAFE_API_KEY='' sw_in "$FIX/working.screen" classify
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a busy footer alone is not decided by rule'
   printf 'Plan · 3/8\n\n ⠇ Reading files  (Press ESC to stop)\n\n╭──────╮\n│ > Enter to steer │\n╰──────╯\n' > "$TMP_ROOT/droid-hint.screen"
-  TYPESAFE_API_KEY= sw_in "$TMP_ROOT/droid-hint.screen" classify
+  TYPESAFE_API_KEY='' sw_in "$TMP_ROOT/droid-hint.screen" classify
   assert_contains "$OUT" 'verdict=unsure' 'a stop hint alone is not decided by rule'
   jev_says working 0.95
   sw_in "$FIX/working.screen" classify
@@ -283,13 +283,13 @@ test_model_judge_maps_answers() {
   assert_not_contains "$(cat "$LOGS/curl.argv.4")" 'ts-test-key-123' 'the key never reaches argv'
   assert_equals 'Authorization: Bearer ts-test-key-123' "$(cat "$LOGS/curl.header.4")" 'the key reaches curl through fd 3'
   calls=$(count curl)
-  TYPESAFE_API_KEY= sw_in "$FIX/api-error.screen" classify
+  TYPESAFE_API_KEY='' sw_in "$FIX/api-error.screen" classify
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'Jev without a key leaves ambiguity unknown'
   assert_contains "$OUT" 'jev:no-key' 'the missing key is recorded'
   assert_contains "$ERR" 'jev unavailable (no TypeSafe key' 'the missing key is logged'
   assert_equals "$calls" "$(count curl)" 'a missing key makes no model call'
   printf 'TYPESAFE_API_KEY=ts-env-file-key\nTYPESAFE_BASE=https://ts.example.test/\n' > "$LAB/.env"
-  TYPESAFE_API_KEY= FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
+  TYPESAFE_API_KEY='' FM_TEST_CURL_HTTP=500 sw_in "$FIX/api-error.screen" classify
   assert_contains "$(cat "$LOGS/curl.argv.5")" 'https://ts.example.test/v1/systemone' 'TYPESAFE_BASE from .env is honored'
   assert_equals 'Authorization: Bearer ts-env-file-key' "$(cat "$LOGS/curl.header.5")" 'the key from .env is used'
   assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'a failed Jev call leaves ambiguity unknown'
@@ -306,9 +306,11 @@ test_model_judge_maps_answers() {
   assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
   sw_in "$FIX/stalled.screen" classify --classifier grok
   expect_code 2 "$RC" 'classify rejects the removed Grok option'
-  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  jev_says idle_with_goals 0.9
+  printf 'classifier=grok\njev_model=other\n' > "$LAB/config/stall-watch"
   sw_in "$FIX/stalled.screen" classify
-  expect_code 2 "$RC" 'config rejects the removed Grok option'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' 'unknown config keys do not change the classifier'
+  assert_equals jev-latest "$(jq -r .model "$LOGS/curl.body.$(count curl)")" 'unknown model override cannot change Jev'
   rm -f "$LAB/config/stall-watch"
   pass 'model judge: Jev alone handles answers, failures, floor, and secret key delivery'
 }
@@ -328,7 +330,7 @@ test_jev_unavailable_takes_no_action() {
 }
 
 test_jev_unavailable_reasons() {
-  local credential="$LAB/config/dispatch-credential-sources.json" reason expected
+  local credential="$LAB/config/dispatch-credential-sources.json" reason expected_note
   reset_lab
   unset TYPESAFE_API_KEY
   printf '{bad json\n' > "$credential"
@@ -348,14 +350,35 @@ SH
   FM_TEST_UNAME=Linux sw_in "$FIX/stalled.screen" classify
   assert_contains "$OUT" 'note=jev:credential-source-unsupported' 'an unsupported source is named in the result'
   for reason in 124 1; do
-    expected=credential-source-empty
-    [ "$reason" != 124 ] || expected=credential-source-timeout
+    expected_note='credential-source-empty'
+    [ "$reason" != 124 ] || expected_note='credential-source-timeout'
     FM_TEST_SECURITY_RC=$reason sw_in "$FIX/stalled.screen" classify
-    assert_contains "$OUT" "note=jev:$expected" "credential source exit $reason has its own result note"
+    assert_contains "$OUT" "note=jev:$expected_note" "credential source exit $reason has its own result note"
     assert_contains "$ERR" 'jev unavailable (' "credential source exit $reason logs one unavailable line"
   done
   rm -f "$FAKEBIN/uname" "$FAKEBIN/security"
   pass 'unavailable Jev: source failures keep distinct result notes'
+}
+
+test_jev_base_transport() {
+  local base calls
+  reset_lab
+  jev_says idle_with_goals 0.9
+  for base in http://127.0.0.1:8080 http://127.0.0.2 http://localhost:8080 'http://[::1]:8080'; do
+    TYPESAFE_BASE=$base sw_in "$FIX/stalled.screen" classify
+    assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=jev' "loopback $base is accepted"
+  done
+  calls=$(count curl)
+  printf 'TYPESAFE_BASE=http://example.test\n' > "$LAB/.env"
+  sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'verdict=unsure stalled=unsure source=none' 'non-loopback HTTP leaves ambiguity unknown'
+  assert_contains "$OUT" 'jev:jev-insecure-base' 'the insecure base is named'
+  assert_equals "$calls" "$(count curl)" 'an HTTP base from .env sends no screen or key'
+  TYPESAFE_BASE=HTTP://127.0.0.1.evil.test sw_in "$FIX/stalled.screen" classify
+  assert_contains "$OUT" 'jev:jev-insecure-base' 'a deceptive 127 hostname is rejected'
+  assert_equals "$calls" "$(count curl)" 'a deceptive host sends no request'
+  rm -f "$LAB/.env"
+  pass 'Jev transport: only HTTPS or loopback HTTP receives a screen'
 }
 
 test_stale_captain_endpoint_is_skipped() {
@@ -393,7 +416,7 @@ test_captain_api_error_without_open_work() {
 
 test_captain_overdue_probe_failure() {
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   jev_says idle_with_goals 0.9
   sw check captain --dry-run
@@ -438,7 +461,7 @@ test_classifier_never_sees_secrets() {
 
 test_unchanged_screen_guard() {
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker w1 stalled.screen
   jev_says idle_done 0.95
   sw check w1
@@ -472,7 +495,7 @@ test_unchanged_screen_guard() {
 
 test_actions() {
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker w2 api-error.screen
   jev_says api_error 0.9
   sw check w2; sw check w2
@@ -545,7 +568,7 @@ test_actions() {
 test_actionful_checks_share_target_lock() {
   local first i=0
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker concurrent stalled.screen
   sw check concurrent
   : > "$LOGS/send.hold"
@@ -571,7 +594,7 @@ test_actionful_checks_share_target_lock() {
 test_captain_actions() {
   local now
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker w1 working.screen
   cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
   sw check captain; sw check captain
@@ -633,7 +656,7 @@ SH
 # ever receives its redacted copy.
 test_declared_status_reads_the_raw_verb() {
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker d1 stalled.screen
   printf 'needs-decision: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d1.status"
   sw check d1
@@ -656,7 +679,7 @@ test_declared_status_reads_the_raw_verb() {
 # change alone, such as the nudge doorbell, keeps it, so idle again fails over.
 test_nudge_ends_with_work() {
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker n3 stalled.screen
   jev_says idle_with_goals 0.9
   sw check n3; sw check n3
@@ -678,12 +701,33 @@ test_nudge_ends_with_work() {
   pass 'nudge: a commit or status line ends it; a screen change alone does not'
 }
 
+test_equal_length_status_change_ends_nudge() {
+  local old_size new_size
+  reset_lab
+  make_worker equal1 stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check equal1; sw check equal1
+  assert_contains "$OUT" 'action=nudged' 'the first idle check nudges'
+  old_size=$(wc -c < "$LAB/state/equal1.status" | tr -d ' ')
+  sed 's/parser/solver/' "$LAB/state/equal1.status" > "$TMP_ROOT/equal1.status"
+  new_size=$(wc -c < "$TMP_ROOT/equal1.status" | tr -d ' ')
+  assert_equals "$old_size" "$new_size" 'the replacement has the same byte count'
+  cp "$TMP_ROOT/equal1.status" "$LAB/state/equal1.status"
+  sw check equal1
+  assert_contains "$OUT" 'verdict=progress' 'equal-length status content is progress'
+  assert_contains "$OUT" 'worked-after-nudge' 'status content change ends the nudge'
+  sw check equal1
+  assert_contains "$OUT" 'action=nudged' 'the next idle spell starts with a nudge'
+  assert_equals 0 "$(count failover)" 'a resumed worker is not failed over'
+  pass 'status content: equal-length changes reset the nudge'
+}
+
 # The watcher's failover skips a refusal row after an ordinary Claude stop, so
 # the stall check judges that screen instead of leaving it to the watcher.
 test_refusal_after_ordinary_stop_is_judged() {
   local gen
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker r1 rate-limited.screen
   gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r1) || fail 'fixture: arm'
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
@@ -711,7 +755,7 @@ test_tick_schedule() {
   sw tick
   assert_contains "$ERR" 'off (no config/stall-watch)' 'no config, no tick'
   assert_absent "$LAB/state/stall-watch.tsv"
-  printf 'interval=600\nclassifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
   FM_STALL_WATCH_NOW=100000 sw tick
   expect_code 0 "$RC" "tick: $ERR"
   assert_equals 1 "$(ledger_rows t1)" 'the tick checks t1'
@@ -735,24 +779,24 @@ test_tick_schedule() {
   printf '999999\nstale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid"
   FM_STALL_WATCH_NOW=200001 sw tick --force
   assert_equals 5 "$(ledger_rows t1)" 'a dead holder also releases the tick lock'
-  printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
+  printf 'interval=abc\n' > "$LAB/config/stall-watch"
   sw tick
-  expect_code 2 "$RC" 'an unknown classifier is a configuration error'
+  expect_code 2 "$RC" 'an invalid interval is a configuration error'
   assert_equals 1 "$(config_reports)" 'a tick reports the invalid file'
-  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'the stall check is not running because config/stall-watch classifier must be' 'the report names the error'
+  assert_contains "$(awk -F '\t' '$3 == "check"' "$LAB/state/.wake-queue")" 'the stall check is not running because config/stall-watch interval must be' 'the report names the error'
   sw tick
   expect_code 2 "$RC" 'the same invalid file is still an error'
   assert_equals 1 "$(config_reports)" 'the same file content is reported once'
-  printf 'classifier=gpt\ninterval=600\n' > "$LAB/config/stall-watch"
+  printf 'interval=abc\nlines=61\n' > "$LAB/config/stall-watch"
   sw check t1
   expect_code 2 "$RC" 'check refuses the invalid file too'
   assert_equals 1 "$(config_reports)" 'only a tick reports'
   sw tick
   assert_equals 2 "$(config_reports)" 'a changed invalid file is reported again'
-  printf 'interval=600\nclassifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
   FM_STALL_WATCH_NOW=300000 sw tick
   expect_code 0 "$RC" "a fixed file ticks again: $ERR"
-  printf 'classifier=gpt\n' > "$LAB/config/stall-watch"
+  printf 'interval=abc\n' > "$LAB/config/stall-watch"
   sw tick
   assert_equals 3 "$(config_reports)" 'a valid tick clears the memory, so the old error is reported again'
   pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
@@ -791,7 +835,7 @@ test_watcher_starts_tick_and_delivers_reports() {
   fm_write_meta "$dir/state/fo.meta" window=test:fm-fo kind=ship harness=claude "worktree=$dir/wt" spawn_gen=s1.fo
   printf 'working: wiring the parser\n' > "$dir/state/fo.status"
   printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
-  printf 'classifier=jev\n' > "$dir/config/stall-watch"
+  printf 'interval=1200\n' > "$dir/config/stall-watch"
   ( unset FM_TEST_SEAM FM_STALL_WATCH_TEST_SCREENS FM_STALL_WATCH_TEST_BIN
     FM_HOME="$dir/home" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
       watch_bg "$dir/state" "$dir/fakebin" "$dir/watch.out" env FM_FAKE_TMUX_WINDOW=test:fm-fo FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" FM_WATCH_ONCE=1
@@ -830,7 +874,7 @@ test_watcher_starts_tick_and_delivers_reports() {
 test_decided_scenarios() {
   local id r rc
   reset_lab
-  printf 'classifier=jev\n' > "$LAB/config/stall-watch"
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
   make_worker a1 stalled.screen
   jev_says auth 0.9
   sw check a1; sw check a1
@@ -921,6 +965,7 @@ fm_test_run \
   test_model_judge_maps_answers \
   test_jev_unavailable_takes_no_action \
   test_jev_unavailable_reasons \
+  test_jev_base_transport \
   test_stale_captain_endpoint_is_skipped \
   test_captain_api_error_without_open_work \
   test_captain_overdue_probe_failure \
@@ -932,6 +977,7 @@ fm_test_run \
   test_captain_actions \
   test_declared_status_reads_the_raw_verb \
   test_nudge_ends_with_work \
+  test_equal_length_status_change_ends_nudge \
   test_refusal_after_ordinary_stop_is_judged \
   test_tick_schedule \
   test_invalid_timing_configuration \

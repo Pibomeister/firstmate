@@ -648,15 +648,13 @@ It is off until the optional local `config/stall-watch` exists.
 While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
 Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain only while its recorded session owner is live and checks each local ship or scout.
 A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
-A screen counts as unchanged only when its redacted rows with timer and counter text normalized, the task's worktree HEAD, and its status file are all the same, so a new commit, status line, or HTTP error code is progress.
+A screen counts as unchanged only when its redacted rows with timer and counter text normalized, the task's worktree HEAD, and a checksum of its status content are all the same, so a new commit, status line, or HTTP error code is progress.
 
 The file holds `key=value` lines; blank lines and lines that start with `#` are ignored, and every key is optional.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `interval` | `1200` | Seconds between checks, at least 60. |
-| `classifier` | `jev` | The only accepted value is `jev`. |
-| `jev_model` | `jev-latest` | The TypeSafe model `jev` asks. |
 | `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
 | `confidence_floor` | `0.6` | A model answer below it is `unsure`. |
 | `timeout` | `90` | Seconds allowed for one model call, at least 5. |
@@ -664,10 +662,9 @@ The file holds `key=value` lines; blank lines and lines that start with `#` are 
 ```text
 # Check every 20 minutes and ask Jev about ambiguous screens
 interval=1200
-classifier=jev
 ```
 
-An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout`, including nonnumeric or overlong timing values, is a configuration error that stops the check before it reads any screen.
+An invalid `confidence_floor`, `interval`, or `timeout`, including nonnumeric or overlong timing values, is a configuration error that stops the check before it reads any screen.
 A watcher-started tick reports that error with one `check:` notification per distinct file content.
 
 **Deterministic pass**
@@ -689,9 +686,9 @@ A timer or token counter that only counts up keeps the same fingerprint, while a
 
 **Classifier**
 
-The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`), so `classifier=jev` is the default.
+The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`).
 `jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
-It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is honored and validated the same way, and the key reaches `curl` only through a file descriptor, never its arguments.
+It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`; `TYPESAFE_BASE` is resolved the same way, but HTTP is accepted only for `localhost`, `127.x.x.x`, or `[::1]`, and the key reaches `curl` only through a file descriptor, never its arguments.
 With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
 The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
 This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
@@ -702,6 +699,7 @@ The reasons are `working` and `idle_done`, which are not stalled, and `rate_limi
 **What leaves the machine**
 
 A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), whether it has open work, and the task's latest status line after the same redaction.
+The screen and key are never posted to a non-loopback HTTP base; HTTPS bases retain the shared TypeSafe URL validation.
 Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options and of compound names that end in them such as `--client-secret`, and URL credentials with `<redacted>`.
 It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row, including one inside a box border or behind a tool-output marker, into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
 Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib.sh`) is withheld and counted rather than sent.

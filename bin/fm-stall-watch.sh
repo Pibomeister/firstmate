@@ -12,7 +12,7 @@
 #   fm-stall-watch.sh tick [--force] [--dry-run]
 #
 # docs/configuration.md "Stall watch" owns the operator contract: the opt-in
-#   and its keys (interval, classifier, jev_model, lines,
+#   and its keys (interval, lines,
 #   confidence_floor, timeout), what counts as an unchanged screen, the
 #   deterministic pass, the classifiers and unavailable verdicts, the reasons, what
 #   leaves the machine, and the actions. This header owns the mechanics.
@@ -103,8 +103,6 @@ sw_now() {
 
 # ---- configuration -----------------------------------------------------------
 INTERVAL=$(fm_wd_conf_get "$CONF" interval 1200)
-CLASSIFIER=$(fm_wd_conf_get "$CONF" classifier jev)
-JEV_MODEL=$(fm_wd_conf_get "$CONF" jev_model jev-latest)
 LINES=$(fm_wd_conf_int "$CONF" lines 60)
 FLOOR=$(fm_wd_conf_get "$CONF" confidence_floor 0.6)
 MODEL_TIMEOUT=$(fm_wd_conf_get "$CONF" timeout 90)
@@ -127,8 +125,6 @@ sw_config_error() {  # <message>
 }
 
 sw_check_config() {
-  case "$CLASSIFIER" in jev) ;; *) sw_config_error "config/stall-watch classifier must be jev" ;; esac
-  case "$JEV_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch jev_model is not a model name" ;; esac
   case "$INTERVAL" in ''|*[!0-9]*|??????????*) sw_config_error "config/stall-watch interval must be a whole number of at most 9 digits" ;; esac
   case "$MODEL_TIMEOUT" in ''|*[!0-9]*|??????????*) sw_config_error "config/stall-watch timeout must be a whole number of at most 9 digits" ;; esac
   INTERVAL=$((10#$INTERVAL))
@@ -291,17 +287,33 @@ sw_jev_key() {
 }
 
 sw_jev() {  # <screen> <kind> <open-work> <status>
-  local base body resp http t0 t1 answer reasons criteria
+  local base host ip body resp http t0 t1 answer reasons criteria
   fm_ts_base_setting "$FM_HOME/.env" base
   [ -n "$base" ] || base=$FM_TS_DEFAULT_BASE
   fm_ts_base_valid "$base" || { M_NOTE=jev-base-invalid; return 1; }
   base=$(fm_ts_base_trim "$base")
+  case "$base" in
+    [Hh][Tt][Tt][Pp]://*)
+      host=${base#*://}
+      host=${host%%/*}
+      host=$(printf '%s' "$host" | tr '[:upper:]' '[:lower:]')
+      case "$host" in
+        localhost|localhost:*|'[::1]'|'[::1]':*) ;;
+        127.*)
+          ip=${host%%:*}
+          printf '%s\n' "$ip" | awk -F. 'NF == 4 && $1 == 127 { for (i = 2; i <= 4; i++) if ($i !~ /^[0-9]+$/ || $i + 0 > 255) exit 1; exit 0 } { exit 1 }' \
+            || { M_NOTE=jev-insecure-base; return 1; }
+          ;;
+        *) M_NOTE=jev-insecure-base; return 1 ;;
+      esac
+      ;;
+  esac
   command -v curl >/dev/null 2>&1 || { M_NOTE=jev-no-curl; return 1; }
   reasons=$(printf '%s\n' "$REASONS" | tr ' ' '\n' | jq -Rsc 'split("\n") | map(select(length > 0))')
   criteria=$(sw_reason_criteria | jq -Rsc 'split("\n") | map(select(length > 0) | split("\t") | {key: .[0], value: .[1]}) | from_entries')
-  body=$(jq -cn --arg model "$JEV_MODEL" --arg screen "$1" --arg kind "$2" --arg open "$3" --arg status "$4" \
+  body=$(jq -cn --arg screen "$1" --arg kind "$2" --arg open "$3" --arg status "$4" \
     --argjson criteria "$criteria" '{
-      model: $model,
+      model: "jev-latest",
       state: {agent: {kind: $kind, open_work: ($open == "yes"), latest_status: $status, screen: $screen}},
       questions: {verdict: {
         type: "choice",
@@ -437,13 +449,13 @@ sw_hash() {
   if command -v md5 >/dev/null 2>&1; then md5 -q; else md5sum | cut -d' ' -f1; fi
 }
 
-sw_work_sig() {  # <target> -> "<worktree-head> <status-size>", nothing for the captain
-  local wt head='' size=''
+sw_work_sig() {  # <target> -> "<worktree-head> <status-hash>", nothing for the captain
+  local wt head='' status=''
   [ "$1" != captain ] || return 0
   wt=$(fm_meta_get "$STATE/$1.meta" worktree 2>/dev/null || true)
   [ -z "$wt" ] || head=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
-  size=$(wc -c < "$STATE/$1.status" 2>/dev/null | tr -d ' ' || true)
-  printf '%s %s\n' "$head" "$size"
+  status=$(cksum < "$STATE/$1.status" 2>/dev/null | awk '{ print $1 ":" $2 }')
+  printf '%s %s\n' "$head" "$status"
 }
 
 sw_fingerprint() {  # <redacted-screen> <work-sig>
@@ -554,6 +566,7 @@ cmd_check() (  # <target> <dry-run>
     return
   fi
   mkdir -p "$SW_DIR" || return 1
+  # shellcheck source=/dev/null
   command -v fm_lock_acquire_wait_bounded >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
   lock="$SW_DIR/$target.check.lock"
   if ! fm_lock_acquire_wait_bounded "$lock" 5; then
@@ -729,6 +742,7 @@ sw_check_target() {  # <target> <dry-run>
 }
 # ---- tick --------------------------------------------------------------------
 sw_tick_pid_start() {
+  # shellcheck source=/dev/null
   command -v fm_pid_start_time >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_run_timed_fn 2 fm_pid_start_time "$1" 2>/dev/null
 }
