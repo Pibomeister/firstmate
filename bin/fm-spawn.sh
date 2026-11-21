@@ -3456,7 +3456,8 @@ launch_template() {
   # (bin/fm-agy-trust.sh, the claude shape), and the post-launch gate
   # (agy_wait_for_working) answers the preselected safe default ("Yes, I
   # trust this folder") with a single Enter if the dialog renders anyway,
-  # then requires the busy signature before the spawn reports success.
+  # then requires the busy signature or confirmed brief-processing progress
+  # before the spawn reports success.
   # The foreign primary markers are cleared for the same
   # reason cursor clears them: agy publishes no marker of its own and does not
   # clear an inherited CLAUDECODE (verified in the /proc environ of a live 1.2.0
@@ -6908,7 +6909,12 @@ opencode2_wait_for_delivery() {
 # with the preselected safe default if it renders anyway, then require
 # positive proof that the brief is being processed - the same verdict the
 # supervisor reads (Herdr's native working state or the pinned `esc to cancel`
-# status row through fm_busy_classify) - before the spawn reports success.
+# status row through fm_busy_classify), or confirmed brief-processing progress
+# (`Thought for ...`, `Ran (...)`, `Explored N file(s)/search(es)`,
+# `Wrote N line(s)`, `Edited N file(s)` above an empty composer, or active
+# background tasks `N task(s) · /tasks` on the `? for shortcuts` footer) when
+# the initial turn already finished or backgrounded a task between polls -
+# before the spawn reports success.
 # The gate is strict about ordering because on Herdr the native working
 # verdict is known to coexist with an unanswered dialog: a busy verdict counts
 # only when the path was pre-registered or the dialog has been seen and
@@ -6924,11 +6930,70 @@ agy_pane_shows_trust_dialog() {  # <plain-pane-capture>
   printf '%s\n' "$1" | grep -Fq "$AGY_TRUST_DIALOG"
 }
 
+agy_pane_has_brief_progress() {  # <plain-pane-capture>
+  printf '%s\n' "$1" | awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      return s
+    }
+    function is_rule(s,    t) {
+      t = trim(s)
+      if (length(t) < 3) return 0
+      gsub(/─/, "", t)
+      return t == ""
+    }
+    function is_empty_prompt(s) {
+      return trim(s) == ">"
+    }
+    function is_progress_line(s) {
+      return s ~ /^[[:space:]]*([^[:alnum:]_>[:space:]-]+[[:space:]]+)?(Thought for (<[0-9]|[0-9])|Ran \(|Explored [1-9][0-9]* (file|files|search|searches)([[:space:],()]|$)|Wrote [1-9][0-9]* lines?([[:space:],()]|$)|Edited [1-9][0-9]* files?([[:space:],()]|$))/
+    }
+    /[^[:space:]]/ {
+      lines[++n] = $0
+    }
+    END {
+      if (n < 2) exit 1
+      start = (n > 12 ? n - 11 : 1)
+      footer = 0
+      for (i = n; i >= start; i--) {
+        if (lines[i] ~ /^[[:space:]]*\?[[:space:]]+for[[:space:]]+shortcuts([[:space:]]|$)/) {
+          footer = i
+          break
+        }
+      }
+      if (!footer) exit 1
+      comp_start = 0
+      if (footer >= 2 && is_rule(lines[footer - 1])) {
+        if (footer >= 4 && is_empty_prompt(lines[footer - 2]) && is_rule(lines[footer - 3])) {
+          comp_start = footer - 3
+        }
+      } else if (footer >= 2 && is_empty_prompt(lines[footer - 1])) {
+        if (footer < 3 || (!is_rule(lines[footer - 2]) && lines[footer - 2] !~ /^[[:space:]]*>/)) {
+          comp_start = footer - 1
+        }
+      }
+      if (!comp_start) exit 1
+      for (i = footer; i <= n; i++) {
+        if (lines[i] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/) {
+          exit 0
+        }
+      }
+      for (i = 1; i < comp_start; i++) {
+        if (is_progress_line(lines[i])) {
+          exit 0
+        }
+      }
+      exit 1
+    }
+  '
+}
+
 agy_pane_is_working() {  # <plain-pane-capture>
+  agy_pane_shows_trust_dialog "$1" && return 1
   case "$(fm_busy_classify "$BACKEND" "$T" agy "$ID" "$STATE" "$1")" in
     busy*) return 0 ;;
   esac
-  return 1
+  agy_pane_has_brief_progress "$1"
 }
 
 agy_wait_for_working() {

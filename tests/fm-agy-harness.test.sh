@@ -511,6 +511,7 @@ test_agy_trust_refuses_out_of_scope_paths() {
 make_agy_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
+  ln -sf "$BASH" "$fakebin/bash"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -524,6 +525,24 @@ fake_screen() {
       ;;
     busy)
       printf 'Generating...\n└ Tip: press f to see the full diff.\n\nesc to cancel                                Gemini 3.8 Flash · low\n'
+      ;;
+    herdr-bg-task)
+      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
+      ;;
+    herdr-bg-task-only)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts             auto · Gemini 4 Argon · high · 1 task(s) · /tasks\n'
+      ;;
+    herdr-turn-done)
+      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    bare-ruled-idle)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    unsubmitted-prompt)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> Thought for 2.4s\n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    errored-before-brief)
+      printf 'Got an error: request failed before turn start\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
       ;;
     racing)
       printf 'esc to cancel                                Gemini 3.8 Flash · low\n'
@@ -548,6 +567,7 @@ case "$*" in
   *"#{pane_current_command}"*)
     if [ "$state" = busy ]; then printf 'agy\n'; else printf 'bash\n'; fi
     exit 0 ;;
+  *"#{pane_pid}"*) printf '4242426\n'; exit 0 ;;
   *"#{pane_tty}"*) exit 0 ;;
   *"#{cursor_y}"*) printf '1\n'; exit 0 ;;
 esac
@@ -611,7 +631,7 @@ case "${1:-}" in
             if fake_path_trusted && [ "${FM_FAKE_AGY_NEVER_BUSY:-0}" = 1 ]; then
               printf 'idle\n' > "$FM_FAKE_AGY_STATE"
             elif fake_path_trusted; then
-              printf 'busy\n' > "$FM_FAKE_AGY_STATE"
+              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
             elif [ "${FM_FAKE_AGY_RACE:-0}" = 1 ]; then
               printf 'racing\n' > "$FM_FAKE_AGY_STATE"
             else
@@ -620,7 +640,7 @@ case "${1:-}" in
             ;;
           dialog)
             if [ "${FM_FAKE_AGY_ANSWER:-works}" = works ]; then
-              printf 'busy\n' > "$FM_FAKE_AGY_STATE"
+              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
             fi
             ;;
         esac
@@ -646,6 +666,14 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  '-p 4242426 -o comm=') printf -- '-bash\n' ;;
+  *) exec /bin/ps "$@" ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
   cat > "$fakebin/agy" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -726,10 +754,12 @@ NODE_BIN_DIR=$(dirname "$NODE_BIN")
 BASE_PATH=${FM_TEST_BASE_PATH:-$NODE_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 
 run_agy_spawn() {
-  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6
+  local case_dir=$1 home=$2 proj=$3 wt=$4 fakebin=$5 id=$6 models_timeout
   shift 6
   local spawn_args=("$id" "$proj" --harness agy --mode no-mistakes --yolo off)
   [ "${FM_FAKE_AGY_RELAUNCH:-0}" != 1 ] || spawn_args=("$id" --relaunch --harness agy)
+  models_timeout=${FM_AGY_MODELS_TIMEOUT:-5}
+  [ "${FM_FAKE_AGY_MODELS_HANG:-0}" != 1 ] || models_timeout=${FM_AGY_MODELS_TIMEOUT:-1}
   HOME="$home" FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -748,10 +778,13 @@ run_agy_spawn() {
     FM_FAKE_AGY_RACE="${FM_FAKE_AGY_RACE:-0}" \
     FM_FAKE_AGY_ANSWER="${FM_FAKE_AGY_ANSWER:-works}" \
     FM_FAKE_AGY_NEVER_BUSY="${FM_FAKE_AGY_NEVER_BUSY:-0}" \
+    FM_FAKE_AGY_LAUNCH_STATE="${FM_FAKE_AGY_LAUNCH_STATE:-}" \
     FM_FAKE_AGY_MODELS_LOG="${FM_FAKE_AGY_MODELS_LOG:-}" \
     FM_FAKE_AGY_FAIL="${FM_FAKE_AGY_FAIL:-}" \
+    FM_FAKE_HERDR_CALL_LOG="${FM_FAKE_HERDR_CALL_LOG:-}" \
+    HERDR_PANE_ID='' HERDR_SESSION='' HERDR_ENV='' HERDR_SOCKET_PATH='' \
     FM_FAKE_ENDPOINT_POOL="${FM_FAKE_ENDPOINT_POOL:-}" FM_FAKE_PROJECT="$proj" \
-    FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT=${FM_AGY_MODELS_TIMEOUT:-1} \
+    FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0 FM_AGY_MODELS_TIMEOUT="$models_timeout" \
     PATH="$fakebin:$BASE_PATH" \
     "$SPAWN" "${spawn_args[@]}" "$@" 2>&1
 }
@@ -1674,6 +1707,268 @@ test_agy_spawn_arms_no_busy_wiring() {
   pass "fm-spawn: agy arms no busy wiring and writes no sidecar"
 }
 
+write_agy_fake_herdr() {  # <fakebin> <home>
+  local fakebin=$1 home=$2 jq_bin
+  jq_bin=$(command -v jq) || fail "test needs jq"
+  [ -e "$fakebin/jq" ] || ln -s "$jq_bin" "$fakebin/jq"
+  printf 'off\n' > "$home/config/herdr-presentation-spaces"
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -z "${FM_FAKE_HERDR_CALL_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_HERDR_CALL_LOG"
+state=$(cat "$FM_FAKE_AGY_STATE" 2>/dev/null || true)
+[ ! -f "$FM_FAKE_AGY_STATE.cwd" ] || FM_FAKE_PANE_PATH=$(cat "$FM_FAKE_AGY_STATE.cwd")
+fake_screen() {
+  case "$state" in
+    dialog)
+      printf 'Accessing workspace:\n\n%s\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' "$FM_FAKE_PANE_PATH"
+      ;;
+    busy)
+      printf 'Generating...\n└ Tip: press f to see the full diff.\n\nesc to cancel                                Gemini 3.8 Flash · low\n'
+      ;;
+    herdr-bg-task)
+      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
+      ;;
+    herdr-bg-task-only)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts             auto · Gemini 4 Argon · high · 1 task(s) · /tasks\n'
+      ;;
+    herdr-turn-done)
+      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    bare-ruled-idle)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    unsubmitted-prompt)
+      printf '──────────────────────────────────────────────────────────────────────────────\n> Thought for 2.4s\n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    errored-before-brief)
+      printf 'Got an error: request failed before turn start\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+      ;;
+    racing)
+      printf 'esc to cancel                                Gemini 3.8 Flash · low\n'
+      printf 'dialog\n' > "$FM_FAKE_AGY_STATE"
+      ;;
+    idle)
+      printf '>\n? for shortcuts                              Gemini 3.8 Flash · low\n'
+      ;;
+    *)
+      printf 'shell starting\n$ \n'
+      ;;
+  esac
+}
+fake_path_trusted() {
+  [ "${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" = 1 ] && return 0
+  [ "${FM_FAKE_AGY_IGNORE_TRUST:-0}" = 1 ] && return 1
+  node -e 'const fs=require("node:fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));}catch(e){process.exit(1);}process.exit(Array.isArray(j.trustedWorkspaces)&&j.trustedWorkspaces.includes(process.argv[2])?0:1);' \
+    "$FM_FAKE_AGY_SETTINGS" "$FM_FAKE_PANE_PATH"
+}
+case "${1:-} ${2:-}" in
+  "status --json")
+    printf '%s\n' '{"client":{"protocol":19,"version":"0.8.0"},"server":{"running":true}}'
+    exit 0 ;;
+  "session list")
+    printf '{"sessions":[{"name":"%s","running":true,"socket_path":"%s.sock"}]}\n' "${HERDR_SESSION:-default}" "$FM_FAKE_AGY_STATE"
+    exit 0 ;;
+  "terminal title")
+    printf '%s\n' '{"result":{"reason":"no_foreground_client"}}'
+    exit 0 ;;
+  "workspace list")
+    printf '%s\n' '{"result":{"workspaces":[]}}'
+    exit 0 ;;
+  "workspace create")
+    printf '%s\n' '{"result":{"workspace":{"workspace_id":"w3C","label":"firstmate"},"root_pane":{"pane_id":"w3C:p1"}}}'
+    exit 0 ;;
+  "tab list")
+    printf '%s\n' '{"result":{"tabs":[]}}'
+    exit 0 ;;
+  "tab create")
+    printf '%s\n' '{"result":{"tab":{"tab_id":"w3C:t2"},"root_pane":{"pane_id":"w3C:p2"}}}'
+    exit 0 ;;
+  "tab close")
+    exit 0 ;;
+  "pane list")
+    printf '%s\n' '{"result":{"panes":[{"pane_id":"w3C:p2","tab_id":"w3C:t2","workspace_id":"w3C"}]}}'
+    exit 0 ;;
+  "pane get")
+    if [ -f "$FM_FAKE_AGY_STATE.closed" ]; then
+      printf '%s\n' '{"error":{"code":"pane_not_found","message":"pane w3C:p2 not found"}}'
+    else
+      printf '{"result":{"pane":{"pane_id":"w3C:p2","tab_id":"w3C:t2","workspace_id":"w3C","foreground_cwd":"%s"}}}\n' "$FM_FAKE_PANE_PATH"
+    fi
+    exit 0 ;;
+  "pane process-info")
+    printf '%s\n' '{"result":{"type":"pane_process_info","process_info":{"pane_id":"w3C:p2","shell_pid":100,"foreground_processes":[{"pid":101,"name":"agy","argv":["agy","--prompt-interactive"],"argv0":"agy","cmdline":"agy --prompt-interactive"}]}}}'
+    exit 0 ;;
+  "pane run")
+    cmd_text=${4:-}
+    case "$cmd_text" in
+      'cd -- '*)
+        bash -c "$cmd_text && pwd" > "$FM_FAKE_AGY_STATE.cwd" || exit 1
+        ;;
+    esac
+    exit 0 ;;
+  "pane send-text")
+    literal=${4:-}
+    case "$literal" in
+      ". '"*"'") staged=${literal#". '"}; staged=${staged%"'"}; [ ! -f "$staged" ] || literal=$(cat "$staged") ;;
+    esac
+    case "$literal" in
+      *--prompt-interactive*)
+        printf '%s\n' "$literal" >> "$FM_FAKE_LAUNCH_LOG"
+        printf 'launched\n' > "$FM_FAKE_AGY_STATE"
+        ;;
+    esac
+    exit 0 ;;
+  "pane send-keys")
+    case " $* " in
+      *' enter '*|*' Enter '*)
+        case "$state" in
+          launched)
+            if fake_path_trusted && [ "${FM_FAKE_AGY_NEVER_BUSY:-0}" = 1 ]; then
+              printf 'idle\n' > "$FM_FAKE_AGY_STATE"
+            elif fake_path_trusted; then
+              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
+            elif [ "${FM_FAKE_AGY_RACE:-0}" = 1 ]; then
+              printf 'racing\n' > "$FM_FAKE_AGY_STATE"
+            else
+              printf 'dialog\n' > "$FM_FAKE_AGY_STATE"
+            fi
+            ;;
+          dialog)
+            if [ "${FM_FAKE_AGY_ANSWER:-works}" = works ]; then
+              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
+            fi
+            ;;
+        esac
+        ;;
+    esac
+    exit 0 ;;
+  "pane read")
+    fake_screen
+    exit 0 ;;
+  "agent get")
+    if [ "$state" = busy ]; then
+      printf '%s\n' '{"result":{"agent":{"agent":"agy","agent_status":"working","pane_id":"w3C:p2"}}}'
+    else
+      printf '%s\n' '{"result":{"agent":{"agent":"agy","agent_status":"idle","pane_id":"w3C:p2"}}}'
+    fi
+    exit 0 ;;
+  "pane close")
+    : > "$FM_FAKE_AGY_STATE.closed"
+    exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/herdr"
+}
+
+run_agy_herdr_wait_gate() {  # <preregistered:0|1> <initial-state> [after-enter-state]
+  local prereg=$1 init_state=$2 after_enter=${3:-$2} gate_code state
+  gate_code=$(awk '
+    /^AGY_TRUST_DIALOG=/ { flag = 1 }
+    flag { print }
+    /^agy_wait_for_working\(\)/ { seen_wait = 1 }
+    flag && seen_wait && /^}$/ { exit }
+  ' "$SPAWN")
+  (
+    export BACKEND=herdr T=default:w3C:p2 ID=agy-gate-unit STATE=/nonexistent
+    export AGY_TRUST_PREREGISTERED="$prereg" FM_AGY_READY_POLLS=4 FM_AGY_POLL_INTERVAL=0
+    state=$init_state
+    eval "$gate_code"
+    fm_busy_classify() { printf 'unknown herdr-native\n'; }
+    spawn_send_key() {
+      state=$after_enter
+      return 0
+    }
+    agy_capture() {
+      case "$state" in
+        dialog)
+          printf 'Accessing workspace:\n\n/tmp/wt\n\nDo you trust the contents of this project?\n\n> Yes, I trust this folder\n  No, exit\n'
+          ;;
+        herdr-bg-task)
+          printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
+          ;;
+        herdr-bg-task-only)
+          printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts             auto · Gemini 4 Argon · high · 1 task(s) · /tasks\n'
+          ;;
+        herdr-turn-done)
+          printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+          ;;
+        herdr-wrote-edited)
+          printf 'Wrote 12 lines (bin/fm-spawn.sh)\nEdited 1 file (bin/fm-spawn.sh)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+          ;;
+        bare-ruled-idle)
+          printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+          ;;
+        idle)
+          printf '>\n? for shortcuts                              Gemini 3.8 Flash · low\n'
+          ;;
+        unsubmitted-prompt)
+          printf '──────────────────────────────────────────────────────────────────────────────\n> Thought for 2.4s\n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+          ;;
+        errored-before-brief)
+          printf 'Got an error: request failed before turn start\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
+          ;;
+      esac
+    }
+    agy_wait_for_working
+  )
+}
+
+test_agy_herdr_ready_accepts_confirmed_brief_progress_and_background_tasks() {
+  local mode id rec out rc
+  for mode in herdr-bg-task herdr-bg-task-only herdr-turn-done herdr-wrote-edited; do
+    run_agy_herdr_wait_gate 1 "$mode" \
+      || fail "agy readiness gate on herdr rejected confirmed brief progress ($mode)"
+  done
+  run_agy_herdr_wait_gate 0 dialog herdr-bg-task \
+    || fail "agy readiness gate on herdr rejected confirmed brief progress after answering the trust dialog"
+
+  id="agy-herdr-ready-$$"
+  rec=$(make_agy_spawn_case herdr-ready "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_herdr "$FAKEBIN_DIR" "$HOME_DIR"
+  : > "$CASE_DIR/herdr-calls.log"
+  rc=0
+  out=$(FM_FAKE_AGY_LAUNCH_STATE=herdr-bg-task FM_FAKE_HERDR_CALL_LOG="$CASE_DIR/herdr-calls.log" \
+    run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --backend herdr) || rc=$?
+  expect_code 0 "$rc" "agy on herdr with confirmed brief progress and backgrounded task should succeed: $out"
+  assert_contains "$out" "spawned $id harness=agy" "agy on herdr did not report spawn success: $out"
+  assert_not_contains "$(cat "$CASE_DIR/herdr-calls.log")" "pane close" \
+    "agy on herdr closed a live healthy pane after brief processing started"
+  assert_absent "$CASE_DIR/agy.state.closed" "agy on herdr marked the pane closed"
+  pass "fm-spawn: agy on herdr recognizes confirmed brief-processing progress and background tasks"
+}
+
+test_agy_herdr_ready_refuses_unstarted_unsubmitted_errored_and_untrusted_prompts() {
+  local mode id rec out rc
+  for mode in bare-ruled-idle idle unsubmitted-prompt errored-before-brief dialog; do
+    if run_agy_herdr_wait_gate 1 "$mode" "$mode"; then
+      fail "agy readiness gate on herdr falsely accepted $mode"
+    fi
+  done
+  if run_agy_herdr_wait_gate 0 herdr-bg-task herdr-bg-task; then
+    fail "agy readiness gate on herdr accepted brief progress on an unregistered worktree that never showed the trust dialog"
+  fi
+
+  id="agy-herdr-refuse-$$"
+  rec=$(make_agy_spawn_case herdr-refuse "$id")
+  read_agy_spawn_record "$rec"
+  write_agy_fake_herdr "$FAKEBIN_DIR" "$HOME_DIR"
+  : > "$CASE_DIR/herdr-calls.log"
+  rc=0
+  out=$(FM_FAKE_AGY_LAUNCH_STATE=bare-ruled-idle FM_FAKE_HERDR_CALL_LOG="$CASE_DIR/herdr-calls.log" \
+    run_agy_spawn "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" \
+    --model gemini-3.8-flash-low --backend herdr) || rc=$?
+  [ "$rc" -ne 0 ] || fail "agy on herdr with a bare unstarted prompt should be refused"
+  assert_contains "$out" "did not start processing its brief in the pre-trusted worktree" \
+    "agy on herdr with a bare unstarted prompt failed without the readiness timeout reason: $out"
+  assert_contains "$(cat "$CASE_DIR/herdr-calls.log")" "pane close" \
+    "a failed agy readiness gate on herdr did not close its pane"
+  pass "fm-spawn: agy on herdr still refuses bare unstarted, unsubmitted, errored, and untrusted prompts"
+}
+
 test_agy_unpublished_allocation_is_returned
 test_agy_unpublished_work_is_preserved
 test_agy_allocation_uses_the_custody_pool
@@ -1726,3 +2021,5 @@ test_agy_macos_home_with_legacy_login_keychain_is_accepted
 test_agy_missing_binary_refuses_before_pane_creation
 test_agy_secondmate_launch_pre_trusts_home_and_records_meta
 test_agy_spawn_arms_no_busy_wiring
+test_agy_herdr_ready_accepts_confirmed_brief_progress_and_background_tasks
+test_agy_herdr_ready_refuses_unstarted_unsubmitted_errored_and_untrusted_prompts
