@@ -698,7 +698,7 @@ The reasons are `working` and `idle_done`, which are not stalled, and `rate_limi
 
 **What leaves the machine**
 
-A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), whether it has open work, and the task's latest status line after the same redaction.
+A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), and whether it has open work.
 The screen and key are never posted to a non-loopback HTTP base; HTTPS bases retain the shared TypeSafe URL validation.
 Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options and of compound names that end in them such as `--client-secret`, and URL credentials with `<redacted>`.
 It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row, including one inside a box border or behind a tool-output marker, into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
@@ -708,6 +708,7 @@ Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib
 **Actions**
 
 Each unchanged screen is acted on once; actionful checks for the same target use a bounded lock shared by direct checks and ticks.
+A verdict from a worker or captain runtime that changed after screen capture is recorded with `runtime-changed` and takes no action.
 
 - A model-judged `rate_limit`, `usage_limit`, `billing`, or `api_error` runs `bin/fm-failover.sh` with that `--reason`; a captain failover is authorized only as a descendant of this home's watcher.
 - `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.

@@ -39,6 +39,15 @@ for a in "$@"; do
   prev=$a
 done
 cat > "$FM_TEST_LOGS/curl.body.$n"
+if [ -n "${FM_TEST_TURNOVER_TARGET:-}" ]; then
+  if [ "$FM_TEST_TURNOVER_TARGET" = captain ]; then
+    sed '1s/^test-session$/replacement-session/' "$FM_STATE_OVERRIDE/.lock-session" > "$FM_STATE_OVERRIDE/.lock-session.next"
+    mv "$FM_STATE_OVERRIDE/.lock-session.next" "$FM_STATE_OVERRIDE/.lock-session"
+  else
+    sed 's/^spawn_gen=.*/spawn_gen=s2.relaunched/' "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta" > "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta.next"
+    mv "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta.next" "$FM_STATE_OVERRIDE/$FM_TEST_TURNOVER_TARGET.meta"
+  fi
+fi
 if [ "${FM_TEST_CURL_HOLD:-0}" = 1 ]; then
   : > "$FM_TEST_LOGS/curl.entered"
   while [ -f "$FM_TEST_LOGS/curl.hold" ]; do sleep 0.1; done
@@ -272,6 +281,7 @@ test_model_judge_maps_answers() {
   assert_equals jev-latest "$(jq -r .model "$LOGS/curl.body.1")" 'the request names jev-latest'
   assert_equals choice "$(jq -r .questions.verdict.type "$LOGS/curl.body.1")" 'the request is one Choice question'
   assert_equals 10 "$(jq -r '.questions.verdict.criteria | length' "$LOGS/curl.body.1")" 'every reason is an option'
+  assert_equals false "$(jq -r '.state.agent | has("latest_status") or has("status")' "$LOGS/curl.body.1")" 'the request has no status field'
   jev_says idle_done 0.4
   sw_in "$FIX/idle-done.screen" classify
   assert_contains "$OUT" 'verdict=idle_done stalled=unsure source=jev' 'an answer below the floor is unsure'
@@ -310,6 +320,8 @@ test_model_judge_maps_answers() {
   assert_contains "$OUT" 'jev:jev-unparseable' 'the unparseable answer is recorded'
   sw_in "$FIX/stalled.screen" classify --classifier grok
   expect_code 2 "$RC" 'classify rejects the removed Grok option'
+  sw_in "$FIX/stalled.screen" classify --status 'private status prose'
+  expect_code 2 "$RC" 'classify rejects the removed status option'
   jev_says idle_with_goals 0.9
   printf 'classifier=grok\njev_model=other\n' > "$LAB/config/stall-watch"
   sw_in "$FIX/stalled.screen" classify
@@ -418,6 +430,45 @@ test_captain_api_error_without_open_work() {
   pass 'captain: a terminal API error reaches recovery without open work'
 }
 
+test_worker_turnover_suppresses_actions() {
+  reset_lab
+  make_worker oldfail api-error.screen
+  make_worker oldnudge stalled.screen
+  make_worker current api-error.screen
+  sw check oldfail; sw check oldnudge; sw check current
+  jev_says api_error 0.9
+  FM_TEST_TURNOVER_TARGET=oldfail sw check oldfail
+  assert_contains "$OUT" 'action=none' 'a relaunched worker is not failed over from an old verdict'
+  assert_contains "$OUT" 'runtime-changed' 'the stale verdict names the turnover'
+  assert_equals 0 "$(count failover)" 'the old runtime causes no failover'
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/oldfail.state")" 'the stale screen was not marked acted'
+  jev_says idle_with_goals 0.9
+  FM_TEST_TURNOVER_TARGET=oldnudge sw check oldnudge
+  assert_contains "$OUT" 'action=none' 'a relaunched worker is not nudged from an old verdict'
+  assert_contains "$OUT" 'runtime-changed' 'the stale nudge names the turnover'
+  assert_equals 0 "$(count send)" 'the old runtime receives no nudge'
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/oldnudge.state")" 'the stale nudge was not marked acted'
+  jev_says api_error 0.9
+  sw check current
+  assert_contains "$OUT" 'action=failover-switched' 'an unchanged runtime still acts on its verdict'
+  assert_equals 1 "$(count failover)" 'the unchanged worker alone fails over'
+  pass 'worker turnover: stale failover and nudge are suppressed'
+}
+
+test_captain_turnover_suppresses_nudge() {
+  reset_lab
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received turnover-goal --summary 'open work' >/dev/null || fail 'fixture: captain goal'
+  sw check captain
+  jev_says idle_with_goals 0.9
+  FM_TEST_TURNOVER_TARGET=captain sw check captain
+  assert_contains "$OUT" 'action=none' 'a successor captain does not receive the predecessor nudge'
+  assert_contains "$OUT" 'runtime-changed' 'the captain turnover is recorded'
+  assert_absent "$LOGS/captain-send"
+  assert_equals '' "$(sed -n 's/^acted=//p' "$LAB/state/stall-watch/captain.state")" 'the stale captain screen was not marked acted'
+  pass 'captain turnover: an old verdict sends no nudge'
+}
+
 test_captain_overdue_probe_failure() {
   reset_lab
   printf 'interval=1200\n' > "$LAB/config/stall-watch"
@@ -455,10 +506,10 @@ test_classifier_never_sees_secrets() {
   reset_lab
   { secrets_screen; printf 'wrote %s/projects/notes.md\n' "$HOME"; } > "$TMP_ROOT/s.screen"
   jev_says idle_with_goals 0.9
-  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$TMP_ROOT/s.screen" classify --status "working: token=FAKEstatusSecret99 in /Users/alice/x"
+  TYPESAFE_API_KEY=ts-test-key-123 sw_in "$TMP_ROOT/s.screen" classify
   assert_no_planted "$(cat "$LOGS/curl.body.1")" 'the jev request body'
   assert_not_contains "$(cat "$LOGS/curl.body.1")" 'ts-test-key-123' 'the jev request body'
-  assert_not_contains "$(cat "$LOGS/curl.body.1")" 'FAKEstatusSecret99' 'Jev receives the redacted status'
+  assert_equals false "$(jq -r '.state.agent | has("latest_status") or has("status")' "$LOGS/curl.body.1")" 'Jev receives no status field'
   assert_contains "$(jq -r .state.agent.screen "$LOGS/curl.body.1")" 'GITHUB_TOKEN=<redacted>' 'Jev receives the redacted screen'
   pass 'redaction boundary: Jev receives no planted secret or private path'
 }
@@ -656,8 +707,7 @@ SH
   pass 'captain: idle and owing nothing is healthy; owed work comes from overdue goals or old wakes; nudge then one escalation, never a stalled failover'
 }
 
-# A declared verb is read from the raw status line, while the classifier only
-# ever receives its redacted copy.
+# A declared verb is read from the raw status line, while Jev receives only the screen.
 test_declared_status_reads_the_raw_verb() {
   reset_lab
   printf 'interval=1200\n' > "$LAB/config/stall-watch"
@@ -671,12 +721,12 @@ test_declared_status_reads_the_raw_verb() {
   sw check d2
   assert_contains "$OUT" 'status=done' 'a withheld done line with continuation prose is still declared'
   make_worker d3 stalled.screen
-  printf 'working: rotate the password: %s [at=3]\n' "$P_PASS" >> "$LAB/state/d3.status"
+  printf 'working: reviewing confidential offer for Alice [at=3]\n' >> "$LAB/state/d3.status"
   jev_says idle_with_goals 0.9
   sw check d3; sw check d3
   assert_contains "$OUT" 'source=jev' 'an undeclared worker is judged'
-  assert_not_contains "$(cat "$LOGS/curl.body.1")" "$P_PASS" 'the classifier never receives the raw status line'
-  pass 'declared status: the verb comes from the raw line; the classifier gets the redacted copy'
+  assert_not_contains "$(cat "$LOGS/curl.body.1")" 'confidential offer for Alice' 'the classifier never receives status prose absent from the screen'
+  pass 'declared status: the verb stays local and status prose is not sent'
 }
 
 # A nudge ends only with real work: a new commit or status line. A screen
@@ -1036,6 +1086,8 @@ fm_test_run \
   test_jev_base_transport \
   test_stale_captain_endpoint_is_skipped \
   test_captain_api_error_without_open_work \
+  test_worker_turnover_suppresses_actions \
+  test_captain_turnover_suppresses_nudge \
   test_captain_overdue_probe_failure \
   test_fingerprint_preserves_error_status \
   test_classifier_never_sees_secrets \
