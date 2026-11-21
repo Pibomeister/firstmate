@@ -1,0 +1,5 @@
+ok - parked run: a paused worker is rung once per park through its steering inbox, and the record stays on the re-ring ladder
+ok - parked run: firstmate is woken once per ask-user gate, and nothing the run reports reaches the record or the wake
+ok - parked run: no declared pause, a captain-held wait, a secondmate, and an already escalated gate are left alone
+ok - parked run: a dead agent still gets its durable record and wake, and an unwritable inbox is retried rather than claimed
+EXIT:0

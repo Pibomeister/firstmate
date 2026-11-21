@@ -1,0 +1,26 @@
+pane=%0 lock=98290
+=== once.out ===
+=== ledger ===
+decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 30 minutes, oldest first: t1/nm-test-awaiting (PR #562). Answer each, or settle it by council per the captain rules, and record the answer with fm-send --resolve-key.
+=== inbox ===
+⁣FIRSTMATE_OP: v1 watcher: Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 30 minutes, oldest first: t1/nm-test-awaiting (PR #562). Answer each, or settle it by council per the captain rules, and record the answer with fm-send --resolve-key.
+=== status ===
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-21T13:58:10Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-21T14:09:10Z (watchdog may be down)
+models: claude:haiku unused, agy:flash unused; spent 24h $0 of $1.00
+
+## Homes
+- home: ok, last turn 1m ago via transcript, ctx unknown; captain pid 98290 live on tmux:%0, moved 2026-11-21T13:58:09Z
+
+## Actions since last read (2026-11-21T12:58:10Z)
+
+## Open gaps
+PASS nudge names PR #562
+PASS nudge did not treat issue #306 as the PR
+=== bare inbox ===
+
+FAIL bare nudge missing PR #77: 
+=== structured inbox ===
+
+FAIL structured nudge missing PR #88: 
