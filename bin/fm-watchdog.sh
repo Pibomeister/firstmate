@@ -1349,7 +1349,7 @@ wd_restart_run() {  # <symptom>
       return 0
     fi
   fi
-  prompt="Watchdog restart of this firstmate home. Read $handoff first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=$O_HOME $SCRIPT_DIR/fm-watchdog.sh pickup $token"
+  prompt=$(fm_wd_restart_prompt "$handoff" "$O_HOME" "$SCRIPT_DIR" "$token")
   case "$O_BACKEND" in
     orca) fm_orca_cli_mutation fm_run_timed 60 orca terminal create --worktree "path:$O_HOME" --title "firstmate captain" --command "$cmd $(printf '%q' "$prompt")" --json >/dev/null 2>&1 ;;
     tmux)

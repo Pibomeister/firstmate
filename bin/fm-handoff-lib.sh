@@ -46,6 +46,10 @@
 # surviving session for a handoff that will not come. A record that names any
 # other pid, such as after an unresolved failure the transfer later committed,
 # releases nothing.
+#
+# Launch prompts name a handoff by path and never include its text.
+# fm_handoff_prompt_line_cap is 60. fm_handoff_warn_line_cap warns on stderr
+# when the document is longer, and the launch still passes only the path.
 
 # shellcheck source=bin/fm-supervisor-target-lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fm-supervisor-target-lib.sh"
@@ -161,4 +165,24 @@ fm_handoff_completed() { # <record-file>
   fm_session_lock_anchor_instance_matches "$STATE" || return 1
   fm_handoff_ack_valid "$nonce" "$doc" "$sha" "$pid" || return 1
   [ "$(jq -r .terminal_handle "$FM_HOME/data/handoff-ack-$nonce.json")" = "$(sed -n 's/^terminal=//p' "$STATE/.lock-session")" ]
+}
+
+# Successor and restart prompts name the document by path. Sixty lines is the
+# warning cap; a longer file still launches, and the prompt never includes it.
+fm_handoff_prompt_line_cap() { printf '60'; }
+
+fm_handoff_warn_line_cap() { # <path>
+  local path=$1 lines=0 cap
+  [ -f "$path" ] || return 0
+  cap=$(fm_handoff_prompt_line_cap)
+  lines=$(awk 'END { print NR+0 }' "$path" 2>/dev/null) || return 0
+  case "$lines" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$lines" -gt "$cap" ] || return 0
+  printf 'warning: handoff %s is %s lines, above the %s-line launch cap; the prompt names the path and does not inline the document\n' \
+    "$path" "$lines" "$cap" >&2
+}
+
+fm_handoff_successor_prompt() { # <path> <sha256> <ack-cmd> <start-cmd> <nonce>
+  printf 'Firstmate handoff successor. Read the entire document at %s. Its sha256 must be %s. Before doing any project work or starting a read-only session, run this exact acknowledgement command: %s . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run %s and continue the document. nonce=%s' \
+    "$1" "$2" "$3" "$4" "$5"
 }

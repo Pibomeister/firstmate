@@ -2389,7 +2389,7 @@ test_parked_stop_keeps_monitoring() {
   printf '#!/usr/bin/env bash\nif [ "$*" = +%%s ]; then cat "$FM_HOME/state/clock"; else exec %q "$@"; fi\n' "$real_date" > "$clockbin/date"
   chmod +x "$clockbin/date"
   if [ "$variant" = budget ]; then
-    jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.parked-monitor.json"
+    jq -nc --argjson now "$now" --argjson n 12 '{times:[range($n)|$now],streak:0}' > "$dir/state/.stop-hook.parked-monitor.json"
   fi
   cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
@@ -2516,7 +2516,7 @@ test_host_deferred_handback_keeps_monitoring() {
   printf '%s\n' "$now" > "$dir/state/clock"
   printf '#!/usr/bin/env bash\nif [ "$*" = +%%s ]; then cat "$FM_HOME/state/clock"; else exec %q "$@"; fi\n' "$real_date" > "$clockbin/date"
   chmod +x "$clockbin/date"
-  jq -nc --argjson now "$now" '{times:[$now,$now,$now,$now,$now,$now],streak:0}' > "$dir/state/.stop-hook.host-deferred.json"
+  jq -nc --argjson now "$now" --argjson n 12 '{times:[range($n)|$now],streak:0}' > "$dir/state/.stop-hook.host-deferred.json"
   env PATH="$clockbin:$PATH" FM_HOME="$dir" FM_POLL=1 FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=0 \
     "$FAKE_CLAUDE" -c '
       printf "%s\n" "$$" > "$FM_HOME/state/.lock"
@@ -2541,6 +2541,33 @@ test_host_deferred_handback_keeps_monitoring() {
   pass "auto-arm: a deferred host hand-back keeps the host parked and delivers after budget expiry"
 }
 
+# The stall: an exhausted rolling-hour budget deferred every later wake, so a
+# new captain inbox note never arrived. The note must deliver exit 2 without
+# waiting out the hour. A deferral sleeps FM_POLL, so a miss dies at the bound.
+test_new_inbox_note_wakes_through_exhausted_budget() {
+  local dir now out status
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  dir=$(make_primary_dir "$TMP_ROOT/inbox-budget")
+  : > "$dir/state/task.meta"
+  printf 'working [at=1]: lane\n' > "$dir/state/task.status"
+  write_arm_fixture "$dir" actionable
+  now=$(date +%s)
+  jq -nc --argjson now "$now" --argjson n 12 '{times:[range($n)|$now],streak:0}' \
+    > "$dir/state/.stop-hook.sess-autoarm.json"
+  mkdir -p "$dir/state/inbox"
+  printf 'captain note\n' > "$dir/state/inbox/100.note"
+  status=0
+  out=$(FM_POLL=60 FM_CLAUDE_AUTOARM_ATTEMPTS=1 fm_run_timed_fn 30 run_autoarm "$dir" 2>/dev/null) || status=$?
+  expect_code 2 "$status" "a new inbox note must wake even when the stop budget is exhausted: $out"
+  assert_contains "$out" "stale: fixture-win actionable" "the delivered wake must carry the arm reason"
+  grep -q 'status=continue ' "$dir/state/stop-hook.log" \
+    || fail "inbox bypass did not continue: $(cat "$dir/state/stop-hook.log" 2>/dev/null)"
+  ! grep -q 'status=hook_budget ' "$dir/state/stop-hook.log" \
+    || fail "inbox bypass still recorded hook_budget: $(cat "$dir/state/stop-hook.log")"
+  pass "auto-arm: a new inbox note wakes through an exhausted stop budget"
+}
+
 if [ "${FM_TEST_ONLY:-}" = stop-policy-review ]; then
   trap fm_test_cleanup EXIT
   test_parked_failure_delivers_notice
@@ -2553,6 +2580,7 @@ if [ "${FM_TEST_ONLY:-}" = stop-policy ]; then
   test_parked_failure_delivers_notice
   test_actionable_close_rewakes_with_reason
   test_host_deferred_handback_keeps_monitoring
+  test_new_inbox_note_wakes_through_exhausted_budget
   exit 0
 fi
 
@@ -2626,6 +2654,7 @@ test_host_lost_handback_notifies_once_per_episode
 test_host_lost_announced_handback_notifies_once_per_episode
 test_host_crash_is_retried_then_reported
 test_host_deferred_handback_keeps_monitoring
+test_new_inbox_note_wakes_through_exhausted_budget
 test_arguments_never_arm
 test_fm_lock_status_still_works_with_shared_lib
 test_stands_down_only_on_pi_code_transcript_path
