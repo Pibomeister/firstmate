@@ -1,0 +1,21 @@
+=== scanner bin at HEAD, test cases at HEAD ===
+ok - a slow forge read retains all discovered branches and an incomplete scan
+ok - a caller deadline bounds the scan from where its timer starts
+ok - replaying a cut-short scan ends the timed scan its caller could not reach
+ok - the replay never ends its own or an unrelated process group
+ok - a timed scan that starts after its deadline stops before any read
+# changed-case subset: all assertions passed
+
+real	0m37.995s
+user	0m0.384s
+sys	0m0.203s
+suite exit=0
+=== scanner bin at 20077ced, test cases at HEAD ===
+ok - a slow forge read retains all discovered branches and an incomplete scan
+ok - a caller deadline bounds the scan from where its timer starts
+not ok - the replay left the cut-short scan reading the forge
+
+real	0m38.544s
+user	0m0.294s
+sys	0m0.169s
+suite exit=1

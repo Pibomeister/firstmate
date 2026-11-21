@@ -1,0 +1,16 @@
+work dir length: 172; recorded scan group=93693; forge pid=98441; decoy pid=92513
+scan group members (wide ps):
+93693 /opt/homebrew/bin/timeout -k 1 60 bash -c \012    status_file=$1\012    shift\012    "$@"\012    command_rc=$?\012    printf "%s\n" "$command_rc" > "$status_file"\012    exit "$command_rc"\012   _ /var/folders/93/6
+93693 bash -c \012    status_file=$1\012    shift\012    "$@"\012    command_rc=$?\012    printf "%s\n" "$command_rc" > "$status_file"\012    exit "$command_rc"\012   _ /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//f
+93693 bash {run-worktree}/bin/fm-unpushed-reconcile.sh --scan /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-probe.8QLbnp/t/a-very-long-work-dire
+93693 bash {run-worktree}/bin/fm-unpushed-reconcile.sh --scan /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-probe.8QLbnp/t/a-very-long-work-dire
+93693 bash {run-worktree}/bin/fm-unpushed-reconcile.sh --scan /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-probe.8QLbnp/t/a-very-long-work-dire
+93693 bash /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-probe.8QLbnp/t/fakebin/gh-axi api --hostname github.com /repos/example/demo/pulls?state=closed&head=example:fm/task&per_page=100 --jq [.[] | select(.merged_
+93693 sleep 60
+after killing scanner only: forge read still alive (expected)
+pending output: UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-probe.8QLbnp/t/home/projects/demo branch=fm/task head=42a3fb669d490ff0f3dadc475305777fabe92bb9; inspection incomplete, task eligibility and publication unverified
+PASS: COLUMNS=40 replay ended the timed scan within 0s
+PASS: neighbour-dir decoy scan survived the replay
+exit=
+macOS piped ps width under COLUMNS=40 (max command length seen):
+39647

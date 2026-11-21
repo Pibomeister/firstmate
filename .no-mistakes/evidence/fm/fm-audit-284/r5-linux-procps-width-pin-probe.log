@@ -1,0 +1,32 @@
+=== Linux procps, scanner at base (20077ced), COLUMNS=40 exported ===
+ps from procps-ng 4.0.2
+work dir length: 111; recorded scan group=60; forge pid=151; decoy pid=26
+scan group members (wide ps):
+     60 /usr/bin/timeout -k 1 60 bash -c      status_file=$1     shift     "$@"     command_rc=$?     printf "%s\n" "$command_rc" > "$status_file"     exit "$command_rc"    _ /tmp/fm-timeout-status.aqw67u bash /p/base/bi
+     60 bash -c      status_file=$1     shift     "$@"     command_rc=$?     printf "%s\n" "$command_rc" > "$status_file"     exit "$command_rc"    _ /tmp/fm-timeout-status.aqw67u bash /p/base/bin/fm-unpushed-reconcile.s
+     60 bash /p/base/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /p/base/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /p/base/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /tmp/t/fakebin/gh-axi api --hostname github.com /repos/example/demo/pulls?state=closed&head=example:fm/task&per_page=100 --jq [.[] | select(.merged_at != null) | .head.sha] | join(" ") --full
+     60 sleep 60
+after killing scanner only: forge read still alive (expected)
+pending output: UNPUSHED: project=/tmp/t/home/projects/demo branch=fm/task head=42b502f31177044bc98a77719d2369bc463ae069; inspection incomplete, task eligibility and publication unverified
+FAIL: forge read survived the COLUMNS=40 replay
+PASS: neighbour-dir decoy scan survived the replay
+exit=1
+=== Linux procps, scanner at head (68aab73c), COLUMNS=40 exported ===
+ps from procps-ng 4.0.2
+work dir length: 111; recorded scan group=60; forge pid=151; decoy pid=26
+scan group members (wide ps):
+     60 /usr/bin/timeout -k 1 60 bash -c      status_file=$1     shift     "$@"     command_rc=$?     printf "%s\n" "$command_rc" > "$status_file"     exit "$command_rc"    _ /tmp/fm-timeout-status.jdORXL bash /p/head/bi
+     60 bash -c      status_file=$1     shift     "$@"     command_rc=$?     printf "%s\n" "$command_rc" > "$status_file"     exit "$command_rc"    _ /tmp/fm-timeout-status.jdORXL bash /p/head/bin/fm-unpushed-reconcile.s
+     60 bash /p/head/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /p/head/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /p/head/bin/fm-unpushed-reconcile.sh --scan /tmp/t/a-very-long-work-directory-name-to-overflow-a-narrow-terminal-column-width-xxxxxxxxxxxxxxxxxxxxxxxx/work
+     60 bash /tmp/t/fakebin/gh-axi api --hostname github.com /repos/example/demo/pulls?state=closed&head=example:fm/task&per_page=100 --jq [.[] | select(.merged_at != null) | .head.sha] | join(" ") --full
+     60 sleep 60
+after killing scanner only: forge read still alive (expected)
+pending output: UNPUSHED: project=/tmp/t/home/projects/demo branch=fm/task head=dc7575ca6f7f44559970a5491252ab5d88a49f7f; inspection incomplete, task eligibility and publication unverified
+PASS: COLUMNS=40 replay ended the timed scan within 0s
+PASS: neighbour-dir decoy scan survived the replay
+exit=0

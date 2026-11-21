@@ -1,0 +1,15 @@
+16
+0.80 0.44 0.31 1/635 17
+ok - fm-startup-network: a stage deadline retains discovered branch identities and leaves no scan running
+ok - fm-startup-network: refresh preserves unpublished gone-upstream branches for recovery
+ok - fm-startup-network: wait fails when no deferred stage publishes before its deadline
+ok - fm-startup-network: start returns immediately and never holds the caller's stdout open
+ok - fm-startup-network: exactly one of the digest and the wake reports each actionable result
+ok - fm-startup-network: a claimant crash after publication still surfaces the result
+not ok - a report-publication failure was published as done
+suite exit=1
+
+real	1m4.771s
+user	0m3.568s
+sys	0m2.494s
+docker exit=0
