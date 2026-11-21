@@ -1655,6 +1655,11 @@ test_parked_gate_notice_rings_once_per_park() {
   gate_notice "$dir" "$GATE_WORKER" >/dev/null; gate_notice "$dir" "$GATE_WORKER" >/dev/null
   [ "$(gate_records "$dir")" = 1 ] && [ "$(gate_doorbells "$dir")" = 1 ] \
     || fail "one park rang more than once: $(gate_records "$dir") record(s), $(gate_doorbells "$dir") doorbell(s)"
+  # The same park whose reported wait has grown is still the same park.
+  gate_notice "$dir" "${GATE_WORKER% · run:*} · parked: 2m10s · run: 01RUNPARK" >/dev/null
+  gate_notice "$dir" "${GATE_WORKER% · run:*} · parked: 7m10s · run: 01RUNPARK" >/dev/null
+  [ "$(gate_records "$dir")" = 1 ] && [ "$(gate_doorbells "$dir")" = 1 ] \
+    || fail "a growing parked duration rang one park again: $(gate_records "$dir") record(s), $(gate_doorbells "$dir") doorbell(s)"
   # A different parked verdict is a different park.
   gate_notice "$dir" 'state: parked · source: run-step · parked at fix_review: 2 finding(s) · run: 01RUNPARK' >/dev/null
   [ "$(gate_records "$dir")" = 2 ] || fail "a new park of the same run was not rung"

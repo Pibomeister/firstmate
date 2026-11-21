@@ -4375,7 +4375,7 @@ parked_gate_notice() {  # <window> <task> <crew-state-line>
   pause=$(grep -nFx -- "$pause" "$STATE/$task.status") || return 0
   pause=${pause##*$'\n'}
   notice=$(_fm_open_decisions_file_ident "$STATE/$task.status") || return 0
-  notice="$notice"$'\n'"$pause"$'\n'"$line"
+  notice="$notice"$'\n'"$pause"$'\n'"$(printf '%s' "$line" | sed 's/ · parked: [0-9A-Za-z]*//')"
   [ "$(cat "$marker" 2>/dev/null || true)" != "$notice" ] || return 0
   [ "$(window_kind "$win")" != secondmate ] || return 0
   run=${gate#*$'\t'}
