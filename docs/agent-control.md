@@ -208,7 +208,8 @@ The worktree and the task's records are unaffected either way.
   On the classifier backends `interrupt` also requires a positively `alive` agent before it sends a key, and confirms the agent is still alive afterwards.
 - An ambiguous endpoint state refuses.
   An unreadable endpoint state refuses unless the [endpoint-absence proof](#reclaiming-a-task-whose-endpoint-is-gone) (Orca or Rex) establishes that the endpoint is gone.
-- `exit`'s composer-empty check, above, is itself a fail-closed boundary that `relaunch` inherits by stopping the old agent through `exit`.
+- `exit`'s composer-empty check, above, is itself a fail-closed boundary that an ordinary `relaunch` inherits by stopping the old agent through `exit`.
+  The provider-refusal path has a separate no-input endpoint close for a usage-limit picker ([provider failover](configuration.md#provider-failover-configfailover-order)).
 - `fm-spawn --relaunch` independently refuses unless the endpoint is positively agent-free - either a `dead` endpoint that survives, or a Herdr, Rex, tmux, or Orca endpoint proven gone by the absence proof above - so a replacement can never join a live agent.
   Every other verdict refuses; absence is claimed only from positive evidence of it.
   It also requires the shell to be in the recorded worktree: every backend but Orca (which owns its own task worktree with no current-path probe) gets one explicit `cd` to the recorded path, then a pre-launch path read that refuses before any harness starts unless it confirms the endpoint is sitting in the recorded copy.
