@@ -15,6 +15,24 @@
 #       Returns 0 when the text names an owner-reserved category (merge, release,
 #       deploy, spend, money, sign-in, credential, secret, security, production
 #       data, PII, delete, destroy, force-push). Those holds stay held.
+#   fm_wd_nm_awaiting_approval <text>
+#       Returns 0 when the text names a no-mistakes `awaiting_approval` step.
+#       Such a step is a council or captain decision by default; the merge or
+#       release it would unblock does not by itself make it the owner's.
+#   fm_wd_human_only <text>
+#       Returns 0 when the text names a human-only category for an
+#       awaiting_approval decision (deploy, publish, force-push, spend,
+#       secrets or credentials, sign-in, security, production or
+#       shared-database writes, PII, messages to people, deletion, or a
+#       failure in the PR's own changed behavior).
+#   fm_wd_known_unreachable_timing_flake <text>
+#       Returns 0 when the text describes a known timing flake in a test the
+#       PR cannot reach: a timing word, a flake word, and an unreachable word.
+#   fm_wd_pr_label <text>
+#       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
+#       else its first `PR #<n>`, else its first structured `pr: #<n>` or
+#       `pr: <n>` component, else its first bare `#<n>`; prints nothing when
+#       it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -236,6 +254,47 @@ _fm_wd_guard_view() {  # <text>
 
 fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
+}
+
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|shared[- ]?(db|database)|e-?mail|sms|messages? to|delet|destroy|wipe|changed behavio|force.?push|a merge([^a-z]|$)|merge (the|this|pr|#|now))|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+
+fm_wd_nm_awaiting_approval() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval' || return 1
+  # The token alone does not prove a pipeline step: a plain merge decision can
+  # mention it. Require a no-mistakes or named-step context, including the
+  # nm-<run>-<step> decision key a gate escalation carries.
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'no-mistakes|(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]-]*step|step[[:space:]]+awaiting|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$)'
+}
+
+fm_wd_human_only() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
+  # Formatting alone must not change authority: shared_database and
+  # messages-to-people name the same categories as their spaced forms.
+  printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE"
+}
+
+fm_wd_known_unreachable_timing_flake() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load-sensitive|load shaped' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'flake|flaky' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable'
+}
+
+fm_wd_pr_label() {  # <text>
+  local hit n
+  hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE 'PR #[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE '(^|[^A-Za-z])pr:[[:space:]]*#?[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '#[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || return 0
+  n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')
+  [ -n "$n" ] && printf 'PR #%s\n' "$n"
+  return 0
 }
 
 fm_wd_text_allowed() {  # <text>
