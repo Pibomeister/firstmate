@@ -229,7 +229,7 @@ test_stop_refuses_herdr_named_pid_with_wrong_start_time() {
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
   pidfile=$(fm_test_tmproot herdr-named-sleep)/wrong-start.pid
-  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  start_herdr_named_sleep "$pidfile" 600 "XDG_CONFIG_HOME=$root/c"
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -270,9 +270,9 @@ refuse_herdr_named_decoy() { # <pass-msg> [missing-xdg|prefix|inject-argv|space-
     *) fail "unknown decoy shape: $decoy_shape" ;;
   esac
   if [ -n "$extra_env" ]; then
-    start_herdr_named_sleep "$pidfile" 30 "$extra_env"
+    start_herdr_named_sleep "$pidfile" 600 "$extra_env"
   else
-    start_herdr_named_sleep "$pidfile" 30
+    start_herdr_named_sleep "$pidfile" 600
   fi
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
@@ -365,7 +365,7 @@ owned_herdr_named_decoy() { # sets root pid
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
   pidfile=$(fm_test_tmproot herdr-named-sleep)/owned.pid
-  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  start_herdr_named_sleep "$pidfile" 600 "XDG_CONFIG_HOME=$root/c"
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
   write_kern_procargs2 "$pid"
@@ -425,7 +425,7 @@ test_stop_refuses_herdr_named_pid_with_empty_readable_environ() {
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
   pidfile=$(fm_test_tmproot herdr-named-sleep)/empty-environ.pid
-  start_herdr_named_sleep "$pidfile" 30
+  start_herdr_named_sleep "$pidfile" 600
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -457,7 +457,7 @@ test_stop_refuses_herdr_named_pid_when_xdg_is_forged_inside_a_nul_field() {
   remember_owned "$root"
   token=$(cat "$root/.fm-herdr-owned")
   pidfile=$(fm_test_tmproot herdr-named-sleep)/newline-environ.pid
-  start_herdr_named_sleep "$pidfile" 30
+  start_herdr_named_sleep "$pidfile" 600
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named decoy did not start"
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -638,7 +638,7 @@ test_start_keeps_a_live_recorded_pid_it_cannot_prove() {
   token=$(cat "$root/.fm-herdr-owned")
   push_darwin_env argv-only
   pidfile=$(fm_test_tmproot herdr-named-sleep)/unprovable.pid
-  start_herdr_named_sleep "$pidfile" 30 "XDG_CONFIG_HOME=$root/c"
+  start_herdr_named_sleep "$pidfile" 600 "XDG_CONFIG_HOME=$root/c"
   pid=$(cat "$pidfile")
   kill -0 "$pid" 2>/dev/null || fail "the herdr-named server stand-in did not start"
   start=$(LC_ALL=C ps -p "$pid" -o lstart= | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
