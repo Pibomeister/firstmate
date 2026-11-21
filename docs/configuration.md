@@ -678,6 +678,7 @@ On an unchanged screen these rules decide without a model, in order:
 - A busy semantic record (`fm_busy_classify_meta` in `bin/fm-busy-lib.sh`) for a worker, or the backend's native busy state for the captain, is `working`.
 - A refusal row the watchdog patterns recognize (`fm_wd_provider_error_screen` in `bin/fm-watchdog-lib.sh`) is `rate_limit`, `usage_limit`, or `billing`, and is left to the watcher's own provider failover.
   After a turn the Claude hook recorded as an ordinary stop, the watcher does not act on such a row, so the classifier judges that screen instead.
+  Because the hook reports every refusal as a stop failure, a refusal answer for that screen counts as `idle_with_goals`.
 - A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
 - A captain with no open work is `idle_done`.
   The captain has open work only when `bin/fm-dispatch-log.sh overdue` lists an overdue goal or a wake has waited in the queue for longer than one interval; otherwise a captain idle at its prompt is waiting on its watcher, which is healthy.
@@ -701,8 +702,8 @@ The reasons are `working` and `idle_done`, which are not stalled, and `rate_limi
 **What leaves the machine**
 
 A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), whether it has open work, and the task's latest status line after the same redaction.
-Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options, and URL credentials with `<redacted>`.
-It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
+Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options and of compound names that end in them such as `--client-secret`, and URL credentials with `<redacted>`.
+It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row, including one inside a box border or behind a tool-output marker, into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
 Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib.sh`) is withheld and counted rather than sent.
 `bin/fm-stall-watch.sh screen <task-id|captain>` prints exactly the text a classifier would receive.
 

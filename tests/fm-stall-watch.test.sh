@@ -154,8 +154,14 @@ P_CLITOK="FAKEcliTokenValue0123"
 P_B64="QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ejAxMjM0NTY3ODk"
 P_KEYTAIL="FAKEorphanKeyTail0123"
 P_SPACEDIR="Zanzibar"
+P_BOXKEY="FAKEboxed""KeyRowAAAA""0123456789abcdefFAKE"
+P_BOXB64="TUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFG""QUtF"
+P_CSEC="FAKEclientSecret0123"
+P_GHTOK="FAKEgithubTokenOpt0123"
+P_DBPW="FAKEdbPassword0123"
 PLANTED="$P_GH $P_OPENAI $P_AWS $P_PASS $P_BEARER $P_URLPASS $P_SLACK $P_KEYBODY /Users/alice /home/bob
-  $P_XAI $P_GLPAT $P_NPM $P_HF $P_GOOGLE $P_STRIPE $P_JWT $P_CLIKEY $P_CLIQ $P_CLITOK $P_B64 $P_KEYTAIL $P_SPACEDIR"
+  $P_XAI $P_GLPAT $P_NPM $P_HF $P_GOOGLE $P_STRIPE $P_JWT $P_CLIKEY $P_CLIQ $P_CLITOK $P_B64 $P_KEYTAIL $P_SPACEDIR
+  $P_BOXKEY $P_BOXB64 $P_CSEC $P_GHTOK $P_DBPW"
 
 secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the planted values, then more
   sed -e "s|{{GH}}|$P_GH|" -e "s|{{OPENAI}}|$P_OPENAI|" -e "s|{{AWS}}|$P_AWS|" \
@@ -168,6 +174,10 @@ secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the
   printf '  mytool --api-key %s --password "%s pass" --token=%s\n' "$P_CLIKEY" "$P_CLIQ" "$P_CLITOK"
   # A key block whose BEGIN row has scrolled off the top.
   printf '  %s\n  %s\n  -----END %s-----\n' "$P_B64" "$P_KEYTAIL" "$P_KEYKIND"
+  # The same inside a box border, then a base64 row behind a tool-output marker.
+  printf '\342\224\202 %s \342\224\202\n\342\224\202 %s \342\224\202\n\342\224\202 -----END %s----- \342\224\202\n' "$P_BOXKEY" "$P_KEYTAIL" "$P_KEYKIND"
+  printf '  \342\216\277  %s\n' "$P_BOXB64"
+  printf '  mytool --client-secret %s --github-token=%s --db-password %s\n' "$P_CSEC" "$P_GHTOK" "$P_DBPW"
 }
 assert_no_planted() {  # <text> <where>
   local s
@@ -191,7 +201,10 @@ test_screen_redacts_secrets_and_paths() {
   assert_contains "$OUT" '<redacted key material>' 'a long base64 row is replaced whole'
   assert_contains "$OUT" 'open "<path>"' 'a quoted user path with spaces is replaced whole'
   assert_contains "$OUT" '--api-key <redacted> --password <redacted> --token=<redacted>' 'secret option values are replaced'
-  assert_equals 2 "$(printf '%s\n' "$OUT" | grep -c '<redacted private key>')" 'a key block, and one whose BEGIN row scrolled away, each collapse to one marker'  assert_contains "$OUT" 'row(s) withheld: credential-like text' 'a row still credential-like is withheld and counted'
+  assert_equals 3 "$(printf '%s\n' "$OUT" | grep -c '<redacted private key>')" 'a key block, and one whose BEGIN row scrolled away, plain or boxed, each collapse to one marker'
+  assert_contains "$OUT" '<redacted private key>'$'\n''<redacted key material>' 'a boxed key tail and a marked base64 row are replaced'
+  assert_contains "$OUT" '--client-secret <redacted> --github-token=<redacted> --db-password <redacted>' 'compound secret option values are replaced'
+  assert_contains "$OUT" 'row(s) withheld: credential-like text' 'a row still credential-like is withheld and counted'
   sw screen captain --lines 3
   [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -le 3 ] || fail "--lines 3 printed more than 3 rows: $OUT"
   sw screen ghost
@@ -538,15 +551,17 @@ test_refusal_after_ordinary_stop_is_judged() {
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r1 idle --gen "$gen" --source claude-hook --event stop >/dev/null || fail 'fixture: stop'
   grok_says rate_limit 0.9
   sw check r1; sw check r1
-  assert_contains "$OUT" 'verdict=rate_limit stalled=yes source=grok' 'the refusal row is judged by the classifier'
-  assert_contains "$OUT" 'action=failover-switched' 'and the stall check fails over itself'
+  assert_contains "$OUT" 'verdict=idle_with_goals stalled=yes source=grok' 'the classifier judges the screen, and a refusal answer is history'
+  assert_contains "$OUT" 'refusal-row-is-history' 'the remap is named'
+  assert_contains "$OUT" 'action=nudged' 'so the idle worker is nudged'
+  assert_equals 0 "$(count failover)" 'an old refusal row never fails a worker over'
   make_worker r2 rate-limited.screen
   gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$LAB/state" r2) || fail 'fixture: arm'
   bash "$ROOT/bin/fm-busy-event.sh" apply "$LAB/state" r2 idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null || fail 'fixture: stop-failure'
   sw check r2; sw check r2
   assert_contains "$OUT" 'action=watcher-owned' 'after a stop-failure the row stays the watcher'"'"'s'
   assert_equals 1 "$(count grok)" 'only the ordinary stop reached the classifier'
-  pass 'refusal rows: left to the watcher unless the Claude hook recorded an ordinary stop'
+  pass 'refusal rows: left to the watcher unless the Claude hook recorded an ordinary stop, which makes them history'
 }
 config_reports() { grep -l 'the stall check is not running' "$LAB/state/stall-watch"/.report.* 2>/dev/null | wc -l | tr -d ' '; }
 

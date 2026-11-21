@@ -160,6 +160,8 @@ sw_redact() {  # stdin -> stdout
   fm_wd_strip_ansi | SW_HOME_DIR="${HOME:-}" SW_FM_HOME="$FM_HOME" perl -e '
     my $h = $ENV{SW_HOME_DIR} // ""; my $f = $ENV{SW_FM_HOME} // "";
     my $user = qr{(?:/Users|/home|/root|/private/var/folders|/var/folders)};
+    # Box borders and tool-output markers (| \x{2502} \x{2503} \x{2551} \x{23bf}) as UTF-8 bytes.
+    my $fr = qr{(?:\s|\||\xe2\x94[\x82\x83]|\xe2\x95\x91|\xe2\x8e\xbf)};
     my @rows = <STDIN>;
     chomp @rows;
     my @key = (0) x @rows;
@@ -170,12 +172,12 @@ sw_redact() {  # stdin -> stdout
       # A key whose BEGIN row scrolled away still ends in its END row.
       next unless $rows[$i] =~ /-----END [A-Z ]*PRIVATE KEY/i;
       $key[$i] = 1;
-      for (my $j = $i - 1; $j >= 0 && !$key[$j] && $rows[$j] =~ m{^[\s|]*[A-Za-z0-9+/=]+\s*$}; $j--) { $key[$j] = 1; }
+      for (my $j = $i - 1; $j >= 0 && !$key[$j] && $rows[$j] =~ m{^$fr*[A-Za-z0-9+/=]+$fr*$}; $j--) { $key[$j] = 1; }
     }
     for my $i (0 .. $#rows) {
       $_ = $rows[$i];
-      if ($key[$i]) { print "<redacted private key>\n" unless $i > 0 && $key[$i - 1]; next; }
-      if (m{^[\s|]*[A-Za-z0-9+/]{40,}={0,2}\s*$} && /[A-Z]/ && /[a-z]/ && /[0-9]/) { print "<redacted key material>\n"; next; }
+      if ($key[$i]) { print "<redacted private key>\n" unless $i > 0 && $key[$i - 1] && $rows[$i - 1] !~ /-----END [A-Z ]*PRIVATE KEY/i; next; }
+      if (m{^$fr*[A-Za-z0-9+/]{40,}={0,2}$fr*$} && /[A-Z]/ && /[a-z]/ && /[0-9]/) { print "<redacted key material>\n"; next; }
       s/\Q$f\E/<path>/g if length($f) > 1;
       s/\Q$h\E/<path>/g if length($h) > 1;
       s{"(?:<path>|$user)(?:/[^"]*)?"}{"<path>"}g;
@@ -194,16 +196,19 @@ sw_redact() {  # stdin -> stdout
       s/(bearer)\s+[^\s"\x27]+/$1 <redacted>/gi;
       s/(authorization\s*:\s*)\S.*$/$1<redacted>/gi;
       s{([a-z][a-z0-9+.-]*://)[^/\s@]+@}{$1<redacted>@}gi;
-      s/(--(?:api[_-]?key|(?:auth[_-]?|access[_-]?)?token|password|passwd|secret)(?:=|\s+))(?:"[^"]*"|\x27[^\x27]*\x27|[^\s"\x27]+)/$1<redacted>/gi;
+      s/(--(?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|token|password|passwd|secret)(?:=|\s+))(?:"[^"]*"|\x27[^\x27]*\x27|[^\s"\x27]+)/$1<redacted>/gi;
       s/((?:x-access-token|token|password|passwd|pwd|secret|secret[_-]?key|api[_-]?key|access[_-]?key)["\x27]?\s*[=:]\s*)[^\s"\x27,;]+/$1<redacted>/gi;
       print "$_\n";
     }'
 }
+
 # Rows still credential-like after redaction are withheld, never sent.
+# An "=" is dropped with the marker after it, so a redacted
+# "--token=<redacted>" does not read as "token=" followed by the next option.
 sw_withhold() {  # stdin -> stdout
   local line n=0
   while IFS= read -r line || [ -n "$line" ]; do
-    if fm_secret_like "$(printf '%s' "$line" | sed 's/<redacted>//g')"; then
+    if fm_secret_like "$(printf '%s' "$line" | sed -e 's/=<redacted>//g' -e 's/<redacted>//g')"; then
       n=$((n + 1))
       continue
     fi
@@ -430,6 +435,13 @@ sw_judge() {
   fi
   V_REASON=$M_REASON V_CONF=$M_CONF V_LAT=${M_LAT:--} V_COST=${M_COST:--}
   [ -z "$M_NOTE" ] || V_NOTE="${V_NOTE:+$V_NOTE,}$M_NOTE"
+  if [ "$rule" = 0 ]; then
+    # The Claude hook reports every refusal as a stop-failure, so after an
+    # ordinary stop a refusal row on screen is history and the agent is idle.
+    case "$V_REASON" in rate_limit|usage_limit|billing)
+      V_REASON=idle_with_goals V_NOTE="${V_NOTE:+$V_NOTE,}refusal-row-is-history" ;;
+    esac
+  fi
   V_STALLED=$(sw_stalled_of "$V_REASON")
   if sw_below_floor "$V_CONF"; then
     V_STALLED=unsure
