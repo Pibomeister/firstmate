@@ -22,6 +22,14 @@
 # The stage worker owns the scan journal outside its timed child. Inventory is
 # collected before bootstrap, and pending identities are replayed if the outer
 # deadline stops discovery, refresh, or proofs (fm-unpushed-reconcile.sh).
+# The stage passes its deadline as FM_UNPUSHED_DEADLINE, and the scanner ends
+# its own bound 3 s before that deadline: a GNU or BSD timeout runs its command
+# in a separate process group that the outer bound's kill does not reach, so a
+# longer scan bound would keep the scan running after the stage replayed,
+# published, and removed its journal. A timer that still starts late on a
+# loaded host is covered by the replay itself, which ends the scan's recorded
+# group before it prints. A scan with no time left replays its pending
+# identities without starting.
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
@@ -487,7 +495,7 @@ publish_lock_held() {  # <generation> <phases> <locked> <started> <lockdir> <out
 }
 
 cmd_run() {  # <locked> <lock-pid> <generation>
-  local locked=$1 lock_pid=$2 generation=$3 phases started budget out rc sweep_locked=0 downgraded=0 internal=0 lease_held=0 timings stage_started stage_deadline unpushed_work=''
+  local locked=$1 lock_pid=$2 generation=$3 phases started budget out rc sweep_locked=0 downgraded=0 internal=0 lease_held=0 timings stage_started stage_deadline bound_deadline unpushed_work=''
   mkdir -p "$STATE" 2>/dev/null || return 1
   started=$(now)
   budget=$(stage_budget)
@@ -581,6 +589,8 @@ EOF
   # The sweeps get whatever the lock waits above left of the stage budget.
   budget=$(seconds_until "$stage_deadline")
   if [ "$sweep_locked" -eq 1 ]; then
+    # now floors to the second, so the bound below fires no earlier than this.
+    bound_deadline=$(( $(now) + budget ))
     unpushed_work=$(mktemp -d "${TMPDIR:-/tmp}/fm-startup-unpushed.XXXXXX") || {
       printf 'UNPUSHED: cannot retain startup inventory; recovery may be incomplete\n' >> "$out"
       unpushed_work=''
@@ -591,25 +601,34 @@ EOF
       bash -c '
         script_dir=$1
         work=$2
+        deadline=$3
+        unpushed() {  # <mode> [--work-dir <dir>]: the scanner ends inside this stage
+          FM_UNPUSHED_DEADLINE=$deadline "$script_dir/fm-unpushed-reconcile.sh" "$@"
+        }
         if [ -n "$work" ]; then
-          "$script_dir/fm-unpushed-reconcile.sh" discover --work-dir "$work" || true
+          unpushed discover --work-dir "$work" || true
         fi
         "$script_dir/fm-inactive-reconcile.sh" scan --startup >/dev/null 2>&1 || true
         bootstrap_rc=0
         FM_FLEET_PRUNE=0 "$script_dir/fm-bootstrap.sh" || bootstrap_rc=$?
         if [ -n "$work" ]; then
-          "$script_dir/fm-unpushed-reconcile.sh" scan --work-dir "$work"
+          unpushed scan --work-dir "$work"
         else
-          "$script_dir/fm-unpushed-reconcile.sh" scan
+          unpushed scan
         fi || printf "UNPUSHED: incomplete scan; rerun %s/fm-unpushed-reconcile.sh scan\n" "$script_dir"
         exit "$bootstrap_rc"
-      ' _ "$SCRIPT_DIR" "$unpushed_work" >>"$out" 2>&1 || rc=$?
+      ' _ "$SCRIPT_DIR" "$unpushed_work" "$bound_deadline" >>"$out" 2>&1 || rc=$?
   else
     fm_run_timed "$budget" env FM_BOOTSTRAP_NETWORK=only FM_BOOTSTRAP_DETECT_ONLY=1 \
       "$SCRIPT_DIR/fm-bootstrap.sh" >"$out" 2>&1 || rc=$?
   fi
   if [ "$rc" -ne 0 ] && [ -n "$unpushed_work" ]; then
     "$SCRIPT_DIR/fm-unpushed-reconcile.sh" pending --work-dir "$unpushed_work" >> "$out" 2>&1 || true
+    # A stage bound that cut the scanner off before it could say so itself
+    # still reports the scan as incomplete.
+    if [ "$rc" -eq 124 ] && ! grep -q '^UNPUSHED: incomplete scan' "$out" 2>/dev/null; then
+      printf 'UNPUSHED: incomplete scan (the startup stage bound ended it); rerun %s/fm-unpushed-reconcile.sh scan\n' "$SCRIPT_DIR" >> "$out"
+    fi
   fi
   [ "$lease_held" -eq 0 ] || fm_lock_release "$STATE/.lock.acquire"
   # The bounded run as a whole, so the per-phase records can be read against the

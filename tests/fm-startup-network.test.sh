@@ -942,7 +942,7 @@ EOF
 }
 
 test_outer_timeout_keeps_discovered_branch_names() {
-  local rec home root log project report
+  local rec home root log project report forge_pid real_mktemp
   rec=$(new_world outer-unpublished-timeout)
   IFS='|' read -r home root log <<EOF
 $rec
@@ -963,32 +963,79 @@ EOF
   printf 'project=%s\nbranch=fm/task\nkind=ship\nmode=no-mistakes\n' "$project" > "$home/state/task.meta"
   cat > "$root/bin/gh-axi" <<'SH'
 #!/usr/bin/env bash
-printf 'entered\n' > "$FM_OUTER_PROOF_MARK"
-sleep 60
+printf '%s\n' "$$" > "$FM_OUTER_PROOF_MARK"
+exec sleep 60
 SH
   chmod +x "$root/bin/gh-axi"
   printf '%s\n' $$ > "$home/state/.lock"
+  # On a loaded host the scanner can take seconds to reach its own timer.
+  # Delay that start so a bound fixed before it would outlive the stage.
+  rm "$root/bin/fm-unpushed-reconcile.sh"
+  cat > "$root/bin/fm-unpushed-reconcile.sh" <<SH
+#!/usr/bin/env bash
+[ "\$1" != scan ] || sleep 6
+exec "$ROOT/bin/fm-unpushed-reconcile.sh" "\$@"
+SH
+  chmod +x "$root/bin/fm-unpushed-reconcile.sh"
+  # The timeout helper's own setup can also run late after the scan computed
+  # its bound; delay it once so the scan's timer would outlive the stage.
+  real_mktemp=$(type -P mktemp)
+  cat > "$root/bin/mktemp" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *fm-timeout-status*)
+    if [ ! -e "$home/setup-delayed" ] && ps -o command= -p "\$PPID" | grep -q 'fm-unpushed-reconcile.sh scan'; then
+      : > "$home/setup-delayed"
+      sleep 6
+    fi
+    ;;
+esac
+exec "$real_mktemp" "\$@"
+SH
+  chmod +x "$root/bin/mktemp"
+  # A per-scan bound longer than the stage budget must still end inside it:
+  # nothing the scan started may outlive the stage that reports it. The stage
+  # budget leaves room for the scan to reach the forge read on a loaded host,
+  # while staying well under the 60 s scan bound the stage must override.
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
-    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=12 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=30 FM_UNPUSHED_TIMEOUT_SECS=60 \
     run_stage "$home" "$root" run --locked 1 --lock-pid $$
+  rm "$root/bin/fm-unpushed-reconcile.sh" "$root/bin/mktemp"
+  ln -s "$ROOT/bin/fm-unpushed-reconcile.sh" "$root/bin/fm-unpushed-reconcile.sh"
   [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
+  if type -P timeout >/dev/null 2>&1 || type -P gtimeout >/dev/null 2>&1; then
+    [ -f "$home/setup-delayed" ] || fail 'the timeout setup delay was never exercised'
+  fi
+  forge_pid=$(cat "$home/proof-entered")
+  # The scan's group is reaped before the stage returns; allow only the
+  # moment the killed process needs to disappear.
+  for _ in 1 2 3 4 5; do
+    kill -0 "$forge_pid" 2>/dev/null || break
+    sleep 0.2
+  done
+  if kill -0 "$forge_pid" 2>/dev/null; then
+    kill "$forge_pid" 2>/dev/null || true
+    fail 'the scan kept running after the startup stage that bounds it had finished'
+  fi
   report=$(run_stage "$home" "$root" report)
-  assert_contains "$report" 'branch=fm/task' 'the outer deadline lost a discovered task branch'
-  assert_contains "$report" 'branch=fm/another' 'the outer deadline lost the later discovered branch'
-  assert_contains "$report" 'hit the 12s bound' 'the outer deadline was not exercised'
-  wait_for_startup_network_wake "$home" || fail 'the outer deadline did not deliver its branch evidence durably'
+  assert_contains "$report" 'branch=fm/task' 'the stage deadline lost a discovered task branch'
+  assert_contains "$report" 'branch=fm/another' 'the stage deadline lost the later discovered branch'
+  assert_contains "$report" 'incomplete scan' 'the cut-short scan was not reported as incomplete'
+  wait_for_startup_network_wake "$home" || fail 'the stage deadline did not deliver its branch evidence durably'
   # Discovery also precedes refresh itself: a refresh that never returns must
   # not prevent already local branch identities from reaching the report.
+  # Discovery itself must end inside the stage, so the budget leaves it room
+  # after the stage's own start on a loaded host.
   rm "$home/proof-entered"
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=60 \
-    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=8 FM_UNPUSHED_TIMEOUT_SECS=60 \
+    FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=15 FM_UNPUSHED_TIMEOUT_SECS=60 \
     run_stage "$home" "$root" run --locked 1 --lock-pid $$
   [ ! -f "$home/proof-entered" ] || fail 'the stalled refresh unexpectedly reached publication proofs'
   report=$(run_stage "$home" "$root" report)
   assert_contains "$report" 'branch=fm/task' 'a stalled refresh hid the task inventory'
   assert_contains "$report" 'branch=fm/another' 'a stalled refresh hid the other branch inventory'
-  assert_contains "$report" 'hit the 8s bound' 'the refresh deadline was not exercised'
-  pass 'fm-startup-network: an outer deadline retains discovered branch identities'
+  assert_contains "$report" 'hit the 15s bound' 'the refresh deadline was not exercised'
+  pass 'fm-startup-network: a stage deadline retains discovered branch identities and leaves no scan running'
 }
 
 test_outer_timeout_keeps_discovered_branch_names

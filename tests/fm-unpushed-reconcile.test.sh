@@ -12,6 +12,7 @@ mkdir -p "$TMP_ROOT/fakebin"
 cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_GH_LOG"
+[ -z "${FM_GH_PID:-}" ] || printf '%s\n' "$$" > "$FM_GH_PID"
 [ "${FM_GH_FAIL:-0}" = 0 ] || exit 1
 [ -z "${FM_GH_SLEEP:-}" ] || sleep "$FM_GH_SLEEP"
 if [ "$1" = api ]; then
@@ -299,6 +300,134 @@ assert_contains "$out" 'branch=fm/task' 'timeout hid the branch'
 assert_contains "$out" 'branch=fm/another' 'slow comparison hid another local branch'
 assert_contains "$out" 'incomplete' 'timeout became success'
 pass 'a slow forge read retains all discovered branches and an incomplete scan'
+
+new_world deadline
+# As in the startup stage, inventory comes first so a deadline cut, however
+# little time it leaves on a loaded host, still names the discovered branch.
+deadline_work="$TMP_ROOT/deadline-work"
+mkdir -m 700 "$deadline_work"
+bash "$ROOT/bin/fm-unpushed-reconcile.sh" discover --work-dir "$deadline_work" >/dev/null
+deadline=$(( $(date +%s) + 20 ))
+# Time spent before the scan reaches its timer, as on a loaded host, must come
+# out of the caller's deadline rather than extend past it.
+sleep 4
+out=$(FM_UNPUSHED_DEADLINE=$deadline FM_UNPUSHED_TIMEOUT_SECS=20 FM_GH_SLEEP=60 \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan --work-dir "$deadline_work")
+finished=$(date +%s)
+[ "$finished" -le "$deadline" ] || fail "the scan ended at $finished, after its deadline $deadline"
+assert_contains "$out" 'branch=fm/task' 'the deadline hid the branch'
+assert_contains "$out" 'incomplete' 'the deadline cut became success'
+: > "$FM_GH_LOG"
+out=$(FM_UNPUSHED_DEADLINE=$(( $(date +%s) - 1 )) scan)
+assert_contains "$out" 'incomplete' 'a passed deadline became success'
+assert_equals '' "$(cat "$FM_GH_LOG")" 'a passed deadline still read the forge'
+rc=0
+FM_UNPUSHED_DEADLINE=soon scan >/dev/null 2>&1 || rc=$?
+assert_equals 2 "$rc" 'an invalid deadline was accepted'
+pass 'a caller deadline bounds the scan from where its timer starts'
+
+new_world stray-group
+# A space and a literal backslash in the path must not hide the scan from its
+# own replay.
+group_work="$TMP_ROOT/stray group\\tw"
+mkdir -m 700 "$group_work"
+rm -f "$TMP_ROOT/gh.pid"
+# The caller's kill reaches only the scanner, as when a stage bound fires
+# while the timed scan is still reading the forge.
+FM_UNPUSHED_TIMEOUT_SECS=60 FM_GH_SLEEP=60 FM_GH_PID="$TMP_ROOT/gh.pid" \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan --work-dir "$group_work" >/dev/null &
+scan_pid=$!
+for _ in $(seq 1 300); do
+  [ ! -s "$TMP_ROOT/gh.pid" ] || break
+  sleep 0.1
+done
+[ -s "$TMP_ROOT/gh.pid" ] || fail 'the scan never reached its forge read'
+forge_pid=$(cat "$TMP_ROOT/gh.pid")
+kill -KILL "$scan_pid"
+wait "$scan_pid" 2>/dev/null || true
+kill -0 "$forge_pid" 2>/dev/null || fail 'killing the scanner alone already ended its timed scan'
+# An ambient narrow terminal width must not hide the scan from the replay.
+out=$(COLUMNS=40 bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work")
+for _ in 1 2 3 4 5; do
+  kill -0 "$forge_pid" 2>/dev/null || break
+  sleep 0.2
+done
+if kill -0 "$forge_pid" 2>/dev/null; then
+  kill "$forge_pid" 2>/dev/null || true
+  fail 'the replay left the cut-short scan reading the forge'
+fi
+assert_contains "$out" 'branch=fm/task' 'the replay lost the discovered branch'
+pass 'replaying a cut-short scan ends the timed scan its caller could not reach'
+
+# A recorded group that is not this work directory's live scan is never ended,
+# nor is the caller's own group even when a member of it carries the token.
+[ -s "$group_work/token" ] || fail 'the cut-short scan left no token for its replay'
+token=$(cat "$group_work/token")
+mkdir -p "$TMP_ROOT/decoy"
+printf '#!/usr/bin/env bash\nsleep 30\n' > "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh"
+if command -v perl >/dev/null 2>&1; then
+  # The caller runs in a group of its own here, so a replay that wrongly ends its
+  # caller's group ends only this probe.
+  own_out=$(perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' bash -c '
+    bash "$1" --scan "$2" "$3" &
+    member=$!
+    for _ in $(seq 1 50); do
+      ps -o command= -p "$member" 2>/dev/null | grep -qF -- "$3" && break
+      sleep 0.1
+    done
+    ps -o command= -p "$member" 2>/dev/null | grep -qF -- "$3" || { echo member-missing; exit 0; }
+    ps -o pgid= -p $$ | tr -d " " > "$2/group"
+    bash "$4" pending --work-dir "$2" >/dev/null
+    if kill -0 "$member" 2>/dev/null; then echo caller-group-kept; fi
+    kill "$member" 2>/dev/null
+    wait "$member" 2>/dev/null
+    exit 0
+  ' _ "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" "$group_work" "$token" "$ROOT/bin/fm-unpushed-reconcile.sh") || true
+  case "$own_out" in
+    *member-missing*) fail 'the token-carrying member of the caller group never started' ;;
+    *caller-group-kept*) ;;
+    *) fail 'the replay ended its own caller group' ;;
+  esac
+fi
+if command -v perl >/dev/null 2>&1; then
+  perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec "sleep", "30"' &
+  other=$!
+  sleep 0.5
+  printf '%s\n' "$other" > "$group_work/group"
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+  kill -0 "$other" 2>/dev/null || fail 'the replay ended an unrelated process group'
+  kill "$other" 2>/dev/null || true
+  wait "$other" 2>/dev/null || true
+  # A live scan of another work directory whose path starts with this one, with
+  # or without a separating space, does not belong to this work directory, even
+  # when the recorded id is its group.
+  for neighbour in "$group_work-other" "$group_work other"; do
+    perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec @ARGV' \
+      bash "$TMP_ROOT/decoy/fm-unpushed-reconcile.sh" --scan "$neighbour" 0123456789abcdef01234567 &
+    other=$!
+    for _ in $(seq 1 50); do
+      ps -o command= -p "$other" 2>/dev/null | grep -qF -- "--scan $neighbour" && break
+      sleep 0.1
+    done
+    ps -o command= -p "$other" 2>/dev/null | grep -qF -- "--scan $neighbour" \
+      || fail 'the decoy scan of the neighbouring work directory never started'
+    printf '%s\n' "$other" > "$group_work/group"
+    bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+    kill -0 "$other" 2>/dev/null || fail 'the replay ended the scan of a neighbouring work directory'
+    kill "$other" 2>/dev/null || true
+    wait "$other" 2>/dev/null || true
+  done
+fi
+pass 'the replay never ends its own or an unrelated process group'
+
+# A timed scan that starts after the caller's deadline reads nothing.
+: > "$FM_GH_LOG"
+rc=0
+FM_UNPUSHED_WORK=$group_work FM_UNPUSHED_DEADLINE=$(( $(date +%s) - 1 )) \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" --scan "$group_work" >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a scan started after its deadline reported success'
+assert_equals '' "$(cat "$FM_GH_LOG")" 'a scan started after its deadline still read the forge'
+pass 'a timed scan that starts after its deadline stops before any read'
 
 new_world resolved-blocker
 printf 'resolved [at=101] [key=nm-daemon-gate-context]: retry authorized\n' >> "$FM_HOME/state/task.status"
