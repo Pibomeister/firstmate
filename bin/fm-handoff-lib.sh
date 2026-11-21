@@ -175,7 +175,9 @@ fm_handoff_warn_line_cap() { # <path>
   local path=$1 lines=0 cap
   [ -f "$path" ] || return 0
   cap=$(fm_handoff_prompt_line_cap)
-  lines=$(awk 'END { print NR+0 }' "$path" 2>/dev/null) || return 0
+  # Read the file on stdin. A path whose text is an awk assignment or flag
+  # must not become an operand, or awk waits on stdin with no file to count.
+  lines=$(2>/dev/null awk 'END { print NR+0 }' < "$path") || return 0
   case "$lines" in ''|*[!0-9]*) return 0 ;; esac
   [ "$lines" -gt "$cap" ] || return 0
   printf 'warning: handoff %s is %s lines, above the %s-line launch cap; the prompt names the path and does not inline the document\n' \

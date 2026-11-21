@@ -19,20 +19,23 @@
 #
 # state/.stop-hook.<session>.json stores a rolling 3600-second reservation
 # ledger, transcript event, normalized reply SHA-256, tool count, HEAD, wake
-# fingerprint, pending captain-inbox note ids, lane fingerprint and repeat
-# streak. Transcript parsing and HEAD reads precede the small locked
-# read-modify-write. Parallel writers charge one transcript event once.
+# fingerprint, pending captain-inbox note ids, worker-status digest,
+# captain-lane digest and repeat streak. The cached event key includes the
+# inbox ids and both digests, so a cached hook loop cannot hide a new note
+# or an acknowledgement. Transcript parsing and HEAD reads precede the small
+# locked read-modify-write. Parallel writers charge one transcript event once.
 # Without a transcript, each charge conservatively consumes budget.
 # Three identical case/whitespace-normalized replies without tools or commits
 # suppress continuation. New external wake state starts a fresh streak so an
 # old hook loop cannot hide a later real event. Twelve reservations per
 # rolling hour prevent a thirteenth. A pending state/inbox note list that
 # differs from the stored list bypasses that cap once, so a new note still
-# continues. Dropping a stored note id, or a change in the lane fingerprint,
-# clears the reservations. The lane fingerprint covers task status files, the
-# dispatch log, and pending lane inbox messages. A routine poll changes none
-# of those and does not clear the cap. Unsafe session ids do not create
-# ledger paths.
+# continues. Dropping a stored note id clears the reservations and the repeat
+# streak. A change in the dispatch log or in pending lane inbox messages does
+# the same. A worker status file does not: the first time its digest differs
+# while the cap is already spent, that poll continues once, and later status
+# writes still stop. A routine poll that changes nothing still spends a
+# reservation. Unsafe session ids do not create ledger paths.
 # Policy errors suppress model turns, never monitoring. The auto-arm retains
 # its generation and retries tokenlessly until fresh state permits a rewake.
 #
@@ -101,14 +104,15 @@ fm_stop_policy_inbox_fp() { # <state>
   printf '%s' "$out"
 }
 
-# Stable digest of lane state. "none" when this home has no such files, so the
-# first observation can be stored without clearing a seeded reservation list.
-fm_stop_policy_lane_fp() { # <state>
-  local state=$1 file line manifest sum
+# Digest of the named files that exist. A file that disappears between the
+# existence check and the read is skipped. "none" when nothing was readable.
+# An empty stored field is the first observation and does not clear a ledger.
+fm_stop_policy_files_fp() {
+  local file line manifest sum
   manifest=$(
-    for file in "$state"/*.status "$state"/dispatch-log.tsv "$state"/*.inbox/*.msg; do
+    for file in "$@"; do
       [ -f "$file" ] || continue
-      line=$(cksum < "$file" 2>/dev/null) || line='0 0'
+      line=$(2>/dev/null cksum < "$file") || continue
       printf '%s %s\n' "$line" "$file"
     done | sort
   ) || true
@@ -117,10 +121,21 @@ fm_stop_policy_lane_fp() { # <state>
   printf '%s' "$sum"
 }
 
+# Worker status files only. A later difference does not refill the budget.
+fm_stop_policy_worker_fp() { # <state>
+  fm_stop_policy_files_fp "$1"/*.status
+}
+
+# Dispatch log and pending lane inbox messages. A later difference clears
+# the reservations and the repeat streak.
+fm_stop_policy_captain_fp() { # <state>
+  fm_stop_policy_files_fp "$1"/dispatch-log.tsv "$1"/*.inbox/*.msg
+}
+
 fm_stop_policy_allows_stop() (
   local payload=$1 mode=${2:-check} session active state home script_dir now record lock
   local old snapshot event='' reply='' tools=unknown human=unknown turn_tools=unknown
-  local commit wake inbox lanes decision count streak tmp result allow reason cached fields
+  local commit wake inbox worker captain decision count streak tmp result allow reason cached fields
   local budget=12
   script_dir=${BASH_SOURCE[0]%/*}
   state=${STATE:-${FM_STATE_OVERRIDE:-${FM_HOME:?}/state}}
@@ -191,8 +206,10 @@ fm_stop_policy_allows_stop() (
   wake=none
   [ ! -f "$state/.wake-queue" ] || wake=$(cksum < "$state/.wake-queue") || wake=none
   inbox=$(fm_stop_policy_inbox_fp "$state") || inbox=
-  lanes=$(fm_stop_policy_lane_fp "$state") || lanes=none
-  [ -n "$lanes" ] || lanes=none
+  worker=$(fm_stop_policy_worker_fp "$state") || worker=none
+  captain=$(fm_stop_policy_captain_fp "$state") || captain=none
+  [ -n "$worker" ] || worker=none
+  [ -n "$captain" ] || captain=none
   record="$state/.stop-hook.$session.json"
   lock="$record.lock"
   if ! declare -F fm_lock_try_acquire >/dev/null; then
@@ -210,25 +227,34 @@ fm_stop_policy_allows_stop() (
     old=$(cat "$record") || { fm_stop_policy_log policy_error; return 0; }
   fi
   decision=$(printf '%s' "$old" | jq -ce --argjson now "$now" --argjson budget "$budget" \
-    --arg event "$event|$commit|$wake" --arg raw_event "$event" \
+    --arg event "$event|$commit|$wake|$inbox|$captain|$worker" --arg raw_event "$event" \
     --arg reply "$reply" --arg tools "$tools" --arg commit "$commit" --arg human "$human" \
-    --arg turn_tools "$turn_tools" --arg wake "$wake" --arg inbox "$inbox" --arg lanes "$lanes" '
+    --arg turn_tools "$turn_tools" --arg wake "$wake" --arg inbox "$inbox" \
+    --arg worker "$worker" --arg captain "$captain" '
       select(.times | type == "array") | .times |= map(select(. > ($now-3600)))
       | if $raw_event != "" and .event == $event and .reason != "hook_budget" then .cached=true
         else .cached=false
           | if ((.inbox // "") != "" and (($inbox | split(",")) as $nowids
                 | any((.inbox | split(","))[]; . as $id | all($nowids[]; . != $id))))
-              or ((.lanes // "") != "" and .lanes != $lanes)
-            then .times = [] else . end
-          | if (.times|length) >= $budget and ($inbox == "" or $inbox == (.inbox // "")) then
+              or ((.captain // "") != "" and .captain != $captain)
+            then .times = [] | .streak = 0 else . end
+          | if (.times|length) >= $budget
+              and ($inbox == "" or $inbox == (.inbox // ""))
+              and (((.worker // "") != "" and .worker != $worker and .worker_bypass != true) | not)
+            then
               .allow=true | .reason="hook_budget"
-            else .streak=(if $turn_tools != "0" or (has("tools") and (.tools != $tools or .commit != $commit)) then 0
-              elif $reply != "" and .reply == $reply and .human == $human and .wake == $wake and (.inbox // "") == $inbox then (.streak+1) else 1 end)
+            else
+              if (.times|length) >= $budget
+                and ($inbox == "" or $inbox == (.inbox // ""))
+                and (.worker // "") != "" and .worker != $worker and .worker_bypass != true
+              then .worker_bypass = true else . end
+              | .streak=(if $turn_tools != "0" or (has("tools") and (.tools != $tools or .commit != $commit)) then 0
+                elif $reply != "" and .reply == $reply and .human == $human and .wake == $wake and (.inbox // "") == $inbox then (.streak+1) else 1 end)
               | .allow=(.streak >= 3 and $reply != "" and $tools != "unknown")
               | if .allow then .reason="hook_loop" else .reason="continue" | .times+=[$now] end
             end
           | .event=$event | .reply=$reply | .tools=$tools | .commit=$commit | .human=$human | .wake=$wake
-          | .inbox=$inbox | .lanes=$lanes
+          | .inbox=$inbox | .worker=$worker | .captain=$captain
         end') || { fm_stop_policy_log policy_error; return 0; }
   tmp=$(mktemp "$record.XXXXXX") || { fm_stop_policy_log policy_error; return 0; }
   if ! { printf '%s\n' "$decision" > "$tmp" && mv -f "$tmp" "$record"; }; then

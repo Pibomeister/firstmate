@@ -28,6 +28,13 @@ err=$(fm_handoff_warn_line_cap "$TMP_ROOT/ten.md" 2>&1)
 [ -z "$err" ] || fail "10 lines warned: $err"
 err=$(fm_handoff_warn_line_cap "$sixty" 2>&1)
 [ -z "$err" ] || fail "60 lines warned: $err"
+assign="$TMP_ROOT/handoff=1.md"
+seq 1 61 > "$assign"
+err=$( ( cd "$TMP_ROOT" && fm_handoff_warn_line_cap 'handoff=1.md' ) 2>&1 )
+case "$err" in
+  *"is 61 lines, above the 60-line launch cap"*) ;;
+  *) fail "an awk-assignment path did not warn: $err" ;;
+esac
 err=$(fm_handoff_warn_line_cap "$long" 2>&1)
 case "$err" in
   *"is 61 lines, above the 60-line launch cap"*) ;;
