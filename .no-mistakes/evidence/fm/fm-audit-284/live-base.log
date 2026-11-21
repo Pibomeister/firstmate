@@ -1,0 +1,17 @@
+== A: deadline 20s ahead, 4s spent before scan, bound 20s, forge stalls 60s
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.Mojjh7/home/projects/demo branch=fm/task head=992fada2aa1bf530c552353bdc33690a3e067b46; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 20s); rerun /tmp/fm-base.eWakWC/bin/fm-unpushed-reconcile.sh scan
+deadline=1795220846 finished=1795220851 elapsed=25 -> PAST_DEADLINE
+== B: kill only the scanner during its forge read, then run pending
+forge pid=38834 alive after scanner kill: yes
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.Mojjh7/home/projects/demo branch=fm/task head=992fada2aa1bf530c552353bdc33690a3e067b46; inspection incomplete, task eligibility and publication unverified
+forge alive after pending: YES_LEAKED (pending took 4s)
+== C: pending with a recorded unrelated process group
+unrelated group alive: yes_spared
+~/.no-mistakes/evidence/01M7XQEB8HRRXJCE9PSCKEQN03/driver/live.sh: line 61: 45633 Terminated: 15          perl -MPOSIX=setpgid -e 'setpgid(0,0); exec "sleep","30"'
+own group survived pending: yes
+== D: passed deadline and invalid deadline
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.Mojjh7/home/projects/demo branch=fm/task head=992fada2aa1bf530c552353bdc33690a3e067b46 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/task ledger=missing pr=none merged=unknown (invalid forge response); reconcile the ledger and resume the owning task or escalate its blocker
+forge reads with passed deadline: 2
+invalid deadline exit=0

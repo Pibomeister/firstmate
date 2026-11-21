@@ -1,0 +1,16 @@
+== A: deadline 20s ahead, 4s spent before scan, bound 20s, forge stalls 60s
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.j1iGGA/home/projects/demo branch=fm/task head=992fada2aa1bf530c552353bdc33690a3e067b46; inspection incomplete, task eligibility and publication unverified
+UNPUSHED: incomplete scan (failed or exceeded 13s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+deadline=1795220847 finished=1795220844 elapsed=17 -> WITHIN_DEADLINE
+== B: kill only the scanner during its forge read, then run pending
+forge pid=28693 alive after scanner kill: yes
+UNPUSHED: project=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-unpushed.j1iGGA/home/projects/demo branch=fm/task head=992fada2aa1bf530c552353bdc33690a3e067b46; inspection incomplete, task eligibility and publication unverified
+forge alive after pending: no_ended (pending took 1s)
+== C: pending with a recorded unrelated process group
+unrelated group alive: yes_spared
+~/.no-mistakes/evidence/01M7XQEB8HRRXJCE9PSCKEQN03/driver/live.sh: line 61: 32845 Terminated: 15          perl -MPOSIX=setpgid -e 'setpgid(0,0); exec "sleep","30"'
+own group survived pending: yes
+== D: passed deadline and invalid deadline
+UNPUSHED: incomplete scan (failed or exceeded 0s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan
+forge reads with passed deadline: 0
+invalid deadline exit=2
