@@ -94,6 +94,7 @@ test_loop_done_line_is_not_a_completion() {
 
 test_bare_done_on_a_status_path_is_not_a_completion() {
   local cmd
+  # shellcheck disable=SC2016 # the hook must see the loop text with a literal $f.
   cmd=$(printf 'for f in state/*.status; do\n echo "$f"\ndone')
   run_hook "$PRIMARY" \
     "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":$(printf '%s' "$cmd" | jq -Rs .)}}" \
