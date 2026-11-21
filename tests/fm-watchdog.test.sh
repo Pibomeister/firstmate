@@ -1812,6 +1812,50 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean"
 }
 
+test_human_only_keeps_real_change_and_releases_negation() {
+  local phrase
+  for phrase in \
+    'PR #9 no-mistakes test step awaiting_approval. The once-rerun changed behavior. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. A rerun changed behavior in this PR. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. This run changed behavior. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. The test run changed behavior. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. The once-rerun failed on changed behavior. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. The once-rerun failed in code modified by this PR. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. The unit test failed on the new handler added in this PR. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. The failure was introduced by this PR. A approve, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. A approve shared-database writes so the PR can merge, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. A approve shared_database writes so the PR can merge, or B hold' \
+    'PR #9 no-mistakes test step awaiting_approval. A approve writes to the shared database so the PR can merge, or B hold' \
+    'PR #9 no-mistakes push step awaiting_approval. A forced push the rebased branch to origin, or B hold'
+  do
+    lib fm_wd_human_only "$phrase" || fail "human-only released a real hold: $phrase"
+  done
+  lib fm_wd_human_only $'PR #9 no-mistakes test step awaiting_approval. A approve the\nread-only\nshared-database writes so the PR can merge, or B hold' \
+    || fail "human-only released shared-database writes wrapped onto the next line"
+  lib fm_wd_human_only $'PR #9 no-mistakes test step awaiting_approval. The once-rerun failed in code\nmodified by this PR. A approve, or B hold' \
+    || fail "human-only released a wrapped modified-by-this-PR failure"
+  for phrase in \
+    'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake that is not on changed behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is unchanged behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is un-changed behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is un_changed behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only shared-database fixture; no writes are involved. A approve the park, or B hold'
+  do
+    ! lib fm_wd_human_only "$phrase" || fail "human-only held a negation: $phrase"
+  done
+  ! lib fm_wd_human_only $'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake. The failure is not\non changed behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    || fail "human-only held a wrapped not-on-changed-behavior negation"
+  ! lib fm_wd_human_only $'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is\nunchanged behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    || fail "human-only held unchanged behavior wrapped onto the next line"
+  ! lib fm_wd_human_only $'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake and the rest is un\nchanged behavior in a test the PR cannot reach. A approve the park, or B hold' \
+    || fail "human-only held a wrapped un-changed negation"
+  ! lib fm_wd_human_only $'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only\nshared-database fixture and has\nno\nwrites. A approve the park, or B hold' \
+    || fail "human-only held a read-only shared-database mention whose write negation wraps"
+  lib fm_wd_human_only 'PR #9 no-mistakes test step awaiting_approval. The flake is not on changed behavior. The once-rerun changed behavior. A approve, or B hold' \
+    || fail "human-only released a real changed-behavior failure that follows a negation"
+  pass "human-only: a real changed behavior or shared-database write stays held, and a negation of either does not"
+}
+
 test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council() {
   local out
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -7422,6 +7466,7 @@ fm_test_run \
   test_council_runs_one_at_a_time_per_decision \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
+  test_human_only_keeps_real_change_and_releases_negation \
   test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council \
   test_council_revisit_on_contradicting_record \
   test_council_failed_revisit_keeps_the_prior_ruling \

@@ -331,29 +331,33 @@ FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|
 # so the category search below runs on the text after these are removed.
 _fm_wd_without_negated_categories() {
   LC_ALL=C sed -E \
-    -e 's/not on changed behavio[a-z]*//g' \
-    -e 's/is not changed behavio[a-z]*//g' \
-    -e 's/not changed behavio[a-z]*//g' \
-    -e 's/no changed behavio[a-z]*//g' \
-    -e 's/without changed behavio[a-z]*//g' \
-    -e 's/unchanged behavio[a-z]*//g' \
-    -e 's/un changed behavio[a-z]*//g' \
-    -e 's/read-only//g' \
-    -e 's/read only//g' \
-    -e 's/readonly//g' \
-    -e 's/no writes//g' \
-    -e 's/no write//g' \
-    -e 's/without writes//g' \
-    -e 's/without writing//g' \
-    -e 's/without a write//g' \
-    -e 's/not writing//g' \
-    -e 's/not a write//g'
+    -e 's/(^|[^a-z])not on changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])is not changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])not changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])no changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])without changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])unchanged behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])un changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])read-only/\1/g' \
+    -e 's/(^|[^a-z])read only/\1/g' \
+    -e 's/(^|[^a-z])readonly/\1/g' \
+    -e 's/(^|[^a-z])no writes/\1/g' \
+    -e 's/(^|[^a-z])no write/\1/g' \
+    -e 's/(^|[^a-z])without writes/\1/g' \
+    -e 's/(^|[^a-z])without writing/\1/g' \
+    -e 's/(^|[^a-z])without a write/\1/g' \
+    -e 's/(^|[^a-z])not writing/\1/g' \
+    -e 's/(^|[^a-z])not a write/\1/g'
+}
+
+_fm_wd_category_line() {  # <view>
+  printf '%s\n' "$1" | awk '{ space_joined = prev; prev = $0 } END { print space_joined }' | tr '_-' '  ' | _fm_wd_without_negated_categories
 }
 
 # A shared-database write, not a bare or read-only mention of the database.
 _fm_wd_shared_db_writes() {  # <view>
   local cleaned
-  cleaned=$(printf '%s\n' "$1" | tr '_-' '  ' | _fm_wd_without_negated_categories)
+  cleaned=$(_fm_wd_category_line "$1")
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])shared[[:space:]]*(db|database)([^a-z]|$)' || return 1
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote)([^a-z]|$)'
 }
@@ -363,7 +367,7 @@ FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in thi
 
 _fm_wd_pr_caused_failure() {  # <view>
   local cleaned
-  cleaned=$(printf '%s\n' "$1" | tr '_-' '  ' | _fm_wd_without_negated_categories)
+  cleaned=$(_fm_wd_category_line "$1")
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
 }
 
