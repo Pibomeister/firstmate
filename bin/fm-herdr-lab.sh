@@ -949,6 +949,13 @@ fm_herdr_lab_fixture_start() { # <root>
   fi
   pid=$(fm_herdr_lab_fixture_record_get "$root" pid)
   if [ -n "$pid" ]; then
+    # A recorded pid still running with its recorded start time is this
+    # fixture's server even when its identity cannot be proven now, so keep the
+    # record rather than orphan that server for a later cleanup.
+    if fm_herdr_lab_fixture_pid_matches_start "$pid" "$(fm_herdr_lab_fixture_record_get "$root" pid_start)"; then
+      fm_herdr_lab_error "recorded herdr pid $pid is still running but cannot be proven this fixture's; refusing to forget it"
+      return 1
+    fi
     fm_herdr_lab_fixture_clear_pid "$root" || return 1
   fi
   if fm_herdr_lab_fixture_ready; then

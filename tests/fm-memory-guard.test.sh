@@ -303,6 +303,26 @@ test_alarm_survives_a_failed_record() {
   pass "an alarm is never hidden by a sample that cannot be recorded"
 }
 
+test_state_save_failure_exits_1() {
+  if [ "$MYUID" = 0 ]; then
+    pass "a state save failure exits 1 (skipped: root ignores directory permissions)"
+    return 0
+  fi
+  new_home 'swap_warn_mb=999999'
+  proc 4242 "$MYUID" 1 9000 60 node 'node /srv/build.js'
+  guard "$NOW0"
+  assert_equals 0 "$RC" "the first sample is recorded: $OUT"
+  # The sample log stays appendable while the state directory refuses the
+  # renames that save the sustained-process and alarm state.
+  chmod 500 "$H/state"
+  guard $((NOW0 + 60))
+  chmod 700 "$H/state"
+  assert_contains "$OUT" "cannot write $H/state/memory-guard-seen.tsv" "the failed save is reported"
+  assert_equals 2 "$(wc -l < "$H/state/memory-guard.tsv" | tr -d ' ')" "the sample itself was still recorded"
+  assert_equals 1 "$RC" "a pass that cannot save its state exits 1"
+  pass "a pass that cannot save its sustained-process or alarm state exits 1"
+}
+
 test_json_output() {
   command -v jq >/dev/null 2>&1 || { pass "json output (skip: jq not found)"; return 0; }
   new_home
@@ -529,6 +549,7 @@ fm_test_run \
   test_swap_threshold_and_config \
   test_log_is_bounded \
   test_alarm_survives_a_failed_record \
+  test_state_save_failure_exits_1 \
   test_json_output \
   test_observe_default_never_signals \
   test_reap_scratch_spares_live_agents_and_operator_apps \

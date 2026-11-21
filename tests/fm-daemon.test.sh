@@ -1014,6 +1014,7 @@ test_stale_diagnostic_wedge_survives_busy_housekeeping() {
       kill() { printf 'kill %s\n' "$*" >> "$action_log"; }
       fm_backend_send_text_submit() { printf 'interrupt %s\n' "$*" >> "$action_log"; }
       # A live agent holds the endpoint, so the paused case is a wait, not a dead worker.
+      # shellcheck disable=SC2030 # Scoped to this subshell on purpose.
       export PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude
       LOG="$dir/daemon.log" FM_STATE_OVERRIDE="$state" handle_wake "$reason" "$state"
       FM_FAKE_TMUX_CAPTURE="$pane" \
@@ -1070,6 +1071,7 @@ test_enriched_wedge_under_declared_wait_uses_pause_cadence() {
   printf 'idle prompt $\n' > "$pane"
   # A live agent holds the recorded endpoint for the whole case: a declared wait
   # whose agent is gone is a dead worker, not this healthy wait (Refs #149).
+  # shellcheck disable=SC2031 # This function's own export, not the subshell export in the case above.
   local -x PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$win" FM_FAKE_TMUX_CURRENT_COMMAND=claude
   case "$(FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")" in
     pause\|*) ;;
@@ -1819,6 +1821,27 @@ test_paused_dead_agent_surfaces_for_recovery() {
     && fail "a vanished endpoint was reported as a healthy external wait"
   [ -e "$state/.subsuper-paused-$key" ] || fail "the recheck dropped the window instead of resetting it"
   pass "a dead or vanished agent behind an ordinary paused: wait is surfaced for recovery"
+}
+
+# A tmux record names the server its window lives on. A daemon addressing
+# another server cannot see that window, so its absence there is not a gone
+# worker; the same record on the daemon's own server still surfaces.
+test_paused_worker_on_another_tmux_server_is_not_gone() {
+  local dir state task=paused-other-server win out
+  dir=$(paused_liveness_case paused-other-server "$task"); state="$dir/state"
+  win="sess:fm-$task"
+  mkdir -p "$dir/own-server" "$dir/other-server"
+  printf 'tmux_socket=%s\n' "$dir/other-server/default" >> "$state/$task.meta"
+  out=$(PATH="$dir/fakebin:$PATH" TMUX="$dir/own-server/default,1,0" FM_FAKE_TMUX_WINDOW="sess:some-other-window" \
+    FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in pause\|paused\ \(awaiting\ external\)*) ;;
+    *) fail "a paused worker recorded on another tmux server was judged from this one: $out" ;; esac
+  fm_write_meta "$state/$task.meta" "window=$win" "backend=tmux" "kind=ship" "tmux_socket=$dir/own-server/default"
+  out=$(PATH="$dir/fakebin:$PATH" TMUX="$dir/own-server/default,1,0" FM_FAKE_TMUX_WINDOW="sess:some-other-window" \
+    FM_STATE_OVERRIDE="$state" classify_stale "$win" "$state")
+  case "$out" in "escalate|paused worker gone: $win (agent missing - "*) ;;
+    *) fail "a vanished worker recorded on the daemon's own tmux server was not surfaced: $out" ;; esac
+  pass "a paused worker recorded on another tmux server is not reported gone from this one"
 }
 
 # A dead worker whose `paused:` line names an `until` time already past is
@@ -4038,6 +4061,7 @@ test_housekeeping_pause_marker_transitions_to_clear
 test_paused_live_agent_stays_a_healthy_wait
 test_paused_dead_agent_under_backlog_captain_hold_stays_quiet
 test_paused_dead_agent_surfaces_for_recovery
+test_paused_worker_on_another_tmux_server_is_not_gone
 test_paused_dead_agent_with_passed_until_surfaces_once
 test_housekeeping_herdr_persistent_stale_resolves_meta
 test_housekeeping_herdr_idle_busy_record_clears_stale

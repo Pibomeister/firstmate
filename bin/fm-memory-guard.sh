@@ -111,7 +111,8 @@
 #
 # Exit status: 0 for ok or watch, 3 for alarm (even when the sample could not
 # be recorded, so an alarm is never hidden), 1 when sampling or recording
-# failed without an alarm, 2 for a usage error.
+# (the sample row, or the seen or alarm state) failed without an alarm, 2 for
+# a usage error.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
 # clock, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
@@ -501,6 +502,7 @@ swap_ok=1
 swap_mb=$(read_swap_mb) || swap_ok=0
 [ "$swap_ok" = 1 ] && [ -n "$swap_mb" ] || { swap_ok=0; swap_mb=unknown; }
 procs_ok=1
+state_ok=1
 read_procs "$WORK/names" > "$WORK/procs" || procs_ok=0
 [ -s "$WORK/procs" ] || procs_ok=0
 [ "$swap_ok" = 1 ] || echo "memory-guard: swap could not be read on $os" >&2
@@ -526,7 +528,7 @@ if [ "$procs_ok" = 1 ]; then
       held = now - first
       if (held >= sus + 0) printf "%s\t%d\t%d\t%s\n", pid, $5 / 1024, held, $7 > susout
     }' "$WORK/procs"
-  mv -f "$WORK/seen" "$SEEN" 2>/dev/null || echo "memory-guard: cannot write $SEEN" >&2
+  mv -f "$WORK/seen" "$SEEN" 2>/dev/null || { echo "memory-guard: cannot write $SEEN" >&2; state_ok=0; }
 fi
 
 watched=0
@@ -598,7 +600,7 @@ while IFS=$'\t' read -r key line; do
   fi
   printf '%s\t%s\n' "$key" "$last" >> "$WORK/alarms-next"
 done < "$WORK/alarm-lines"
-mv -f "$WORK/alarms-next" "$ALARMS" 2>/dev/null || echo "memory-guard: cannot write $ALARMS" >&2
+mv -f "$WORK/alarms-next" "$ALARMS" 2>/dev/null || { echo "memory-guard: cannot write $ALARMS" >&2; state_ok=0; }
 
 # Record the sample and keep the log bounded.
 record_ok=1
@@ -634,5 +636,5 @@ else
 fi
 
 [ "$status" != alarm ] || exit 3
-[ "$procs_ok" = 1 ] && [ "$record_ok" = 1 ] || exit 1
+[ "$procs_ok" = 1 ] && [ "$record_ok" = 1 ] && [ "$state_ok" = 1 ] || exit 1
 exit 0

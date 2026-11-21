@@ -294,8 +294,10 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
-rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
+# Mark the record cleared before removing it, so a signal during the removal
+# still leaves this launch's own failure record for the surviving session.
 FAILED_RECORD_CLEARED=1
+rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 

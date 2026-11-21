@@ -164,6 +164,18 @@ fhl_mtime() {  # <file> -> epoch seconds
   fi
 }
 
+# fhl_take_lock: take the ladder lock without waiting. A held lock skips this
+# run, and a lock older than five minutes is a crashed run's, so it is reclaimed.
+fhl_take_lock() {
+  local lock_m
+  mkdir "$HL/.lock" 2>/dev/null && return 0
+  lock_m=$(fhl_mtime "$HL/.lock") || return 1
+  case "$lock_m" in ''|*[!0-9]*) return 1 ;; esac
+  [ $(( $(date +%s) - lock_m )) -ge 300 ] || return 1
+  rmdir "$HL/.lock" 2>/dev/null
+  mkdir "$HL/.lock" 2>/dev/null
+}
+
 # 0 when <file> is a regular file owned by this user whose permissions have
 # none of the bits in <mask> (octal, e.g. 022 or 077).
 fhl_owner_file() {  # <file> <mask>
@@ -1108,15 +1120,7 @@ cmd_tick() {
   esac
   [ -d "$HL" ] || [ "$EFFECTIVE" != off ] || exit 0
   fhl_setup_dirs || exit 0
-  mkdir "$HL/.lock" 2>/dev/null || {
-    # Never wait on the poll path: a held lock skips this sample, and a lock
-    # older than five minutes is a crashed tick's.
-    local lock_m
-    lock_m=$(fhl_mtime "$HL/.lock") || exit 0
-    case "$lock_m" in ''|*[!0-9]*) exit 0 ;; esac
-    [ $(( $(date +%s) - lock_m )) -ge 300 ] || exit 0
-    rmdir "$HL/.lock" 2>/dev/null; mkdir "$HL/.lock" 2>/dev/null || exit 0
-  }
+  fhl_take_lock || exit 0
   trap 'rmdir "$HL/.lock" 2>/dev/null' EXIT
   LEDGER_BROKEN=0
   SIGNALS=- CAPS=- BREAKER=-
@@ -1561,7 +1565,7 @@ cmd_prune() {
   NOW=$(fhl_now)
   fhl_resolve_mode
   case "$MODE_REASON" in refused:*) exit 0 ;; esac
-  mkdir "$HL/.lock" 2>/dev/null || exit 0
+  fhl_take_lock || exit 0
   trap 'rmdir "$HL/.lock" 2>/dev/null' EXIT
   SIGNALS=- CAPS=- BREAKER=-
   fhl_prune_now

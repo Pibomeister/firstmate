@@ -906,9 +906,10 @@ stale_window_is_busy() {  # <window> <state>
 # ambiguous, unreadable, and unverified keep the declared wait. Exempt, because
 # the check cannot or need not judge them: a task with no recorded endpoint, a
 # secondmate (its liveness is secondmate-liveness's job), a remote task (a local
-# probe cannot see its endpoint), a verified captain-held transfer, and a task
-# whose backlog item is an open captain hold (bin/fm-captain-hold.sh `open`
-# exit 0) - no live agent is needed while the captain decides, so that gone
+# probe cannot see its endpoint), a tmux task recorded on a tmux server other
+# than the one this daemon addresses (the same reason), a verified
+# captain-held transfer, and a task whose backlog item is an open captain hold
+# (bin/fm-captain-hold.sh `open` exit 0) - no live agent is needed while the captain decides, so that gone
 # agent returns 2 and its pause recheck stays quiet as well. A hold the backlog
 # cannot confirm surfaces the worker, the fail-safe direction.
 # Dedupe: state/.subsuper-gone-paused-<key> records the declared line already
@@ -917,7 +918,7 @@ stale_window_is_busy() {  # <window> <state>
 PAUSED_GONE_PREFIX='paused worker gone: '
 
 paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing; 1 not gone, 2 gone but held
-  local win=$1 state=$2 declared=$3 task meta verdict
+  local win=$1 state=$2 declared=$3 task meta backend sock verdict
   status_is_paused "$declared" || return 1
   task=$(window_to_task "$win" "$state")
   [ -n "$task" ] || return 1
@@ -926,7 +927,17 @@ paused_wait_agent_gone() {  # <window> <state> <declared-line> -> dead|missing; 
   [ -n "$(fm_backend_target_of_meta "$meta" 2>/dev/null)" ] || return 1
   [ "$(fm_meta_get "$meta" kind 2>/dev/null || true)" != secondmate ] || return 1
   [ -z "$(fm_meta_get "$meta" remote_host 2>/dev/null || true)" ] || return 1
-  verdict=$(fm_backend_agent_state "$(fm_backend_of_meta "$meta")" "$win" 2>/dev/null) || return 1
+  backend=$(fm_backend_of_meta "$meta")
+  # A tmux probe reads only the server this daemon addresses, so a record that
+  # names another server cannot be judged from here: its window may be alive.
+  if [ "$backend" = tmux ]; then
+    sock=$(fm_meta_get "$meta" tmux_socket 2>/dev/null || true)
+    if [ -n "$sock" ]; then
+      fm_backend_source tmux || return 1
+      [ "$(fm_backend_tmux_canonical_socket "$sock")" = "$(fm_backend_tmux_addressed_socket)" ] || return 1
+    fi
+  fi
+  verdict=$(fm_backend_agent_state "$backend" "$win" 2>/dev/null) || return 1
   case "$verdict" in
     dead|missing) ;;
     *) rm -f "$state/.subsuper-gone-paused-$(_stale_key "$task")"; return 1 ;;
