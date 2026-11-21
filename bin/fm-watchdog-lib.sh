@@ -21,13 +21,15 @@
 #       release it would unblock does not by itself make it the owner's.
 #   fm_wd_human_only <text>
 #       Returns 0 when the text names a human-only category for an
-#       awaiting_approval decision (deploy, publish, force-push, spend,
+#       awaiting_approval decision (deploy, publish, force-push or a forced push, spend,
 #       secrets or credentials, sign-in, security, production or
 #       shared-database writes, PII, messages to people, deletion, or a
 #       failure in the PR's own changed behavior).
 #   fm_wd_known_unreachable_timing_flake <text>
 #       Returns 0 when the text describes a known timing flake in a test the
-#       PR cannot reach: a timing word, a flake word, and an unreachable word.
+#       PR cannot reach: a timing word (`timing`, `load-sensitive`, or
+#       `load-shaped`, and `load shaped` counts as `load-shaped`), a flake
+#       word, and an unreachable word.
 #   fm_wd_pr_label <text>
 #       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
 #       else its first `PR #<n>`, else its first structured `pr: #<n>` or
@@ -40,8 +42,9 @@
 #       seat never counts toward the two families a ruling needs.
 #   fm_wd_text_allowed <text>
 #       Returns 0 only when the watchdog may type or file this text: it refuses
-#       merge, deploy, release, publish, and force-push words, so no typed answer
-#       or nudge can carry a merge or deploy instruction.
+#       merge, deploy, release, publish, and force-push words, including a
+#       forced push, so no typed answer or nudge can carry a merge or deploy
+#       instruction.
 #   fm_wd_draft_rows <composer-window>
 #       Prints the draft fm_wd_draft_readable proved, for the handoff note: a
 #       closed box's body from its first prompt row, or the rows from the last

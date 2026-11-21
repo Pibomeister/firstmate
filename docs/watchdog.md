@@ -269,7 +269,7 @@ Apart from the revisit below, removing the record file is the only way to allow 
 The one documented exception is that revisit: `fm-watchdog.sh council --revisit` with a `--record-file` carrying a later standing order or supervisor nudge that contradicts the recorded outcome convenes once more on the new record, and archives that outcome under `data/watchdog/revisits/` only when the new council publishes a ruling or no-ruling record; a failed, refused, or busy revisit leaves the prior outcome in place.
 Re-asking on contradicting evidence is a revisit, never a silent re-roll, and an automatic pass never revisits on its own.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
-A record that describes a known unreachable timing flake - a timing word, a flake word, and an unreachable word - is put to the seats with a default: approve the park, labeled approved, not clean, when that is option A.
+A record that describes a known unreachable timing flake - a timing word, a flake word, and an unreachable word - is put to the seats with a default: approve the park, labeled approved, not clean, on whichever option approves it.
 [`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when that default applies to a parked test step.
 
 `fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.
@@ -282,7 +282,9 @@ It types nothing into any pane.
 
 The watchdog never merges, never deploys, never spends beyond existing caps, never messages the owner except the pages below, never accepts a `merge #...` autosuggestion, never tears down work, never types into panes on the `do-not-touch` list, and owner-reserved holds stay held.
 
-- No typed text or pressed Enter can carry a merge, deploy, release, publish, or force-push word. A letter before the word does not change this, so `redeploy`, `automerge`, `prerelease`, and `republish` are refused; `emerge` and `submerge` are not merge words. Text with `push` followed later, on one row or across joined rows, by `--force`, `--force-with-lease`, a `-f` flag, or a `+` refspec such as `+main` is a force-push. The guard also reads a multi-row text joined with spaces and joined with nothing, so a continued command, a soft wrap, or a split word is refused; a handoff keeps the original rows.
+- No typed text or pressed Enter can carry a merge, deploy, release, publish, or force-push word. A letter before the word does not change this, so `redeploy`, `automerge`, `prerelease`, and `republish` are refused; `emerge` and `submerge` are not merge words. Text with `push` followed later, on one row or across joined rows, by `--force`, `--force-with-lease`, a `-f` flag, or a `+` refspec such as `+main` is a force-push.
+  `forced push` is a force-push word, including `forced-push` and `forcedpush`.
+  The guard also reads a multi-row text joined with spaces and joined with nothing, so a continued command, a soft wrap, or a split word is refused; a handoff keeps the original rows.
 - A decision keyed `captain-hold-*` or `human-step-*`, listed in `reserved-keys`, or naming money, merges, releases, deploys, credentials, security, production data, or deletion in its task, key, or summary is never nudged, put to council, or answered; it appears as a held gap. The `council` command holds it the same way.
   One carve-out: a decision naming a no-mistakes `awaiting_approval` step reaches the council despite the merge or release it would unblock, because that step is a council or captain decision by default.
   It stays held only when it also names a human-only category - a deploy, a publish, a force-push or a forced push, spend, secrets or credentials, a sign-in, security, production or shared-database writes, PII, messages to people, deletion, or a failure in the PR's own changed behavior - or it looks like a secret, or its key is reserved above.

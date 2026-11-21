@@ -38,8 +38,8 @@ It stops at the finding, routes the decision to firstmate, and applies only the 
 
 A no-mistakes step parked at `awaiting_approval` is a council or captain decision by default, answered with `no-mistakes axi respond --action approve` or a hold.
 The merge or release that approving would unblock does not by itself make the step human-only.
-It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push or a forced push, spend, secrets, production or shared-database writes, PII, messages to people, deletion, or sign-in.
-When a once-rerun fails only on a known load-sensitive timing test the PR cannot reach, default to approve the park and label it "approved, not clean".
+It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push or a forced push, spend, secrets, a sign-in, security, production or shared-database writes, PII, messages to people, or deletion.
+When a once-rerun fails only on a known unreachable timing flake in a test the PR cannot reach, including one named load-sensitive or load-shaped, default to approve the park and label it "approved, not clean".
 The alternative to approving is a scheduled low-load rerun, never a hold for the human on that evidence alone.
 A failed once-rerun does not by itself bar approving, and an extra isolated green run is evidence to weigh, not fishing that disqualifies it.
 That default stands at full strength when a standing order already accepts flaky-test risk or merges gate-green work with no per-PR approval.
@@ -99,4 +99,4 @@ Do not relay reviewer labels or gate output as if they settled the decision.
 - A third review round on one reversible theme ships with a filed follow-up only on a unanimous council ruling; a split council holds it for the captain.
 - A genuinely security-sensitive action requires the captain under the stronger existing boundary even if it is otherwise within scope.
 - Complex architecture explicitly requested by the captain stays within scope and does not escalate merely because it is complex.
-- A test step parked at `awaiting_approval` whose only once-rerun failure is a known load-sensitive timing flake in a test the PR cannot reach is the council's to approve as "approved, not clean", not a hold for the human.
+- A test step parked at `awaiting_approval` whose only once-rerun failure is a known unreachable timing flake, including a load-sensitive or load-shaped flake, in a test the PR cannot reach is the council's to approve as "approved, not clean", not a hold for the human.
