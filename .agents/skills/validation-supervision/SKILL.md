@@ -35,3 +35,6 @@ Judge validation by the resolved state line from [`bin/fm-crew-state.sh`](../../
 Workers parked at approval or fix-review must follow the active gate help.
 A worker hand-editing, committing, aborting, or restarting during an active validation run duplicates pipeline ownership outside the supersession sequence above; steer it back to the gate response flow.
 The worker reports the PR when CI first becomes green rather than waiting for merge monitoring to finish.
+
+When a covered merge review blocks the PR, steer the fix round with the open finding ids from `bin/fm-merge-review.sh findings <PR url> --head <full-sha>`, so the worker and the next round's reviewers name the same findings.
+From the third review round, `ask-user-authority` "Third same-theme review round" owns what each finding state requires.
