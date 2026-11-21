@@ -1,0 +1,92 @@
+revision=307babb208e3b38a282e5c56b8adb21580df5cae
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g
+Stop exit 2 blocks the stop, so the captain continues. Exit 0 allows the stop.
+
+== twelve distinct replies continue and the thirteenth is refused ==
+PASS turn 1 continues rc=2 log=STOPHOOK v1 ts=1795274850 session=budget-live status=continue turns=1 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":1,"inbox":"","captain":"none"}
+PASS turn 2 continues rc=2 log=STOPHOOK v1 ts=1795274867 session=budget-live status=continue turns=2 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":2,"inbox":"","captain":"none"}
+PASS turn 3 continues rc=2 log=STOPHOOK v1 ts=1795274876 session=budget-live status=continue turns=3 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":3,"inbox":"","captain":"none"}
+PASS turn 4 continues rc=2 log=STOPHOOK v1 ts=1795274884 session=budget-live status=continue turns=4 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":4,"inbox":"","captain":"none"}
+PASS turn 5 continues rc=2 log=STOPHOOK v1 ts=1795274892 session=budget-live status=continue turns=5 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":5,"inbox":"","captain":"none"}
+PASS turn 6 continues rc=2 log=STOPHOOK v1 ts=1795274901 session=budget-live status=continue turns=6 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":6,"inbox":"","captain":"none"}
+PASS turn 7 continues rc=2 log=STOPHOOK v1 ts=1795274910 session=budget-live status=continue turns=7 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":7,"inbox":"","captain":"none"}
+PASS turn 8 continues rc=2 log=STOPHOOK v1 ts=1795274914 session=budget-live status=continue turns=8 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":8,"inbox":"","captain":"none"}
+PASS turn 9 continues rc=2 log=STOPHOOK v1 ts=1795274919 session=budget-live status=continue turns=9 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":9,"inbox":"","captain":"none"}
+PASS turn 10 continues rc=2 log=STOPHOOK v1 ts=1795274924 session=budget-live status=continue turns=10 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":10,"inbox":"","captain":"none"}
+PASS turn 11 continues rc=2 log=STOPHOOK v1 ts=1795274934 session=budget-live status=continue turns=11 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":11,"inbox":"","captain":"none"}
+PASS turn 12 continues rc=2 log=STOPHOOK v1 ts=1795274942 session=budget-live status=continue turns=12 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":12,"inbox":"","captain":"none"}
+PASS turn 13 is refused rc=0 log=STOPHOOK v1 ts=1795274957 session=budget-live status=hook_budget turns=12 repeat=1 ledger={"reason":"hook_budget","allow":true,"streak":1,"n":12,"inbox":"","captain":"none"}
+continue_rows=12 hook_budget_rows=1
+
+== a new inbox note wakes an exhausted ledger once, and the same note does not ==
+PASS exhausted ledger stops with no pending note rc=0 log=STOPHOOK v1 ts=1795274961 session=inbox-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS new inbox note continues past the cap rc=2 log=STOPHOOK v1 ts=1795274961 session=inbox-live status=continue turns=13 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":13,"inbox":"100","captain":"none"}
+PASS the same pending note does not wake again rc=0 log=STOPHOOK v1 ts=1795274964 session=inbox-live status=hook_budget turns=13 repeat=1 ledger={"reason":"hook_budget","allow":true,"streak":1,"n":13,"inbox":"100","captain":"none"}
+PASS a second new note wakes once rc=2 log=STOPHOOK v1 ts=1795274966 session=inbox-live status=continue turns=14 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":14,"inbox":"100,200","captain":"none"}
+PASS consuming the notes clears the reservations rc=2 log=STOPHOOK v1 ts=1795274972 session=inbox-live status=continue turns=1 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":1,"inbox":"","captain":"none"}
+
+== a handled note and a wake-queue rewrite do not wake an exhausted ledger ==
+PASS a note under inbox/handled does not wake rc=0 log=STOPHOOK v1 ts=1795274977 session=handled-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS a wake-queue change does not bypass the cap rc=0 log=STOPHOOK v1 ts=1795274980 session=wakeq-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+
+== worker status polls do not continue and do not clear reservations ==
+PASS first status observation stays stopped rc=0 log=STOPHOOK v1 ts=1795274983 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS status poll 1 stays stopped rc=0 log=STOPHOOK v1 ts=1795274987 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS status poll 2 stays stopped rc=0 log=STOPHOOK v1 ts=1795274991 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS status poll 3 stays stopped rc=0 log=STOPHOOK v1 ts=1795274994 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS status poll 4 stays stopped rc=0 log=STOPHOOK v1 ts=1795274996 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS status poll 5 stays stopped rc=0 log=STOPHOOK v1 ts=1795274999 session=worker-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+worker ledger times=12
+
+== a lane message and a dispatch-log append each clear an exhausted ledger ==
+PASS lane baseline stays stopped rc=0 log=STOPHOOK v1 ts=1795275001 session=lane-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"none"}
+PASS a pending lane message clears the budget rc=2 log=STOPHOOK v1 ts=1795275003 session=lane-live status=continue turns=1 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":1,"inbox":"","captain":"3735390981 116"}
+PASS dispatch baseline stays stopped rc=0 log=STOPHOOK v1 ts=1795275009 session=dispatch-live status=hook_budget turns=12 repeat=0 ledger={"reason":"hook_budget","allow":true,"streak":0,"n":12,"inbox":"","captain":"3735390981 116"}
+PASS a dispatch log change clears the budget rc=2 log=STOPHOOK v1 ts=1795275019 session=dispatch-live status=continue turns=1 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":1,"inbox":"","captain":"3885119988 230"}
+
+== a cached hook loop does not hide a new inbox note ==
+PASS three identical replies reach a hook loop rc=0 log=STOPHOOK v1 ts=1795275032 session=cache-live status=hook_loop turns=2 repeat=3 ledger={"reason":"hook_loop","allow":true,"streak":3,"n":2,"inbox":"","captain":"3885119988 230"}
+PASS the same transcript keeps the cached hook loop rc=0 log=STOPHOOK v1 ts=1795275032 session=cache-live status=hook_loop turns=2 repeat=3 ledger={"reason":"hook_loop","allow":true,"streak":3,"n":2,"inbox":"","captain":"3885119988 230"}
+PASS the new note is not hidden by the cached hook loop rc=2 log=STOPHOOK v1 ts=1795275038 session=cache-live status=continue turns=3 repeat=1 ledger={"reason":"continue","allow":false,"streak":1,"n":3,"inbox":"cache-live","captain":"3885119988 230"}
+
+== handoff launch and restart prompts name the path and warn above 60 lines ==
+line_cap=60
+PASS 10 and 60 lines are silent
+long_warning=warning: handoff /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/long.md is 61 lines, above the 60-line launch cap; the prompt names the path and does not inline the document
+PASS 61 lines warn
+PASS warning omits the document body
+successor_prompt=Firstmate handoff successor. Read the entire document at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/handoff ) '.md. Its sha256 must be sha256. Before doing any project work or starting a read-only session, run this exact acknowledgement command: ack-cmd . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run start-cmd and continue the document. nonce=nonce
+PASS successor prompt names the path
+PASS successor prompt omits the document body
+restart_prompt=Watchdog restart of this firstmate home. Read /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/long.md first, then take over as the session-start contract says. After you hold the session lock, run: FM_HOME=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g {run-worktree}/bin/fm-watchdog.sh pickup tok
+restart_warning=warning: handoff /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/long.md is 61 lines, above the 60-line launch cap; the prompt names the path and does not inline the document
+PASS restart prompt names the path
+PASS restart prompt omits the document body
+launch_rc=1
+launch_stderr<<EOF
+warning: handoff /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/launch-handoff.md is 61 lines, above the 60-line launch cap; the prompt names the path and does not inline the document
+error: only the current session lock owner or its watcher can launch its successor
+EOF
+launch_stdout<<EOF
+EOF
+PASS launch output omits the document body
+
+== auto-arm delivers a new inbox note without waiting out the hour ==
+autoarm_rc=0
+autoarm_stdout<<EOF
+EOF
+autoarm_stderr<<EOF
+EOF
+autoarm_stop_log<<EOF
+EOF
+FAIL: auto-arm exit 0, expected 2
+FAIL: auto-arm wake did not carry the arm reason
+grep: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/autoarm/state/stop-hook.log: No such file or directory
+FAIL: auto-arm did not record continue
+grep: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-wake-budget-live.SD1Q4g/autoarm/state/stop-hook.log: No such file or directory
+PASS auto-arm did not record hook_budget
+
+== summary ==
+failures=3
+
+NOTE: the auto-arm section above ran with the parent lab overrides still exported, so the hook did not see this inbox. The isolated rerun is live-autoarm.txt: exit 2, status=continue, inbox 100, wake text on stderr.

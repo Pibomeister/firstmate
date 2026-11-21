@@ -1,0 +1,89 @@
+DRILL lab_home=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stop-policy.cJIbxq/home (temporary FM_HOME)
+ok - DRILL all-parked: stopped in 1 turn
+ok - parked shortcut preserves executable orders and mixed work
+ok - stop_hook_active is honored by the ordinary Stop guard
+DRILL repeated reply turn=1 exit=2
+DRILL repeated reply turn=2 exit=2
+DRILL repeated reply turn=3 exit=0
+ok - DRILL constant normalized reply: loop broken by turn 3
+ok - rolling-hour budget permits at most twelve continuations per session
+ok - budget expires after a rolling hour without affecting other sessions
+ok - a fixed turn_id without a transcript cannot bypass the cap
+ok - parallel Stop entrypoints share one event charge
+ok - three concurrent Stop writers reserve one continuation
+ok - check mode ignores ledger contention and transcript parsing
+ok - tool calls and commits reset the repeat streak
+ok - a new inbox note wakes once through an exhausted budget, and consuming it clears the budget
+ok - wake-queue changes do not bypass or clear an exhausted budget
+ok - tool use does not clear an exhausted reservation budget
+ok - a worker status line every poll does not refill the stop budget
+ok - a pending lane inbox message clears an exhausted budget
+ok - a dispatch log change clears an exhausted budget
+ok - lane progress that clears the budget resets the repeat streak
+ok - a cached hook loop does not hide a new inbox note
+ok - handoff gate honors stop_hook_active; auto-arm arming is tested separately
+STOPHOOK v1 ts=1795275433 session=parked status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1795275436 session=parked-order status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275438 session=external status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1795275439 session=mixed status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275441 session=active status=hook_active turns=0 repeat=0
+STOPHOOK v1 ts=1795275442 session=repeat status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275445 session=repeat status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1795275447 session=repeat status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1795275448 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275450 session=budget status=continue turns=2 repeat=1
+STOPHOOK v1 ts=1795275452 session=budget status=continue turns=3 repeat=1
+STOPHOOK v1 ts=1795275466 session=budget status=continue turns=4 repeat=1
+STOPHOOK v1 ts=1795275474 session=budget status=continue turns=5 repeat=1
+STOPHOOK v1 ts=1795275482 session=budget status=continue turns=6 repeat=1
+STOPHOOK v1 ts=1795275490 session=budget status=continue turns=7 repeat=1
+STOPHOOK v1 ts=1795275494 session=budget status=continue turns=8 repeat=1
+STOPHOOK v1 ts=1795275497 session=budget status=continue turns=9 repeat=1
+STOPHOOK v1 ts=1795275501 session=budget status=continue turns=10 repeat=1
+STOPHOOK v1 ts=1795275503 session=budget status=continue turns=11 repeat=1
+STOPHOOK v1 ts=1795275506 session=budget status=continue turns=12 repeat=1
+STOPHOOK v1 ts=1795275509 session=budget status=hook_budget turns=12 repeat=1
+STOPHOOK v1 ts=1795279111 session=budget status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275515 session=no-transcript status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1795275518 session=no-transcript status=continue turns=2 repeat=0
+STOPHOOK v1 ts=1795275522 session=no-transcript status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1795275525 session=no-transcript status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1795275528 session=no-transcript status=continue turns=5 repeat=0
+STOPHOOK v1 ts=1795275529 session=no-transcript status=continue turns=6 repeat=0
+STOPHOOK v1 ts=1795275531 session=no-transcript status=continue turns=7 repeat=0
+STOPHOOK v1 ts=1795275537 session=no-transcript status=continue turns=8 repeat=0
+STOPHOOK v1 ts=1795275543 session=no-transcript status=continue turns=9 repeat=0
+STOPHOOK v1 ts=1795275549 session=no-transcript status=continue turns=10 repeat=0
+STOPHOOK v1 ts=1795275551 session=no-transcript status=continue turns=11 repeat=0
+STOPHOOK v1 ts=1795275555 session=no-transcript status=continue turns=12 repeat=0
+STOPHOOK v1 ts=1795275560 session=no-transcript status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275563 session=dedup status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275576 session=concurrent status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275588 session=progress status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275602 session=progress status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1795275612 session=progress status=continue turns=3 repeat=0
+STOPHOOK v1 ts=1795275621 session=progress status=continue turns=4 repeat=0
+STOPHOOK v1 ts=1795275631 session=inbox-bypass status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275644 session=inbox-bypass status=continue turns=13 repeat=1
+STOPHOOK v1 ts=1795275654 session=inbox-bypass status=hook_budget turns=13 repeat=1
+STOPHOOK v1 ts=1795275663 session=inbox-bypass status=continue turns=14 repeat=1
+STOPHOOK v1 ts=1795275681 session=inbox-bypass status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275707 session=wake-only status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275718 session=tool-poll status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275728 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275736 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275749 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275758 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275765 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275773 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275778 session=worker-cap status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275783 session=lane-msg status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275789 session=lane-msg status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275810 session=dispatch-reset status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795275814 session=dispatch-reset status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275824 session=lane-streak status=hook_budget turns=12 repeat=2
+STOPHOOK v1 ts=1795275828 session=lane-streak status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275839 session=cache-note status=continue turns=1 repeat=1
+STOPHOOK v1 ts=1795275850 session=cache-note status=continue turns=2 repeat=2
+STOPHOOK v1 ts=1795275865 session=cache-note status=hook_loop turns=2 repeat=3
+STOPHOOK v1 ts=1795275877 session=cache-note status=continue turns=3 repeat=1

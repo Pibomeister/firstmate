@@ -1,17 +1,15 @@
 DRILL parked: model stopped in 1 turn; tokenless arm is waiting
 DRILL parked: later real external wake delivered exit=2; queue retained
-STOPHOOK v1 ts=1795220623 session=parked-monitor status=parked turns=0 repeat=0
-STOPHOOK v1 ts=1795220623 session=parked-monitor status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1795275904 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1795275904 session=parked-monitor status=continue turns=1 repeat=0
 ok - parked parked session stops cleanly while monitoring and later wake delivery continue
 DRILL budget: model stopped in 1 turn; tokenless arm is waiting
 DRILL budget: later real external wake delivered exit=2; queue retained
-STOPHOOK v1 ts=1795220636 session=parked-monitor status=parked turns=0 repeat=0
-STOPHOOK v1 ts=1795220636 session=parked-monitor status=hook_budget turns=12 repeat=0
-STOPHOOK v1 ts=1795224237 session=parked-monitor status=continue turns=1 repeat=0
+STOPHOOK v1 ts=1795275933 session=parked-monitor status=parked turns=0 repeat=0
+STOPHOOK v1 ts=1795275933 session=parked-monitor status=hook_budget turns=12 repeat=0
+STOPHOOK v1 ts=1795279534 session=parked-monitor status=continue turns=1 repeat=0
 ok - parked budget session stops cleanly while monitoring and later wake delivery continue
 ok - parked startup failure delivers one notice and its watchdog record without looping
 ok - auto-arm: actionable close translates to exactly one exit-2 rewake with reason
 ok - auto-arm: a deferred host hand-back keeps the host parked and delivers after budget expiry
 ok - auto-arm: a new inbox note wakes through an exhausted stop budget
-TMPDIR=$T FM_TEST_SKIP_ORPHAN_REAP=1 FM_TEST_ONLY=stop-policy timeout 1500    3.83s user 9.23s system 10% cpu 2:08.14 total
-autoarm rc=0

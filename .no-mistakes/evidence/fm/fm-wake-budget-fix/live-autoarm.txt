@@ -1,0 +1,16 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-autoarm-live.r9QYv9/home
+revision=307babb208e3b38a282e5c56b8adb21580df5cae
+autoarm_rc=2
+stdout<<EOF
+EOF
+stderr<<EOF
+firstmate watcher wake - one supervision event needs a handling turn now.
+stale: fixture-win actionable
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This Stop hook owns watcher continuity: when the handling turn ends, the next needed cycle arms automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake.
+EOF
+stop-hook.log<<EOF
+STOPHOOK v1 ts=1795275435 session=sess-autoarm status=continue turns=13 repeat=0
+EOF
+ledger<<EOF
+{"times":[1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275430,1795275435],"streak":0,"cached":false,"allow":false,"reason":"continue","event":"|aaf7229407bb312357777026f39078f8584b76bc|none|100|none","reply":"","tools":"unknown","commit":"aaf7229407bb312357777026f39078f8584b76bc","human":"unknown","wake":"none","inbox":"100","captain":"none"}
+EOF
