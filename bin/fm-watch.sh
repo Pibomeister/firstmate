@@ -2401,7 +2401,6 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
     0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - its local copy, branch, and gates were kept; reconcile its current state rather than relaunching it again" ;;
     1) reason="check: $task stopped on a $class refusal from its provider and no runtime in the failover order took over (${line:-no result line}) - relaunch it by hand on an available runtime, or queue it until the limit resets" ;;
     3) reason="check: $task stopped on a $class refusal from its provider again, and automatic failover paused at its attempt bound (${line:-no result line}) - recover it by hand" ;;
-    4) reason="check: $task stopped on a $class refusal from its provider; automatic failover is off in config/failover-order - relaunch it on another runtime, or queue it until the limit resets" ;;
     5) rm -f "$seen"; return 1 ;;
     6) return 1 ;;
     *) reason="check: $task stopped on a $class refusal from its provider and its automatic failover failed (exit $rc): $(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { l = $0 } END { print substr(l, 1, 240) }') - recover it by hand, and check for unlanded work before any cleanup" ;;
@@ -2409,6 +2408,39 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   fm_wake_append check "$key" "$reason" || exit 1
   wake "$reason"
   return 0
+}
+
+captain_provider_failover_check() {
+  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason
+  fm_sup_open_goal "$STATE" || return 1
+  [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$endpoint")
+  terminal=$(sed -n 's/^terminal=//p' "$endpoint")
+  [ -n "$terminal" ] && [ "$terminal" != unknown ] || return 1
+  watcher_capture "$backend" "$terminal" 40 || return 1
+  screen=$WATCHER_CAPTURE
+  ! fm_failover_turn_end_known "$STATE" captain || return 1
+  fm_wd_prompt_tail "$(printf '%s\n' "$screen" | tail -n 6)" | grep -q . || return 1
+  class=$(fm_wd_provider_error_screen "$screen") || return 1
+  hash=$(printf '%s' "$screen" | hash_pane)
+  seen="$STATE/.captain-failover-seen"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$hash" ] || return 1
+  printf '%s' "$hash" > "$seen" || return 1
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
+  out=$(FM_HOME=$FM_HOME FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
+    --reason "$class" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  [ "$rc" -ne 6 ] || return 1
+  key="failover-captain-$now"
+  if [ "$rc" -eq 0 ]; then
+    reason="check: captain moved to the next runtime after a $class refusal ($line)"
+  else
+    reason="check: captain stopped on a $class refusal and automatic failover did not confirm a successor (exit $rc): ${line:-no result line}"
+  fi
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
 }
 
 # The question the wedge timer never asked before it alarmed: is there still an
@@ -5548,6 +5580,8 @@ while :; do
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
+
+  captain_provider_failover_check || true
 
   fleet_heartbeat_publish_detached
 

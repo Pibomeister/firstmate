@@ -10,17 +10,11 @@
 #   <account>  `next` (every other declared config/claude-accounts entry, in
 #              file order), `ordinary`, or one absolute declared path; Claude
 #              only, and an account path holds no whitespace.
-#   host=      the entry runs on that host. Ordinary workers are not remotely
-#              placeable and a primary successor launches locally, so this
-#              side skips it; the host's own home fails over its own lanes.
-# Two setting lines may appear among the entries:
-#   off             automatic failover is off: the watcher and the Claude
-#                   hooks record a refusal without relaunching anything, and
-#                   `fm-failover.sh worker` and `captain` refuse.
+#   host=      the entry names a configured remote route.
+# One setting line may appear among the entries:
 #   min-5h <0-100>  the preflight excludes an account with less than this
 #                   percent of its five-hour window left (default 30).
-# Without the file the order is FM_FAILOVER_DEFAULT_ORDER: codex, then droid,
-# then another declared Claude account.
+# Without the file the order is FM_FAILOVER_DEFAULT_ORDER.
 #
 # Record: state/<task-id>.provider-error, or state/captain.provider-error for
 # the primary session, one line replaced atomically:
@@ -28,7 +22,8 @@
 # class is rate_limit, usage_limit, or billing; source and gen are tokens
 # (gen is the task's busy generation, `-` when none); detail is one safe token.
 
-FM_FAILOVER_DEFAULT_ORDER='codex
+FM_FAILOVER_DEFAULT_ORDER='codex host=hetzner
+codex
 droid
 claude@next'
 FM_FAILOVER_RECORD_MAX_AGE=${FM_FAILOVER_RECORD_MAX_AGE:-1800}
@@ -38,14 +33,13 @@ FM_FO_SEP=$'\037'
 
 # fm_failover_order_load <config-dir>
 # Sets FM_FO_ENTRIES (array of `<harness> <model> <account> <host>` joined by
-# FM_FO_SEP, empty fields for an unnamed axis), FM_FO_OFF (0|1), FM_FO_MIN_5H, and
+# FM_FO_SEP, empty fields for an unnamed axis), FM_FO_MIN_5H, and
 # FM_FO_SOURCE (the file, or `default`). Prints one error and returns 1 for a
 # malformed file.
 # shellcheck disable=SC2034  # FM_FO_* are read by the sourcing script.
 fm_failover_order_load() {
   local cfg="$1/failover-order" body line runtime host extra harness model account has_at n=0
   FM_FO_ENTRIES=()
-  FM_FO_OFF=0
   FM_FO_MIN_5H=30
   FM_FO_SOURCE=default
   if [ -e "$cfg" ] || [ -L "$cfg" ]; then
@@ -61,10 +55,6 @@ fm_failover_order_load() {
     case "$line" in *[[:cntrl:]]*) printf 'error: config/failover-order line %s holds a control character\n' "$n"; return 1 ;; esac
     line=$(printf '%s' "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     case "$line" in ''|'#'*) continue ;; esac
-    if [ "$line" = off ]; then
-      FM_FO_OFF=1
-      continue
-    fi
     runtime='' host='' extra=''
     read -r runtime host extra <<< "$line"
     if [ "$runtime" = min-5h ]; then
@@ -85,7 +75,7 @@ fm_failover_order_load() {
     harness=${runtime%%:*}
     model=''
     [ "$harness" = "$runtime" ] || model=${runtime#*:}
-    case "$harness" in ''|*[!a-z0-9-]*) printf 'error: config/failover-order line %s: invalid harness\n' "$n"; return 1 ;; esac
+    case "$harness" in ''|off|*[!a-z0-9-]*) printf 'error: config/failover-order line %s: invalid harness\n' "$n"; return 1 ;; esac
     if [ "$harness" != "$runtime" ]; then
       case "$model" in ''|-*|*[!A-Za-z0-9._/:-]*) printf 'error: config/failover-order line %s: invalid model\n' "$n"; return 1 ;; esac
     fi

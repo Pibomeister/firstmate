@@ -51,6 +51,12 @@ n=$(( $(cat "$FM_HOME/control.n" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$FM_HOME/control.n"
 printf '%s\n' "$@" > "$FM_HOME/control.argv.$n"
 printf '%s\n' "${FM_CONTROL_EXPECTED_SPAWN_GEN-unset}" > "$FM_HOME/control.gen.$n"
+if [ -n "${FM_TEST_CONTROL_PUBLISH_GEN:-}" ]; then
+  sed -e "s/^spawn_gen=.*/spawn_gen=$FM_TEST_CONTROL_PUBLISH_GEN/" \
+    -e "s/^harness=.*/harness=${FM_TEST_CONTROL_PUBLISH_HARNESS:-codex}/" \
+    "$FM_HOME/state/$1.meta" > "$FM_HOME/state/$1.meta.next"
+  mv "$FM_HOME/state/$1.meta.next" "$FM_HOME/state/$1.meta"
+fi
 rc=$(printf '%s' "${FM_TEST_CONTROL_RCS:-0}" | cut -d, -f"$n")
 [ "${rc:-0}" = 0 ] || { echo "error: ${FM_TEST_CONTROL_MSG:-relaunch refused for the test}" >&2; exit "$rc"; }
 echo "relaunched $1"
@@ -70,6 +76,11 @@ while [ $# -gt 0 ]; do
 done
 mkdir -p "$(dirname "$doc")"
 printf '# handoff\n%s\n' "$note" > "$doc"
+SH
+cat > "$DELEGATES/fm-on.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s %s %s\n' "$1" "$2" "$3" >> "$FM_HOME/remote.calls"
+echo 'entry=1 runtime=codex'
 SH
 chmod +x "$FAKEBIN"/* "$DELEGATES"/*
 
@@ -155,18 +166,15 @@ test_order_file() {
   reset_lab
   fo order
   expect_code 0 "$RC" "the default order"
-  assert_contains "$OUT" $'entry=1 runtime=codex\nentry=2 runtime=droid\nentry=3 runtime=claude@next\nmin_5h=30 off=0 source=default' \
-    'without config/failover-order the order is codex, droid, then another Claude account'
+  assert_contains "$OUT" $'entry=1 runtime=codex host=hetzner\nentry=2 runtime=codex\nentry=3 runtime=droid\nentry=4 runtime=claude@next\nmin_5h=30 source=default' \
+    'without config/failover-order the host precedes codex, droid, and another Claude account'
   printf '# night order\ncodex host=hz1\n\n  codex:gpt-5.5  \nclaude:opus@ordinary\nclaude@%s/acct\nmin-5h 45\n' "$ACCTS" > "$LAB/config/failover-order"
   fo order
   expect_code 0 "$RC" "a configured order"
-  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nmin_5h=45 off=0' \
+  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nmin_5h=45' \
     'every entry form parses in file order, comments and blanks ignored'
-  printf 'codex\noff\n' > "$LAB/config/failover-order"
-  fo order
-  assert_contains "$OUT" 'off=1' 'the off line turns failover off'
   local bad
-  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 101' 'min-5h 30 40' 'codex host=a b'; do
+  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 101' 'min-5h 30 40' 'codex host=a b' 'off'; do
     printf '%s\n' "$bad" > "$LAB/config/failover-order"
     fo order
     expect_code 2 "$RC" "a malformed line '$bad'"
@@ -177,7 +185,7 @@ test_order_file() {
   fo worker nobody
   expect_code 2 "$RC" "two Claude accounts sharing a label"
   assert_contains "$OUT" 'share the label claude@same' 'the refusal names the shared label'
-  pass 'order: the default, every entry form, off, min-5h, and each malformed line'
+  pass 'order: the default, every entry form, min-5h, and each malformed line'
 }
 
 test_refusal_detector() {
@@ -283,6 +291,7 @@ test_worker_429_moves_to_the_next_runtime() {
   fo worker w1
   expect_code 0 "$RC" "worker failover after a 429: $OUT"
   assert_contains "$OUT" 'candidate runtime=codex eligible verdict=ok' 'codex is measured and eligible'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host route not configured' 'an absent host route is recorded before local failover'
   assert_contains "$OUT" 'switched task=w1 from=claude to=codex reason=rate_limit' 'the switch names both runtimes and the reason'
   expect_code 1 "$(control_calls)" "one relaunch"
   assert_equals "w1 relaunch --harness codex --provider-failover --note" "$(control_arg 1 0) $(control_arg 1 1) $(control_arg 1 2) $(control_arg 1 3) $(control_arg 1 4) $(control_arg 1 5)" 'the relaunch goes through fm-control in place'
@@ -299,6 +308,13 @@ test_worker_429_moves_to_the_next_runtime() {
   [ ! -e "$LAB/state/w1.provider-error" ] || fail 'the record must be cleared after the switch'
   assert_contains "$(cat "$LAB/state/.failover-w1")" $'attempt\tclaude\tcodex\trate_limit' 'the attempt is in the ledger'
   no_lost_work w1 'a 429 failover'
+  reset_lab
+  make_worker w1 claude
+  : > "$LAB/data/secondmates.md"
+  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo worker w1 --reason rate_limit
+  expect_code 0 "$RC" "a configured remote route is probed before local failover: $OUT"
+  assert_contains "$(cat "$LAB/remote.calls")" 'hetzner fm-failover.sh order' 'the configured host was contacted through the remote transport'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree not configured' 'an available route without the task worktree is recorded'
   pass 'worker 429: relaunched on codex in the same local copy, branch, and gates, recorded, nothing lost'
 }
 
@@ -310,7 +326,7 @@ test_worker_billing_moves_past_its_own_runtime() {
   assert_contains "$OUT" 'class=billing source=pane' 'the codex billing screen classes billing'
   fo worker w2 --reason billing
   expect_code 0 "$RC" "worker failover after a billing error: $OUT"
-  assert_contains "$OUT" 'candidate runtime=codex skip=same_runtime_as_current' 'the refused runtime is never the target'
+  assert_not_contains "$OUT" 'candidate runtime=codex eligible' 'the refused runtime is never the target'
   assert_contains "$OUT" 'switched task=w2 from=codex to=droid reason=billing' 'billing moves the worker to droid'
   assert_equals droid "$(control_arg 1 3)" 'fm-control relaunches on droid'
   assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" $'\tfailover\tw2\ttask=w2 from=codex to=droid reason=billing' \
@@ -326,6 +342,29 @@ test_worker_walks_the_order() {
   expect_code 0 "$RC" "a failed first relaunch: $OUT"
   assert_contains "$OUT" 'failed task=w3 to=codex rc=1' 'the failed relaunch is reported'
   assert_contains "$OUT" 'switched task=w3 from=claude to=droid' 'the next runtime takes over'
+  reset_lab
+  mkdir -p "$ACCTS/after-droid"
+  touch "$ACCTS/after-droid/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/after-droid/quota.json"
+  printf '%s\n' "$ACCTS/after-droid" > "$LAB/config/claude-accounts"
+  make_worker w3 droid
+  fo worker w3 --reason rate_limit
+  expect_code 0 "$RC" "a refused droid proceeds to the next Claude account: $OUT"
+  assert_contains "$OUT" 'switched task=w3 from=droid to=claude@after-droid' 'a later failure never returns to codex'
+  assert_not_contains "$OUT" 'candidate runtime=codex eligible' 'codex is before the refused runtime'
+  reset_lab
+  make_worker w3 claude
+  printf '%s\tattempt\tcodex\tdroid\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w3"
+  fo worker w3 --reason rate_limit
+  expect_code 0 "$RC" "a prior refusal is not retried after the order changes: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex skip=refused_in_window' 'a runtime already refused in the window stays excluded'
+  reset_lab
+  make_worker w3 claude
+  FM_TEST_CONTROL_RCS=1,0 FM_TEST_CONTROL_PUBLISH_GEN=s2.w3 fo worker w3
+  expect_code 0 "$RC" "a published replacement after a nonzero confirmation: $OUT"
+  assert_contains "$OUT" 'switched task=w3 from=claude to=codex' 'the published replacement counts as the switch'
+  expect_code 1 "$(control_calls)" 'a published replacement prevents another relaunch'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=w3 from=claude to=codex reason=rate_limit' 'the published replacement is logged'
   reset_lab
   make_worker w3 claude
   FM_TEST_CONTROL_RCS=7,0 fo worker w3
@@ -362,8 +401,8 @@ test_worker_candidates_and_skips() {
   printf '%s\tdroid\texcluded\tfail:rate_limit\tunknown\tunknown\tcall_rate_limit\n' "$(date +%s)" > "$LAB/state/failover-preflight.tsv"
   fo worker w4
   expect_code 0 "$RC" "claude account failover: $OUT"
-  assert_contains "$OUT" 'candidate runtime=codex skip=quota_exhausted' 'an exhausted runtime is skipped'
-  assert_contains "$OUT" 'candidate runtime=droid skip=preflight_excluded why=call_rate_limit' 'a runtime the night plan excludes is skipped'
+  assert_not_contains "$OUT" 'candidate runtime=codex eligible' 'the walk does not return to codex before the refused Claude account'
+  assert_not_contains "$OUT" 'candidate runtime=droid eligible' 'the walk does not return to droid before the refused Claude account'
   assert_contains "$OUT" 'candidate runtime=claude@C skip=not_signed_in' 'a signed-out account is skipped, never signed in'
   assert_not_contains "$OUT" 'runtime=claude@A' 'the refused account is never a candidate'
   assert_contains "$OUT" 'switched task=w4 from=claude@A to=claude@B' 'another signed-in account takes over'
@@ -378,11 +417,8 @@ test_worker_candidates_and_skips() {
 
   reset_lab
   make_worker w5 claude
-  printf 'off\n' > "$LAB/config/failover-order"
-  fo worker w5
-  expect_code 4 "$RC" "failover off"
   printf 'done: PR https://example.test/pr/1\n' >> "$LAB/state/w5.status"
-  rm "$LAB/config/failover-order"
+  rm -f "$LAB/config/failover-order"
   fo worker w5
   expect_code 6 "$RC" "a finished task"
   make_worker w5 claude
@@ -412,7 +448,7 @@ test_worker_candidates_and_skips() {
   kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
   expect_code 5 "$RC" "a failover already holding the lock"
   expect_code 0 "$(control_calls)" "relaunches under a bound or a held lock"
-  pass 'candidates and skips: quota, night plan, sign-in, accounts, off, finished, stopped, remote, secondmate, bound, lock'
+  pass 'candidates and skips: quota, night plan, sign-in, accounts, finished, stopped, remote, secondmate, bound, lock'
 }
 
 captain_world() {
@@ -444,6 +480,15 @@ test_captain_429_and_billing_start_a_successor() {
   assert_contains "$OUT" 'switched task=captain from=claude@ordinary to=codex reason=billing' 'billing starts a successor too'
   assert_contains "$(cat "$LAB/state/supervisor-failover.log")" 'event=provider_failover_result scope=primary from=claude@ordinary to=codex result=replaced' \
     'the supervisor failover log records the replacement'
+
+  captain_world
+  mkdir -p "$ACCTS/after-droid"
+  touch "$ACCTS/after-droid/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/after-droid/quota.json"
+  printf '%s\n' "$ACCTS/after-droid" > "$LAB/config/claude-accounts"
+  FM_FAILOVER_TEST_HARNESS=droid fo captain --reason billing
+  expect_code 0 "$RC" "a captain refused on droid proceeds forward: $OUT"
+  assert_contains "$OUT" 'switched task=captain from=droid to=claude@after-droid' 'a captain failure never returns to codex'
 
   captain_world
   FM_TEST_HANDOFF_RC=4 fo captain --reason billing
@@ -528,8 +573,8 @@ test_preflight_night_plan() {
   quota_fixture codex 80 0 > "$QUOTA/codex.json"
   printf 'min-5h 10\n' > "$LAB/config/failover-order"
   printf 'codex\nclaude@next\nmin-5h 10\n' > "$LAB/config/failover-order"
-  fo preflight --no-call
-  assert_contains "$OUT" 'preflight runtime=codex verdict=excluded call=skipped five_hour=80 weekly=0 why=weekly_exhausted' 'a spent weekly window excludes'
+  fo preflight
+  assert_contains "$OUT" 'preflight runtime=codex verdict=excluded call=ok five_hour=80 weekly=0 why=weekly_exhausted' 'a spent weekly window excludes after a real call'
   assert_contains "$OUT" 'preflight runtime=claude@pA verdict=eligible' 'the configured floor applies'
   pass 'preflight: a real call and the 5h and weekly windows per runtime and account set the night plan'
 }
@@ -599,6 +644,25 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   [ -e "$dir/state/fo.failover-judged" ] || fail 'fixture: the watcher never judged the hook-stop screen'
   [ ! -e "$dir/control.calls" ] || fail "a Claude turn end its hook recorded as an ordinary stop must not relaunch from old screen rows: $(cat "$dir/control.calls")"
   pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose and a hook-recorded ordinary stop do not'
+}
+
+test_watcher_moves_an_idle_refused_captain_in_one_poll() {
+  local dir class err
+  for class in rate_limit billing; do
+    err='⏺ API Error: Request rejected (429)'
+    [ "$class" != billing ] || err='⏺ Credit balance is too low'
+    dir=$(watch_case "captain-$class" "$err"$'\n\n❯ \n  ⏵⏵ auto mode on')
+    rm -f "$dir/state/fo.meta"
+    printf 'backend=tmux\nterminal=test:fm-fo\nworktree=%s\n' "$dir/home" > "$dir/state/.lock-session"
+    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" received "g-$class" --summary 'open captain work' >/dev/null
+    watch_once "$dir" FM_FAILOVER_TEST_LOCK_OWNER=1 FM_FAILOVER_TEST_HARNESS=claude
+    assert_contains "$(cat "$dir/watch.out")" "check: captain moved to the next runtime after a $class refusal" \
+      "the watcher hands off a $class refusal from an idle captain pane"
+    assert_contains "$(cat "$dir/state/dispatch-log.tsv")" "task=captain from=claude@ordinary to=codex reason=$class" \
+      "the captain switch is recorded"
+    [ -s "$dir/home/data/handoffs/$(ls "$dir/home/data/handoffs" | head -n 1)" ] || fail 'the captain handoff is missing'
+  done
+  pass 'watcher: idle captain 429 and billing screens with open goals hand off in one poll'
 }
 
 # Every stale grace, from the floor to well past the default, and explicit
@@ -686,5 +750,6 @@ fm_test_run \
   test_captain_hook_429_and_billing_start_a_successor \
   test_preflight_night_plan \
   test_watcher_moves_an_idle_refused_ship_in_one_poll \
+  test_watcher_moves_an_idle_refused_captain_in_one_poll \
   test_watch_bounds_stay_inside_the_stale_grace \
   test_worker_account_identity_is_its_config_root

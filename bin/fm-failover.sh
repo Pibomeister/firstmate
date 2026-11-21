@@ -7,7 +7,7 @@
 # Usage:
 #   fm-failover.sh order
 #   fm-failover.sh plan
-#   fm-failover.sh preflight [--no-call]
+#   fm-failover.sh preflight
 #   fm-failover.sh record <task-id|captain> --class <class> [--source <token>] [--gen <token>] [--state <dir>]
 #   fm-failover.sh hook <task-id|captain> [--gen <token>] [--state <dir>]
 #   fm-failover.sh detect <task-id> [--screen-file <file>]
@@ -19,7 +19,7 @@
 # "Provider failover" owns the operator contract.
 #
 #   order      Prints the resolved order, one `entry=<n> runtime=<label>
-#              [host=<h>]` line per entry, then `min_5h=<n> off=<0|1>
+#              [host=<h>]` line per entry, then `min_5h=<n>
 #              source=<file|default>`.
 #   plan       The order with the newest preflight verdict of every runtime it
 #              expands to, one `plan runtime=<label> verdict=<eligible|
@@ -32,8 +32,8 @@
 #              (a Claude read passes --allow-claude-inference, one more small
 #              call). A runtime whose call fails, whose weekly window reads 0,
 #              or whose five-hour window reads below min-5h is excluded; an
-#              unreadable window is disclosed and does not exclude. --no-call
-#              skips the calls. Rewrites state/failover-preflight.tsv:
+#              unreadable window is disclosed and does not exclude.
+#              Rewrites state/failover-preflight.tsv:
 #              <epoch> <runtime> <verdict> <call> <five_hour> <weekly> <why>.
 #              A verdict older than FM_FAILOVER_PREFLIGHT_MAX_AGE (43200s) is
 #              ignored. Sends one short prompt per runtime and account, each
@@ -54,7 +54,7 @@
 #              [--account] --provider-failover --note, which closes a
 #              usage-limit picker without typing into it. A runtime is skipped
 #              when it is the current one (an unpinned Claude worker counts as
-#              this home's inherited account), host-qualified, excluded by the
+#              this home's inherited account), excluded by the
 #              plan, missing its executable, an undeclared or signed-out Claude
 #              account, or exhausted by quota-axi (unmeasured quota is
 #              disclosed and does not skip). A failed relaunch moves on to the
@@ -74,7 +74,7 @@
 # Exit 0 on a switch (or a dry-run choice), 1 when no runtime took over,
 # 2 for a usage or configuration error, 3 when the attempt bound holds
 # (FM_FAILOVER_MAX_ATTEMPTS, default 3, captain 2, inside
-# FM_FAILOVER_WINDOW_SECS, default 3600), 4 when failover is off, 5 when
+# FM_FAILOVER_WINDOW_SECS, default 3600), 5 when
 # another failover of the same target holds its lock, 6 when the target needs
 # none (a finished, stopped, or not ship/scout task, or a captain with no
 # lock or no open work).
@@ -87,7 +87,8 @@
 # Test-only: FM_TEST_SEAM=1 enables FM_FAILOVER_TEST_BIN (a directory holding
 # the fm-control.sh, fm-handoff-launch.sh, and fm-ledger.sh to call),
 # FM_FAILOVER_TEST_HARNESS (the captain's current harness), and
-# FM_FAILOVER_TEST_LOCK_OWNER=1 (treat this process as the lock owner).
+# FM_FAILOVER_TEST_LOCK_OWNER=1 (treat this process as the lock owner), and
+# FM_FAILOVER_TEST_ON_BIN (remote transport stand-in).
 set -eu
 umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -109,7 +110,7 @@ case "$CMD" in
     shift
     ;;
 esac
-CLASS='' SOURCE='' GEN='' STATE_ARG='' SCREEN_FILE='' DRY_RUN=0 NO_CALL=0
+CLASS='' SOURCE='' GEN='' STATE_ARG='' SCREEN_FILE='' DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --class|--reason) [ -n "${2:-}" ] || die "$1 needs a value"; CLASS=$2; shift 2 ;;
@@ -118,7 +119,6 @@ while [ $# -gt 0 ]; do
     --state) [ -n "${2:-}" ] || die '--state needs a directory'; STATE_ARG=$2; shift 2 ;;
     --screen-file) [ -n "${2:-}" ] || die '--screen-file needs a file'; SCREEN_FILE=$2; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
-    --no-call) NO_CALL=1; shift ;;
     *) die "unexpected argument: $1" ;;
   esac
 done
@@ -156,6 +156,8 @@ if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_FAILOVER_TEST_BIN:-}" ]; then
   DELEGATE_BIN=$FM_FAILOVER_TEST_BIN
 fi
 CONTROL_BIN=${FM_CONTROL_BIN:-$DELEGATE_BIN/fm-control.sh}
+ON_BIN=$SCRIPT_DIR/fm-on.sh
+if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_FAILOVER_TEST_ON_BIN:-}" ]; then ON_BIN=$FM_FAILOVER_TEST_ON_BIN; fi
 RELAUNCH_TIMEOUT=$(int_or "${FM_FAILOVER_RELAUNCH_TIMEOUT:-}" 300)
 HANDOFF_TIMEOUT=$(int_or "${FM_FAILOVER_HANDOFF_TIMEOUT:-}" 900)
 CALL_TIMEOUT=$(int_or "${FM_FAILOVER_CALL_TIMEOUT:-}" 90)
@@ -240,17 +242,52 @@ account_declared() {  # <account-entry>
 
 # --- candidate evaluation ------------------------------------------------------
 CAND=()
-# evaluate <scope worker|primary> <from-harness> <from-account> <backend>
+# evaluate <scope worker|primary> <from-harness> <from-model> <from-account> <backend> <ledger>
 # Fills CAND with eligible `<harness> <model> <account> <label> <quota>` rows,
 # joined by FM_FO_SEP, in order, and prints one candidate line per runtime.
 evaluate() {
-  local scope=$1 from_h=$2 from_a=$3 backend=$4 h m a host label pv why quota rc root rows
+  local scope=$1 from_h=$2 from_m=$3 from_a=$4 backend=$5 ledger=$6 h m a host label pv why quota rc root rows current=0 index=0
   CAND=()
-  rows=$(expand_entries 0 "$from_a")
+  rows=$(expand_entries 1 '')
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
+    index=$((index + 1))
+    [ -z "$host" ] && [ "$h" = "$from_h" ] && [ "${m:-default}" = "${from_m:-default}" ] || continue
+    if [ "$h" != claude ] || { [ -n "$a" ] && same_account "$a" "$from_a"; }; then
+      current=$index
+      break
+    fi
+  done <<< "$rows"
+  index=0
+  while IFS=$FM_FO_SEP read -r h m a host label; do
+    [ -n "$h" ] || continue
+    index=$((index + 1))
+    [ "$index" -gt "$current" ] || continue
+    if [ -f "$ledger" ] && awk -F '\t' -v l="$label" -v c="$(( $(now) - WINDOW_SECS ))" \
+      '$1 >= c && (($2 == "attempt" && $3 == l) || ($2 == "failed" && $4 == l)) { found = 1 } END { exit !found }' "$ledger"; then
+      printf 'candidate runtime=%s skip=refused_in_window\n' "$label"
+      continue
+    fi
+    if [ "$h" = claude ] && [ -n "$a" ] && same_account "$a" "$from_a"; then
+      continue
+    fi
     if [ -n "$host" ]; then
-      printf 'candidate runtime=%s host=%s skip=cross_host_unsupported\n' "$label" "$(tok "$host")"
+      if [ ! -f "$DATA/secondmates.md" ]; then
+        why='host route not configured'
+      else
+        rc=0
+        why=$(FM_HOME=$FM_HOME fm_run_timed "$CALL_TIMEOUT" "$ON_BIN" "$host" fm-failover.sh order </dev/null 2>&1) || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          case "$why" in
+            *"no remote secondmate or SSH alias matches"*|*"no safe secondmate registry"*) why='host route not configured' ;;
+            *) why='host route unavailable' ;;
+          esac
+        else
+          why='host worktree not configured'
+        fi
+      fi
+      dispatch_skip "${TARGET:-captain}" "$from" "$label@$host" "$why"
+      printf 'candidate runtime=%s host=%s skip=%s\n' "$label" "$(tok "$host")" "$(tok "$why")"
       continue
     fi
     if [ "$h" = "$from_h" ] && { [ "$h" != claude ] || [ -z "$a" ] || same_account "$a" "$from_a"; }; then
@@ -334,6 +371,12 @@ dispatch_record() {  # <task> <from> <to> <reason>
     || printf 'warning: the dispatch log did not record the switch of %s\n' "$1" >&2
 }
 
+dispatch_skip() {
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE bash "$SCRIPT_DIR/fm-dispatch-log.sh" failover-skip \
+    --task "$1" --from "$2" --to "$3" --reason "$4" >/dev/null 2>&1 \
+    || printf 'warning: the dispatch log did not record the skip of %s\n' "$3" >&2
+}
+
 reason_or_record() {  # <id>
   if [ -n "$CLASS" ]; then
     fm_failover_class_valid "$CLASS" || die '--reason must be rate_limit, usage_limit, or billing'
@@ -352,7 +395,7 @@ cmd_order() {
     IFS=$FM_FO_SEP read -r h m a host <<< "$entry"
     printf 'entry=%s runtime=%s%s\n' "$i" "$(fm_failover_label "$h" "$m" "$a")" "${host:+ host=$host}"
   done
-  printf 'min_5h=%s off=%s source=%s\n' "$FM_FO_MIN_5H" "$FM_FO_OFF" "$(tok "$FM_FO_SOURCE")"
+  printf 'min_5h=%s source=%s\n' "$FM_FO_MIN_5H" "$(tok "$FM_FO_SOURCE")"
 }
 
 cmd_plan() {
@@ -454,7 +497,7 @@ cmd_preflight() {
     if [ -n "$host" ]; then
       call=skipped fh=unknown wk=unknown verdict=unmeasured why=cross_host_unsupported
     else
-      if [ "$NO_CALL" = 1 ]; then call=skipped; else call=$(probe_call "$h" "$m" "$a"); fi
+      call=$(probe_call "$h" "$m" "$a")
       read -r fh wk <<< "$(probe_quota "$h" "$a")"
       fh=${fh:-unknown} wk=${wk:-unknown}
       verdict=eligible why=ok
@@ -533,10 +576,9 @@ cmd_detect() {
 
 # --- worker --------------------------------------------------------------------
 cmd_worker() {
-  local meta kind wt from_h from_m from_a run_a backend from gen reason ledger max attempts statusf last branch note row h m a label quota out rc detail rto left
+  local meta kind wt from_h from_m from_a run_a backend from gen published_gen published_h reason ledger max attempts statusf last branch note row h m a label quota out rc detail rto left
   valid_target "$TARGET" && [ "$TARGET" != captain ] || die "invalid task id: $TARGET"
   load_order
-  [ "$FM_FO_OFF" = 0 ] || { printf 'off task=%s reason=failover_off\n' "$TARGET"; exit 4; }
   meta="$STATE/$TARGET.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || die "no regular record for $TARGET in $STATE"
   kind=$(fm_meta_get "$meta" kind)
@@ -581,7 +623,7 @@ cmd_worker() {
   # one is excluded too. Only a Claude worker has a Claude account to exclude.
   run_a=''
   [ "$from_h" != claude ] || run_a=${from_a:-${CLAUDE_CONFIG_DIR:-ordinary}}
-  evaluate worker "$from_h" "$run_a" "$backend"
+  evaluate worker "$from_h" "$from_m" "$run_a" "$backend" "$ledger"
   if [ "${#CAND[@]}" -eq 0 ]; then
     ledger_add "$ledger" none "$from" - "$reason"
     printf 'none task=%s from=%s reason=%s why=no_eligible_runtime\n' "$TARGET" "$from" "$reason"
@@ -616,12 +658,18 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
     ledger_add "$ledger" attempt "$from" "$label" "$reason"
     rc=0
     out=$(FM_HOME=$FM_HOME FM_CONTROL_EXPECTED_SPAWN_GEN=$gen fm_run_timed "$rto" "$CONTROL_BIN" "${args[@]}" </dev/null 2>&1) || rc=$?
-    if [ "$rc" -eq 0 ]; then
+    published_gen=$(fm_meta_get "$meta" spawn_gen)
+    published_h=$(fm_meta_get "$meta" harness)
+    if [ "$rc" -eq 0 ] || { [ -n "$published_gen" ] && [ "$published_gen" != "$gen" ] && [ "$published_h" = "$h" ]; }; then
       ledger_add "$ledger" switched "$from" "$label" "$reason"
       rm -f "$(fm_failover_record_path "$STATE" "$TARGET")"
       dispatch_record "$TARGET" "$from" "$label" "$reason"
       printf 'switched task=%s from=%s to=%s reason=%s\n' "$TARGET" "$from" "$label" "$reason"
       exit 0
+    fi
+    if [ -n "$published_gen" ] && [ "$published_gen" != "$gen" ]; then
+      printf 'none task=%s from=%s reason=%s why=unexpected_published_runtime\n' "$TARGET" "$from" "$reason"
+      exit 1
     fi
     detail=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { line = $0 } END { print substr(line, 1, 200) }')
     ledger_add "$ledger" failed "$from" "$label" "rc=$rc"
@@ -655,7 +703,6 @@ cmd_captain() {
   . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
   fm_root_is_secondmate_home "$FM_HOME" && { printf 'skip task=captain reason=secondmate_home_parent_fails_it_over\n'; exit 6; }
   load_order
-  [ "$FM_FO_OFF" = 0 ] || { printf 'off task=captain reason=failover_off\n'; exit 4; }
   captain_lock_owner || { printf 'skip task=captain reason=not_the_session_lock_owner\n'; exit 6; }
   # shellcheck source=bin/fm-supervision-lib.sh
   . "$SCRIPT_DIR/fm-supervision-lib.sh"
@@ -675,7 +722,7 @@ cmd_captain() {
     printf 'bound task=captain from=%s attempts=%s window=%ss\n' "$from" "$attempts" "$WINDOW_SECS"
     exit 3
   fi
-  evaluate primary "$from_h" "$from_a" "$backend"
+  evaluate primary "$from_h" '' "$from_a" "$backend" "$ledger"
   if [ "${#CAND[@]}" -eq 0 ]; then
     ledger_add "$ledger" none "$from" - "$reason"
     fm_failover_log "event=provider_failover_none scope=primary from=$from reason=$reason"

@@ -177,7 +177,7 @@ The shared session-lock ancestry suite passed on the same host; it covers other 
 
 Verified on 2026-11-15 UTC on macOS arm64 with Bash 3.2.57.
 The successor regression runs the production launcher, acknowledgement, and session lock against Codex-, agy-, and Claude-named processes, with fake Orca and tmux transports, a fake `claude auth status`, and quota-axi fixtures.
-The failover regression runs the production choice against fake delegates, so the handoff and relaunch it requests are proven by their own suites.
+The failover regression runs the production choice against fake delegates, and `tests/fm-failover-relaunch.test.sh` runs the real relaunch through an isolated tmux session with only the harness binaries stubbed.
 The installed Orca 1.4.258 `agent launch --help` exposes the `--agent codex` and `--model` arguments the launcher passes; live Codex and agy model startup is outside this fixture's evidence.
 
 Refresh both with:
@@ -211,7 +211,7 @@ A real `bin/fm-failover.sh preflight` on the same host reached a Claude login wh
 Usage-limit screens were not reproduced live; their rows stay covered only by the portable detector regression.
 The usage-limit picker that `bin/fm-control.sh relaunch --provider-failover` closes is proven only against the tmux stand-in in `tests/fm-control-relaunch.test.sh`.
 Codex and Droid refusal screens and their preflight calls were not reproduced live.
-The captain path starts only from the StopFailure hook; a captain whose hook does not fire has no screen fallback in this change.
+The watcher also reads the recorded captain endpoint when the dispatch log has open goals and can start the same handoff after an idle provider refusal screen.
 The captain hook uses the same payload with `"async": true`; a separate probe on the same version showed the async hook running as a child of the `claude` process, which is what the captain lock-owner check walks.
 
 Refresh the live guard and the portable regression with:
