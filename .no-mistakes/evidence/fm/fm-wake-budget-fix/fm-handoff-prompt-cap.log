@@ -1,0 +1,2 @@
+ok - handoff prompts name the path, warn above 60 lines, and do not inline the document
+TMPDIR=$T FM_TEST_SKIP_ORPHAN_REAP=1 timeout 500 bash   0.20s user 0.30s system 20% cpu 2.457 total

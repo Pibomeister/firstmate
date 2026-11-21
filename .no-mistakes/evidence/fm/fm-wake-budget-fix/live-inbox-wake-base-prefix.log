@@ -1,0 +1,26 @@
+== code root: /tmp/fmval.diSUkU/base
+-- spend the budget with routine status-poll turns (distinct replies, no lane change)
+  routine continuations granted before cap: 6; turn 7 rc=0
+-- captain posts a new inbox note via real fm-inbox.sh note
+  inbox: queued 1795220877-usqSK8
+  inbox:   please check PR status
+  inbox:   firstmate will pick this up at its next check.
+  pending: 1795220877-usqSK8.note
+  stop-guard rc=0 (captain allowed to stop)
+-- same note still pending, next poll
+  stop-guard rc=0 (captain allowed to stop)
+-- firstmate consumes the note (drain --ack)
+  drain rc=0
+  pending notes now: 0
+  stop-guard rc=0 (captain allowed to stop)
+-- stop-hook log:
+  STOPHOOK v1 ts=1795220835 session=captain status=continue turns=1 repeat=1
+  STOPHOOK v1 ts=1795220841 session=captain status=continue turns=2 repeat=1
+  STOPHOOK v1 ts=1795220847 session=captain status=continue turns=3 repeat=1
+  STOPHOOK v1 ts=1795220853 session=captain status=continue turns=4 repeat=1
+  STOPHOOK v1 ts=1795220859 session=captain status=continue turns=5 repeat=1
+  STOPHOOK v1 ts=1795220865 session=captain status=continue turns=6 repeat=1
+  STOPHOOK v1 ts=1795220874 session=captain status=hook_budget turns=6 repeat=1
+  STOPHOOK v1 ts=1795220886 session=captain status=hook_budget turns=6 repeat=1
+  STOPHOOK v1 ts=1795220890 session=captain status=hook_budget turns=6 repeat=1
+  STOPHOOK v1 ts=1795220895 session=captain status=hook_budget turns=6 repeat=1

@@ -1,0 +1,5 @@
+1..2
+ok - restart: lean handoff, new terminal, verified pickup with lock takeover; a loop stops and escalates
+ok - tmux restart: resolves the session before the stop and opens one when the old session closed
+FM_TEST_COMPLETE
+TMPDIR=$T FM_TEST_SKIP_ORPHAN_REAP=1 timeout 900 bash     4.95s user 9.48s system 8% cpu 2:41.65 total

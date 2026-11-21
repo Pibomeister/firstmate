@@ -1,0 +1,32 @@
+== code root: {run-worktree}
+-- spend the budget with routine status-poll turns (distinct replies, no lane change)
+  routine continuations granted before cap: 12; turn 13 rc=0
+-- captain posts a new inbox note via real fm-inbox.sh note
+  inbox: queued 1795220786-GxSULD
+  inbox:   please check PR status
+  inbox:   firstmate will pick this up at its next check.
+  pending: 1795220786-GxSULD.note
+  stop-guard rc=2 (captain woken/continued)
+-- same note still pending, next poll
+  stop-guard rc=0 (captain allowed to stop)
+-- firstmate consumes the note (drain --ack)
+  drain rc=0
+  pending notes now: 0
+  stop-guard rc=2 (captain woken/continued)
+-- stop-hook log:
+  STOPHOOK v1 ts=1795220681 session=captain status=continue turns=1 repeat=1
+  STOPHOOK v1 ts=1795220687 session=captain status=continue turns=2 repeat=1
+  STOPHOOK v1 ts=1795220693 session=captain status=continue turns=3 repeat=1
+  STOPHOOK v1 ts=1795220698 session=captain status=continue turns=4 repeat=1
+  STOPHOOK v1 ts=1795220705 session=captain status=continue turns=5 repeat=1
+  STOPHOOK v1 ts=1795220712 session=captain status=continue turns=6 repeat=1
+  STOPHOOK v1 ts=1795220726 session=captain status=continue turns=7 repeat=1
+  STOPHOOK v1 ts=1795220734 session=captain status=continue turns=8 repeat=1
+  STOPHOOK v1 ts=1795220746 session=captain status=continue turns=9 repeat=1
+  STOPHOOK v1 ts=1795220753 session=captain status=continue turns=10 repeat=1
+  STOPHOOK v1 ts=1795220761 session=captain status=continue turns=11 repeat=1
+  STOPHOOK v1 ts=1795220767 session=captain status=continue turns=12 repeat=1
+  STOPHOOK v1 ts=1795220786 session=captain status=hook_budget turns=12 repeat=1
+  STOPHOOK v1 ts=1795220790 session=captain status=continue turns=13 repeat=1
+  STOPHOOK v1 ts=1795220803 session=captain status=hook_budget turns=13 repeat=1
+  STOPHOOK v1 ts=1795220810 session=captain status=continue turns=1 repeat=1

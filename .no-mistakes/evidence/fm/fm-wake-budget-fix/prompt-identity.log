@@ -1,0 +1,2 @@
+successor prompt identical to pre-change inline prompt
+restart prompt identical to pre-change; stderr: warning: handoff /tmp/fmval-h80.md is 80 lines, above the 60-line launch cap; the prompt names the path and does not inline the document

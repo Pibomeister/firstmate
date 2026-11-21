@@ -1,0 +1,4 @@
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - codex successor follows config/codex-permission-mode on tmux
+not ok - orca codex successor: handoff must complete: successor: harness=codex model=gpt-5.5 account=ambient reason=handoff verdict=unknown why=no_valid_codex_snapshot error: another live firstmate session holds the lock (pid 5041); operate read-only until resolved
+TMPDIR=$T FM_TEST_SKIP_ORPHAN_REAP=1 timeout 840 bash   1.23s user 2.64s system 0% cpu 7:11.18 total
