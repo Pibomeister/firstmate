@@ -747,7 +747,7 @@ test_relaunch_refuses_an_unverified_pane_text_usage_limit() {
 }
 
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
-  local dir out rc sock ident
+  local dir out rc sock ident suffix=${1-} failover=${2-}
   dir=$(new_case grok-limit-relaunch rl96)
   add_ship_task "$dir" rl96 grok
   printf 'grok' > "$dir/fake/command"
@@ -768,10 +768,10 @@ test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter() {
     '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
     '  ┃' \
     '' \
-    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+    "  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss$suffix" > "$dir/fake/capture"
   printf 'codex' > "$dir/fake/becomes"
   out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
-    run_control "$dir" rl96 relaunch --harness codex --note "move off the limited grok account"); rc=$?
+    run_control "$dir" rl96 relaunch --harness codex ${failover:+"$failover"} --note "move off the limited grok account"); rc=$?
   expect_code 0 "$rc" "a Grok weekly-limit relaunch should close the endpoint and start the replacement"$'\n'"$out"
   assert_not_contains "$out" "composer visibly holds pending text" \
     "a Grok weekly-limit composer must not be treated as pending composer text"
@@ -810,7 +810,7 @@ test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt() {
     '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
     '  ┃' \
     '' \
-    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture-after-interrupt"
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss  │  Ctrl+e:expand thinking' > "$dir/fake/capture-after-interrupt"
   printf 'codex' > "$dir/fake/becomes"
   out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
     run_control "$dir" rl97 relaunch --harness codex --note "move off the limited grok account"); rc=$?
@@ -819,8 +819,8 @@ test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt() {
     || fail "a busy grok pane must receive its interrupt before close: $(cat "$dir/fake/keys")"
   assert_no_grep "/exit" "$dir/fake/literal" \
     "the exit command must not be typed into a Grok weekly-limit composer that appeared after interrupt"
-  grep -qx Enter "$dir/fake/picker-keys" 2>/dev/null \
-    && fail "the live Grok weekly-limit composer received Enter: $(cat "$dir/fake/picker-keys")"
+  [ "$(cat "$dir/fake/picker-keys")" = C-c ] \
+    || fail "only the interrupt before the Grok picker appeared is allowed: $(cat "$dir/fake/picker-keys")"
   assert_contains "$out" "harness=codex from=grok" "the replacement should land on the named harness"
   [ "$(meta_field "$dir" rl97 harness)" = codex ] \
     || fail "the published record should follow the replacement harness"
@@ -962,7 +962,7 @@ test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch() {
     '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
     '  ┃' \
     '' \
-    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/fake/capture"
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss  │  Ctrl+e:expand thinking' > "$dir/fake/capture"
   out=$(run_control "$dir" rl97 interrupt); rc=$?
   expect_code 1 "$rc" "interrupt must refuse a Grok weekly-limit composer"$'\n'"$out"
   assert_contains "$out" "usage-limit screen" "the refusal should name the usage-limit screen"
@@ -4974,6 +4974,8 @@ test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text
 test_relaunch_does_not_kill_an_untrusted_usage_limit_endpoint
 test_relaunch_refuses_an_unverified_pane_text_usage_limit
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter '  │  Ctrl+e:expand thinking'
+test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter '  │  Ctrl+e:expand thinking' --provider-failover
 test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt
 test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt
 test_provider_failover_closes_a_usage_limit_picker

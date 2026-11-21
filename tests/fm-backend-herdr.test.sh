@@ -4432,7 +4432,7 @@ test_composer_state_grok_weekly_limit_live_shapes() {
     '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
     '  ┃' \
     '' \
-    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$resp/2.out"
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss  │  Ctrl+e:expand thinking' > "$resp/2.out"
   fb=$(make_herdr_fakebin "$dir")
   out=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" FM_COMPOSER_DIALOG_SINK="$dir/sink" \
     bash -c '. "$0/bin/fm-backend.sh"

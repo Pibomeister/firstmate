@@ -2544,9 +2544,10 @@ EOF
 
 # fm_composer_blocking_dialog: name a screen whose next Enter would answer it.
 # Prints the name and returns 0 only for the recorded structure of a known dialog:
-# the heading on its own line, then its selected row alone on a row, with the
-# recorded footer as the last non-blank row. A heading buried in a sentence,
-# or a last line that only starts with the same words, is not that dialog.
+# the heading on its own line, then its choice rows, with the recorded footer
+# as the last non-blank row. Grok can append shortcut segments on that same
+# footer bar. A heading buried in a sentence, or prose after the footer,
+# is not that dialog.
 # The strings alone are not enough, because a diff, a note, or a test fixture
 # on the pane can quote all of them above a normal composer. A miss returns 1
 # and prints nothing.
@@ -2566,11 +2567,14 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
   fi
   # Recorded 2026-10-19 on Grok 4.7 over Herdr: a prompt sent at 0% weekly
   # quota opens this left-barred choice, whose first row is Buy more credits.
+  # A later capture appends Ctrl+e:expand thinking. Keep the whole footer
+  # anchored and accept only bar-separated key:action segments after dismiss.
   if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
     /^[ \t]*┃[ \t]+You hit your weekly limit\.[ \t\r]*$/ { heading = 1 }
     heading && /^[ \t]*┃[ \t]+1 \(○\) Buy more credits([ \t]|$)/ { selected = 1 }
+    selected && /^[ \t]*┃[ \t]+2 \(○\) Try Again([ \t]|$)/ { retry = 1 }
     /[^ \t\r]/ { last = $0 }
-    END { exit !(selected && last ~ /^[ \t]*Tab:next answer[ \t]+│[ \t]+Esc:scrollback[ \t]+│[ \t]+Shift\+x:dismiss[ \t\r]*$/) }
+    END { exit !(retry && last ~ /^[ \t]*Tab:next answer[ \t]+│[ \t]+Esc:scrollback[ \t]+│[ \t]+Shift\+x:dismiss([ \t]+│[ \t]+([A-Za-z0-9]+\+)*[A-Za-z0-9]+:[A-Za-z][A-Za-z0-9 -]*)*[ \t\r]*$/) }
   '; then
     printf '%s' 'Grok weekly-limit choice'
     return 0
