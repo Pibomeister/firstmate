@@ -1326,7 +1326,7 @@ Every message the fleet tried to send and every worker restart or shutdown was r
 Opencode's left-bar composer draws its mode/model/branch line INSIDE the box as its last row, and that row's identifying cells are DE-EMPHASISED: the mode word is `ESC[38;2;67;133;190m` (luminance 119.8) and the middle-dot separators are `ESC[38;2;111;110;105m` (luminance 109.7), both under `FM_COMPOSER_GHOST_LUMA_MAX`'s 128, while the model, effort, and branch cells beside them are bright.
 `fm_composer_strip_ghost` exists to answer "what did the human type?", so it deleted precisely the cells that identify the footer, and the row reached `_fm_composer_classify_leftbar` opening at the bright model cell (`Space Bunny max fm-composer-footer` on the pane above, `Grok 4.7 ... tt-record-refresh` on the pane the incident was recorded from) instead of at `Build`.
 `FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT`'s `^(Build|Plan)` anchor therefore could not match on ANY styled backend - tmux, Herdr, and Zellij all pass `styled=1`, which is every backend except cmux, orca, and Paseo - so the exemption was unreachable and a real idle composer read `pending`.
-`pending` is the one verdict that blocks a steer: `fm_task_inbox_ring` defers on it and `bin/fm-watch.sh`'s re-ring calls the same function, and `bin/fm-send.sh` and `bin/fm-control.sh` refuse it, so the measured cost was three manual interventions into worker panes in one day.
+`pending` is a verdict that blocks a steer: `fm_task_inbox_ring` defers on it and `bin/fm-watch.sh`'s re-ring calls the same function, and `bin/fm-send.sh` and `bin/fm-control.sh` refuse it, so the measured cost was three manual interventions into worker panes in one day.
 The geometry was never at fault: the pane's floor row is still `╹` + `▀` and `_fm_composer_leftbar_floor_row` still recognizes it, and the run's LAST row was correctly the footer row.
 
 `_fm_composer_row_is_leftbar_footer` now proves the footer from BOTH forms of that row, the ghost-stripped content and the ANSI-stripped plain row, because the second is the only form that still carries opencode's own de-emphasised mode cell.
@@ -1623,7 +1623,7 @@ All six installed harnesses honored the doorbell contract with real model turns:
 An OpenCode vendor update modal swallowed the first doorbell and the single re-ring recovered it, which is exactly the watcher ladder's job.
 The [Composer classification matrix](#composer-classification-matrix) owns Grok's classifier results and refresh evidence.
 The ring's advisory pre-check tolerates ambiguity because a doorbell into an ambiguous composer is a recoverable constant line, while skipping on ambiguity would starve steering for any harness the classifier cannot positively identify.
-The current pending-composer ring contract is owned by `bin/fm-task-inbox-lib.sh`.
+The current doorbell ring contract is owned by `bin/fm-task-inbox-lib.sh`.
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
