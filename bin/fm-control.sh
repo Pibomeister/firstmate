@@ -6,6 +6,7 @@
 #        fm-control.sh <task-id> exit
 #        fm-control.sh <task-id> relaunch [--harness <name>] [--model <name>]
 #                                         [--effort <level>] [--account <entry>]
+#                                         [--provider-failover]
 #                                         (--note <text> | --note-file <path>)
 #
 # Why this exists, and how it differs from fm-send.sh. bin/fm-send.sh is the
@@ -123,6 +124,10 @@
 #              destroying the endpoint without typing Enter, so the replacement
 #              can rebind. A pane-text usage-limit verdict is refused; that
 #              classifier is not live-verified, and the endpoint is not closed.
+#              --provider-failover (bin/fm-failover.sh, with --harness or
+#              --account) is the one exception: the task is leaving a provider
+#              that refused it, so any usage-limit screen is closed the same
+#              way, by destroying the endpoint without typing into the picker.
 #              Moving a Claude task onto another harness is refused when
 #              bin/fm-quota-reroute.sh claude-tooling reports a signal, and
 #              when that check cannot complete; there is no override.
@@ -386,6 +391,7 @@ EFFORT_SET=0
 ACCOUNT_SET=0
 NOTE=
 NOTE_SET=0
+PROVIDER_FAILOVER=0
 control_want_value=
 for control_arg in "$@"; do
   if [ -n "$control_want_value" ]; then
@@ -419,6 +425,7 @@ for control_arg in "$@"; do
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
     --note-file) control_want_value=note_file ;;
+    --provider-failover) PROVIDER_FAILOVER=1 ;;
     --note-file=*)
       [ -f "${control_arg#--note-file=}" ] || die "--note-file '${control_arg#--note-file=}' is not a readable file"
       NOTE=$(cat "${control_arg#--note-file=}")
@@ -435,7 +442,10 @@ fi
 if [ "$VERB" != relaunch ]; then
   [ "$HARNESS_SET" = 0 ] && [ "$MODEL_SET" = 0 ] && [ "$EFFORT_SET" = 0 ] && [ "$ACCOUNT_SET" = 0 ] && [ "$NOTE_SET" = 0 ] \
     || die "--harness, --model, --effort, --account, and --note apply to 'relaunch' only"
+  [ "$PROVIDER_FAILOVER" = 0 ] || die "--provider-failover applies to 'relaunch' only"
 fi
+[ "$PROVIDER_FAILOVER" = 0 ] || [ "$HARNESS_SET" = 1 ] || [ "$ACCOUNT_SET" = 1 ] \
+  || die "--provider-failover needs --harness or --account, the runtime the task moves to"
 [ "$ACCOUNT_SET" = 0 ] || [ -n "$NEW_ACCOUNT" ] || die "--account requires a non-empty value"
 [ "$HARNESS_SET" = 0 ] || [ -n "$NEW_HARNESS" ] || die "--harness requires a non-empty value"
 [ "$MODEL_SET" = 0 ] || [ -n "$NEW_MODEL" ] || die "--model requires a non-empty value"
@@ -681,8 +691,9 @@ usage_limit_screen() {
   fm_wd_usage_limit_kind "$USAGE_LIMIT_DIALOG"
 }
 
-# Close the endpoint without typing Enter. Used only on a Grok weekly-limit
-# composer during relaunch, so the replacement can rebind.
+# Close the endpoint without typing Enter. Used during relaunch on a Grok
+# weekly-limit composer, or on any usage-limit screen under
+# --provider-failover, so the replacement can rebind.
 usage_limit_relaunch_close() {
   fm_backend_kill "$BACKEND" "$T" \
     || die "task $ID is at a usage-limit screen and its endpoint could not be closed without typing Enter"
@@ -1085,13 +1096,13 @@ do_exit() {
   dialog=$USAGE_LIMIT_DIALOG
   if fm_wd_usage_limit_kind "$dialog"; then
     if [ "$VERB" = relaunch ]; then
-      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ] || [ "$PROVIDER_FAILOVER" = 1 ]; then
         usage_limit_relaunch_close
         return 0
       fi
       die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
     fi
-    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+    if [ "$dialog" = 'Grok weekly-limit choice' ] || [ "$PROVIDER_FAILOVER" = 1 ]; then
       die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
     fi
     die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
@@ -1130,13 +1141,13 @@ do_exit() {
   dialog=$USAGE_LIMIT_DIALOG
   if fm_wd_usage_limit_kind "$dialog"; then
     if [ "$VERB" = relaunch ]; then
-      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ] || [ "$PROVIDER_FAILOVER" = 1 ]; then
         usage_limit_relaunch_close
         return 0
       fi
       die "task $ID is at a usage-limit screen that is not live-verified; refusing to close the endpoint or type Enter. Queue until reset."
     fi
-    if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+    if [ "$dialog" = 'Grok weekly-limit choice' ] || [ "$PROVIDER_FAILOVER" = 1 ]; then
       die "task $ID is at a usage-limit screen; refusing to type Enter into it. Relaunch onto another runtime instead."
     fi
     die "task $ID is at a usage-limit screen; refusing to type Enter into it. Queue until reset."
@@ -1948,7 +1959,7 @@ case "$VERB" in
     load_usage_limit_dialog
     dialog=$USAGE_LIMIT_DIALOG
     if fm_wd_usage_limit_kind "$dialog"; then
-      if [ "$dialog" = 'Grok weekly-limit choice' ]; then
+      if [ "$dialog" = 'Grok weekly-limit choice' ] || [ "$PROVIDER_FAILOVER" = 1 ]; then
         die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Relaunch onto another runtime instead."
       fi
       die "task $ID is at a usage-limit screen; refusing to send a lifecycle key into it. Queue until reset."

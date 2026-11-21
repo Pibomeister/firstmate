@@ -383,6 +383,8 @@ esac
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-failover-lib.sh
+. "$SCRIPT_DIR/fm-failover-lib.sh"
 # shellcheck source=bin/fm-health-lib.sh
 . "$SCRIPT_DIR/fm-health-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
@@ -615,6 +617,15 @@ CREW_RELAUNCH_WINDOW_SECS=${FM_CREW_RELAUNCH_WINDOW_SECS:-}
 case "$CREW_RELAUNCH_WINDOW_SECS" in ''|*[!0-9]*|0) CREW_RELAUNCH_WINDOW_SECS=3600 ;; esac
 CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
 case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
+# Provider failover of an idle ship or scout (provider_failover_check): the
+# wall-clock bound on one whole bin/fm-failover.sh worker call, every runtime
+# it tries included (FM_FAILOVER_WATCH_TIMEOUT), on each relaunch inside it
+# (FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT), and the earlier deadline fm-failover.sh
+# gets so it starts no relaunch it cannot finish and records any switch before
+# the kill. The call blocks this window's iteration, so
+# fm_failover_watch_bounds keeps it strictly inside the watcher stale grace.
+read -r FAILOVER_WATCH_TIMEOUT FAILOVER_WATCH_RELAUNCH_TIMEOUT FAILOVER_WATCH_DEADLINE_MARGIN <<< \
+  "$(fm_failover_watch_bounds "$WATCHER_STALE_GRACE" "${FM_FAILOVER_WATCH_TIMEOUT:-}" "${FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT:-}")"
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held crew whose agent has confidently exited uses the same
@@ -685,13 +696,14 @@ hash_pane() {
 # `idle`, or `unknown codex-unverified`), so a caller can say what it saw.
 WINDOW_BUSY_VERDICT=
 window_is_busy() {  # <window> <tail40>
-  local w=$1 tail40=$2 task meta verdict
-  task=$(window_to_task "$w" "$STATE")
+  local w=$1 tail40=$2 task meta verdict harness=${4:-}
+  if [ "$#" -ge 3 ]; then task=$3; else task=$(window_to_task "$w" "$STATE"); fi
   meta="$STATE/$task.meta"
   if [ -n "$task" ] && [ -f "$meta" ]; then
     verdict=$(fm_busy_classify_meta "$meta" "$task" "$STATE" "$tail40")
   else
-    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$(window_harness "$w")" \
+    [ -n "$harness" ] || harness=$(window_harness "$w")
+    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$harness" \
       "${task:-unknown}" "$STATE" "$tail40")
   fi
   WINDOW_BUSY_VERDICT=$verdict
@@ -2341,6 +2353,115 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   fm_lock_release "$lock" 2>/dev/null || true
   return 0
 }
+# Provider failover of an idle ship or scout whose last turn ended on a provider
+# refusal (HTTP 429, rate, usage, or billing limit). The verdict comes from the
+# task's provider-error record, which its Claude StopFailure hook writes and
+# which counts only for the agent's current turn end, or else from the refusal
+# row the idle screen shows (fm_wd_provider_error_screen). A screen is judged
+# once (state/<task>.failover-judged), and a Claude task whose hook recorded an
+# ordinary turn end is not judged by its screen at all. It runs
+# bin/fm-failover.sh worker once per distinct idle screen, remembered in
+# state/<task>.failover-seen, on the first idle poll that shows it, so a
+# refused worker moves within one cycle; that script owns the order, the
+# attempt bound, the per-task lock, and the dispatch-log record. A captain-held
+# or remote task is left to the ordinary stale path. Returns 0 when it ran and
+# queued a check wake, 1 when the window is out of scope or nothing ran.
+provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason
+  case "$kind" in ship|scout) ;; *) return 1 ;; esac
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  seen="$STATE/$task.failover-seen"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
+  if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
+    src=record
+  else
+    judged="$STATE/$task.failover-judged"
+    [ "$(cat "$judged" 2>/dev/null || true)" != "$h" ] || return 1
+    src=screen
+  fi
+  [ -z "$(fm_meta_get "$STATE/$task.meta" remote_host 2>/dev/null || true)" ] || return 1
+  if status_is_captain_held "$(status_declared_wait_line "$STATE/$task.status")" || task_captain_call_open "$task"; then
+    return 1
+  fi
+  if [ "$src" = screen ]; then
+    printf '%s' "$h" > "$judged" 2>/dev/null || true
+    ! fm_failover_turn_end_known "$STATE" "$task" || return 1
+    class=$(fm_wd_provider_error_screen "$screen") || return 1
+  fi
+  printf '%s' "$h" > "$seen" 2>/dev/null || return 1
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
+  out=$(FM_HOME=$FM_HOME FM_FAILOVER_RELAUNCH_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" worker "$task" \
+    --reason "$class" --state "$STATE" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|off|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  triage_log "provider failover ($class from $src) rc=$rc: $task ${line:-no result line}"
+  fm_watch_now now
+  key="failover-$task-$now"
+  case "$rc" in
+    0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - its local copy, branch, and gates were kept; reconcile its current state rather than relaunching it again" ;;
+    1) reason="check: $task stopped on a $class refusal from its provider and no runtime in the failover order took over (${line:-no result line}) - relaunch it by hand on an available runtime, or queue it until the limit resets" ;;
+    3) reason="check: $task stopped on a $class refusal from its provider again, and automatic failover paused at its attempt bound (${line:-no result line}) - recover it by hand" ;;
+    5) rm -f "$seen"; return 1 ;;
+    6) return 1 ;;
+    *) reason="check: $task stopped on a $class refusal from its provider and its automatic failover failed (exit $rc): $(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { l = $0 } END { print substr(l, 1, 240) }') - recover it by hand, and check for unlanded work before any cleanup" ;;
+  esac
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
+  return 0
+}
+
+captain_provider_failover_check() {
+  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason owner_pid captain_h rows prompt before after
+  fm_supervision_needed "$STATE" || return 1
+  [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$endpoint")
+  terminal=$(sed -n 's/^terminal=//p' "$endpoint")
+  [ -n "$terminal" ] && [ "$terminal" != unknown ] || return 1
+  watcher_capture "$backend" "$terminal" 40 || return 1
+  screen=$WATCHER_CAPTURE
+  owner_pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  captain_h=$("$SCRIPT_DIR/fm-harness.sh" process "$owner_pid" 2>/dev/null) || captain_h=
+  captain_h=${captain_h##* }
+  if [ -z "$captain_h" ]; then
+    command -v fm_session_lock_recorded_owner_live >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+    fm_session_lock_recorded_owner_live "$STATE" || return 1
+    captain_h=${FM_SESSION_LOCK_OWNER_HARNESS:-}
+  fi
+  [ -n "$captain_h" ] || return 1
+  window_is_busy "$terminal" "$screen" captain "$captain_h" && return 1
+  ! fm_failover_turn_end_known "$STATE" captain || return 1
+  rows=$(_fm_wd_tail_rows "$screen" 12)
+  prompt=$(printf '%s\n' "$rows" | awk -v glyph="$FM_WD_PROMPT_RE" '$0 ~ glyph { n = NR } END { print n + 0 }')
+  [ "$prompt" -gt 1 ] || return 1
+  before=$(printf '%s\n' "$rows" | head -n "$((prompt - 1))")
+  after=$(printf '%s\n' "$rows" | tail -n "+$((prompt + 1))")
+  printf '%s\n%s\n' "$before" "$after" | LC_ALL=C grep -Eiq '^[^a-z]*(working|thinking|processing|connecting|retrying|esc to interrupt)' && return 1
+  class=$(fm_wd_provider_error_class "$before") || return 1
+  hash=$(printf '%s' "$screen" | hash_pane)
+  seen="$STATE/.captain-failover-seen"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$hash" ] || return 1
+  printf '%s' "$hash" > "$seen" || return 1
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
+  out=$(FM_HOME=$FM_HOME FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
+    --reason "$class" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  if [ "$rc" -eq 6 ]; then rm -f "$seen"; return 1; fi
+  key="failover-captain-$now"
+  if [ "$rc" -eq 0 ]; then
+    reason="check: captain moved to the next runtime after a $class refusal ($line)"
+  else
+    reason="check: captain stopped on a $class refusal and automatic failover did not confirm a successor (exit $rc): ${line:-no result line}"
+  fi
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
+}
+
 # The question the wedge timer never asked before it alarmed: is there still an
 # agent here to BE wedged? A wedge is something stuck that might recover, so
 # re-alarming it earns its cost; an agent that is gone never moves again, its pane
@@ -5479,6 +5600,8 @@ while :; do
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
 
+  captain_provider_failover_check || true
+
   fleet_heartbeat_publish_detached
 
   for budget_meta in "$STATE"/*.meta; do
@@ -5959,6 +6082,12 @@ EOF
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
+      continue
+    fi
+    if [ "$busy_now" -ne 0 ] && provider_failover_check "$w" "$task" "$kind" "$tail40" "$h"; then
+      echo "$h" > "$hf"
+      echo 1 > "$cf"
+      printf '%s' "$h" > "$sf"
       continue
     fi
     if [ "$h" = "$prev" ]; then

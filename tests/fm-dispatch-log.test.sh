@@ -420,3 +420,24 @@ want="OPEN o1 event=received at=2027-01-15T08:00:00Z project=alpha summary=first
 OPEN o2 event=queued at=2027-01-15T08:01:00Z summary=second ask reason=behind o1"
 [ "$out" = "$want" ] || fail "open must list every undispatched, unblocked goal oldest first: $out"
 pass "open lists every goal not yet dispatched or blocked, whatever its age"
+dlo $((T0 + 120)) failover --task t-3 --from claude@ordinary --to codex --reason rate_limit >/dev/null \
+  || fail "failover refused a well-formed switch"
+[ "$(tail -n 1 "$OPEN_STATE/dispatch-log.tsv" | cut -f3-5)" = $'failover\to3\ttask=t-3 from=claude@ordinary to=codex reason=rate_limit' ] \
+  || fail "failover must log under the goal that dispatched the task: $(tail -n 1 "$OPEN_STATE/dispatch-log.tsv")"
+dlo $((T0 + 121)) failover --task captain --from claude --to codex --reason billing >/dev/null \
+  || fail "failover refused a captain switch"
+[ "$(tail -n 1 "$OPEN_STATE/dispatch-log.tsv" | cut -f4)" = captain ] || fail "an undispatched task's switch must log under its own id"
+[ "$(dlo 0 show o3 | tail -n 1 | cut -f3)" = failover ] || fail "show must list the switch among the goal's lines"
+[ "$(dlo 0 show o3 | head -n 1)" = 'STATE o3 event=dispatched at=2027-01-15T08:01:01Z task=t-3' ] \
+  || fail "a switch must not change the goal's state line: $(dlo 0 show o3 | head -n 1)"
+out=$(dlo $((T0 + 7200)) open); rc=$?
+[ "$rc" = 0 ] && [ "$out" = "$want" ] || fail "a switch must not open or reopen a goal: $out"
+out=$(dlo $((T0 + 7200)) overdue); rc=$?
+case "$out" in *captain*|*o3*) fail "a switch must never be overdue: $out" ;; esac
+before=$(wc -l < "$OPEN_STATE/dispatch-log.tsv" | tr -d ' ')
+dlo "$T0" failover --task t-3 --to codex --reason rate_limit >/dev/null 2>&1 && fail "failover without --from was accepted"
+dlo "$T0" failover --task t-3 --from claude --to codex >/dev/null 2>&1 && fail "failover without --reason was accepted"
+dlo "$T0" failover --task t-3 --from 'two words' --to codex --reason r >/dev/null 2>&1 && fail "a multi-word --from was accepted"
+dlo "$T0" failover --task 'bad id' --from a --to b --reason r >/dev/null 2>&1 && fail "a malformed task id was accepted"
+[ "$(wc -l < "$OPEN_STATE/dispatch-log.tsv" | tr -d ' ')" = "$before" ] || fail "a refused failover wrote to the ledger"
+pass "failover logs a provider switch under its goal without changing state, open, or overdue, and refuses malformed switches"

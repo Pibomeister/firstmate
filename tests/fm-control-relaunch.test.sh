@@ -827,6 +827,67 @@ test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt() {
   pass "fm-control relaunch: a Grok weekly-limit after busy interrupt is closed without typing Enter"
 }
 
+# trust_endpoint <dir> <id>: record the tmux addressing a close needs.
+trust_endpoint() {
+  local sock ident
+  sock=$(bash -c '. "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_addressed_socket' _ "$ROOT")
+  ident=$(bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s" "$(fm_pid_identity "$2")" | tr "\t\n" "  "' _ "$ROOT" "$$")
+  printf 'tmux_socket=%s\ntmux_server_pid=%s\ntmux_server_identity=%s\ntmux_window_id=%s\n' \
+    "$sock" "$$" "$ident" @9 >> "$1/home/state/$2.meta"
+  printf '%s\n' "$sock"
+}
+
+claude_limit_picker() {  # <file>
+  printf '%s\n' \
+    'You have hit your weekly limit for Opus.' \
+    '' \
+    ' ❯ 1. Switch to Sonnet' \
+    '   2. Wait for the limit to reset' \
+    '   3. Buy more credits' \
+    '' \
+    'Enter to confirm · Esc to cancel' > "$1"
+}
+
+test_provider_failover_closes_a_usage_limit_picker() {
+  local dir out rc sock id capture gen expected_keys
+  for id in rl86 rl87; do
+    dir=$(new_case "provider-failover-$id" "$id")
+    add_ship_task "$dir" "$id" claude
+    sock=$(trust_endpoint "$dir" "$id")
+    capture=capture
+    if [ "$id" = rl87 ]; then
+      printf '%s\n' 'thinking hard' 'esc to interrupt' > "$dir/fake/capture"
+      gen=$("$ROOT/bin/fm-busy-event.sh" arm "$dir/home/state" "$id")
+      printf 'busy_gen=%s\n' "$gen" >> "$dir/home/state/$id.meta"
+      capture='capture-after-interrupt'
+    fi
+    claude_limit_picker "$dir/fake/$capture"
+    printf 'codex' > "$dir/fake/becomes"
+    out=$(FM_FAKE_TMUX_SOCKET="$sock" FM_FAKE_TMUX_SERVER_PID=$$ \
+      run_control "$dir" "$id" relaunch --harness codex --provider-failover --note "the provider refused this task"); rc=$?
+    expect_code 0 "$rc" "a provider failover must close a usage-limit picker ($capture)"$'\n'"$out"
+    assert_no_grep "/exit" "$dir/fake/literal" \
+      "the exit command must not be typed into a usage-limit picker ($capture)"
+    # The fake records every key sent while a screen is showing; on the busy
+    # case that is only the interrupt sent before the picker appeared.
+    expected_keys=''
+    if [ "$id" = rl87 ]; then
+      grep -qx Escape "$dir/fake/keys" || fail "a busy claude pane must receive its interrupt first: $(cat "$dir/fake/keys")"
+      expected_keys=Escape
+    fi
+    [ "$(cat "$dir/fake/picker-keys")" = "$expected_keys" ] \
+      || fail "the usage-limit picker received keys ($capture): $(cat "$dir/fake/picker-keys")"
+    assert_contains "$out" "harness=codex from=claude" "the replacement lands on codex ($capture)"
+    [ "$(meta_field "$dir" "$id" harness)" = codex ] \
+      || fail "the published record should follow the replacement harness ($capture)"
+  done
+  dir=$(new_case provider-failover-usage rl88)
+  add_ship_task "$dir" rl88 claude
+  out=$(run_control "$dir" rl88 relaunch --provider-failover --note "no target"); rc=$?
+  expect_code 1 "$rc" "--provider-failover without a target runtime"$'\n'"$out"
+  assert_contains "$out" "needs --harness or --account" "the usage error names the missing target"
+  pass "fm-control relaunch --provider-failover: a usage-limit picker, idle or after interrupt, is closed without typing into it"
+}
 test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt() {
   local dir out rc gen
   dir=$(new_case usage-limit-busy-relaunch rl98)
@@ -4915,6 +4976,7 @@ test_relaunch_refuses_an_unverified_pane_text_usage_limit
 test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter
 test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt
 test_busy_relaunch_refuses_pane_text_usage_limit_after_interrupt
+test_provider_failover_closes_a_usage_limit_picker
 test_interrupt_refuses_a_usage_limit_screen
 test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch
 test_control_relaunch_of_a_gone_tmux_endpoint

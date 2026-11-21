@@ -196,6 +196,29 @@ fm_poll_derived_grace() {
   printf '%s\n' "$derived"
 }
 
+# fm_failover_watch_bounds <stale-grace> [timeout] [relaunch-timeout]
+# Prints `<timeout> <relaunch-timeout> <deadline-margin>` for bin/fm-watch.sh's
+# provider failover call, which blocks one watcher iteration, so its timeout
+# stays strictly inside the watcher stale grace: grace - 60, or half the grace
+# when that is larger, which also caps an explicit timeout. bin/fm-failover.sh
+# gets a deadline deadline-margin (15s, at most a quarter of the timeout)
+# before the kill, and each relaunch fits inside that deadline.
+fm_failover_watch_bounds() {
+  local grace=${1:-} t=${2:-} r=${3:-} cap m
+  case "$grace" in ''|*[!0-9]*) grace=300 ;; esac
+  [ "$grace" -ge 2 ] || grace=2
+  cap=$((grace - 60))
+  [ "$cap" -ge $((grace / 2)) ] || cap=$((grace / 2))
+  case "$t" in ''|*[!0-9]*|0) t=$cap ;; esac
+  [ "$t" -le "$cap" ] || t=$cap
+  m=15
+  [ "$m" -le $((t / 4)) ] || m=$((t / 4))
+  case "$r" in ''|*[!0-9]*|0) r=$((t - m - 5)) ;; esac
+  [ "$r" -le $((t - m)) ] || r=$((t - m))
+  [ "$r" -ge 1 ] || r=1
+  printf '%s %s %s\n' "$t" "$r" "$m"
+}
+
 # fm_watcher_stall_bound [poll-seconds]
 # Hard bound on a live watcher holder's beacon age: FM_WATCHER_STALL_BOUND,
 # defaulting to 3x the watcher's stale grace (FM_WATCHER_STALE_GRACE, else

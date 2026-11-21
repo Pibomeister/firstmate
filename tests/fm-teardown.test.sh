@@ -75,6 +75,8 @@
 #   (ah) hung fetch                                               -> bounded, REFUSE
 #   (ai) commits held only by the no-mistakes gate                -> REFUSE, gate not fetched
 #   (aj) file saved during the refresh, work landed                -> REFUSE, file intact
+#   (ak) a live provider failover holds the task's failover lock  -> REFUSE;
+#        a dead holder                                            -> ALLOW, failover state retired
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -1413,6 +1415,47 @@ test_gate_remote_is_not_refreshed_into_landed() {
   expect_code 1 "$rc" "gate-not-refreshed: commits only on the gate must refuse"
   grep -q REFUSED "$case_dir/stderr" || fail "gate-not-refreshed: no REFUSED line"
   pass "commits held only by the no-mistakes gate are not refreshed into landed"
+}
+
+# A landed task's provider-failover state goes with it: the attempt ledger,
+# the watcher's screen markers, the provider-error record, and a dead
+# holder's failover lock. A live failover holding the lock refuses teardown.
+test_teardown_retires_provider_failover_state() {
+  local case_dir rc holder i
+  case_dir=$(make_case failover-state)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit "$case_dir" "shippable work"
+  git -C "$case_dir/wt" push -q origin fm/task-x1
+  git -C "$case_dir/project" fetch -q origin
+  printf '1\tattempt\tclaude\tcodex\trate_limit\n' > "$case_dir/state/.failover-task-x1"
+  printf 'h1' > "$case_dir/state/task-x1.failover-seen"
+  printf 'h1' > "$case_dir/state/task-x1.failover-judged"
+  printf 'class=rate_limit\n' > "$case_dir/state/task-x1.provider-error"
+
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" && touch "$3"; sleep 30' _ \
+    "$ROOT" "$case_dir/state/.failover-task-x1.lock" "$case_dir/held" &
+  holder=$!
+  i=0
+  while [ ! -e "$case_dir/held" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$case_dir/held" ] || fail 'failover-state: fixture lock holder never took the lock'
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  expect_code 1 "$rc" "failover-state: teardown must refuse while a failover holds the lock"
+  assert_grep 'a provider failover is already running for task task-x1' "$case_dir/stderr" \
+    "failover-state: the refusal did not name the running failover"
+  [ -e "$case_dir/state/task-x1.meta" ] || fail 'failover-state: the refusal removed the task record'
+  [ -e "$case_dir/state/.failover-task-x1" ] || fail 'failover-state: the refusal removed the failover ledger'
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "failover-state: teardown should succeed once the holder is dead"$'\n'"$(cat "$case_dir/stderr")"
+  local f
+  for f in .failover-task-x1 .failover-task-x1.lock task-x1.failover-seen task-x1.failover-judged task-x1.provider-error; do
+    [ ! -e "$case_dir/state/$f" ] && [ ! -L "$case_dir/state/$f" ] || fail "failover-state: teardown left state/$f behind"
+  done
+  pass "teardown refuses during a live provider failover and retires the task's failover state after it"
 }
 
 test_no_mistakes_origin_remote_allows() {
@@ -6830,6 +6873,7 @@ test_reachable_work_needs_no_fetch
 test_hung_fetch_is_bounded_and_refuses
 test_gate_remote_is_not_refreshed_into_landed
 test_no_mistakes_origin_remote_allows
+test_teardown_retires_provider_failover_state
 test_no_mistakes_truly_unpushed_refuses
 test_no_mistakes_mirror_only_branch_refuses
 test_local_only_force_overrides_unpushed
