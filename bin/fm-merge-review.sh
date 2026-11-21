@@ -93,9 +93,9 @@
 #
 # Convergence shadow (convergence=shadow in config/merge-review). The rule
 # above still decides the state word and the exit status. After a batch, run
-# also gives every valid seat review at this head to AgentKit's review engine
-# and records the engine's verdict beside the receipts; check then appends
-# that verdict to the line:
+# also gives AgentKit's review engine exactly the seat reviews the rule above
+# counts at this head and the live merge base, and records the engine's
+# verdict beside the receipts; check then appends that verdict to the line:
 #   ... url=<pr-url> converge=<approved|blocked|incomplete|owner-hold>
 #     tier=<green|yellow-agent|yellow-owner|red|unavailable>
 #   ... url=<pr-url> converge=unavailable converge_reason="<text>"
