@@ -51,8 +51,10 @@
 # live task's open blocked event must be remediated and closed with
 # `resolved [key=...]`, or explicitly reclassified in the status stream with a
 # durable reason, before an ordinary captain request may proceed.
-# `needs-decision:` is deliberately not part of this blocker gate. The gate
-# keeps every open blocker until that blocker's own resolution is proven.
+# `needs-decision:` is deliberately not part of this blocker gate, and neither
+# is a `human-step-<slug>` keyed blocker, which only a person can finish and
+# which is listed as described above. The gate keeps every other open blocker
+# until that blocker's own resolution is proven.
 # Captain-verdict outcomes are listed under "waiting on you", but cannot exempt
 # a blocker: per-blocker decision-key provenance is deferred, with no owner,
 # because the gate fails safe by keeping every open blocker. Away-window

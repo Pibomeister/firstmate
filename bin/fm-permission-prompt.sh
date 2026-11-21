@@ -242,29 +242,11 @@ _fm_pp_trust_dialog() {  # <screen>
 }
 
 # A recorded Codex CLI 0.151.0 dialog, which the watchdog's dialog detector
-# does not read: its command-approval question or hook-review heading, a
-# numbered cursor row (`›` or `>`) below it, and its whole lowercase footer as
-# the last row. It only ever leads to a hold or a hard stop. It prints every
-# row from the heading through the footer, which the hard-stop check reads.
+# does not read; bin/fm-watchdog-lib.sh fm_wd_codex_dialog owns its shape. It
+# only ever leads to a hold or a hard stop. It prints every row from the
+# heading through the footer, which the hard-stop check reads.
 _fm_pp_codex_dialog() {  # <screen>
-  local rows
-  rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
-    { r[NR] = $0 }
-    END {
-      last = NR
-      while (last > 0 && r[last] !~ /[^ \t]/) last--
-      if (r[last] !~ /^[ \t]*Press enter to confirm or esc to (cancel|go back)[ \t]*$/) exit 1
-      floor = last - 40; if (floor < 1) floor = 1
-      head = 0
-      for (i = last - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(Would you like to run the following command\?|Hooks need review)[ \t]*$/) { head = i; break }
-      if (!head) exit 1
-      cursor = 0
-      for (i = head + 1; i < last; i++) if (r[i] ~ /^[ \t]*(›|>)[ \t]*[0-9]+\.[ \t]/) cursor++
-      if (cursor != 1) exit 1
-      for (i = head; i <= last; i++) print r[i]
-    }') || return 1
-  [ -n "$rows" ] || return 1
-  printf '%s\n' "$rows"
+  fm_wd_codex_dialog "$@"
 }
 
 # The screen rows of a picker from the top of the paragraph that holds its

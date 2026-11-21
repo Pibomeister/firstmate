@@ -595,6 +595,7 @@ IFS= read -r -d '' WAIT_SECTION <<'EOF' || true
 # Waiting
 Every turn you take resends your whole context, so a wait must cost no turns.
 After you append `needs-decision:` or `blocked:`, end your turn at once: do not check the inbox, the status file, or anything else, because the answer arrives as a terminal message that starts your next turn.
+A `blocked [key=human-step-<slug>]` line is the exception: keep working on everything that does not depend on that step.
 For your own no-mistakes run and its PR CI, follow the completion-listener contract in Definition of done.
 For a PR check outside that run, firstmate arms the named PR check watch and steers you its watch reference, bound head, exact check name, and trusted App ID. Do not poll that check yourself. If the reference is missing, report `blocked:` to firstmate and end the turn.
 Once firstmate supplies it, append `paused [at=<epoch>]: external PR check <exact name> check-watch=<watch-ref> head=<bound-sha> producer=app:<id>` and end the turn. The watch wakes firstmate, which validates the current check and steers you to resume or update the pause with a new reference.

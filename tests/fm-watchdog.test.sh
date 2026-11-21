@@ -6514,6 +6514,14 @@ test_human_step_detection() {
   assert_equals "" "$(lib fm_wd_human_step $'The 2FA and otp checks pass now.\n> 1. merge it')" "a numbered composer draft under a 2FA reply is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Working on the mirror.\n────────────────────────────────────────\n❯ check whether\n  authentication is required for the mirror\n────────────────────────────────────────\n  ? for shortcuts')" "a wrapped composer draft that mentions authentication is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'Working on the login flow.\n❯ next, enable the\n  2fa check and sign in to the staging app')" "a borderless wrapped draft that mentions 2FA and sign-in is not a step"
+  assert_equals verification-code "$(lib fm_wd_human_step $'❯ /login\n\nBrowser did not open? Use the url below to sign in\nPaste code here if prompted > ')" "a sign-in prompt below an echoed turn, with no composer under it"
+  assert_equals otp "$(lib fm_wd_human_step $'❯ push the PR\n\n! First copy your one-time code: 8F3A-21C4\nPress Enter to open github.com in your browser...')" "a device code below an echoed turn, with no composer under it"
+  assert_equals "" "$(lib fm_wd_human_step $'❯ push the PR\n\n! First copy your one-time code: 8F3A-21C4\n\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  ? for shortcuts')" "conversation above a live composer is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'I set up the sign in to GitHub docs.\n› \n\n  ? for shortcuts   100% context left')" "an empty row and one footer row under a composer are not an echoed turn"
+  assert_equals "" "$(lib fm_wd_human_step $'Would you like to run the following command?\n\n  $ op item get gh --otp\n\n› 1. Yes, proceed (y)\n  2. Yes, and don\'t ask again for this command (a)\n  3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel')" "a Codex command approval for an OTP command is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'  Would you like to run the following command?\n\n  $ op item get gh --otp\n\n  › 1. Yes, proceed (y)\n    2. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel')" "an indented Codex command approval for an OTP command is not a step"
+  assert_equals "" "$(lib fm_wd_human_step $'I set up 2FA on the account earlier.\n\nContinue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel')" "conversation above an unnumbered picker is not a step"
+  assert_equals sign-in "$(lib fm_wd_human_step $'Working.\n\nSign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel')" "an unnumbered sign-in picker is a step"
   pass "human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not"
 }
 
@@ -6793,6 +6801,28 @@ test_worker_human_step_keeps_other_work_moving() {
   pass "human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled"
 }
 
+# A Codex approval that names an OTP command is a permission prompt, not a
+# human-only step: the hard stop and its away page still run on the worker.
+test_codex_approval_on_a_worker_is_a_hard_stop_not_a_human_step() {
+  local approval=$'\n  Would you like to run the following command?\n\n  $ op item get gh --otp\n\n  › 1. Yes, proceed (y)\n    2. Yes, and don\'t ask again for this command (p)\n    3. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel'
+  make_home $'Captain session\n❯ \n  ? for shortcuts'
+  transcript 100 "Working."
+  worker_pane cx ship "$approval"
+  printf 'harness=codex\n' >> "$H/state/cx.meta"
+  sleep 0.5
+  printf '%s\n' "$LOCKPID" > "$H/state/.supervise-daemon.pid"
+  printf "command:cat >> '%s'\n" "$H/paged.log" > "$H/config/wedge-alarm"
+  : > "$H/state/.afk"
+  run_wd 0 once >/dev/null 2>&1 || fail "the worker pass failed"
+  run_wd 600 once >/dev/null 2>&1 || fail "the ten-minute worker pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$4 == "worker:cx" && $5 == "human-step"' | wc -l | tr -d ' ')" "the Codex approval was read as a human-only step: $(ledger | cut -f4-8)"
+  assert_no_grep "human-only" "$H/data/watchdog/status.md" "the Codex approval is reported as a human-only step"
+  assert_grep "permission-prompt-hardstop" "$H/state/cx.status" "the Codex credential approval got no hard stop: $(cat "$H/state/cx.status" 2>/dev/null)"
+  sleep 1
+  [ ! -s "$H/worker-cx.typed" ] || fail "the watchdog answered the Codex approval: $(cat "$H/worker-cx.typed")"
+  pass "permission prompt: a Codex approval naming an OTP command on a worker is a hard stop, not a human-only step"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -6943,6 +6973,7 @@ fm_test_run \
   test_primary_quoted_autowait_is_not_paged \
   test_primary_ordinary_idle_is_not_paged \
   test_human_step_detection \
+  test_codex_approval_on_a_worker_is_a_hard_stop_not_a_human_step \
   test_wrapped_draft_about_a_sign_in_is_unsent_input_not_a_step \
   test_human_step_pages_once_after_ten_minutes_and_is_never_typed_into \
   test_human_step_overnight_reports_only_what_it_recorded \

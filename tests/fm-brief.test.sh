@@ -1967,6 +1967,26 @@ test_crewmate_scaffolds_escalate_human_only_steps() {
     || fail "fm-brief.sh --secondmate exited non-zero"
   assert_no_grep "A human-only step" "$home/data/human-step-mate/brief.md" \
     "secondmate charter must not carry the crewmate human-only-step rule"
+  # On a home whose workers end the turn after a blocker, the step's key is
+  # the one blocker that does not end it.
+  local wait
+  home="$TMP_ROOT/human-step-wait-home"
+  mkdir -p "$home/data" "$home/config"
+  : > "$home/config/wait-no-turns"
+  for mode in no-mistakes scout; do
+    if [ "$mode" = scout ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "human-step-wait-$mode" alpha --scout >/dev/null 2>&1 \
+        || fail "fm-brief.sh --scout exited non-zero on a wait-no-turns home"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "human-step-wait-$mode" alpha --mode "$mode" >/dev/null 2>&1 \
+        || fail "fm-brief.sh --mode $mode exited non-zero on a wait-no-turns home"
+    fi
+    wait=$(awk '/^# Waiting$/{on=1} on && /^# / && !/^# Waiting$/{exit} on' "$home/data/human-step-wait-$mode/brief.md")
+    [ -n "$wait" ] || fail "$mode brief on a wait-no-turns home has no Waiting section"
+    assert_contains "$wait" 'end your turn at once' "$mode brief's Waiting section no longer ends the turn after a blocker"
+    assert_contains "$wait" "A \`blocked [key=human-step-<slug>]\` line is the exception: keep working on everything that does not depend on that step." \
+      "$mode brief's Waiting section ends the turn on a human-only step"
+  done
   pass "fm-brief.sh: every crewmate scaffold escalates a human-only step within 10 minutes and keeps work moving"
 }
 

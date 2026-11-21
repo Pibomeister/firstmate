@@ -625,3 +625,26 @@ test_claim_refuted_keys_are_reserved() {
 
 test_recorded_line_stays_recorded_across_a_resolve
 test_claim_refuted_keys_are_reserved
+
+# A worker's `human-step-` key is a human-only step it reports while it keeps
+# working (bin/fm-brief.sh rule 11), so the fire-and-forget retry ring and
+# pending-reply recovery, which leave a task alone while it has an open
+# decision of its own, must not treat it as one. An idle worker whose last
+# line reports the step still has an open blocker, so its stale alarm stays
+# bounded like any other.
+test_human_step_key_is_not_an_own_decision_but_still_bounds_the_wait() {
+  local dir f
+  dir=$(case_dir human-step-own)
+  f="$dir/task.status"
+  printf 'working: started\nblocked [at=1] [key=human-step-device]: human-only step: approve the sign-in on the phone\n' > "$f"
+  [ -z "$(status_own_open_decisions "$f")" ] \
+    || fail "a human-step key counted as the task's own open decision: '$(status_own_open_decisions "$f")'"
+  [ "$(status_worker_open_wait_verb "$f")" = blocked ] \
+    || fail "a worker's newest human-step blocker stopped counting as its open wait: '$(status_worker_open_wait_verb "$f")'"
+  printf 'blocked [at=2] [key=creds]: need the deploy token\n' >> "$f"
+  [ "$(status_own_open_decisions "$f" | cut -f1)" = creds ] \
+    || fail "an ordinary blocker beside a human-step key was lost: '$(status_own_open_decisions "$f")'"
+  pass "a human-step key is not the task's own open decision, and still bounds the worker's idle wait"
+}
+
+test_human_step_key_is_not_an_own_decision_but_still_bounds_the_wait
