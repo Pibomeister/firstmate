@@ -11,9 +11,6 @@
 #              file order), `ordinary`, or one absolute declared path; Claude
 #              only, and an account path holds no whitespace.
 #   host=      the entry names a configured remote route.
-# One setting line may appear among the entries:
-#   min-5h <0-100>  the preflight excludes an account with less than this
-#                   percent of its five-hour window left (default 30).
 # Without the file the order is FM_FAILOVER_DEFAULT_ORDER.
 #
 # Record: state/<task-id>.provider-error, or state/captain.provider-error for
@@ -33,14 +30,13 @@ FM_FO_SEP=$'\037'
 
 # fm_failover_order_load <config-dir>
 # Sets FM_FO_ENTRIES (array of `<harness> <model> <account> <host>` joined by
-# FM_FO_SEP, empty fields for an unnamed axis), FM_FO_MIN_5H, and
+# FM_FO_SEP, empty fields for an unnamed axis), and
 # FM_FO_SOURCE (the file, or `default`). Prints one error and returns 1 for a
 # malformed file.
 # shellcheck disable=SC2034  # FM_FO_* are read by the sourcing script.
 fm_failover_order_load() {
   local cfg="$1/failover-order" body line runtime host extra harness model account has_at n=0
   FM_FO_ENTRIES=()
-  FM_FO_MIN_5H=30
   FM_FO_SOURCE=default
   if [ -e "$cfg" ] || [ -L "$cfg" ]; then
     [ -f "$cfg" ] && [ -r "$cfg" ] || { printf 'error: config/failover-order must be a readable regular file: %s\n' "$cfg"; return 1; }
@@ -57,12 +53,6 @@ fm_failover_order_load() {
     case "$line" in ''|'#'*) continue ;; esac
     runtime='' host='' extra=''
     read -r runtime host extra <<< "$line"
-    if [ "$runtime" = min-5h ]; then
-      case "$host" in ''|*[!0-9]*) printf 'error: config/failover-order line %s: min-5h needs a whole percent\n' "$n"; return 1 ;; esac
-      [ -z "$extra" ] && [ "$((10#$host))" -le 100 ] || { printf 'error: config/failover-order line %s: min-5h needs one percent from 0 to 100\n' "$n"; return 1; }
-      FM_FO_MIN_5H=$((10#$host))
-      continue
-    fi
     [ -z "$extra" ] || { printf 'error: config/failover-order line %s: expected <harness>[:<model>][@<account>] [host=<ssh-host>]\n' "$n"; return 1; }
     case "$host" in
       '') ;;
@@ -75,7 +65,7 @@ fm_failover_order_load() {
     harness=${runtime%%:*}
     model=''
     [ "$harness" = "$runtime" ] || model=${runtime#*:}
-    case "$harness" in ''|off|*[!a-z0-9-]*) printf 'error: config/failover-order line %s: invalid harness\n' "$n"; return 1 ;; esac
+    case "$harness" in ''|off|min-5h|*[!a-z0-9-]*) printf 'error: config/failover-order line %s: invalid harness\n' "$n"; return 1 ;; esac
     if [ "$harness" != "$runtime" ]; then
       case "$model" in ''|-*|*[!A-Za-z0-9._/:-]*) printf 'error: config/failover-order line %s: invalid model\n' "$n"; return 1 ;; esac
     fi

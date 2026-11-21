@@ -416,15 +416,15 @@ test_claude_ship_stopfailure_records_a_provider_refusal() {
   run_claude_hook "$settings" UserPromptSubmit
   run_claude_stopfailure "$settings" '{"hook_event_name":"StopFailure","error":"server_error","last_assistant_message":"API Error: 500"}' \
     || fail "StopFailure hooks must exit 0 on a server error"
-  out=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-failover.sh" detect "$id" 2>&1) \
-    && fail "a server error must record no provider refusal, got '$out'"
+  [ ! -e "$state/$id.provider-error" ] || fail 'a server error must record no provider refusal'
   run_claude_hook "$settings" UserPromptSubmit
   run_claude_stopfailure "$settings" '{"hook_event_name":"StopFailure","error":"rate_limit","last_assistant_message":"API Error: Request rejected (429)"}' \
     || fail "StopFailure hooks must exit 0 on a 429"
   out=$(classify claude "$id" "$state")
   [ "$out" = "idle claude-hook" ] || fail "a 429 StopFailure must still close the turn, got '$out'"
-  out=$(FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-failover.sh" detect "$id" 2>&1)
-  [ "$out" = 'class=rate_limit source=record' ] || fail "a claude ship's StopFailure must record the 429 for failover, got '$out'"
+  out=$(bash -c '. "$1/bin/fm-busy-lib.sh"; . "$1/bin/fm-failover-lib.sh"; fm_failover_record_class "$2" "$3"' _ "$ROOT" "$state" "$id") \
+    || fail "a claude ship's StopFailure did not record the current turn's refusal"
+  [ "$out" = rate_limit ] || fail "a claude ship's StopFailure must record the 429 for failover, got '$out'"
   pass "a claude ship's StopFailure hooks close the turn and record a 429 refusal for provider failover, and a server error records nothing"
 }
 

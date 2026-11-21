@@ -17,8 +17,7 @@
 # "Provider failover" owns the operator contract.
 #
 #   order      Prints the resolved order, one `entry=<n> runtime=<label>
-#              [host=<h>]` line per entry, then `min_5h=<n>
-#              source=<file|default>`.
+#              [host=<h>]` line per entry, then `source=<file|default>`.
 #   plan       The order with the newest preflight verdict of every runtime it
 #              expands to, one `plan runtime=<label> verdict=<eligible|
 #              excluded|unmeasured> ...` line each; this is the night plan, and
@@ -29,7 +28,7 @@
 #              reads its five-hour and weekly percent left from quota-axi
 #              (a Claude read passes --allow-claude-inference, one more small
 #              call). A runtime whose call fails, whose weekly window reads 0,
-#              or whose five-hour window reads below min-5h is excluded; an
+#              or whose five-hour window reads below 30% is excluded; an
 #              unreadable window is disclosed and does not exclude.
 #              Rewrites state/failover-preflight.tsv:
 #              <epoch> <runtime> <verdict> <call> <five_hour> <weekly> <why>.
@@ -195,7 +194,13 @@ preflight_verdict() {
   local cutoff
   [ -f "$PREFLIGHT_FILE" ] || return 1
   cutoff=$(( $(now) - PREFLIGHT_MAX_AGE ))
-  awk -F '\t' -v l="$1" -v c="$cutoff" '$2 == l && $1 + 0 >= c + 0 { v = $3 "\t" $7 } END { if (v == "") exit 1; print v }' "$PREFLIGHT_FILE"
+  awk -F '\t' -v l="$1" -v c="$cutoff" '
+    $2 == l && $1 + 0 >= c + 0 {
+      v = $3 "\t" $7
+      if ($5 ~ /^[0-9]+(\.[0-9]+)?$/ && $5 + 0 < 30) v = "excluded\tfive_hour_below_30"
+    }
+    END { if (v == "") exit 1; print v }
+  ' "$PREFLIGHT_FILE"
 }
 
 claude_root() {  # <account-entry> -> config root for quota reads
@@ -401,7 +406,7 @@ cmd_order() {
     IFS=$FM_FO_SEP read -r h m a host <<< "$entry"
     printf 'entry=%s runtime=%s%s\n' "$i" "$(fm_failover_label "$h" "$m" "$a")" "${host:+ host=$host}"
   done
-  printf 'min_5h=%s source=%s\n' "$FM_FO_MIN_5H" "$(tok "$FM_FO_SOURCE")"
+  printf 'source=%s\n' "$(tok "$FM_FO_SOURCE")"
 }
 
 cmd_plan() {
@@ -514,7 +519,7 @@ cmd_preflight() {
           case "$wk" in ''|unknown|*[!0-9.]*) ;; *) if awk -v v="$wk" 'BEGIN { exit !(v < 1) }'; then verdict=excluded why=weekly_exhausted; fi ;; esac
           if [ "$verdict" = eligible ]; then
             case "$fh" in ''|unknown|*[!0-9.]*) why=five_hour_unmeasured ;;
-              *) if awk -v v="$fh" -v t="$FM_FO_MIN_5H" 'BEGIN { exit !(v < t) }'; then verdict=excluded why="five_hour_below_${FM_FO_MIN_5H}"; fi ;;
+              *) if awk -v v="$fh" 'BEGIN { exit !(v < 30) }'; then verdict=excluded why=five_hour_below_30; fi ;;
             esac
           fi
           ;;

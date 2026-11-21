@@ -178,15 +178,15 @@ test_order_file() {
   reset_lab
   fo order
   expect_code 0 "$RC" "the default order"
-  assert_contains "$OUT" $'entry=1 runtime=codex host=hetzner\nentry=2 runtime=codex\nentry=3 runtime=droid\nentry=4 runtime=claude@next\nmin_5h=30 source=default' \
+  assert_contains "$OUT" $'entry=1 runtime=codex host=hetzner\nentry=2 runtime=codex\nentry=3 runtime=droid\nentry=4 runtime=claude@next\nsource=default' \
     'without config/failover-order the host precedes codex, droid, and another Claude account'
-  printf '# night order\ncodex host=hz1\n\n  codex:gpt-5.5  \nclaude:opus@ordinary\nclaude@%s/acct\nmin-5h 45\n' "$ACCTS" > "$LAB/config/failover-order"
+  printf '# night order\ncodex host=hz1\n\n  codex:gpt-5.5  \nclaude:opus@ordinary\nclaude@%s/acct\n' "$ACCTS" > "$LAB/config/failover-order"
   fo order
   expect_code 0 "$RC" "a configured order"
-  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nmin_5h=45' \
+  assert_contains "$OUT" $'entry=1 runtime=codex host=hz1\nentry=2 runtime=codex:gpt-5.5\nentry=3 runtime=claude:opus@ordinary\nentry=4 runtime=claude@acct\nsource=' \
     'every entry form parses in file order, comments and blanks ignored'
   local bad
-  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 101' 'min-5h 30 40' 'codex host=a b' 'off'; do
+  for bad in 'codex extra' 'codex host=bad/host' 'codex@next' 'claude@relative' 'Codex' 'codex:-x' 'min-5h' 'min-5h 0' 'min-5h 101' 'min-5h 30 40' 'codex host=a b' 'off'; do
     printf '%s\n' "$bad" > "$LAB/config/failover-order"
     fo order
     expect_code 2 "$RC" "a malformed line '$bad'"
@@ -197,7 +197,7 @@ test_order_file() {
   fo worker nobody
   expect_code 2 "$RC" "two Claude accounts sharing a label"
   assert_contains "$OUT" 'share the label claude@same' 'the refusal names the shared label'
-  pass 'order: the default, every entry form, min-5h, and each malformed line'
+  pass 'order: the default, every entry form, and each malformed line'
 }
 
 test_refusal_detector() {
@@ -611,12 +611,14 @@ test_preflight_night_plan() {
   fo plan
   assert_contains "$OUT" 'plan runtime=droid verdict=excluded why=call_rate_limit' 'the plan carries the exclusion'
   assert_contains "$OUT" 'plan runtime=claude@pB verdict=eligible' 'the plan carries the eligible account'
+  printf '%s\tclaude@pA\teligible\tok\t20\t80\tok\n' "$(date +%s)" >> "$LAB/state/failover-preflight.tsv"
+  fo plan
+  assert_contains "$OUT" 'plan runtime=claude@pA verdict=excluded why=five_hour_below_30' 'an older eligible verdict cannot weaken the fixed floor'
   quota_fixture codex 80 0 > "$QUOTA/codex.json"
-  printf 'min-5h 10\n' > "$LAB/config/failover-order"
-  printf 'codex\nclaude@next\nmin-5h 10\n' > "$LAB/config/failover-order"
+  printf 'codex\nclaude@next\n' > "$LAB/config/failover-order"
   fo preflight
   assert_contains "$OUT" 'preflight runtime=codex verdict=excluded call=ok five_hour=80 weekly=0 why=weekly_exhausted' 'a spent weekly window excludes after a real call'
-  assert_contains "$OUT" 'preflight runtime=claude@pA verdict=eligible' 'the configured floor applies'
+  assert_contains "$OUT" 'preflight runtime=claude@pA verdict=excluded call=ok five_hour=20 weekly=80 why=five_hour_below_30' 'the fixed five-hour floor still applies'
   fo preflight --no-call
   expect_code 2 "$RC" 'the operational preflight rejects skipping provider calls'
   reset_lab
