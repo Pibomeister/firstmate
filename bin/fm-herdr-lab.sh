@@ -485,7 +485,8 @@ fm_herdr_lab_provision() { # <session>
   else
     fm_herdr_lab_prepare "$name" || return 1
   fi
-  fm_herdr_lab_raw "$name" server >/dev/null 2>&1 &
+  env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    HERDR_SESSION="$name" herdr server --session "$name" >/dev/null 2>&1 &
   server_pid=$!
   attempt=0
   max_attempts=300

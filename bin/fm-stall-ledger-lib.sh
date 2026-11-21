@@ -753,10 +753,10 @@ _fm_stall_wd_done_for() { # <class> <subject> <detect> <now>
   file=$STATE/watchdog/actions.tsv
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   while IFS=$'\036' read -r epoch _id home subject symptom action phase detail || [ -n "${epoch:-}" ]; do
-    : "$_id" "$detail"
+    : "$_id"
     _fm_stall_is_num "$epoch" || continue
     [ "$epoch" -ge "$detect" ] && [ "$epoch" -le "$now" ] || continue
-    _fm_stall_wd_terminates "$phase" "$action" || continue
+    _fm_stall_wd_terminates "$phase" "$action" "$detail" || continue
     _fm_stall_wd_symptom "$symptom" || continue
     norm=$(_fm_stall_wd_norm "$home" "$subject" "$symptom")
     ncls=${norm%% *}
