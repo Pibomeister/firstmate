@@ -1007,10 +1007,11 @@ wd_council_record() {
             prefix=(i == 1 ? "seat" i "=" : i "=")
             if (index(votes[i], prefix) != 1) exit 1
             vote=substr(votes[i],length(prefix)+1)
-            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}|HOLD|FAILED)$/) exit 1
+            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}( (APPROVE_PARK|DEFER_PARK))?|HOLD|FAILED)$/) exit 1
             if (vote != "FAILED") answered++
             if (i == 1) first=vote; else if (vote != first) agreed=0
-            if (kind == "ruled" && vote != answer) exit 1
+            choice=vote; sub(/ (APPROVE_PARK|DEFER_PARK)$/, "", choice)
+            if (kind == "ruled" && (choice != answer || !agreed)) exit 1
           }
           if (kind == "no-ruling" && (!answered || (agreed && first ~ /^PROCEED /))) exit 1
         }
@@ -1036,7 +1037,7 @@ wd_council_record() {
 # only when the new record publishes, and is otherwise left in place.
 wd_council() {
   local task=$1 key=$2 summary=$3 prior=${4:-} archive=${5:-} cur seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
-  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec='' qualification=''
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec='' qualification='' answer_re='(PROCEED [A-Za-z0-9]{1,3}|HOLD)' reply_format='PROCEED <label> or HOLD'
   if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
     printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
     return 0
@@ -1072,8 +1073,10 @@ wd_council() {
   fi
   tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
   if fm_wd_known_unreachable_timing_flake "$summary"; then
-    qualification='approved, not clean'
+    answer_re='(PROCEED [A-Za-z0-9]{1,3} (APPROVE_PARK|DEFER_PARK)|HOLD)'
+    reply_format='PROCEED <label> APPROVE_PARK, PROCEED <label> DEFER_PARK, or HOLD'
     flake_note='This record describes a known unreachable timing flake: default to the option that approves the park, labeled approved, not clean, whichever label that option has, unless the record also names a human-only category in the line above.
+Append APPROVE_PARK to your PROCEED answer only when the selected option approves the park now despite the flake. For a scheduled rerun, deferral, or hold option, append DEFER_PARK instead. Every PROCEED answer for this flake must include one of these markers.
 '
   fi
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:
@@ -1084,10 +1087,10 @@ If the record itself asks for a merge, a release, a deploy, a publish, a force-p
 A no-mistakes awaiting_approval step is a council decision: a merge or release the step would unblock does not by itself make it the owner's, and a failed once-rerun or an extra isolated green run is evidence to weigh, never a reason to refuse the question, unless that failure is in the PR's own changed behavior.
 ${flake_note}If the record offers options and one is clearly recommended or clearly safest for continuing work, answer PROCEED followed by that option's label (for example PROCEED A or PROCEED 2).
 Otherwise answer HOLD.
-Reply with exactly one line: PROCEED <label> or HOLD."
+Reply with exactly one line: $reply_format."
   for seat in $(printf '%s' "$seats" | tr ',' ' '); do
     i=$((i + 1))
-    ( wd_judge_one "$seat" council '(PROCEED [A-Za-z0-9]{1,3}|HOLD)' "$prompt" > "$tmp/$i" 2>/dev/null || printf 'FAILED\n' > "$tmp/$i" ) &
+    ( wd_judge_one "$seat" council "$answer_re" "$prompt" > "$tmp/$i" 2>/dev/null || printf 'FAILED\n' > "$tmp/$i" ) &
   done
   wait
   [ "$i" -ge 2 ] || unanimous=0
@@ -1104,6 +1107,12 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   done
   rm -rf "$tmp"
   if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
+  if [ "$unanimous" = 1 ]; then
+    case "$first" in
+      *' APPROVE_PARK') qualification='approved, not clean'; first=${first% APPROVE_PARK} ;;
+      *' DEFER_PARK') first=${first% DEFER_PARK} ;;
+    esac
+  fi
   if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
   mkdir -p "$dir"
   record=$dir/$locator.md

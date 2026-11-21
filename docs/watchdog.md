@@ -250,6 +250,7 @@ It acts when `decisions=act`, and an unset `decisions` follows `mode`, so a home
 Any other `decisions` value is a dry run, which records `would convene council`, calls no seat, and returns no actionable answer even when a prior ruling exists.
 
 A council is a set of blind seats that each answer `PROCEED <label>` or `HOLD` to one decision record.
+For a known unreachable timing flake, a `PROCEED` answer must also identify approval now or deferral, and the seats must agree on both the option and that meaning.
 The complete record is checked for reserved conditions; a record beyond the council context limit is refused rather than shortened.
 The seats must span at least two model families, read from each seat's model name and then its harness.
 A seat whose family is unknown does not count, and seats of one family are refused with no model call and a gap.
@@ -270,7 +271,7 @@ The one documented exception is that revisit: `fm-watchdog.sh council --revisit`
 Re-asking on contradicting evidence is a revisit, never a silent re-roll, and an automatic pass never revisits on its own.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
 A record that describes a known unreachable timing flake - a timing word, a flake word, and an unreachable word - is put to the seats with a default: approve the park, labeled approved, not clean, on whichever option approves it.
-Unanimous rulings on these records retain that qualification in the persisted ruling, command output, ledger, status and ruling nudge, including replay and revisits.
+When all seats choose the same option and explicitly identify it as approving the park now, the ruling retains that qualification in the persisted ruling, command output, ledger, status and ruling nudge, including replay and revisits.
 [`ask-user-authority`](../.agents/skills/ask-user-authority/SKILL.md) owns when that default applies to a parked test step.
 
 `fm-watchdog.sh council` convenes the same council on demand, for a supervisor that needs a ruling now rather than after the age windows.

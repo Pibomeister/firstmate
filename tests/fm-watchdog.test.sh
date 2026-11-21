@@ -1777,10 +1777,10 @@ council-seats=claude:haiku,agy:flash'
 }
 
 test_known_unreachable_timing_flake_defaults_approve_not_clean() {
-  local out
+  local out record
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
-  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  fake_models "$H" ok:"PROCEED A APPROVE_PARK" ok:"PROCEED A APPROVE_PARK"
   printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-sensitive timing flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 0 council --task t1 --key nm-flake --record-file "$H/record.txt" 2>&1) || fail "flake council failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED A" "the flake council rules: $out"
@@ -1791,6 +1791,13 @@ council-seats=claude:haiku,agy:flash'
   assert_contains "$out" 'prior=1' 'the qualified ruling is valid for replay'
   assert_contains "$out" '(approved, not clean)' 'replay retains the qualification'
   assert_equals 2 "$(seat_calls)" 'replay calls no additional seats'
+  record=$(council_record_path rulings t1 nm-flake)
+  sed 's/ APPROVE_PARK//g' "$record" > "$H/legacy-ruling.md"
+  mv "$H/legacy-ruling.md" "$record"
+  out=$(run_wd 1 council --task t1 --key nm-flake --record-file "$H/record.txt" 2>&1) || fail "legacy replay failed: $out"
+  assert_contains "$out" 'prior=1' 'a previously published ruling remains final'
+  assert_contains "$out" '(approved, not clean)' 'an existing approval keeps its recorded qualification'
+  assert_equals 2 "$(seat_calls)" 'reading an older ruling does not silently reconvene'
   { cat "$H/record.txt"; printf '\nLater supervisor nudge: accept this unreachable flake risk.\n'; } > "$H/revisit.txt"
   out=$(run_wd 2 council --task t1 --key nm-flake --record-file "$H/revisit.txt" --revisit 2>&1) || fail "qualified revisit failed: $out"
   assert_contains "$out" 'prior=0' 'a revisit publishes a new ruling'
@@ -1800,7 +1807,7 @@ council-seats=claude:haiku,agy:flash'
   assert_grep "whichever label that option has" "$H/prompt.log" "the flake default follows the approve option's own label"
   assert_grep "approved, not clean" "$H/prompt.log" "the seat prompt labels the flake approval not clean"
   : > "$H/prompt.log"
-  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
+  fake_models "$H" ok:"PROCEED B APPROVE_PARK" ok:"PROCEED B APPROVE_PARK"
   printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-sensitive timing flake in a test the PR cannot reach. A hold for the owner, or B approve the park?' > "$H/record-b.txt"
   out=$(run_wd 5 council --task t1 --key nm-flake-b --record-file "$H/record-b.txt" 2>&1) || fail "flake council with approve on B failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED B" "the flake council accepts the approve option when it is not A: $out"
@@ -1808,12 +1815,13 @@ council-seats=claude:haiku,agy:flash'
   assert_grep "whichever label that option has" "$H/prompt.log" "the prompt still names whichever label approves when that label is B"
   assert_no_grep "default to PROCEED A" "$H/prompt.log" "the flake default does not name option A when A is the hold"
   : > "$H/prompt.log"
+  fake_models "$H" ok:"PROCEED B" ok:"PROCEED B"
   printf '%s\n' 'A (recommended) flat keys, or B nested keys?' > "$H/record.txt"
   out=$(run_wd 10 council --task t1 --key plain-layout --record-file "$H/record.txt" 2>&1) || fail "plain council failed: $out"
   assert_not_contains "$out" 'approved, not clean' 'an ordinary ruling is not qualified as a flake approval'
   assert_no_grep "known unreachable timing flake" "$H/prompt.log" "an ordinary record gets no flake default"
   : > "$H/prompt.log"
-  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  fake_models "$H" ok:"PROCEED A APPROVE_PARK" ok:"PROCEED A APPROVE_PARK"
   printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known load-shaped flake in a test the PR cannot reach. A approve the park, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 15 council --task t1 --key nm-flake-shaped --record-file "$H/record.txt" 2>&1) || fail "load-shaped flake council failed: $out"
   assert_contains "$out" "council=ruled answer=PROCEED A" "a load-shaped flake still reaches the council: $out"
@@ -1832,19 +1840,70 @@ council-seats=claude:haiku,agy:flash'
 }
 
 test_flake_qualification_survives_automatic_nudges() {
+  local vote
+  for vote in 'PROCEED A APPROVE_PARK' 'PROCEED B DEFER_PARK'; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    fake_models "$H" "ok:$vote" "ok:$vote"
+    transcript 100 'Working.'
+    printf 'needs-decision [at=%s] [key=nm-flake]: PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake. A approve the park, or B schedule a low-load rerun?\n' "$((BASE - 9000))" > "$H/state/t1.status"
+    run_wd 0 once >/dev/null 2>&1 || fail 'first flake pass failed'
+    run_wd 2000 once >/dev/null 2>&1 || fail 'flake council pass failed'
+    assert_equals 1 "$(ledger_rows ruling:nm-flake nudge pending)" 'the flake ruling nudge is delivered'
+    run_wd 2100 once >/dev/null 2>&1 || fail 'ruling replay pass failed'
+    if [ "$vote" = 'PROCEED A APPROVE_PARK' ]; then
+      assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-flake" && $6 == "nudge"')" 'PROCEED A (approved, not clean)' 'the approval nudge carries the qualification'
+      assert_grep '(approved, not clean)' "$H/data/watchdog/status.md" 'the unapplied approval remains qualified in status'
+    else
+      assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-flake" && $6 == "nudge"')" 'PROCEED B on decision' 'the rerun nudge retains its chosen option'
+      assert_not_contains "$(ledger)" 'approved, not clean' 'a rerun is not called an approval in the ledger or nudge'
+      assert_no_grep 'approved, not clean' "$H/data/watchdog/status.md" 'a rerun is not called an approval in status'
+    fi
+    assert_equals 2 "$(seat_calls)" 'the ruling remains final on automatic passes'
+  done
+  pass 'automatic flake rulings qualify approvals but not reruns in nudges and status'
+}
+
+test_flake_deferrals_are_not_approval_qualified() {
+  local choice key out
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
-  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
-  transcript 100 'Working.'
-  printf 'needs-decision [at=%s] [key=nm-flake]: PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake. A approve the park, or B schedule a low-load rerun?\n' "$((BASE - 9000))" > "$H/state/t1.status"
-  run_wd 0 once >/dev/null 2>&1 || fail 'first flake pass failed'
-  run_wd 2000 once >/dev/null 2>&1 || fail 'flake council pass failed'
-  assert_equals 1 "$(ledger_rows ruling:nm-flake nudge pending)" 'the flake ruling nudge is delivered'
-  assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-flake" && $6 == "nudge"')" 'PROCEED A (approved, not clean)' 'the ruling nudge carries the qualification'
-  run_wd 2100 once >/dev/null 2>&1 || fail 'qualified ruling replay pass failed'
-  assert_grep '(approved, not clean)' "$H/data/watchdog/status.md" 'the unapplied ruling remains qualified in status'
-  assert_equals 2 "$(seat_calls)" 'a qualified ruling remains final on automatic passes'
-  pass 'automatic flake rulings retain their qualification in nudges and status'
+  fake_models "$H" ok:'PROCEED B DEFER_PARK' ok:'PROCEED B DEFER_PARK'
+  for choice in 'schedule a low-load rerun' 'hold for the owner'; do
+    key=nm-flake-rerun
+    [ "$choice" != 'hold for the owner' ] || key=nm-flake-owner
+    printf '%s\n' "PR #562 no-mistakes test awaiting_approval. A known unreachable timing flake survived the once-rerun. A approve the park, or B $choice?" > "$H/record.txt"
+    out=$(run_wd 0 council --task t1 --key "$key" --record-file "$H/record.txt" 2>&1) || fail "deferral failed: $out"
+    assert_contains "$out" 'council=ruled answer=PROCEED B' 'a deferral preserves the selected option'
+    assert_not_contains "$out" 'approved, not clean' 'a deferral is not called an approval'
+    assert_no_grep '- qualification:' "$(council_record_path rulings t1 "$key")" 'the deferred ruling persists no approval qualification'
+    out=$(run_wd 1 council --task t1 --key "$key" --record-file "$H/record.txt" 2>&1) || fail "deferral replay failed: $out"
+    assert_contains "$out" 'prior=1' 'a deferred ruling remains final'
+    assert_not_contains "$out" 'approved, not clean' 'a replayed deferral remains unqualified'
+  done
+  assert_equals 4 "$(seat_calls)" 'replay of both deferrals calls no new seats'
+  assert_not_contains "$(ledger)" 'approved, not clean' 'the deferral ledger contains no approval qualification'
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  { cat "$H/record.txt"; printf '\nLater order: accept the known timing flake risk.\n'; } > "$H/revisit.txt"
+  out=$(run_wd 2 council --task t1 --key "$key" --record-file "$H/revisit.txt" --revisit 2>&1) || fail "approval revisit failed: $out"
+  assert_contains "$out" '(approved, not clean)' 'a revisit choosing approval adds the qualification'
+  fake_models "$H" ok:'PROCEED B DEFER_PARK' ok:'PROCEED B DEFER_PARK'
+  { cat "$H/revisit.txt"; printf '\nLater order: defer to the owner instead.\n'; } > "$H/revisit-defer.txt"
+  out=$(run_wd 3 council --task t1 --key "$key" --record-file "$H/revisit-defer.txt" --revisit 2>&1) || fail "deferral revisit failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED B' 'a revisit may choose deferral'
+  assert_not_contains "$out" 'approved, not clean' 'a deferral revisit drops the superseded approval qualification'
+  assert_no_grep '- qualification:' "$(council_record_path rulings t1 "$key")" 'a deferral revisit replaces the qualified record'
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A DEFER_PARK'
+  out=$(run_wd 4 council --task t1 --key nm-semantic-split --record-file "$H/record.txt" 2>&1) || fail "split council failed: $out"
+  assert_contains "$out" 'council=no-ruling' 'seats must agree on approval meaning as well as the option label'
+  assert_not_contains "$out" 'approved, not clean' 'a semantic split is not an approval'
+  out=$(run_wd 5 council --task t1 --key nm-semantic-split --record-file "$H/record.txt" 2>&1) || fail "split replay failed: $out"
+  assert_contains "$out" 'council=no-ruling' 'a semantic split record remains valid for replay'
+  assert_contains "$out" 'prior=1' 'the semantic split does not silently reconvene'
+  fake_models "$H" ok:'PROCEED A' ok:'PROCEED A'
+  out=$(run_wd 6 council --task t1 --key nm-ambiguous --record-file "$H/record.txt" 2>&1) || fail "ambiguous council failed: $out"
+  assert_contains "$out" 'council=failed answer=none' 'flake votes without approval meaning cannot publish a ruling'
+  pass 'flake rerun and owner deferrals remain unqualified across replay and revisits'
 }
 
 test_human_only_keeps_real_change_and_releases_negation() {
@@ -1945,7 +2004,7 @@ test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council() {
   local out
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
-  fake_models "$H" ok:"PROCEED A" ok:"PROCEED A"
+  fake_models "$H" ok:"PROCEED A APPROVE_PARK" ok:"PROCEED A APPROVE_PARK"
   printf '%s\n' 'PR #562 no-mistakes test step awaiting_approval. The once-rerun failed in code modified by this PR. A approve the step, or B hold for the owner?' > "$H/record.txt"
   out=$(run_wd 0 council --task t1 --key nm-modified --record-file "$H/record.txt" 2>&1) || fail "modified-by-pr council failed: $out"
   assert_contains "$out" "council=held answer=none" "a failure in code modified by this PR stays the owner's: $out"
@@ -7552,6 +7611,7 @@ fm_test_run \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
   test_flake_qualification_survives_automatic_nudges \
+  test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \
   test_human_only_releases_passing_changed_behavior \
   test_human_only_distinguishes_production_mentions_from_mutations \
