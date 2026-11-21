@@ -16,7 +16,8 @@
 # Record: state/<task-id>.provider-error, or state/captain.provider-error for
 # the primary session, one line replaced atomically:
 #   v1<TAB><epoch><TAB><class><TAB><source><TAB><gen><TAB><detail>
-# class is rate_limit, usage_limit, or billing; source and gen are tokens
+# class is rate_limit, usage_limit, or billing from a refusal, or api_error or
+# stalled from the stall check (bin/fm-stall-watch.sh); source and gen are tokens
 # (gen is the task's busy generation, `-` when none); detail is one safe token.
 
 FM_FAILOVER_DEFAULT_ORDER='codex host=hetzner
@@ -94,7 +95,7 @@ fm_failover_label() {
 }
 
 fm_failover_class_valid() {
-  case "${1:-}" in rate_limit|usage_limit|billing) return 0 ;; esac
+  case "${1:-}" in rate_limit|usage_limit|billing|api_error|stalled) return 0 ;; esac
   return 1
 }
 

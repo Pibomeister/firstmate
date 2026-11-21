@@ -159,10 +159,12 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
 # shellcheck source=bin/fm-credential-source-lib.sh
 . "$SCRIPT_DIR/fm-credential-source-lib.sh"
+# shellcheck source=bin/fm-typesafe-lib.sh
+. "$SCRIPT_DIR/fm-typesafe-lib.sh"
 
 CONFIDENCE_FLOOR=0.6
 TS_MODEL=jev-latest
-TS_BASE=https://api.typesafe.ai
+TS_BASE=$FM_TS_DEFAULT_BASE
 TS_TIMEOUT=5
 OR_BASE=https://openrouter.ai/api
 OR_TIMEOUT=10
@@ -248,24 +250,23 @@ fi
 # configuration error, and a declared source this host cannot run or that
 # yields no key is an error outcome. Nothing is sent in either case.
 declared_key() {
-  local provider=$1 src problem value rc
+  local provider=$1 value rc
   [ -e "$CRED_PATH" ] || [ -L "$CRED_PATH" ] || return 1
   [ -r "$CRED_PATH" ] || die "credential source declaration not readable: $CRED_PATH"
   command -v jq >/dev/null 2>&1 || die "jq required"
-  problem=$(fm_credsrc_check "$CRED_PATH" typesafe openrouter) \
-    || die "malformed credential source declaration: $CRED_PATH - $problem"
-  fm_credsrc_declares "$CRED_PATH" "$provider" || return 1
+  value=$(fm_credsrc_resolve "$CRED_PATH" "$provider" typesafe openrouter); rc=$?
+  case "$rc" in
+    0) printf -v "$2" '%s' "$value"; return 0 ;;
+    1) return 1 ;;
+    2) die "malformed credential source declaration: $CRED_PATH - $value" ;;
+  esac
+  local src
   src=$(fm_credsrc_field "$CRED_PATH" "$provider" source)
-  fm_credsrc_supported "$src" \
-    || emit_error "credential source $src declared for $provider is not supported on this host; nothing sent"
-  value=$(fm_credsrc_read "$CRED_PATH" "$provider"); rc=$?
-  if [ "$rc" -ne 0 ] || [ -z "$value" ]; then
-    if fm_timed_out "$rc"; then
-      emit_error "credential source $src declared for $provider did not answer in time; nothing sent"
-    fi
-    emit_error "credential source $src declared for $provider is unavailable; nothing sent"
-  fi
-  printf -v "$2" '%s' "$value"
+  case "$rc" in
+    3) emit_error "credential source $src declared for $provider is not supported on this host; nothing sent" ;;
+    4) emit_error "credential source $src declared for $provider did not answer in time; nothing sent" ;;
+    *) emit_error "credential source $src declared for $provider is unavailable; nothing sent" ;;
+  esac
 }
 
 # select_key <provider> <KEY_NAME> <private variable>: the selected provider's
@@ -288,30 +289,9 @@ select_typesafe_base() {
   [ -n "$base" ] || base=$(fmx_env_get TYPESAFE_BASE "$FM_HOME/.env")
   [ -n "$base" ] || return 0
   command -v jq >/dev/null 2>&1 || die "jq required"
-  jq -en --arg base "$base" '
-    def ipv4:
-      split(".") | length == 4 and all(.[];
-        test("\\A(0|[1-9][0-9]{0,2})\\z") and (tonumber <= 255));
-    def ipv6:
-      # An IPv4 tail occupies two of the eight IPv6 groups.
-      (if contains(".") then
-        split(":") | if (.[-1] | ipv4) then .[-1] = "0:0" | join(":") else "!" end
-       else . end) |
-      split("::") as $sides |
-      if ($sides | length) == 1 then
-        test("\\A[0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4}){7}\\z")
-      elif ($sides | length) == 2 then
-        all($sides[]; test("\\A([0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{1,4})*)?\\z")) and
-        (split(":") | map(select(length > 0)) | length < 8)
-      else false end;
-    $base | capture("\\Ahttps?://(?<host>\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9._-]+)(:(?<port>[0-9]+))?(?<path>/[^?#[:space:]\\\\]*)?\\z"; "i") |
-    ((.path // "") | (contains("[") or contains("]")) | not) and
-    (if .host | startswith("[") then .host[1:-1] | ipv6
-     else true end) and
-    (.port == null or (.port | tonumber | . >= 1 and . <= 65535))
-  ' >/dev/null 2>&1 || die "TYPESAFE_BASE must be an http(s) URL with a host and no userinfo, query, fragment, whitespace, or brackets in its path"
-  while [ "${base%/}" != "$base" ]; do base=${base%/}; done
-  TS_BASE=$base
+  fm_ts_base_valid "$base" \
+    || die "TYPESAFE_BASE must be an http(s) URL with a host and no userinfo, query, fragment, whitespace, or brackets in its path"
+  TS_BASE=$(fm_ts_base_trim "$base")
 }
 DISPATCH_PROVIDER=${FM_DISPATCH_PROVIDER:-}
 [ -n "$DISPATCH_PROVIDER" ] || DISPATCH_PROVIDER=$(fmx_env_get FM_DISPATCH_PROVIDER "$FM_HOME/.env")
@@ -572,16 +552,7 @@ command -v curl >/dev/null 2>&1 || emit_error "curl not installed"
   fi
   never_send_check
   T0=$(fm_timing_now_ms)
-  if [ -n "$KEY_PRIVATE" ]; then
-    HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-      -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
-      -H @/dev/fd/3 3< <(printf 'Authorization: Bearer %s\n' "$KEY_PRIVATE") \
-      --data-binary @- 2>/dev/null) || HTTP=000
-  else
-    HTTP=$(printf '%s' "$BODY" | curl --globoff -sS --max-time "$TIMEOUT" -o "$RESP_FILE" -w '%{http_code}' \
-      -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
-      --data-binary @- 2>/dev/null) || HTTP=000
-  fi
+  HTTP=$(printf '%s' "$BODY" | fm_ts_post "$ENDPOINT" "$TIMEOUT" "$KEY_PRIVATE" "$RESP_FILE")
   T1=$(fm_timing_now_ms)
   LAT_MS=$(( T1 - T0 ))
   if [ "$DISPATCH_PROVIDER" = typesafe ]; then

@@ -1,0 +1,14 @@
+⏺ Bash(git push origin fm/parser-fix)
+  ⎿  Waiting…
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                                 │
+│                                                                              │
+│   git push origin fm/parser-fix                                              │
+│   Push the parser branch                                                     │
+│                                                                              │
+│ Do you want to proceed?                                                      │
+│ ❯ 1. Yes                                                                     │
+│   2. Yes, and don't ask again for git push commands in this project          │
+│   3. No, and tell Claude what to do differently (esc)                        │
+╰──────────────────────────────────────────────────────────────────────────────╯

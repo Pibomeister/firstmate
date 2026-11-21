@@ -333,6 +333,30 @@ test_worker_billing_moves_past_its_own_runtime() {
   pass 'worker billing: relaunched on the next runtime after its own, recorded, nothing lost'
 }
 
+test_worker_stall_check_classes() {
+  local class why note
+  for class in stalled api_error; do
+    reset_lab
+    make_worker w5 claude
+    fo worker w5 --reason "$class"
+    expect_code 0 "$RC" "worker failover with --reason $class: $OUT"
+    assert_contains "$OUT" "switched task=w5 from=claude to=codex reason=$class" "--reason $class moves the worker on"
+    note=$(sed -n '6,$p' "$LAB/control.argv.1")
+    why='ended its turn on an API error from its provider'
+    [ "$class" = api_error ] || why='stayed idle with open work after a stall-check nudge'
+    assert_contains "$note" "$why" "the note names what stopped the worker for $class"
+    assert_not_contains "$note" 'refusal' "the $class note does not call it a refusal"
+    no_lost_work w5 "a $class failover"
+  done
+  reset_lab
+  make_worker w5 claude
+  fo worker w5 --reason idle
+  expect_code 2 "$RC" "an unknown --reason is a usage error: $OUT"
+  assert_contains "$OUT" '--reason must be rate_limit, usage_limit, billing, api_error, or stalled' 'the usage error names every class'
+  expect_code 0 "$(control_calls)" 'no relaunch for an unknown reason'
+  pass 'worker stall-check classes: api_error and stalled relaunch with an accurate note; unknown reasons refused'
+}
+
 test_worker_walks_the_order() {
   reset_lab
   make_worker w3 claude
@@ -893,6 +917,7 @@ fm_test_run \
   test_stop_failure_record \
   test_worker_429_moves_to_the_next_runtime \
   test_worker_billing_moves_past_its_own_runtime \
+  test_worker_stall_check_classes \
   test_worker_walks_the_order \
   test_worker_candidates_and_skips \
   test_captain_429_and_billing_start_a_successor \
