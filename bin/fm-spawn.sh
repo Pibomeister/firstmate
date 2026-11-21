@@ -9528,12 +9528,6 @@ else
     # keep an errexit pane shell open in both cases.
     LAUNCH_SOURCE_TEXT="if [ -e $(shell_quote "$LAUNCH_FILE") ]; then $LAUNCH_SOURCE_TEXT || true; else echo 'error: private launch file was already removed; refusing worker launch' >&2; fi"
   fi
-  if [ "$BACKEND" = tmux ] && [ "$RELAUNCH" -eq 1 ]; then
-    fm_backend_tmux_prepare_relaunch "$T" || {
-      echo "error: tmux pane $T did not reach a clean shell prompt before relaunch" >&2
-      exit 1
-    }
-  fi
   if ! spawn_send_literal "$T" "$LAUNCH_SOURCE_TEXT"; then
     [ "$ORCA_LAUNCH_ENV_ENABLED" != 1 ] || spawn_orca_launch_send_fail
     exit 1
