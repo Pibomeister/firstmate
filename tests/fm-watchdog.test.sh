@@ -3222,15 +3222,15 @@ test_dialog_reserved_check_reads_only_dialog_rows() {
 test_dialog_kind_ignores_conversation_rows() {
   local q=$'\n\nWhich task first?\n ❯ 1. Task A\n   2. Task B\n\nEnter to select · Esc to cancel'
   assert_equals question "$(lib fm_wd_pane_dialog "I told the worker to switch to sonnet.$q")" "a model name in conversation is no model switch"
-  assert_equals permission "$(lib fm_wd_pane_dialog "It asked: do you want to proceed?$q")" "a permission phrase with no proven boundary holds"
+  assert_equals question "$(lib fm_wd_pane_dialog "It asked: do you want to proceed?$q")" "a permission phrase in an earlier paragraph does not label the current picker"
   assert_equals question "$(lib fm_wd_pane_dialog $'It asked: do you want to proceed?\n──────────'"$q")" "a rule proves a permission phrase is conversation"
-  assert_equals permission "$(lib fm_wd_pane_dialog $'Do you trust the files in this folder?\n\n/some/path\n\nClaude Code may read files here.\n ❯ 1. Yes, proceed\n   2. No, exit\n\nEnter to confirm · Esc to cancel')" "a trust phrase above a detail paragraph is permission"
+  assert_equals question "$(lib fm_wd_pane_dialog $'Do you trust the files in this folder?\n\n/some/path\n\nClaude Code may read files here.\n ❯ 1. Yes, proceed\n   2. No, exit\n\nEnter to confirm · Esc to cancel')" "a trust phrase outside the current picker paragraph does not label it"
 
   make_home $'Do you want to proceed?\n\ndetail row\n ❯ 1. Yes\n   2. No\n\nEnter to confirm · Esc to cancel'
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
   assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "an unproven dialog gets no Escape: $(ledger | cut -f5-8)"
-  assert_grep "permission dialog waiting" "$H/data/watchdog/status.md" "the dialog left alone is reported"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the dialog left alone is reported"
 
   make_home "I told the worker to switch to sonnet.$q" 'models=claude:haiku'
   fake_models "$H" ok:"OPTION 1" absent
@@ -3257,7 +3257,7 @@ test_dialog_kind_ignores_conversation_rows() {
   transcript 100 "Working."
   run_wd 0 once >/dev/null 2>&1
   assert_equals 0 "$(ledger | awk -F'\t' '$6 == "key"' | wc -l | tr -d ' ')" "a trust dialog gets no key: $(ledger | cut -f5-8)"
-  assert_grep "permission dialog waiting" "$H/data/watchdog/status.md" "the trust dialog is reported"
+  assert_grep "question dialog waiting" "$H/data/watchdog/status.md" "the picker whose trust heading is outside its paragraph is still held and reported"
 
   local screen
   for screen in \
@@ -6535,6 +6535,8 @@ test_human_step_detection() {
   assert_equals "" "$(lib fm_wd_human_step $'  Would you like to run the following command?\n\n  $ op item get gh --otp\n\n  › 1. Yes, proceed (y)\n    2. No, and tell Codex what to do differently (esc)\n\n  Press enter to confirm or esc to cancel')" "an indented Codex command approval for an OTP command is not a step"
   assert_equals "" "$(lib fm_wd_human_step $'I set up 2FA on the account earlier.\n\nContinue with paid usage?\n ❯ Yes\n   No\n\n Enter to confirm · Esc to cancel')" "conversation above an unnumbered picker is not a step"
   assert_equals sign-in "$(lib fm_wd_human_step $'Working.\n\nSign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel')" "an unnumbered sign-in picker is a step"
+  assert_equals sign-in "$(lib fm_wd_human_step $'Earlier: Do you want to proceed?\n\nSign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel')" "permission wording in conversation does not mask a sign-in picker"
+  assert_equals sign-in "$(lib fm_wd_human_step $'Earlier: Do you want to proceed?\n\nSign in to continue:\n\n ❯ 1. Open the browser\n   2. Paste a token\n\n Enter to confirm · Esc to cancel')" "permission wording in conversation does not mask a numbered sign-in picker"
   pass "human-only step: sign-in, OTP, code, captcha, and approval prompts are detected, and conversation, dialogs, and status lines about them are not"
 }
 
@@ -6772,6 +6774,60 @@ test_human_step_undelivered_page_falls_back_to_the_record() {
   pass "human-only step: an undelivered page stays pending and visible, is retried after nudge-secs, and reaches a recovered channel"
 }
 
+test_human_step_daytime_handoff_write_failure_is_reported_and_retried() {
+  if [ "$(id -u)" = 0 ]; then pass "human-step write failure # SKIP root can write permission-denied fixtures"; return; fi
+  local BASE subject record episode
+  BASE=$(hs_base day)
+  make_home "$HS_CODE" 'human-step-secs=0'
+  transcript 100 "Working."
+  subject=$(basename "$H")
+  record=$H/state/watchdog/human-steps.tsv
+  episode=$H/state/watchdog/human-step/$(home_key)
+  printf 'off\n' > "$H/config/wedge-alarm"
+  mkdir -p "${record%/*}"
+  : > "$record"
+  chmod a-w "$record"
+  run_wd 0 once >/dev/null 2>&1 || fail "the failed daytime handoff pass failed"
+  assert_equals 1 "$(ledger_rows human-step page failed)" "the failed page is not recorded"
+  assert_equals 1 "$(ledger_rows human-step handoff failed)" "the failed daytime handoff is not recorded"
+  assert_equals 0 "$(hs_rows "$subject" morning-handoff)" "the unwritable record contains a handoff"
+  assert_grep "morning-handoff record could not be written" "$H/data/watchdog/status.md" "the write failure is not reported"
+  assert_no_grep "; recorded," "$H/data/watchdog/status.md" "the failed append claims persistence"
+  [ -f "$episode" ] || fail "the failed handoff lost its episode"
+  chmod u+w "$record"
+  run_wd 900 once >/dev/null 2>&1 || fail "the daytime handoff retry failed"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "the recovered writer was not retried"
+  assert_grep "; recorded," "$H/data/watchdog/status.md" "the successful retry is not reported"
+  pass "human-only step: a failed daytime handoff reports the write failure and retries after recovery"
+}
+
+test_human_step_failed_clear_keeps_its_episode_for_retry() {
+  if [ "$(id -u)" = 0 ]; then pass "human-step clear failure # SKIP root can write permission-denied fixtures"; return; fi
+  local BASE subject record episode original
+  BASE=$(hs_base night)
+  make_home "$HS_OTP" 'human-step-secs=0'
+  transcript 100 "Working."
+  subject=$(basename "$H")
+  record=$H/state/watchdog/human-steps.tsv
+  episode=$H/state/watchdog/human-step/$(home_key)
+  run_wd 0 once >/dev/null 2>&1 || fail "the overnight handoff pass failed"
+  assert_equals 1 "$(hs_rows "$subject" morning-handoff)" "the overnight handoff was not written"
+  original=$(cat "$episode")
+  chmod a-w "$record"
+  hs_screen $'Captain session\n❯ \n  ? for shortcuts'
+  run_wd 1 once >/dev/null 2>&1 || fail "the failed handoff closure pass failed"
+  assert_equals 0 "$(hs_rows "$subject" cleared)" "the unwritable record contains a closure"
+  assert_equals "$original" "$(cat "$episode" 2>/dev/null)" "the failed closure lost its episode"
+  assert_grep "morning-handoff record could not be cleared" "$H/data/watchdog/status.md" "the failed closure is not reported"
+  chmod u+w "$record"
+  run_wd 2 once >/dev/null 2>&1 || fail "the handoff closure retry failed"
+  assert_equals 1 "$(hs_rows "$subject" cleared)" "the recovered writer did not close the handoff"
+  [ ! -e "$episode" ] || fail "the successful closure kept its episode"
+  run_wd 3 once >/dev/null 2>&1 || fail "the pass after closure failed"
+  assert_equals 1 "$(hs_rows "$subject" cleared)" "the handoff was closed twice"
+  pass "human-only step: a failed handoff closure keeps its episode and retries until the closure is written"
+}
+
 test_worker_human_step_keeps_other_work_moving() {
   local BASE perm_pane dialog=$'Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently\n\nEsc to cancel'
   BASE=$(hs_base day)
@@ -6849,7 +6905,7 @@ test_worker_permission_blocker_clears_on_a_human_step() {
   run_wd 0 once >/dev/null 2>&1 || fail "the tool-approval pass failed"
   grep -Eq '^blocked .*\[key=permission-prompt-hardstop\]' "$H/state/cx.status" || fail "the sign-in command did not create a permission hard stop"
 
-  for screen in "$HS_OTP" $'Sign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel'; do
+  for screen in "$HS_OTP" $'Earlier: Do you want to proceed?\n\nSign in to continue:\n ❯ Open the browser\n   Paste a token\n\n Enter to confirm · Esc to cancel'; do
     off=$((off + 1))
     printf '%s\n' "$screen" > "$H/worker-cx.txt"
     "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$pane" "$H/worker-cx.sh"
@@ -7026,6 +7082,8 @@ fm_test_run \
   test_human_step_overnight_handoff_is_paged_by_day_unless_briefed \
   test_human_step_removed_worker_closes_its_handoff \
   test_human_step_undelivered_page_falls_back_to_the_record \
+  test_human_step_daytime_handoff_write_failure_is_reported_and_retried \
+  test_human_step_failed_clear_keeps_its_episode_for_retry \
   test_worker_human_step_keeps_other_work_moving \
   test_unknown_composer_guards_the_nudge \
   test_orca_turn_probe_keeps_errors_unknown \

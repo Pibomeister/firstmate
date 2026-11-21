@@ -497,6 +497,40 @@ fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
 
 FM_WD_PICKER_FOOTER_RE='(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑/↓ to (navigate|select)|Tab:next answer)'
 
+# The screen rows of a picker from the top of the paragraph that holds its
+# first option row through the end of the screen, read from it because the
+# prompt rows drop blank rows. The option rows are found the way main's
+# `_fm_wd_dialog_rows` finds them: the last cursor row within the last 14
+# non-blank rows, then the last `1.` or `1)` row at or above it, or the cursor
+# row itself for an unnumbered picker. When the option rows open their own
+# paragraph, the paragraph above them is the picker's title and is included.
+# Empty when no option row is found.
+_fm_wd_picker_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (r[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      sel = 0
+      for (i = last; i >= floor; i--) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
+      first = 0
+      for (i = (sel ? sel : last); i >= floor; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
+      if (!first) first = sel
+      if (!first) exit 0
+      top = first
+      while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      # Options that open their own paragraph take the paragraph above them
+      # as the picker title, the way Claude draws `Select login method:`.
+      if (top == first) {
+        while (top > 1 && r[top - 1] !~ /[^ \t]/) top--
+        while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      }
+      for (i = top; i <= NR; i++) print r[i]
+    }'
+}
+
 fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
@@ -513,7 +547,7 @@ fm_wd_pane_dialog() {  # <screen> [<harness>]
     NF { last = $0 }
     END { exit !(selected && last ~ footer) }
   ' || return 1
-  if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
+  if _fm_wd_picker_rows "$1" | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
   elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "$FM_WD_USAGE_LIMIT_RE"; then
     printf 'usage-limit\n'

@@ -2073,7 +2073,10 @@ wd_human_step_clear() {
   [ -f "$f" ] || return 0
   IFS=$'\t' read -r since kind < "$f" || true
   if wd_human_step_recorded "${since:-0}" morning-handoff; then
-    wd_human_step_record "${kind:-unknown}" "${since:-0}" cleared
+    if ! wd_human_step_record "${kind:-unknown}" "${since:-0}" cleared; then
+      wd_gap "human-only ${kind:-unknown} step for ${O_REC_SUBJECT:-$O_TAG}: the morning-handoff record could not be cleared; retried on the next pass"
+      return 1
+    fi
   fi
   rm -f "$f"
 }
@@ -2148,8 +2151,12 @@ wd_handle_human_step() {  # <kind>
       # An undelivered page is not an escalation: it stays pending and is retried
       # after nudge-secs, and the record keeps the step visible meanwhile.
       wd_rec "$id" human-step page failed "no alert channel delivered the page (exit $rc); retried after nudge-secs"
-      wd_human_step_recorded "$since" morning-handoff || wd_human_step_record "$kind" "$since" morning-handoff || true
-      wd_gap "human-only $kind step on $who not paged (exit $rc); recorded, and the page is retried after nudge-secs" ;;
+      if wd_human_step_recorded "$since" morning-handoff || wd_human_step_record "$kind" "$since" morning-handoff; then
+        wd_gap "human-only $kind step on $who not paged (exit $rc); recorded, and the page is retried after nudge-secs"
+      else
+        wd_rec "$id" human-step handoff failed "the human-steps record could not be written"
+        wd_gap "human-only $kind step on $who not paged (exit $rc); the morning-handoff record could not be written, retried after nudge-secs"
+      fi ;;
   esac
 }
 

@@ -249,40 +249,6 @@ _fm_pp_codex_dialog() {  # <screen>
   fm_wd_codex_dialog "$@"
 }
 
-# The screen rows of a picker from the top of the paragraph that holds its
-# first option row through the end of the screen, read from it because the
-# prompt rows drop blank rows. The option rows are found the way main's
-# `_fm_wd_dialog_rows` finds them: the last cursor row within the last 14
-# non-blank rows, then the last `1.` or `1)` row at or above it, or the cursor
-# row itself for an unnumbered picker. When the option rows open their own
-# paragraph, the paragraph above them is the picker's title and is included.
-# Empty when no option row is found.
-_fm_pp_question_paragraph() {  # <screen>
-  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
-    { r[NR] = $0 }
-    END {
-      last = NR
-      while (last > 0 && r[last] !~ /[^ \t]/) last--
-      seen = 0; floor = 1
-      for (i = last; i > 0; i--) if (r[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
-      sel = 0
-      for (i = last; i >= floor; i--) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
-      first = 0
-      for (i = (sel ? sel : last); i >= floor; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
-      if (!first) first = sel
-      if (!first) exit 0
-      top = first
-      while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
-      # Options that open their own paragraph take the paragraph above them
-      # as the picker title, the way Claude draws `Select login method:`.
-      if (top == first) {
-        while (top > 1 && r[top - 1] !~ /[^ \t]/) top--
-        while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
-      }
-      for (i = top; i <= NR; i++) print r[i]
-    }'
-}
-
 # The workspace rows of a proven trust dialog: the rows between its
 # `Accessing workspace:` row and its heading, which are the only rows the
 # dialog does not fix. It fails when that row is not found below the same
@@ -391,7 +357,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       # hard-stop answer on one is still reported and never answered here.
       # Only the picker's own paragraph is read, so conversation above it
       # never names the category.
-      text=$(_fm_pp_question_paragraph "$screen")
+      text=$(_fm_wd_picker_rows "$screen")
       [ -n "$text" ] || text=$(_fm_wd_dialog_rows "$screen" all)
       cat=$(fm_pp_hardstop_category "$text") || return 1
       printf 'hardstop\t%s\n' "$cat"
@@ -433,7 +399,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     printf 'hold\t%s\n' "${fixed%%$'\n'*}"; return 0
   fi
   # A question picker's rows can reach conversation above it, so its hard
-  # stops and holds read only the picker's own rows (_fm_pp_question_paragraph),
+  # stops and holds read only the picker's own rows (_fm_wd_picker_rows),
   # from the paragraph that holds its first option row through the end of the
   # screen. A screen labelled permission is
   # labelled again from that paragraph, so words in the conversation, such as
@@ -441,7 +407,7 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   # a permission prompt; a paragraph that still reads as a permission prompt
   # keeps every row, so the command above its question is still checked. A
   # Codex dialog is already read whole.
-  if [ -z "$codex" ] && text=$(_fm_pp_question_paragraph "$screen") && [ -n "$text" ]; then
+  if [ -z "$codex" ] && text=$(_fm_wd_picker_rows "$screen") && [ -n "$text" ]; then
     if [ "$dialog" = permission ] && [ "$(fm_wd_pane_dialog "$text" "$harness" 2>/dev/null)" = question ]; then
       dialog=question
     fi
