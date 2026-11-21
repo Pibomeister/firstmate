@@ -93,7 +93,8 @@
 #       when the last 14 non-blank rows show that human-only step, else nothing
 #       (exit 1). On a proven dialog, whose cursor row is a numbered option
 #       and whose last non-blank row is the picker footer (`Esc to cancel` and
-#       the like), only the paragraph just above the options counts. Otherwise only the rows below
+#       the like), only the paragraph just above the options counts, and a
+#       tool permission dialog (fm_wd_pane_dialog `permission`) never counts. Otherwise only the rows below
 #       the last composer prompt row count, down to the composer's bottom border
 #       or first blank row, so the footer and status line never do; with no
 #       prompt row either, as on a full-screen sign-in view, every one of those
@@ -559,6 +560,9 @@ FM_WD_HS_AUTH_ERROR_RE='^[^a-z]*(not logged in|invalid api key|oauth token (has 
 fm_wd_human_step() {  # <screen>
   local tag row kind re
   [ -n "${1-}" ] || return 1
+  # A tool permission dialog names the command or file it asks about, and that
+  # text is not a human-only step; permission handling owns it.
+  [ "$(fm_wd_pane_dialog "$1")" != permission ] || return 1
   while IFS=$'\t' read -r tag row; do
     row=$(fm_wd_lower "$row")
     if [ "$tag" = above ]; then
