@@ -39,6 +39,10 @@ for a in "$@"; do
   prev=$a
 done
 cat > "$FM_TEST_LOGS/curl.body.$n"
+if [ "${FM_TEST_CURL_HOLD:-0}" = 1 ]; then
+  : > "$FM_TEST_LOGS/curl.entered"
+  while [ -f "$FM_TEST_LOGS/curl.hold" ]; do sleep 0.1; done
+fi
 [ -z "$out" ] || cat "$FM_TEST_CURL_REPLY" > "$out"
 printf '%s' "${FM_TEST_CURL_HTTP:-200}"
 SH
@@ -768,15 +772,17 @@ test_tick_schedule() {
   assert_equals 3 "$(ledger_rows t1)" '--force ignores the interval'
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
   live_start=$(bash -c '. "$1"; fm_pid_start_time "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$$") || fail 'fixture: no tick holder start time'
-  printf '%s\n%s\n' "$$" "$live_start" > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '%s\n' "$$" > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '%s\n' "$live_start" > "$LAB/state/stall-watch/.tick.lock/pid-start"
   FM_STALL_WATCH_NOW=200000 sw tick
   assert_contains "$ERR" 'another tick is running' 'a live tick is single-flight'
   assert_equals 3 "$(ledger_rows t1)" 'no check while another tick runs'
-  printf '%s\n%s\n' "$$" stale-instance > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '%s\n' stale-instance > "$LAB/state/stall-watch/.tick.lock/pid-start"
   FM_STALL_WATCH_NOW=200000 sw tick
   assert_equals 4 "$(ledger_rows t1)" 'a reused live PID with the wrong start time does not hold the tick lock'
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
-  printf '999999\nstale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf '999999\n' > "$LAB/state/stall-watch/.tick.lock/pid"
+  printf 'stale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid-start"
   FM_STALL_WATCH_NOW=200001 sw tick --force
   assert_equals 5 "$(ledger_rows t1)" 'a dead holder also releases the tick lock'
   printf 'interval=abc\n' > "$LAB/config/stall-watch"
@@ -800,6 +806,47 @@ test_tick_schedule() {
   sw tick
   assert_equals 3 "$(config_reports)" 'a valid tick clears the memory, so the old error is reported again'
   pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
+}
+
+test_tick_lock_reclaim_is_single_flight() {
+  local first dead i=0
+  reset_lab
+  make_worker race1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  sw check race1
+  assert_equals 1 "$(ledger_rows race1)" 'the worker has one starting observation'
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  "$TMP_ROOT/claude" 600 &
+  dead=$!
+  printf '%s\n' "$dead" > "$LAB/state/stall-watch/.tick.lock/pid"
+  kill "$dead" 2>/dev/null || true
+  wait "$dead" 2>/dev/null || true
+  : > "$LOGS/curl.hold"
+  FM_TEST_CURL_HOLD=1 FM_STALL_WATCH_NOW=200000 bash "$SW" tick --force > "$TMP_ROOT/first-tick.out" 2> "$TMP_ROOT/first-tick.err" &
+  first=$!
+  while [ ! -f "$LOGS/curl.entered" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_present "$LOGS/curl.entered"
+  FM_STALL_WATCH_NOW=200000 sw tick --force
+  assert_contains "$ERR" 'another tick is running' 'the live first tick blocks the second'
+  assert_equals 1 "$(ledger_rows race1)" 'the second tick does not classify while the first holds the lock'
+  rm -f "$LOGS/curl.hold"
+  wait "$first" || fail 'the first tick did not finish'
+  assert_equals 2 "$(ledger_rows race1)" 'exactly one tick reclaimed the stale lock and checked the worker'
+  assert_equals 1 "$(count curl)" 'only one tick called Jev'
+  pass 'tick lock: concurrent stale reclaim is single-flight'
+}
+
+test_tick_lock_unpublished_owner_is_preserved() {
+  reset_lab
+  make_worker pending1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  mkdir -p "$LAB/state/stall-watch/.tick.lock"
+  FM_STALL_WATCH_NOW=200000 sw tick --force
+  assert_contains "$ERR" 'another tick is running' 'a fresh lock without an owner record is respected'
+  assert_equals 0 "$(ledger_rows pending1)" 'a pending owner prevents work from starting'
+  assert_present "$LAB/state/stall-watch/.tick.lock"
+  rm -rf "$LAB/state/stall-watch/.tick.lock"
+  pass 'tick lock: an unpublished fresh owner is not stolen'
 }
 
 test_invalid_timing_configuration() {
@@ -980,5 +1027,7 @@ fm_test_run \
   test_equal_length_status_change_ends_nudge \
   test_refusal_after_ordinary_stop_is_judged \
   test_tick_schedule \
+  test_tick_lock_reclaim_is_single_flight \
+  test_tick_lock_unpublished_owner_is_preserved \
   test_invalid_timing_configuration \
   test_watcher_starts_tick_and_delivers_reports
