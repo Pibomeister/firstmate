@@ -1,0 +1,6 @@
+blocked [key=a] [at=1]: one
+answered [key=a] [at=2]: closes only under the resolve override
+blocked [key=b] [at=3]: two
+parked [key=b] [at=4]: closes only under the held override
+blocked [key=own-x] [at=5]: plain prose cannot claim a reserved key
+blocked [key=pending-reply-z] [at=6]: plain prose opens once the prefix is not reserved

@@ -1,0 +1,8 @@
+working [at=100]: starting
+needs-decision [key=api-1] [at=110]: pick the api shape
+working [at=120]: resumed on other work
+blocked [key=creds] [at=130]: credential missing
+resolved [key=api-1] [at=140]: answered
+needs-decision: [key=note-head] choose the note form
+blocked [key=pending-reply-x] [at=150]: unrelated prose must not open a reserved key
+blocked [key=pending-reply-y] [at=160]: pending-reply-missed: task=demo pending-reply-id=y
