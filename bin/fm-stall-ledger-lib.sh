@@ -48,7 +48,9 @@
 # watchdog row, because no status line can show that the primary resumed.
 # A later watchdog row after that lapse starts a new episode.
 # An active usage-limit auto-wait or quota hold keeps an open episode evidenced past the lapse.
-# A row past that lapse starts a new episode when that ref is already closed.
+# A row past that lapse starts a new episode when the stall already opened for this subject is closed.
+# That stall's start is the earliest source, including an earlier heartbeat published_epoch.
+# A fresh heartbeat closes that heartbeat-owned stall as firstmate.
 # A later task status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
 # stays unverified. A fresh heartbeat does not end a usage-limit auto-wait,
@@ -161,6 +163,66 @@ _fm_stall_ref_closed() { # <ref>
   [ -f "$FM_STALL_LEDGER" ] || return 1
   awk -F '\t' -v r="$ref" '
     NF == 10 && $2 == "stall-close" && $10 == r { found = 1; exit }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
+# 0 when an hb row for this subject published the epoch named by this ref.
+_fm_stall_hb_owns_ref() { # <class> <subject> <ref>
+  local cls=$1 sub=$2 ref=$3
+  [ -n "$ref" ] && [ -f "$FM_STALL_LEDGER" ] || return 1
+  awk -F '\t' -v c="$cls" -v s="$sub" -v r="$ref" '
+    NF == 10 && $2 == "hb" && $3 == c && $4 == s && $5 ~ /^[0-9]+$/ && r == (c ":" s ":" $5) {
+      found = 1
+      exit
+    }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
+# 0 when this observe recorded a heartbeat no older than 600 seconds.
+_fm_stall_hb_fresh() { # <class> <subject>
+  local cls=$1 sub=$2
+  [ -f "$FM_STALL_LEDGER" ] || return 1
+  awk -F '\t' -v c="$cls" -v s="$sub" -v now="$FM_STALL_NOW" '
+    NF == 10 && $2 == "hb" && $3 == c && $4 == s && $1 == now && $5 ~ /^[0-9]+$/ && (now - $5) <= 600 {
+      found = 1
+      exit
+    }
+    END { exit !found }
+  ' "$FM_STALL_LEDGER"
+}
+
+# A lapse closes a heartbeat-owned open stall as firstmate when that heartbeat is fresh.
+# Every other lapse keeps recoverer -.
+_fm_stall_wd_lapse_who() { # <class> <subject>
+  local cls=$1 sub=$2 line ref rc=0
+  line=$(_fm_stall_open_row "$cls" "$sub") || rc=$?
+  if [ "$rc" -eq 0 ] && [ -n "$line" ]; then
+    ref=${line%% *}
+    if _fm_stall_hb_owns_ref "$cls" "$sub" "$ref" && _fm_stall_hb_fresh "$cls" "$sub"; then
+      printf 'firstmate\n'
+      return 0
+    fi
+  fi
+  printf '%s\n' '-'
+}
+
+# 0 when the stall that covers this watchdog episode already has a stall-close.
+# An open stall for the subject is that episode, so an older close does not end it.
+_fm_stall_wd_covering_closed() { # <class> <subject> <start> <detect> <last>
+  local cls=$1 sub=$2 start=$3 detect=$4 last=$5
+  [ -f "$FM_STALL_LEDGER" ] || return 1
+  if _fm_stall_open_for "$cls" "$sub"; then
+    return 1
+  fi
+  awk -F '\t' -v c="$cls" -v s="$sub" -v estart="$start" -v edetect="$detect" -v elast="$last" '
+    NF == 10 && $2 == "stall-close" && $3 == c && $4 == s &&
+      $5 ~ /^[0-9]+$/ && $6 ~ /^[0-9]+$/ && $8 ~ /^[0-9]+$/ &&
+      $5 + 0 <= estart + 0 && $6 + 0 <= edetect + 0 && $8 + 0 >= elast + 0 {
+      found = 1
+      exit
+    }
     END { exit !found }
   ' "$FM_STALL_LEDGER"
 }
@@ -699,7 +761,7 @@ _fm_stall_wd_resolved() { # <symptom> <subject> <last-epoch> <detect> [state]
 _fm_stall_watchdog() {
   local file epoch _id home subject symptom action phase detail
   local cls sub key extra start detect estart edetect esymptom elast ehome etask task norm
-  local res res_rc source_state
+  local res res_rc source_state lapse_who
   file=$STATE/watchdog/actions.tsv
   [ -f "$file" ] && [ ! -L "$file" ] || return 0
   while IFS=$'\036' read -r epoch _id home subject symptom action phase detail || [ -n "${epoch:-}" ]; do
@@ -745,17 +807,19 @@ _fm_stall_watchdog() {
     _fm_stall_is_num "$elast" || elast=$epoch
     # A row after the primary's episode lapsed is a new stall, so the lapsed
     # episode closes and this row starts its own.
-    # A hold keeps that episode only while its ref is still open.
+    # A hold keeps that episode only while its stall is still open.
     source_state=$ehome/state
     [ "$ehome" != "$FM_HOME" ] || source_state=$STATE
     if _fm_stall_wd_lapsed "$etask" "$esymptom" "$elast" "$epoch" "$source_state"; then
-      printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
+      lapse_who=$(_fm_stall_wd_lapse_who "$cls" "$sub") || return 1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" "$lapse_who" >> "$FM_STALL_WORK/done.tsv" || return 1
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" "$task" > "$key" || return 1
       continue
     fi
     if [ "$etask" = "-" ] \
       && [ $((epoch - elast)) -gt "$FM_STALL_WD_EVIDENCE_SECS" ] \
-      && _fm_stall_ref_closed "$cls:$sub:$estart"; then
+      && { _fm_stall_ref_closed "$cls:$sub:$estart" \
+        || _fm_stall_wd_covering_closed "$cls" "$sub" "$estart" "$edetect" "$elast"; }; then
       printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$start" "$epoch" "$symptom" "$epoch" "$home" "$task" > "$key" || return 1
       continue
     fi
@@ -789,7 +853,8 @@ _fm_stall_watchdog() {
     # FM_STALL_WD_EVIDENCE_SECS after the last watchdog row. The close still
     # needs a current heartbeat, which the reconcile checks.
     if _fm_stall_wd_lapsed "$etask" "$esymptom" "$elast" "$FM_STALL_NOW" "$source_state"; then
-      printf '%s\t%s\t%s\t%s\t%s\t-\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" >> "$FM_STALL_WORK/done.tsv" || return 1
+      lapse_who=$(_fm_stall_wd_lapse_who "$cls" "$sub") || return 1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$cls" "$sub" "$estart" "$edetect" "$((elast + FM_STALL_WD_EVIDENCE_SECS))" "$lapse_who" >> "$FM_STALL_WORK/done.tsv" || return 1
       continue
     fi
     [ $((FM_STALL_NOW - estart)) -gt 600 ] || continue
@@ -919,7 +984,7 @@ _fm_stall_reconcile() {
         continue
       fi
       case "$who" in
-        watchdog|-) ;;
+        watchdog|-|firstmate) ;;
         *) who=watchdog ;;
       esac
       open_rc=0

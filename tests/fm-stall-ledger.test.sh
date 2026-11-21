@@ -548,6 +548,44 @@ test_watchdog_closed_primary_reopens_under_hold() {
   pass "a closed primary ref reopens under a hold, and an open hold stays one episode"
 }
 
+# A stale heartbeat published before the watchdog backdate owns the open ref.
+# After a fresh heartbeat closes that stall, a later held row is its own stall.
+test_watchdog_closed_heartbeat_stall_reopens_under_hold() {
+  local home ledger actions published later second
+  home=$(new_home wd-hb-cover)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  published=$((T0 - 1200))
+  printf '%s\n' "$published" > "$home/state/.stall-ledger-born"
+  write_hb "$home/state/heartbeat.json" "$published"
+  printf '%s\twd1\t\tprimary\tfrozen\tnudge\tdry-run\tWatchdog (automated): frozen 12 minutes\n' "$T0" > "$actions"
+  observe_ok "$home" "$((T0 + 700))"
+  awk -F '\t' -v start="$published" '
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == start { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the frozen primary did not open at the earlier heartbeat: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "the frozen primary closed before the lapse"
+  observe_fresh "$home" "$((T0 + 2400))" "$((T0 + 2400))" 600
+  awk -F '\t' -v ref="primary:-:$published" '
+    $2 == "stall-close" && $10 == ref && $7 == "firstmate" { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the fresh heartbeat did not close the heartbeat stall as firstmate: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  later=$((T0 + 4000))
+  printf '%s\tid2\t\tprimary\tusage-limit-autowait\tpage\tdone\towner paged\n' "$later" >> "$actions"
+  printf 'usage_limit_autowait=1\nchecked_at=%s\n' "$later" > "$home/state/watchdog/captain"
+  observe_fresh "$home" "$((later + 700))" "$((later + 700))" 600
+  second=$((later - 600))
+  assert_equals 2 "$(count_rows "$ledger" stall-open -)" "the auto-wait after the closed heartbeat stall was not recorded: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the auto-wait after the closed heartbeat stall closed while the hold was active: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  awk -F '\t' -v second="$second" -v ref="primary:-:$second" '
+    $2 == "stall-open" && $3 == "primary" && $4 == "-" && $5 == second { neu = 1 }
+    $2 == "stall-close" && $10 == ref { closed = 1 }
+    END { exit !(neu && !closed) }
+  ' "$ledger" || fail "the auto-wait did not open its own ref after the heartbeat stall: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  pass "a closed heartbeat stall reopens under a hold as its own episode"
+}
+
 test_observe_secondmate_progress_closes_as_agentkit() {
   local home mate other ledger start
   home=$(new_home progress)
@@ -1193,6 +1231,7 @@ fm_test_run \
   test_watchdog_primary_stall_after_lapse_reopens \
   test_watchdog_primary_autowait_holds_past_lapse \
   test_watchdog_closed_primary_reopens_under_hold \
+  test_watchdog_closed_heartbeat_stall_reopens_under_hold \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
   test_window_maps_chicago_kickoff \
