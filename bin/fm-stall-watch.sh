@@ -203,12 +203,10 @@ sw_redact() {  # stdin -> stdout
 }
 
 # Rows still credential-like after redaction are withheld, never sent.
-# An "=" is dropped with the marker after it, so a redacted
-# "--token=<redacted>" does not read as "token=" followed by the next option.
 sw_withhold() {  # stdin -> stdout
   local line n=0
   while IFS= read -r line || [ -n "$line" ]; do
-    if fm_secret_like "$(printf '%s' "$line" | sed -e 's/=<redacted>//g' -e 's/<redacted>//g')"; then
+    if fm_secret_like "$(printf '%s' "$line" | sed 's/<redacted>//g')"; then
       n=$((n + 1))
       continue
     fi

@@ -159,6 +159,8 @@ P_BOXB64="TUlJRXZRSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2N3Z2dTakFnRUFBb0lCQVFG""
 P_CSEC="FAKEclientSecret0123"
 P_GHTOK="FAKEgithubTokenOpt0123"
 P_DBPW="FAKEdbPassword0123"
+# Text the key=value and option rules leave after a value, which is not redacted.
+P_TAILS="FAKEtailSpace FAKEtailComma FAKEtailSemi FAKEtailQuote"
 PLANTED="$P_GH $P_OPENAI $P_AWS $P_PASS $P_BEARER $P_URLPASS $P_SLACK $P_KEYBODY /Users/alice /home/bob
   $P_XAI $P_GLPAT $P_NPM $P_HF $P_GOOGLE $P_STRIPE $P_JWT $P_CLIKEY $P_CLIQ $P_CLITOK $P_B64 $P_KEYTAIL $P_SPACEDIR
   $P_BOXKEY $P_BOXB64 $P_CSEC $P_GHTOK $P_DBPW"
@@ -177,7 +179,10 @@ secrets_screen() {  # stdout: tests/fixtures/stall-watch/secrets.screen with the
   # The same inside a box border, then a base64 row behind a tool-output marker.
   printf '\342\224\202 %s \342\224\202\n\342\224\202 %s \342\224\202\n\342\224\202 -----END %s----- \342\224\202\n' "$P_BOXKEY" "$P_KEYTAIL" "$P_KEYKIND"
   printf '  \342\216\277  %s\n' "$P_BOXB64"
-  printf '  mytool --client-secret %s --github-token=%s --db-password %s\n' "$P_CSEC" "$P_GHTOK" "$P_DBPW"
+  printf '  mytool --client-secret %s --db-password %s --github-token=%s\n' "$P_CSEC" "$P_DBPW" "$P_GHTOK"
+  # Values the rules replace only in part, so the row stays credential-like.
+  printf '  conf secret=%s FAKEtailSpace\n  conf password=%s,FAKEtailComma\n' "$P_PASS" "$P_PASS"
+  printf '  conf password=%s;FAKEtailSemi\n  mytool --token=%s"FAKEtailQuote"\n' "$P_PASS" "$P_CLITOK"
 }
 assert_no_planted() {  # <text> <where>
   local s
@@ -187,6 +192,7 @@ assert_no_planted() {  # <text> <where>
 }
 
 test_screen_redacts_secrets_and_paths() {
+  local s
   reset_lab
   { secrets_screen; printf 'wrote %s/projects/notes.md\n' "$HOME"; printf 'echo %s done\n' "sk""-FAKEbareExample0123456789"; } > "$LAB/screens/captain.screen"
   sw screen captain
@@ -203,8 +209,11 @@ test_screen_redacts_secrets_and_paths() {
   assert_contains "$OUT" '--api-key <redacted> --password <redacted> --token=<redacted>' 'secret option values are replaced'
   assert_equals 3 "$(printf '%s\n' "$OUT" | grep -c '<redacted private key>')" 'a key block, and one whose BEGIN row scrolled away, plain or boxed, each collapse to one marker'
   assert_contains "$OUT" '<redacted private key>'$'\n''<redacted key material>' 'a boxed key tail and a marked base64 row are replaced'
-  assert_contains "$OUT" '--client-secret <redacted> --github-token=<redacted> --db-password <redacted>' 'compound secret option values are replaced'
-  assert_contains "$OUT" 'row(s) withheld: credential-like text' 'a row still credential-like is withheld and counted'
+  assert_contains "$OUT" '--client-secret <redacted> --db-password <redacted> --github-token=<redacted>' 'compound secret option values are replaced'
+  for s in $P_TAILS; do
+    assert_not_contains "$OUT" "$s" "a partly redacted row must be withheld, not carry $s"
+  done
+  assert_contains "$OUT" '<5 row(s) withheld: credential-like text>' 'the Authorization row and each partly redacted row are withheld and counted'
   sw screen captain --lines 3
   [ "$(printf '%s\n' "$OUT" | wc -l | tr -d ' ')" -le 3 ] || fail "--lines 3 printed more than 3 rows: $OUT"
   sw screen ghost
