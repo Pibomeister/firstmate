@@ -796,7 +796,7 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
       "the watcher hands off a $class refusal from an idle captain pane"
     assert_contains "$(cat "$dir/state/dispatch-log.tsv")" "task=captain from=$from_label to=$to_label reason=$class" \
       "the captain switch is recorded"
-    [ -s "$dir/home/data/handoffs/$(ls "$dir/home/data/handoffs" | head -n 1)" ] || fail 'the captain handoff is missing'
+    [ -n "$(find "$dir/home/data/handoffs" -type f -size +0c 2>/dev/null)" ] || fail 'the captain handoff is missing'
     kill "$owner" 2>/dev/null || true
     wait "$owner" 2>/dev/null || true
     FAKE_OWNER=''
