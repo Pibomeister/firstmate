@@ -1464,7 +1464,9 @@ wd_heartbeat_owner() {
 
 wd_heartbeat_frozen() {
   local secs
-  secs=$(cfgi heartbeat-frozen-secs 600)
+  # A quiet home's generated_epoch age can reach 837s with the default idle
+  # interval, poll, and run cap (docs/watchdog.md). Stay above that bound.
+  secs=$(cfgi heartbeat-frozen-secs 900)
   [ "$O_OWNER" = live ] && [ "$secs" -gt 0 ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$secs" ]
 }
 

@@ -6269,6 +6269,21 @@ SH
   pass "feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not"
 }
 
+test_default_heartbeat_freeze_stays_above_a_quiet_home() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts'
+  grep -v '^heartbeat-frozen-secs=' "$H/config/watchdog" > "$H/config/watchdog.new"
+  mv "$H/config/watchdog.new" "$H/config/watchdog"
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  run_wd 837 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen detect held)" "a quiet home at the 837s healthy age was treated as frozen"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a quiet home at the 837s healthy age was nudged"
+  run_wd 900 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "the default freeze threshold did not observe a 900s heartbeat"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the default freeze threshold did not nudge a 900s heartbeat"
+  pass "the default heartbeat freeze stays above a quiet home's healthy age and still fires at 900s"
+}
+
 test_pending_handoff_suppresses_heartbeat_recovery() {
   local claim=$TMP_ROOT/pending-heartbeat.json now=1793000000
   jq -n --argjson d "$((now + 300))" '{version:1,predecessor_pid:4242,deadline:$d}' > "$claim"
@@ -7103,6 +7118,7 @@ fm_test_run \
   test_memory_guard_samples_once_per_pass \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner \
+  test_default_heartbeat_freeze_stays_above_a_quiet_home \
   test_pending_handoff_suppresses_heartbeat_recovery \
   test_heartbeat_recovery_preserves_account_pins \
   test_heartbeat_response_cannot_suppress_recovery_forever \

@@ -1055,9 +1055,10 @@ test_unchanged_home_collects_once_per_idle_interval() {
 
 # Each idle due is drawn below the interval by at most the jitter, so the
 # interval stays the longest launch gap. The upper check allows two seconds of
-# launch slip on a loaded host.
+# launch slip on a loaded host. At least one recorded gap must be at least two
+# seconds under the full interval, so a ticker that ignores jitter fails.
 test_jittered_idle_gaps_stay_within_the_interval() {
-  local home stub gaps bad
+  local home stub gaps bad short
   home=$(make_home watch-jitter)
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
   stub=$(launch_log_stub watch-jitter)
@@ -1068,14 +1069,16 @@ test_jittered_idle_gaps_stay_within_the_interval() {
     "$WATCH" > "$TMP_ROOT/watch-jitter.out" 2> "$TMP_ROOT/watch-jitter.err" &
   WATCH_PID=$!
   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
-  command -p sleep 26
+  command -p sleep 48
   kill -TERM "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=
-  [ "$(launch_count watch-jitter)" -ge 4 ] || fail "only $(launch_count watch-jitter) collection(s) in 26s at a 6s idle interval"
+  [ "$(launch_count watch-jitter)" -ge 4 ] || fail "only $(launch_count watch-jitter) collection(s) in 48s at a 6s idle interval"
   gaps=$(awk 'NR>1 {printf "%s ", $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
   bad=$(awk 'NR>1 && ($1-p < 1 || $1-p > 8) {print $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
-  [ -z "$bad" ] || fail "a jittered idle gap left [interval - jitter, interval]: $gaps"
+  [ -z "$bad" ] || fail "a jittered idle gap left [1, 8]: $gaps"
+  short=$(awk 'NR>1 && $1-p <= 4 {c++} {p=$1} END {print c+0}' "$TMP_ROOT/watch-jitter.runs")
+  [ "$short" -ge 1 ] || fail "every gap stayed at the full interval, so jitter did not shorten a launch: $gaps"
   pass "jittered idle gaps stay between the interval less the jitter and the interval"
 }
 
