@@ -1,0 +1,2 @@
+ok - Claude 2.1.330 (Claude Code): a 429 refusal fires StopFailure into a rate_limit record in 3s, and the idle pane classes rate_limit
+ok - Claude 2.1.330 (Claude Code): a credit-balance refusal fires StopFailure into a billing record in 2s, and the idle pane classes billing
