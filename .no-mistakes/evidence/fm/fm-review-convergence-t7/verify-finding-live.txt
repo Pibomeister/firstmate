@@ -1,0 +1,53 @@
+### introduced
+verify-finding: introduced head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=red base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=green path=tests/repro-intro.test.sh repro_sha256=eb263d6ffedb4cf636c6bb737f78a9b8bf3e4c1a48c079d0236d50dd955a3fae
+exit=0
+head.log:
+add 2 3 gave -1
+base.log:
+result:
+verify-finding: introduced head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=red base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=green path=tests/repro-intro.test.sh repro_sha256=eb263d6ffedb4cf636c6bb737f78a9b8bf3e4c1a48c079d0236d50dd955a3fae
+### red-at-both
+verify-finding: red-at-both head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=red base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=red path=tests/repro-both.test.sh repro_sha256=875d69c29da7ba9bf8eb92f66c7ee6071dba1249ab447895b220b6b7d0dd5a11
+exit=0
+### green-head
+verify-finding: no-evidence head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=green base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=skipped path=tests/repro-green.test.sh repro_sha256=28d3b9e880a77975493dc7e359144c0295a4f694cfe0af4f928c22307bc5c320
+exit=0
+head.log
+result
+### wrote-outside
+verify-finding: no-evidence head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=wrote-outside base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=skipped path=tests/repro-out.test.sh repro_sha256=6aa3f1ec69a73590cbe7a616d7af5eb02cfbdffb08a5d4e2870ea6a46f869fb0
+exit=0
+### timeout
+verify-finding: no-evidence head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=timeout base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=skipped path=tests/repro-slow.test.sh repro_sha256=1e68241f69eca9468a2fd80867788a0d408daec3b922bc2bc1f7243f316feff7
+exit=0
+### cmd-not-found
+verify-finding: no-evidence head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=error base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=skipped path=tests/repro-nf.test.sh repro_sha256=bc5d91ea51a689d535ca7823d04f2af7a031c69ef637f607f44c08ba34a753ce
+exit=0
+### evidence-not-replaced (rerun into ev1)
+error: --out ../ev1 already holds a reproduction result; evidence is never replaced
+exit=2
+### supervisor (no FM_TASK_ID)
+error: verify-finding belongs in a background worker: it runs a reviewer-written reproduction, and FM_TASK_ID is not set
+exit=2
+ls: ../ev7: No such file or directory
+### path outside tests
+error: --path bin/x.test.sh is outside tests/; a reproduction may only add a test file there
+exit=2
+### existing test path (case variant)
+error: --path tests/Existing.test.sh names the committed tests/existing.test.sh at 1d27e60d4c53dfef2b80900787cabe36354b6549 apart from letter case; a reproduction may only add a new test file
+exit=2
+### source repo unchanged
+1d27e60d4c53dfef2b80900787cabe36354b6549
+0
+### env scrub
+mkdir: /should: Read-only file system
+verify-finding: red-at-both head=1d27e60d4c53dfef2b80900787cabe36354b6549 head_result=red base=dc3840d252f4918d65ea53a6ccc59edb0f390713 base_result=red path=tests/repro-env.test.sh repro_sha256=e1f09adf6672c1641dbd3da69f7f6cc94142a73b1c8438846c9b13325465aee9
+exit=0
+head.log:
+FM_HOME=unset FM_TASK_ID=unset
+### TERM mid-run
+sleep running before signal: 1
+exit=143
+sleep running after signal: 0
+scratch left in TMPDIR: 0
+ev11 contents: 
