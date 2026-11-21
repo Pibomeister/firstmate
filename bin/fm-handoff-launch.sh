@@ -116,7 +116,7 @@ fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to r
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-supervisor-failover-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-failover-lib.sh"
-fm_session_lock_owned_by_self "$STATE" || die 'only the current session lock owner can launch its successor'
+fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh" || die 'only the current session lock owner or its watcher can launch its successor'
 # Open-order coverage: a handoff that omits an open captain order would drop it
 # across the session boundary, so refuse before any preflight, claim, or record.
 cover_rc=0
@@ -345,7 +345,7 @@ for attempt in 1 2; do
   if ! take_claim; then
     fail_handoff claim_busy
   fi
-  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_owned_by_self "$STATE"; then
+  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh"; then
     die 'predecessor no longer owns the lock'
   fi
   NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')

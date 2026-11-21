@@ -10,7 +10,8 @@ set -u
 # shellcheck source=tests/watch-triage-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/watch-triage-helpers.sh"
 TMP_ROOT=$(fm_test_tmproot fm-failover)
-trap 'fm_test_cleanup' EXIT
+FAKE_OWNER=''
+trap '[ -z "$FAKE_OWNER" ] || { kill "$FAKE_OWNER" 2>/dev/null || true; wait "$FAKE_OWNER" 2>/dev/null || true; }; fm_test_cleanup' EXIT
 FO="$ROOT/bin/fm-failover.sh"
 LAB="$TMP_ROOT/home"
 FAKEBIN="$TMP_ROOT/fakebin"
@@ -63,6 +64,11 @@ echo "relaunched $1"
 SH
 cat > "$DELEGATES/fm-handoff-launch.sh" <<'SH'
 #!/usr/bin/env bash
+if [ "${FM_TEST_HANDOFF_VERIFY_ACTOR:-}" = 1 ]; then
+  . "$FM_TEST_SCRIPT_ROOT/bin/fm-wake-lib.sh"
+  . "$FM_TEST_SCRIPT_ROOT/bin/fm-session-lock-lib.sh"
+  fm_session_lock_handoff_actor_authorized "$FM_STATE_OVERRIDE" "$FM_HOME" "$FM_TEST_SCRIPT_ROOT/bin/fm-watch.sh" || exit 6
+fi
 n=$(( $(cat "$FM_HOME/handoff.n" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$FM_HOME/handoff.n"
 printf '%s\n' "$@" > "$FM_HOME/handoff.argv.$n"
@@ -85,7 +91,7 @@ SH
 chmod +x "$FAKEBIN"/* "$DELEGATES"/*
 
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
-export FM_FAILOVER_TEST_BIN="$DELEGATES" FM_TEST_QUOTA="$QUOTA" HOME="$TMP_ROOT/user"
+export FM_FAILOVER_TEST_BIN="$DELEGATES" FM_TEST_QUOTA="$QUOTA" FM_TEST_SCRIPT_ROOT="$ROOT" HOME="$TMP_ROOT/user"
 export PATH="$FAKEBIN:$PATH"
 unset FM_BACKEND QUOTA_AXI_SNAPSHOT CLAUDE_CONFIG_DIR FM_CONTROL_BIN FM_TEST_CONTROL_RCS FM_TEST_CONTROL_MSG
 unset FM_TEST_HANDOFF_RC FM_FAILOVER_TEST_HARNESS FM_FAILOVER_TEST_LOCK_OWNER
@@ -314,7 +320,7 @@ test_worker_429_moves_to_the_next_runtime() {
   FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo worker w1 --reason rate_limit
   expect_code 0 "$RC" "a configured remote route is probed before local failover: $OUT"
   assert_contains "$(cat "$LAB/remote.calls")" 'hetzner fm-failover.sh order' 'the configured host was contacted through the remote transport'
-  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree not configured' 'an available route without the task worktree is recorded'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host worktree handoff not implemented' 'an available route without the task worktree is recorded'
   pass 'worker 429: relaunched on codex in the same local copy, branch, and gates, recorded, nothing lost'
 }
 
@@ -354,10 +360,16 @@ test_worker_walks_the_order() {
   assert_not_contains "$OUT" 'candidate runtime=codex eligible' 'codex is before the refused runtime'
   reset_lab
   make_worker w3 claude
-  printf '%s\tattempt\tcodex\tdroid\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w3"
+  printf '%s\tattempt\tcodex\tunavailable\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w3"
   fo worker w3 --reason rate_limit
   expect_code 0 "$RC" "a prior refusal is not retried after the order changes: $OUT"
   assert_contains "$OUT" 'candidate runtime=codex skip=refused_in_window' 'a runtime already refused in the window stays excluded'
+  reset_lab
+  make_worker w3 claude
+  printf '%s\tattempt\tclaude\tcodex\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w3"
+  fo worker w3 --reason rate_limit
+  expect_code 0 "$RC" "an attempted target is not retried after a timeout: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex skip=refused_in_window' 'an attempt target is excluded without a failed row'
   reset_lab
   make_worker w3 claude
   FM_TEST_CONTROL_RCS=1,0 FM_TEST_CONTROL_PUBLISH_GEN=s2.w3 fo worker w3
@@ -482,6 +494,13 @@ test_captain_429_and_billing_start_a_successor() {
     'the supervisor failover log records the replacement'
 
   captain_world
+  : > "$LAB/data/secondmates.md"
+  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo captain --reason rate_limit
+  expect_code 0 "$RC" "a configured host is checked before a captain successor: $OUT"
+  assert_contains "$(cat "$LAB/remote.calls")" 'hetzner fm-failover.sh order' 'the captain checks the host route'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=captain from=claude@ordinary to=codex@hetzner reason=host worktree handoff not implemented' 'the captain host skip is recorded'
+
+  captain_world
   mkdir -p "$ACCTS/after-droid"
   touch "$ACCTS/after-droid/signed-in"
   quota_fixture claude 70 70 > "$ACCTS/after-droid/quota.json"
@@ -489,6 +508,16 @@ test_captain_429_and_billing_start_a_successor() {
   FM_FAILOVER_TEST_HARNESS=droid fo captain --reason billing
   expect_code 0 "$RC" "a captain refused on droid proceeds forward: $OUT"
   assert_contains "$OUT" 'switched task=captain from=droid to=claude@after-droid' 'a captain failure never returns to codex'
+
+  captain_world
+  mkdir -p "$ACCTS/after-timeout"
+  touch "$ACCTS/after-timeout/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/after-timeout/quota.json"
+  printf '%s\n' "$ACCTS/after-timeout" > "$LAB/config/claude-accounts"
+  printf '%s\tattempt\tclaude@ordinary\tcodex\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-captain"
+  fo captain --reason rate_limit
+  expect_code 0 "$RC" "a captain attempt without a failed row is skipped: $OUT"
+  assert_contains "$OUT" 'candidate runtime=codex skip=refused_in_window' 'the captain does not repeat a timed-out target'
 
   captain_world
   FM_TEST_HANDOFF_RC=4 fo captain --reason billing
@@ -563,6 +592,8 @@ test_preflight_night_plan() {
   printf 'API Error: Request rejected (429)\n' > "$QUOTA/droid.probe"
   fo preflight
   expect_code 0 "$RC" "the preflight: $OUT"
+  assert_contains "$OUT" 'preflight runtime=codex verdict=unmeasured call=skipped five_hour=unknown weekly=unknown why=host_route_not_configured' 'an absent host route stays unmeasured'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'reason=host route not configured' 'preflight records the host skip'
   assert_contains "$OUT" 'preflight runtime=codex verdict=eligible call=ok five_hour=80 weekly=60' 'a working runtime with headroom is eligible'
   assert_contains "$OUT" 'preflight runtime=droid verdict=excluded call=fail:rate_limit' 'a runtime whose real call is refused is excluded'
   assert_contains "$OUT" 'preflight runtime=claude@pA verdict=excluded call=ok five_hour=20 weekly=80 why=five_hour_below_30' 'an account under the five-hour floor is excluded'
@@ -576,6 +607,16 @@ test_preflight_night_plan() {
   fo preflight
   assert_contains "$OUT" 'preflight runtime=codex verdict=excluded call=ok five_hour=80 weekly=0 why=weekly_exhausted' 'a spent weekly window excludes after a real call'
   assert_contains "$OUT" 'preflight runtime=claude@pA verdict=eligible' 'the configured floor applies'
+  fo preflight --no-call
+  expect_code 2 "$RC" 'the operational preflight rejects skipping provider calls'
+  reset_lab
+  : > "$LAB/data/secondmates.md"
+  FM_FAILOVER_TEST_ON_BIN="$DELEGATES/fm-on.sh" fo preflight
+  expect_code 0 "$RC" 'preflight with a configured host route'
+  assert_contains "$OUT" 'preflight runtime=codex verdict=unmeasured call=skipped five_hour=unknown weekly=unknown why=host_worktree_handoff_not_implemented' 'preflight names the remote handoff limit'
+  assert_contains "$(cat "$LAB/state/dispatch-log.tsv")" 'task=captain from=preflight to=codex@hetzner reason=host worktree handoff not implemented' 'preflight records the configured host skip'
+  fo worker w1 --dry-run
+  expect_code 2 "$RC" 'the worker command rejects the removed choice path'
   pass 'preflight: a real call and the 5h and weekly windows per runtime and account set the night plan'
 }
 
@@ -647,20 +688,38 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
-  local dir class err
+  local dir class err owner start rc out
   for class in rate_limit billing; do
     err='⏺ API Error: Request rejected (429)'
     [ "$class" != billing ] || err='⏺ Credit balance is too low'
     dir=$(watch_case "captain-$class" "$err"$'\n\n❯ \n  ⏵⏵ auto mode on')
-    rm -f "$dir/state/fo.meta"
-    printf 'backend=tmux\nterminal=test:fm-fo\nworktree=%s\n' "$dir/home" > "$dir/state/.lock-session"
+    cat > "$dir/claude" <<'PY'
+import time
+time.sleep(120)
+PY
+    python3 "$dir/claude" &
+    owner=$!
+    FAKE_OWNER=$owner
+    start=$(bash -c '. "$1/bin/fm-session-lock-lib.sh"; fm_session_process_start "$2"' _ "$ROOT" "$owner") || fail 'the owner process has no identity'
+    printf '%s\n' "$owner" > "$dir/state/.lock"
+    printf 'test-session\nanchor_pid=%s\nanchor_start=%s\nbackend=tmux\nterminal=test:fm-fo\nworktree=%s\n' "$owner" "$start" "$dir/home" > "$dir/state/.lock-session"
     FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" received "g-$class" --summary 'open captain work' >/dev/null
-    watch_once "$dir" FM_FAILOVER_TEST_LOCK_OWNER=1 FM_FAILOVER_TEST_HARNESS=claude
+    if [ "$class" = billing ]; then
+      FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" dispatched "g-$class" --task fo >/dev/null
+    fi
+    rc=0
+    out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" FM_DATA_OVERRIDE="$dir/home/data" \
+      FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_TEST_HARNESS=claude bash "$FO" captain --reason "$class" 2>&1) || rc=$?
+    expect_code 6 "$rc" 'a process outside the watcher cannot claim watcher authority'
+    watch_once "$dir" FM_FAILOVER_TEST_HARNESS=claude FM_TEST_HANDOFF_VERIFY_ACTOR=1
     assert_contains "$(cat "$dir/watch.out")" "check: captain moved to the next runtime after a $class refusal" \
       "the watcher hands off a $class refusal from an idle captain pane"
     assert_contains "$(cat "$dir/state/dispatch-log.tsv")" "task=captain from=claude@ordinary to=codex reason=$class" \
       "the captain switch is recorded"
     [ -s "$dir/home/data/handoffs/$(ls "$dir/home/data/handoffs" | head -n 1)" ] || fail 'the captain handoff is missing'
+    kill "$owner" 2>/dev/null || true
+    wait "$owner" 2>/dev/null || true
+    FAKE_OWNER=''
   done
   pass 'watcher: idle captain 429 and billing screens with open goals hand off in one poll'
 }
@@ -715,6 +774,7 @@ test_worker_account_identity_is_its_config_root() {
   printf 'claude@next\n' > "$LAB/config/failover-order"
   for spelling in unset "$me" "$me/"; do
     rm -f "$LAB/control.n"
+    rm -f "$LAB/state/.failover-w8"
     make_worker w8 claude
     if [ "$spelling" = unset ]; then
       fo worker w8

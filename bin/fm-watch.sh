@@ -2412,7 +2412,7 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
 
 captain_provider_failover_check() {
   local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason
-  fm_sup_open_goal "$STATE" || return 1
+  fm_supervision_needed "$STATE" || return 1
   [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
   backend=$(sed -n 's/^backend=//p' "$endpoint")
   terminal=$(sed -n 's/^terminal=//p' "$endpoint")
@@ -2428,7 +2428,7 @@ captain_provider_failover_check() {
   printf '%s' "$hash" > "$seen" || return 1
   command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
   fm_watch_now now
-  out=$(FM_HOME=$FM_HOME FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+  out=$(FM_HOME=$FM_HOME FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
     fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
     --reason "$class" </dev/null 2>&1) || rc=$?
   line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')

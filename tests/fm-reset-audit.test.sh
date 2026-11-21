@@ -87,6 +87,7 @@ goal received waiting --summary waiting >/dev/null
 snapshot before
 goal failover --task ship-switch --from claude --to codex --reason rate_limit >/dev/null || fail 'record the switch'
 goal failover --task captain --from claude --to codex --reason billing >/dev/null || fail 'record the captain switch'
+goal failover-skip --task ship-switch --from claude --to codex@hetzner --reason 'host worktree handoff not implemented' >/dev/null || fail 'record the host skip'
 out=$(audit compare --before "$TEST_HOME/before.json" 2>&1)
 expect_code 0 $? "provider switches keep the ledger readable: $out"
 snapshot after

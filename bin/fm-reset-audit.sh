@@ -168,7 +168,7 @@ try {
     for (const line of read(path.join(home, 'state/dispatch-log.tsv')).split('\n').filter(Boolean)) {
       const fields = line.split('\t');
       // A provider switch (bin/fm-dispatch-log.sh failover) never changes a goal's state.
-      if (fields.length >= 5 && fields[2] === 'failover') continue;
+      if (fields.length >= 5 && ['failover', 'failover-skip'].includes(fields[2])) continue;
       if (fields.length < 5 || !slug(fields[3]) || !['received', 'queued', 'dispatched', 'blocked'].includes(fields[2])) fail('malformed dispatch ledger');
       goals.set(fields[3], { id: fields[3], event: fields[2] });
       if (['dispatched', 'blocked'].includes(fields[2])) {

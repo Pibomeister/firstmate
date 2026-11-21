@@ -826,6 +826,17 @@ fm_session_lock_owned_by_self() {
   fm_session_lock_trusted_codex_session_id >/dev/null
 }
 
+fm_session_lock_handoff_actor_authorized() {
+  local state=$1 home=$2 watch_path=$3 watcher_pid
+  fm_session_lock_owned_by_self "$state" && return 0
+  [ "${FM_CAPTAIN_WATCHER_FAILOVER:-}" = 1 ] || return 1
+  watcher_pid=$(cat "$state/.watch.lock/pid" 2>/dev/null) || return 1
+  case "$watcher_pid" in ''|*[!0-9]*) return 1 ;; esac
+  fm_watcher_lock_matches_pid "$state" "$watch_path" "$watcher_pid" "$home" || return 1
+  fm_pid_descends_from "$$" "$watcher_pid" || return 1
+  fm_session_lock_recorded_owner_live "$state"
+}
+
 # True when state dir $1 records a live owner outside this session, using
 # fm_session_lock_recorded_owner_live and the same-session identity boundary.
 # Sets FM_SESSION_LOCK_FOREIGN_OWNER_PID to the recorded anchor for diagnostics;

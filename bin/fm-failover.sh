@@ -11,8 +11,8 @@
 #   fm-failover.sh record <task-id|captain> --class <class> [--source <token>] [--gen <token>] [--state <dir>]
 #   fm-failover.sh hook <task-id|captain> [--gen <token>] [--state <dir>]
 #   fm-failover.sh detect <task-id> [--screen-file <file>]
-#   fm-failover.sh worker <task-id> [--reason <class>] [--source <token>] [--dry-run]
-#   fm-failover.sh captain [--reason <class>] [--dry-run]
+#   fm-failover.sh worker <task-id> [--reason <class>] [--source <token>]
+#   fm-failover.sh captain [--reason <class>]
 #
 # This is the one entry point for provider failover; bin/fm-failover-lib.sh
 # owns the order file and the provider-error record, and docs/configuration.md
@@ -71,7 +71,7 @@
 #
 # Output: one `candidate runtime=<label> ...` line per evaluated runtime, then
 # `switched task=<id> from=<label> to=<label> reason=<class>`, or `none ...`.
-# Exit 0 on a switch (or a dry-run choice), 1 when no runtime took over,
+# Exit 0 on a switch, 1 when no runtime took over,
 # 2 for a usage or configuration error, 3 when the attempt bound holds
 # (FM_FAILOVER_MAX_ATTEMPTS, default 3, captain 2, inside
 # FM_FAILOVER_WINDOW_SECS, default 3600), 5 when
@@ -110,7 +110,7 @@ case "$CMD" in
     shift
     ;;
 esac
-CLASS='' SOURCE='' GEN='' STATE_ARG='' SCREEN_FILE='' DRY_RUN=0
+CLASS='' SOURCE='' GEN='' STATE_ARG='' SCREEN_FILE=''
 while [ $# -gt 0 ]; do
   case "$1" in
     --class|--reason) [ -n "${2:-}" ] || die "$1 needs a value"; CLASS=$2; shift 2 ;;
@@ -118,7 +118,6 @@ while [ $# -gt 0 ]; do
     --gen) [ -n "${2:-}" ] || die '--gen needs a token'; GEN=$2; shift 2 ;;
     --state) [ -n "${2:-}" ] || die '--state needs a directory'; STATE_ARG=$2; shift 2 ;;
     --screen-file) [ -n "${2:-}" ] || die '--screen-file needs a file'; SCREEN_FILE=$2; shift 2 ;;
-    --dry-run) DRY_RUN=1; shift ;;
     *) die "unexpected argument: $1" ;;
   esac
 done
@@ -264,7 +263,7 @@ evaluate() {
     index=$((index + 1))
     [ "$index" -gt "$current" ] || continue
     if [ -f "$ledger" ] && awk -F '\t' -v l="$label" -v c="$(( $(now) - WINDOW_SECS ))" \
-      '$1 >= c && (($2 == "attempt" && $3 == l) || ($2 == "failed" && $4 == l)) { found = 1 } END { exit !found }' "$ledger"; then
+      '$1 >= c && (($2 == "attempt" && ($3 == l || $4 == l)) || ($2 == "failed" && $4 == l)) { found = 1 } END { exit !found }' "$ledger"; then
       printf 'candidate runtime=%s skip=refused_in_window\n' "$label"
       continue
     fi
@@ -272,21 +271,8 @@ evaluate() {
       continue
     fi
     if [ -n "$host" ]; then
-      if [ ! -f "$DATA/secondmates.md" ]; then
-        why='host route not configured'
-      else
-        rc=0
-        why=$(FM_HOME=$FM_HOME fm_run_timed "$CALL_TIMEOUT" "$ON_BIN" "$host" fm-failover.sh order </dev/null 2>&1) || rc=$?
-        if [ "$rc" -ne 0 ]; then
-          case "$why" in
-            *"no remote secondmate or SSH alias matches"*|*"no safe secondmate registry"*) why='host route not configured' ;;
-            *) why='host route unavailable' ;;
-          esac
-        else
-          why='host worktree not configured'
-        fi
-      fi
-      dispatch_skip "${TARGET:-captain}" "$from" "$label@$host" "$why"
+      host_skip "${TARGET:-captain}" "$from" "$label" "$host"
+      why=$FM_HOST_SKIP_REASON
       printf 'candidate runtime=%s host=%s skip=%s\n' "$label" "$(tok "$host")" "$(tok "$why")"
       continue
     fi
@@ -377,6 +363,24 @@ dispatch_skip() {
     || printf 'warning: the dispatch log did not record the skip of %s\n' "$3" >&2
 }
 
+host_skip() {
+  local task=$1 from=$2 label=$3 host=$4 out rc=0
+  if [ ! -f "$DATA/secondmates.md" ]; then
+    FM_HOST_SKIP_REASON='host route not configured'
+  else
+    out=$(FM_HOME=$FM_HOME fm_run_timed "$CALL_TIMEOUT" "$ON_BIN" "$host" fm-failover.sh order </dev/null 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+      FM_HOST_SKIP_REASON='host worktree handoff not implemented'
+    else
+      case "$out" in
+        *"no remote secondmate or SSH alias matches"*|*"no safe secondmate registry"*) FM_HOST_SKIP_REASON='host route not configured' ;;
+        *) FM_HOST_SKIP_REASON='host route unavailable' ;;
+      esac
+    fi
+  fi
+  dispatch_skip "$task" "$from" "$label@$host" "$FM_HOST_SKIP_REASON"
+}
+
 reason_or_record() {  # <id>
   if [ -n "$CLASS" ]; then
     fm_failover_class_valid "$CLASS" || die '--reason must be rate_limit, usage_limit, or billing'
@@ -405,7 +409,7 @@ cmd_plan() {
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
     if [ -n "$host" ]; then
-      printf 'plan runtime=%s host=%s verdict=unmeasured why=cross_host_unsupported\n' "$label" "$(tok "$host")"
+      printf 'plan runtime=%s host=%s verdict=unmeasured why=host_worktree_handoff_not_implemented\n' "$label" "$(tok "$host")"
     elif pv=$(preflight_verdict "$label"); then
       printf 'plan runtime=%s verdict=%s why=%s\n' "$label" "${pv%%$'\t'*}" "$(tok "${pv#*$'\t'}")"
     else
@@ -495,7 +499,8 @@ cmd_preflight() {
     [ -n "$h" ] || continue
     t=$(now)
     if [ -n "$host" ]; then
-      call=skipped fh=unknown wk=unknown verdict=unmeasured why=cross_host_unsupported
+      host_skip captain preflight "$label" "$host"
+      call=skipped fh=unknown wk=unknown verdict=unmeasured why=${FM_HOST_SKIP_REASON// /_}
     else
       call=$(probe_call "$h" "$m" "$a")
       read -r fh wk <<< "$(probe_quota "$h" "$a")"
@@ -629,11 +634,6 @@ cmd_worker() {
     printf 'none task=%s from=%s reason=%s why=no_eligible_runtime\n' "$TARGET" "$from" "$reason"
     exit 1
   fi
-  if [ "$DRY_RUN" = 1 ]; then
-    IFS=$FM_FO_SEP read -r h m a label quota <<< "${CAND[0]}"
-    printf 'choice task=%s from=%s to=%s reason=%s dry_run=1\n' "$TARGET" "$from" "$label" "$reason"
-    exit 0
-  fi
   branch=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null) || branch=$(fm_meta_get "$meta" branch)
   for row in "${CAND[@]}"; do
     IFS=$FM_FO_SEP read -r h m a label quota <<< "$row"
@@ -694,7 +694,7 @@ captain_lock_owner() {
   command -v fm_lock_try_acquire >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
   # shellcheck source=bin/fm-session-lock-lib.sh
   . "$SCRIPT_DIR/fm-session-lock-lib.sh"
-  fm_session_lock_owned_by_self "$STATE"
+  fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh"
 }
 
 cmd_captain() {
@@ -728,11 +728,6 @@ cmd_captain() {
     fm_failover_log "event=provider_failover_none scope=primary from=$from reason=$reason"
     printf 'none task=captain from=%s reason=%s why=no_eligible_runtime\n' "$from" "$reason"
     exit 1
-  fi
-  if [ "$DRY_RUN" = 1 ]; then
-    IFS=$FM_FO_SEP read -r h m a label quota <<< "${CAND[0]}"
-    printf 'choice task=captain from=%s to=%s reason=%s dry_run=1\n' "$from" "$label" "$reason"
-    exit 0
   fi
   stamp=$(date -u '+%Y%m%dT%H%M%SZ')
   doc="$DATA/handoffs/handoff-$stamp-failover.md"
