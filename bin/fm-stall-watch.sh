@@ -8,7 +8,7 @@
 #   fm-stall-watch.sh screen <task-id|captain> [--lines <n>]
 #   fm-stall-watch.sh classify [--kind worker|captain] [--open-work yes|no]
 #   fm-stall-watch.sh check <task-id|captain> [--dry-run]
-#   fm-stall-watch.sh tick [--force] [--dry-run]
+#   fm-stall-watch.sh tick [--dry-run]
 #
 # docs/configuration.md "Stall watch" owns the operator contract: the opt-in
 #   and its keys (interval, lines,
@@ -24,8 +24,8 @@
 #             recorded screens).
 #   check     One stall check of one target; --dry-run judges it without
 #             acting or recording.
-#   tick      Once the interval has passed since the last tick (or with
-#             --force), checks the captain (when this home records a session
+#   tick      Once the interval has passed since the last tick, checks the
+#             captain (when this home records a session
 #             endpoint) and every local ship or scout, single-flight. A tick
 #             that finds config/stall-watch invalid leaves one report per
 #             distinct file content and exits 2.
@@ -656,7 +656,7 @@ sw_check_target() {  # <target> <dry-run>
     return 1
   fi
   red=$(printf '%s\n' "$raw" | sw_clean "$LINES")
-  work=$(sw_work_sig "$target")
+  work="$runtime|$(sw_work_sig "$target")"
   fp=$(sw_fingerprint "$red" "$work")
   sw_state_load "$target"
   [ "$fp" != "$S_FP" ] || same=1
@@ -672,7 +672,10 @@ sw_check_target() {  # <target> <dry-run>
     if [ -n "$S_NUDGED" ]; then
       # The nudge's own doorbell changes the screen, so only a new commit or
       # status line ends it; the next idle spell then starts with a nudge.
-      if [ -n "$work" ] && [ "$work" != "$S_NUDGE_WORK" ]; then
+      if [ "${S_NUDGE_WORK%%|*}" != "$runtime" ]; then
+        S_NUDGED='' S_NUDGE_WORK=''
+        V_NOTE='runtime-changed'
+      elif [ "$work" != "$S_NUDGE_WORK" ]; then
         S_NUDGED='' S_NUDGE_WORK=''
         V_NOTE=worked-after-nudge
       else
@@ -787,9 +790,9 @@ sw_check_target() {  # <target> <dry-run>
   sw_line "$target" "$action"
 }
 # ---- tick --------------------------------------------------------------------
-cmd_tick() {  # <force> <dry-run>
-  local force=$1 dry=$2 now last f id kind lock="$SW_DIR/.tick.lock"
-  if [ ! -e "$CONF" ] && [ "$force" != 1 ]; then
+cmd_tick() {  # <dry-run>
+  local dry=$1 now last f id kind lock="$SW_DIR/.tick.lock"
+  if [ ! -e "$CONF" ]; then
     log 'off (no config/stall-watch)'
     return 0
   fi
@@ -803,7 +806,7 @@ cmd_tick() {  # <force> <dry-run>
   now=$(sw_now)
   last=$(cat "$SW_DIR/.last-tick" 2>/dev/null || true)
   case "$last" in ''|*[!0-9]*) last=0 ;; esac
-  if [ "$force" != 1 ] && [ $((now - last)) -lt "$INTERVAL" ]; then
+  if [ $((now - last)) -lt "$INTERVAL" ]; then
     return 0
   fi
   [ "$dry" = 1 ] || printf '%s\n' "$now" > "$SW_DIR/.last-tick"
@@ -873,10 +876,10 @@ case "$CMD" in
     cmd_check "$target" "$dry"
     ;;
   tick)
-    force=0 dry=0
+    dry=0
     while [ $# -gt 0 ]; do
-      case "$1" in --force) force=1; shift ;; --dry-run) dry=1; shift ;; *) die "unexpected argument: $1" ;; esac
+      case "$1" in --dry-run) dry=1; shift ;; *) die "unexpected argument: $1" ;; esac
     done
-    cmd_tick "$force" "$dry"
+    cmd_tick "$dry"
     ;;
 esac

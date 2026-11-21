@@ -648,7 +648,7 @@ It is off until the optional local `config/stall-watch` exists.
 While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
 Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain only while its recorded session owner is live and checks each local ship or scout.
 A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
-A screen counts as unchanged only when its redacted rows with timer and counter text normalized, the task's worktree HEAD, and a checksum of its status content are all the same, so a new commit, status line, or HTTP error code is progress.
+A screen counts as unchanged only when its redacted rows with timer and counter text normalized, its runtime identity, the task's worktree HEAD, and a checksum of its status content are all the same, so a relaunch, new captain session, new commit, status line, or HTTP error code is progress.
 
 The file holds `key=value` lines; blank lines and lines that start with `#` are ignored, and every key is optional.
 
@@ -713,7 +713,7 @@ A verdict from a worker or captain runtime that changed after screen capture is 
 - A model-judged `rate_limit`, `usage_limit`, `billing`, or `api_error` runs `bin/fm-failover.sh` with that `--reason`; a captain failover is authorized only as a descendant of this home's watcher.
 - `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.
   When the next unchanged check within three intervals still finds a worker idle, it runs `bin/fm-failover.sh` with `--reason stalled`; a captain gets one notification instead and is never failed over as stalled.
-  A new commit or status line after the nudge ends it, so the next idle spell starts with a nudge again.
+  A new runtime, commit, or status line after the nudge ends it, so the next idle spell starts with a nudge again.
 - `waiting_on_human`, `auth`, `crashed`, a nudge that could not be delivered, and a screen judged `unsure` on two checks in a row each wake firstmate with one `check: <target> ...` notification; a captain waiting on its owner and an unknown result from unavailable Jev are recorded only.
 - `working`, `idle_done`, and a rule-recognized refusal do nothing.
 

@@ -411,7 +411,8 @@ test_stale_captain_endpoint_is_skipped() {
   expect_code 1 "$RC" 'screen refuses a stale captain endpoint'
   sw check captain --dry-run
   assert_contains "$OUT" 'verdict=capture-failed stalled=unsure' 'a direct check cannot capture a stale captain endpoint'
-  sw tick --force
+  printf 'interval=1200\n' > "$LAB/config/stall-watch"
+  sw tick
   assert_equals 0 "$(ledger_rows captain)" 'tick skips a stale captain'
   assert_equals 1 "$(ledger_rows live1)" 'tick still checks local workers'
   assert_equals 0 "$(count send)" 'a stale captain receives no nudge'
@@ -453,6 +454,50 @@ test_worker_turnover_suppresses_actions() {
   assert_contains "$OUT" 'action=failover-switched' 'an unchanged runtime still acts on its verdict'
   assert_equals 1 "$(count failover)" 'the unchanged worker alone fails over'
   pass 'worker turnover: stale failover and nudge are suppressed'
+}
+
+test_runtime_turnover_resets_observation() {
+  reset_lab
+  make_worker renewed stalled.screen
+  jev_says idle_with_goals 0.9
+  sw check renewed; sw check renewed
+  assert_contains "$OUT" 'action=nudged' 'the first worker runtime is nudged'
+  sed 's/^spawn_gen=.*/spawn_gen=s2.renewed/' "$LAB/state/renewed.meta" > "$TMP_ROOT/renewed.meta"
+  cp "$TMP_ROOT/renewed.meta" "$LAB/state/renewed.meta"
+  sw check renewed
+  assert_contains "$OUT" 'verdict=progress' 'a replacement with the same screen starts a new observation'
+  assert_contains "$OUT" 'runtime-changed' 'the old nudge is cleared by runtime turnover'
+  sw check renewed
+  assert_contains "$OUT" 'action=nudged' 'the replacement gets its own first nudge'
+  assert_equals 2 "$(count send)" 'each worker runtime is nudged once'
+  assert_equals 0 "$(count failover)" 'the replacement is not failed over on the old nudge'
+
+  make_worker acted1 api-error.screen
+  jev_says api_error 0.9
+  sw check acted1; sw check acted1
+  assert_contains "$OUT" 'action=failover-switched' 'the first runtime handles its error'
+  sed 's/^spawn_gen=.*/spawn_gen=s2.acted1/' "$LAB/state/acted1.meta" > "$TMP_ROOT/acted1.meta"
+  cp "$TMP_ROOT/acted1.meta" "$LAB/state/acted1.meta"
+  sw check acted1
+  assert_contains "$OUT" 'verdict=progress' 'old acted state does not suppress replacement progress'
+  sw check acted1
+  assert_contains "$OUT" 'action=failover-switched' 'the unchanged replacement screen gets a fresh verdict'
+  assert_equals 2 "$(count failover)" 'each runtime can handle its own error'
+
+  reset_lab
+  cp "$FIX/stalled.screen" "$LAB/screens/captain.screen"
+  FM_DISPATCH_NOW=1000 bash "$ROOT/bin/fm-dispatch-log.sh" received renewed-goal --summary 'open work' >/dev/null || fail 'fixture: captain goal'
+  jev_says idle_with_goals 0.9
+  sw check captain; sw check captain
+  assert_contains "$OUT" 'action=nudged' 'the first captain session is nudged'
+  sed '1s/^test-session$/renewed-session/' "$LAB/state/.lock-session" > "$TMP_ROOT/renewed-session"
+  cp "$TMP_ROOT/renewed-session" "$LAB/state/.lock-session"
+  sw check captain
+  assert_contains "$OUT" 'verdict=progress' 'a new captain session starts a fresh observation'
+  sw check captain
+  assert_contains "$OUT" 'action=nudged' 'the new captain session gets its own nudge'
+  assert_equals 2 "$(wc -l < "$LOGS/captain-send" | tr -d ' ')" 'each captain session is nudged once'
+  pass 'runtime turnover: prior nudge and acted state do not carry over'
 }
 
 test_captain_turnover_suppresses_nudge() {
@@ -636,7 +681,7 @@ test_actionful_checks_share_target_lock() {
   assert_contains "$ERR" 'check for concurrent is already running' 'the held direct check is named'
   sw check concurrent --dry-run
   assert_contains "$OUT" 'action=dry-run' 'a dry run remains available while the target lock is held'
-  sw tick --force
+  sw tick
   assert_contains "$ERR" 'check for concurrent is already running' 'the tick uses the same target lock'
   assert_equals 1 "$(count send)" 'overlapping checks do not send another nudge'
   rm -f "$LOGS/send.hold"
@@ -814,12 +859,16 @@ test_tick_schedule() {
   expect_code 0 "$RC" "tick: $ERR"
   assert_equals 1 "$(ledger_rows t1)" 'the tick checks t1'
   assert_equals 1 "$(ledger_rows t2)" 'the tick checks t2'
+  sw tick --force
+  expect_code 2 "$RC" 'tick rejects the removed force option'
   FM_STALL_WATCH_NOW=100300 sw tick
   assert_equals 1 "$(ledger_rows t1)" 'a tick before the interval does nothing'
   FM_STALL_WATCH_NOW=100600 sw tick
   assert_equals 2 "$(ledger_rows t1)" 'the next tick runs once the interval passed'
-  FM_STALL_WATCH_NOW=100601 sw tick --force
-  assert_equals 3 "$(ledger_rows t1)" '--force ignores the interval'
+  FM_STALL_WATCH_NOW=100601 sw tick
+  assert_equals 2 "$(ledger_rows t1)" 'a tick before the next interval still waits'
+  FM_STALL_WATCH_NOW=101200 sw tick
+  assert_equals 3 "$(ledger_rows t1)" 'the next eligible tick runs'
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
   live_start=$(bash -c '. "$1"; fm_pid_start_time "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$$") || fail 'fixture: no tick holder start time'
   printf '%s\n' "$$" > "$LAB/state/stall-watch/.tick.lock/pid"
@@ -833,7 +882,7 @@ test_tick_schedule() {
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
   printf '999999\n' > "$LAB/state/stall-watch/.tick.lock/pid"
   printf 'stale-instance\n' > "$LAB/state/stall-watch/.tick.lock/pid-start"
-  FM_STALL_WATCH_NOW=200001 sw tick --force
+  FM_STALL_WATCH_NOW=200600 sw tick
   assert_equals 5 "$(ledger_rows t1)" 'a dead holder also releases the tick lock'
   printf 'interval=abc\n' > "$LAB/config/stall-watch"
   sw tick
@@ -855,7 +904,7 @@ test_tick_schedule() {
   printf 'interval=abc\n' > "$LAB/config/stall-watch"
   sw tick
   assert_equals 3 "$(config_reports)" 'a valid tick clears the memory, so the old error is reported again'
-  pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
+  pass 'tick: opt-in, interval, single-flight, config validation, and one report per invalid file'
 }
 
 test_successful_checks_release_locks() {
@@ -866,12 +915,12 @@ test_successful_checks_release_locks() {
   expect_code 0 "$RC" "direct check exits cleanly: $ERR"
   assert_not_contains "$ERR" 'unbound variable' 'direct check has no EXIT trap variable error'
   assert_absent "$LAB/state/stall-watch/release1.check.lock"
-  sw tick --force
+  FM_STALL_WATCH_NOW=200000 sw tick
   expect_code 0 "$RC" "tick exits cleanly: $ERR"
   assert_not_contains "$ERR" 'unbound variable' 'tick has no EXIT trap variable error'
   assert_absent "$LAB/state/stall-watch/.tick.lock"
   assert_absent "$LAB/state/stall-watch/release1.check.lock"
-  sw tick --force
+  FM_STALL_WATCH_NOW=200600 sw tick
   expect_code 0 "$RC" "immediate second tick exits cleanly: $ERR"
   assert_not_contains "$ERR" 'another tick is running' 'a completed tick does not block its successor'
   assert_absent "$LAB/state/stall-watch/.tick.lock"
@@ -887,17 +936,16 @@ test_tick_lock_reclaim_is_single_flight() {
   sw check race1
   assert_equals 1 "$(ledger_rows race1)" 'the worker has one starting observation'
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
-  "$TMP_ROOT/claude" 600 &
+  "$TMP_ROOT/claude" 1 &
   dead=$!
   printf '%s\n' "$dead" > "$LAB/state/stall-watch/.tick.lock/pid"
-  kill "$dead" 2>/dev/null || true
   wait "$dead" 2>/dev/null || true
   : > "$LOGS/curl.hold"
-  FM_TEST_CURL_HOLD=1 FM_STALL_WATCH_NOW=200000 bash "$SW" tick --force > "$TMP_ROOT/first-tick.out" 2> "$TMP_ROOT/first-tick.err" &
+  FM_TEST_CURL_HOLD=1 FM_STALL_WATCH_NOW=200000 bash "$SW" tick > "$TMP_ROOT/first-tick.out" 2> "$TMP_ROOT/first-tick.err" &
   first=$!
   while [ ! -f "$LOGS/curl.entered" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
   assert_present "$LOGS/curl.entered"
-  FM_STALL_WATCH_NOW=200000 sw tick --force
+  FM_STALL_WATCH_NOW=200000 sw tick
   assert_contains "$ERR" 'another tick is running' 'the live first tick blocks the second'
   assert_equals 1 "$(ledger_rows race1)" 'the second tick does not classify while the first holds the lock'
   rm -f "$LOGS/curl.hold"
@@ -912,7 +960,7 @@ test_tick_lock_unpublished_owner_is_preserved() {
   make_worker pending1 stalled.screen
   printf 'interval=600\n' > "$LAB/config/stall-watch"
   mkdir -p "$LAB/state/stall-watch/.tick.lock"
-  FM_STALL_WATCH_NOW=200000 sw tick --force
+  FM_STALL_WATCH_NOW=200000 sw tick
   assert_contains "$ERR" 'another tick is running' 'a fresh lock without an owner record is respected'
   assert_equals 0 "$(ledger_rows pending1)" 'a pending owner prevents work from starting'
   assert_present "$LAB/state/stall-watch/.tick.lock"
@@ -929,13 +977,13 @@ test_invalid_timing_configuration() {
     sw check badtime
     expect_code 2 "$RC" "check rejects nonnumeric $key"
     assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "check names invalid $key"
-    sw tick --force
+    sw tick
     expect_code 2 "$RC" "tick rejects nonnumeric $key"
     assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "tick names invalid $key"
     printf '%s=18446744073709551676\n' "$key" > "$LAB/config/stall-watch"
     sw check badtime
     expect_code 2 "$RC" "check rejects overflowing $key"
-    sw tick --force
+    sw tick
     expect_code 2 "$RC" "tick rejects overflowing $key"
   done
   assert_equals 0 "$(ledger_rows badtime)" 'invalid timing never checks a screen'
@@ -1087,6 +1135,7 @@ fm_test_run \
   test_stale_captain_endpoint_is_skipped \
   test_captain_api_error_without_open_work \
   test_worker_turnover_suppresses_actions \
+  test_runtime_turnover_resets_observation \
   test_captain_turnover_suppresses_nudge \
   test_captain_overdue_probe_failure \
   test_fingerprint_preserves_error_status \
