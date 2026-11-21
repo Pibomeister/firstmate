@@ -254,7 +254,7 @@ test_once_pending_input_never_sends() {
 
 test_once_cooldown_and_escalation() {
   local home cap now=2000000000 st
-  cap=$(fixture_captain 40 true "" empty "❯ " $((now - 40 * 60)))
+  cap=$(fixture_captain 40 true "" empty "❯ " $((now - 40 * 60)) | jq -c '. + {escalate_min:0, council_min:0}')
   home=$(write_home esc "[$cap]")
   FM_NUDGE_NOW=$now run_once "$home"
   assert_equals nudge "$(last_event "$home")" "first eligible pass nudges"
@@ -421,6 +421,7 @@ test_herdr_idle_tracks_screen_change_not_heartbeat() {
   local home bin cap idle
   bin="$TMP_ROOT/herdr-bin"
   mkdir -p "$bin"
+  # shellcheck disable=SC2016 # The fake herdr script, not this shell, expands it.
   printf '#!/bin/sh\nprintf "%%s\\n" "${FAKE_HERDR_SCREEN:-idle screen}"\n' > "$bin/herdr"
   chmod +x "$bin/herdr"
   mkdir -p "$TMP_ROOT/herdr-home/state"
@@ -455,6 +456,300 @@ test_once_submits_own_unsent_prompt_only() {
   pass "fm-captain-nudge: submits only its own unsent fixed prompt, Enter only"
 }
 
+test_decide_ladder_escalates_then_councils() {
+  local out obs
+  obs() {  # <idle> <tier> <cool> [dialog] [open]
+    base_obs "$1" 20 "${5:-true}" "2 open PRs" "${4:-}" empty "$3" 0 false false \
+      | jq -c --argjson tier "$2" '. + {escalate_min:40, council_min:60, stall_tier:$tier}'
+  }
+  out=$(decide "$(obs 45 0 0)")
+  assert_equals nudge "$(event_of "$out")" "no first wake yet: the ladder starts with the ordinary nudge"
+  assert_equals continue "$(printf '%s' "$out" | jq -r '.prompt')" "first wake uses the continue prompt"
+  out=$(decide "$(obs 45 1 10)")
+  assert_equals stall_escalate "$(event_of "$out")" "idle past 40m after a first wake escalates inside the cooldown"
+  assert_equals true "$(send_of "$out")" "the second wake types"
+  assert_equals escalate "$(printf '%s' "$out" | jq -r '.prompt')" "the second wake uses the relaunch-or-replace prompt"
+  out=$(decide "$(obs 50 2 5)")
+  assert_equals skip_cooldown "$(event_of "$out")" "the second wake fires once per stall"
+  out=$(decide "$(obs 65 2 0 permission)")
+  assert_equals stall_council "$(event_of "$out")" "idle past 60m raises the council row even behind a modal"
+  assert_equals high "$(sev_of "$out")" "the council row is high"
+  assert_equals false "$(send_of "$out")" "the council row never types"
+  out=$(decide "$(obs 70 3 0)")
+  assert_equals nudge "$(event_of "$out")" "the council row is raised once per stall"
+  out=$(decide "$(obs 70 0 0 '' false)")
+  assert_equals skip_no_open_work "$(event_of "$out")" "no open work raises no council row"
+  out=$(decide "$(base_obs 70 20 true "2 open PRs" "" empty 0 0 false false)")
+  assert_equals nudge "$(event_of "$out")" "an observation without ladder keys keeps the single-prompt behavior"
+  pass "fm-captain-nudge: decide wakes, escalates once past 40m, and raises one council row past 60m"
+}
+
+ESCALATE='Still stalled with open work: relaunch or replace the stalled worker, then continue open work'
+MERGE='A PR is merge-ready and unmerged: dispatch the merge or record why'
+
+test_once_ladder_wakes_escalates_councils_and_records_ack() {
+  local home cap now=2000000000 st
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)))
+  home=$(write_home ladder "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  assert_equals stall_escalate "$(last_event "$home")" "idle 40m with no ack gets the second wake"
+  [ "$(cut -f3 "$home/send.log")" = "$(printf '%s\n%s' "$FIXED" "$ESCALATE")" ] \
+    || fail "send log must hold the continue prompt, then the escalate prompt: $(cat "$home/send.log")"
+  FM_NUDGE_NOW=$((now + 25 * 60)) run_once "$home"
+  assert_equals skip_cooldown "$(last_event "$home")" "no third prompt before the council tier"
+  FM_NUDGE_NOW=$((now + 40 * 60)) run_once "$home"
+  assert_equals stall_council "$(last_event "$home")" "idle 60m raises the council row"
+  assert_grep "event=stall_council severity=high" "$home/state/beacon.log" "the council row reaches the beacon"
+  [ "$(wc -l < "$home/send.log" | tr -d ' ')" = 2 ] || fail "the council row must not type: $(cat "$home/send.log")"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 3' >/dev/null || fail "state must record the council tier: $st"
+  cap=$(fixture_captain 1 true "" empty "❯ working" $((now + 40 * 60)) | jq -c '.fixture.commit="def"')
+  home2="$TMP_ROOT/ladder"
+  write_home ladder "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 41 * 60)) run_once "$home2"
+  jq -e 'select(.event == "stall_acked")' "$home2/state/nudge.jsonl" >/dev/null \
+    || fail "progress after a wake must record a stall_acked row"
+  st=$(cat "$home2/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 0' >/dev/null || fail "progress must reset the ladder: $st"
+  pass "fm-captain-nudge: once wakes at 20m, escalates at 40m, raises a council row at 60m, and records the ack"
+}
+
+test_once_ladder_does_not_ack_its_own_wake() {
+  local home cap echoed now=2000000000 st
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c --arg s "$echoed" --argjson at "$now" \
+      '.fixture.after_send = [{}, {screen:$s, last_activity_epoch:$at}]')
+  home=$(write_home ladder-echo "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at')
+  write_home ladder-echo "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "the pane's echo of the tool's own wake must not count as the captain's ack"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "40m into the stall after an echoed wake gets the second wake"
+  FM_NUDGE_NOW=$((now + 40 * 60)) run_once "$home"
+  assert_equals stall_council "$(last_event "$home")" "60m into the stall after echoed wakes raises the council row"
+  st=$(cat "$home/state/captains/alpha.json")
+  printf '%s' "$st" | jq -e '.stall_tier == 3' >/dev/null || fail "state must record the council tier: $st"
+  pass "fm-captain-nudge: the ladder never reads the pane's echo of its own wake as the captain's ack"
+}
+
+test_once_settle_keeps_last_reading_when_a_reread_fails() {
+  local home cap echoed now=2000000000
+  echoed=$(printf '❯ %s\n✻ Working\n❯ ' "$FIXED")
+  cap=$(fixture_captain 20 true "" empty "❯ " $((now - 20 * 60)) \
+    | jq -c --arg s "$echoed" --argjson at "$now" \
+      '.fixture.after_send = [{}, {screen:$s, last_activity_epoch:$at}, {read_failed:true}]')
+  home=$(write_home ladder-reread-fail "[$cap]")
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "idle 20m with open work gets the first wake"
+  cap=$(printf '%s' "$cap" | jq -c --arg s "$echoed" --argjson at "$now" \
+    '.fixture.screen = $s | .fixture.last_activity_epoch = $at | .fixture.after_send = []')
+  write_home ladder-reread-fail "[$cap]" >/dev/null
+  FM_NUDGE_NOW=$((now + 20 * 60)) run_once "$home"
+  if jq -e 'select(.event == "stall_acked")' "$home/state/nudge.jsonl" >/dev/null; then
+    fail "a failed reread after the echo was seen must not drop back to the pre-send reading"
+  fi
+  assert_equals stall_escalate "$(last_event "$home")" "the settled echo reading survives a failed reread"
+  pass "fm-captain-nudge: a failed reread during the settle keeps the last good reading"
+}
+
+write_ready_bin() {  # <dir> -> fake fm-ready-pr-discovery reading $FAKE_READY_JSON
+  mkdir -p "$1"
+  cat > "$1/ready" <<'SH'
+#!/bin/sh
+[ "$1" = --json ] || exit 2
+[ -n "${FM_HOME:-}" ] || exit 3
+printf '%s\n' "$FM_HOME" >> "$FAKE_READY_LOG"
+cat "$FAKE_READY_JSON"
+SH
+  chmod +x "$1/ready"
+}
+
+test_once_merge_ready_nudges_once_after_15_minutes() {
+  local home cap now=2000000000 fm bin ready
+  fm="$TMP_ROOT/mr-home"
+  mkdir -p "$fm/state"
+  bin="$TMP_ROOT/mr-bin"
+  write_ready_bin "$bin"
+  ready="$TMP_ROOT/mr-ready.json"
+  jq -nc '{schema:"fm-ready-pr-discovery.v1", runs:[
+    {repo:"firstmate", branch:"fm/a", pr:"https://github.com/o/r/pull/7", head:"abc", run_id:"R1", kind:"ci-ready", gate:"-"},
+    {repo:"firstmate", branch:"fm/b", pr:"https://github.com/o/r/pull/8", head:"def", run_id:"R2", kind:"gate", gate:"review"}
+  ], unreadable:[]}' > "$ready"
+  cap=$(fixture_captain 1 true "" empty "❯ " "$now" | jq -c --arg fm "$fm" '.fm_home=$fm')
+  home=$(write_home merge-ready "[$cap]")
+  mr_once() {  # <now> [composer]
+    if [ -n "${2:-}" ]; then
+      jq --arg c "$2" '.captains[0].fixture.composer=$c' "$home/config/captain-nudge.json" > "$home/cfg.tmp" \
+        && mv "$home/cfg.tmp" "$home/config/captain-nudge.json"
+    fi
+    FM_NUDGE_READY_PR_BIN="$bin/ready" FAKE_READY_JSON="$ready" FAKE_READY_LOG="$home/ready.log" \
+      FM_NUDGE_NOW=$1 run_once "$home"
+  }
+  mr_once "$now"
+  assert_equals "$fm" "$(head -n 1 "$home/ready.log")" "discovery runs against the captain's home"
+  [ "$(jq -c 'select(.event == "merge_ready") | .pr' "$home/state/nudge.jsonl")" = '"https://github.com/o/r/pull/7"' ] \
+    || fail "only the ci-ready PR gets a merge_ready row: $(cat "$home/state/nudge.jsonl")"
+  [ ! -s "$home/send.log" ] || fail "a fresh merge-ready PR must not type yet: $(cat "$home/send.log")"
+  mr_once $((now + 14 * 60))
+  [ ! -s "$home/send.log" ] || fail "14 minutes is not overdue: $(cat "$home/send.log")"
+  mr_once $((now + 15 * 60)) pending
+  [ ! -s "$home/send.log" ] || fail "typed text must not receive the merge prompt: $(cat "$home/send.log")"
+  mr_once $((now + 16 * 60)) empty
+  assert_equals merge_ready_wait "$(last_event "$home")" "an overdue merge-ready PR wakes the captain"
+  [ "$(cut -f3 "$home/send.log")" = "$MERGE" ] || fail "send log must hold only the merge prompt: $(cat "$home/send.log")"
+  mr_once $((now + 25 * 60))
+  [ "$(grep -cF "$MERGE" "$home/send.log")" = 1 ] || fail "one merge prompt per PR head: $(cat "$home/send.log")"
+  jq -nc '{schema:"fm-ready-pr-discovery.v1", runs:[], unreadable:[]}' > "$ready"
+  mr_once $((now + 30 * 60))
+  jq -e 'select(.event == "merge_ready_cleared" and .pr == "https://github.com/o/r/pull/7")' "$home/state/nudge.jsonl" >/dev/null \
+    || fail "a PR that leaves the ready list gets a merge_ready_cleared row"
+  pass "fm-captain-nudge: a ci-ready PR waiting 15 minutes gets one merge prompt, never over typed text"
+}
+
+test_once_records_the_captain_home_stall_ledger() {
+  local home cap now=2000000000 fm
+  fm="$TMP_ROOT/ledger-home"
+  mkdir -p "$fm/state" "$fm/data"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"generated_epoch":%s}\n' $((now - 1800)) $((now - 1800)) \
+    > "$fm/state/heartbeat.json"
+  cap=$(fixture_captain 30 true "" empty "❯ " $((now - 30 * 60)) | jq -c --arg fm "$fm" '.fm_home=$fm')
+  home=$(write_home ledger "[$cap]")
+  FM_NUDGE_READY_PR_BIN=/nonexistent FM_NUDGE_NOW=$now run_once "$home"
+  awk -F '\t' -v start=$((now - 1800)) '$2 == "stall-open" && $3 == "primary" && $5 == start { ok = 1 } END { exit !ok }' \
+    "$fm/state/stall-ledger.tsv" 2>/dev/null \
+    || fail "a pass must record the quiet captain's stall in its home ledger: $(cat "$fm/state/stall-ledger.tsv" 2>&1)"
+  pass "fm-captain-nudge: each pass records the captain home's stall ledger even when its watcher is quiet"
+}
+test_once_stalled_lane_wakes_with_the_lane_table() {
+  local home cap now=2000000000 fm ledger
+  fm="$TMP_ROOT/lane-home"
+  mkdir -p "$fm/state" "$fm/data"
+  ledger="$fm/state/stall-ledger.tsv"
+  {
+    printf '%s\tstall-open\tworker\tfm-a\t%s\t%s\t-\t-\t-\tworker:fm-a:%s\n' $((now - 1400)) $((now - 1500)) $((now - 1400)) $((now - 1500))
+    printf '%s\tstall-open\tworker\tfm-b\t%s\t%s\t-\t-\t-\tworker:fm-b:%s\n' $((now - 1700)) $((now - 1800)) $((now - 1700)) $((now - 1800))
+    printf '%s\tstall-close\tworker\tfm-b\t%s\t%s\tfirstmate\t%s\t300\tworker:fm-b:%s\n' $((now - 1500)) $((now - 1800)) $((now - 1700)) $((now - 1500)) $((now - 1800))
+    printf '%s\tstall-open\tworker\tfm-c\t%s\t%s\t-\t-\t-\tworker:fm-c:%s\n' $((now - 500)) $((now - 600)) $((now - 500)) $((now - 600))
+  } > "$ledger"
+  # Hold the observe throttle so this case reads exactly the rows above.
+  printf '%s\n' "$now" > "$fm/state/.stall-ledger-observed"
+  cap=$(fixture_captain 1 false "" empty "❯ " "$now" | jq -c --arg fm "$fm" '.fm_home=$fm')
+  home=$(write_home lane "[$cap]")
+  FM_NUDGE_READY_PR_BIN=/nonexistent FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "a lane stalled 25m wakes a busy captain with no other open work"
+  [ "$(cut -f3 "$home/send.log")" = "$FIXED Stalled lanes: fm-a 25m." ] \
+    || fail "the wake must carry only the open lane past 20m: $(cat "$home/send.log")"
+  tail -n 1 "$home/state/nudge.jsonl" | jq -e '.lanes == "Stalled lanes: fm-a 25m."' >/dev/null \
+    || fail "the JSONL row must record the lane table: $(tail -n 1 "$home/state/nudge.jsonl")"
+  printf '%s\tstall-close\tworker\tfm-a\t%s\t%s\tfirstmate\t%s\t1500\tworker:fm-a:%s\n' $((now - 10)) $((now - 1500)) $((now - 1400)) $((now - 10)) $((now - 1500)) >> "$ledger"
+  home=$(write_home lane-young "[$cap]")
+  FM_NUDGE_READY_PR_BIN=/nonexistent FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals skip_not_idle "$(last_event "$home")" "a lane stalled under 20m does not wake the captain"
+  [ ! -s "$home/send.log" ] || fail "a young lane stall must not type: $(cat "$home/send.log")"
+  pass "fm-captain-nudge: a lane with no progress for 20m wakes the captain with the lane table"
+}
+write_fake_orca() {  # <dir> <last-output-ms>
+  mkdir -p "$1"
+  cat > "$1/orca" <<SH
+#!/bin/sh
+case "\$1 \$2" in
+  "terminal list")
+    printf '%s\n' '{"result":{"terminals":[{"id":"term_stale","title":"captain-a","lastOutputAt":$2},{"id":"term_live","title":"captain-a","lastOutputAt":$2},{"id":"term_new","title":"captain-a","lastOutputAt":$2}]}}'
+    ;;
+  "terminal read")
+    t=''
+    while [ "\$#" -gt 0 ]; do [ "\$1" = --terminal ] && t=\$2; shift; done
+    printf '%s\n' "\$t" >> "\$FAKE_ORCA_LOG"
+    printf '%s\n' '{"result":{"terminal":{"tail":"❯ ","draft":""}}}'
+    ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$1/orca"
+}
+
+write_locate_bin() {  # <dir> -> fake fm-captain-locate printing one line per call from $FAKE_LOCATE_LINES
+  mkdir -p "$1"
+  cat > "$1/locate" <<'SH'
+#!/bin/sh
+[ -n "${FM_HOME:-}" ] || exit 3
+n=$(cat "$FAKE_LOCATE_COUNT" 2>/dev/null || echo 0)
+n=$((n + 1))
+printf '%s\n' "$n" > "$FAKE_LOCATE_COUNT"
+line=$(sed -n "${n}p" "$FAKE_LOCATE_LINES")
+[ -n "$line" ] || line=$(tail -n 1 "$FAKE_LOCATE_LINES")
+printf '%s\n' "$line"
+case "$line" in *state=held*) exit 0 ;; *) exit 1 ;; esac
+SH
+  chmod +x "$1/locate"
+}
+
+orca_captain_home() {  # <name> -> config home for an Orca captain configured on the stale pane
+  local fm="$TMP_ROOT/$1-fm" cap
+  mkdir -p "$fm/state"
+  printf -- '- [ ] do the thing\n' > "$TMP_ROOT/$1-queue.md"
+  cap=$(jq -nc --arg fm "$fm" --arg q "$TMP_ROOT/$1-queue.md" \
+    '[{id:"alpha", owner:"firstmate", backend:"orca", handle:"term_stale", title:"captain-a", fm_home:$fm,
+       idle_min:15, open_work:{repos:[], queue_file:$q}}]')
+  write_home "$1" "$cap"
+}
+
+orca_once() {  # <home> <now> <locate-lines...>
+  local home=$1 now=$2 bin="$TMP_ROOT/f11-bin"
+  shift 2
+  write_fake_orca "$bin" "$(( (now - 30 * 60) * 1000 ))"
+  write_locate_bin "$bin"
+  printf '%s\n' "$@" > "$home/locate.lines"
+  : > "$home/locate.count"
+  PATH="$bin:$PATH" FM_NUDGE_LOCATE_BIN="$bin/locate" FM_NUDGE_READY_PR_BIN=/nonexistent \
+    FAKE_LOCATE_LINES="$home/locate.lines" FAKE_LOCATE_COUNT="$home/locate.count" FAKE_ORCA_LOG="$home/orca.log" \
+    FM_NUDGE_NOW=$now run_once "$home"
+}
+
+test_once_targets_the_lock_owner_not_the_configured_pane() {
+  local home now=2000000000
+  home=$(orca_captain_home lock-owner)
+  orca_once "$home" "$now" 'CAPTAIN v1 pid=4242 handle=term_live state=held'
+  assert_equals nudge "$(last_event "$home")" "the live lock owner idle 30m with open work gets the wake"
+  [ "$(sort -u "$home/orca.log")" = term_live ] || fail "only the lock owner's pane may be read: $(cat "$home/orca.log")"
+  [ "$(cut -f2 "$home/send.log")" = term_live ] || fail "the wake must go to the lock owner: $(cat "$home/send.log")"
+  tail -n 1 "$home/state/nudge.jsonl" | jq -e '.target == "term_live"' >/dev/null \
+    || fail "the JSONL row must name the lock owner's terminal"
+  pass "fm-captain-nudge: an Orca captain with a home is reached at its lock owner's terminal, not the configured pane"
+}
+
+test_once_reports_an_unknown_captain_without_typing() {
+  local home now=2000000000 state
+  for state in unknown free stale unreadable; do
+    home=$(orca_captain_home "lock-$state")
+    orca_once "$home" "$now" "CAPTAIN v1 pid=0 handle=none state=$state"
+    assert_equals captain_unknown "$(last_event "$home")" "a $state lock reports an unknown captain"
+    tail -n 1 "$home/state/nudge.jsonl" | jq -e --arg s "$state" '.severity == "medium" and .lock_state == $s' >/dev/null \
+      || fail "the $state row must be medium and name the lock state: $(tail -n 1 "$home/state/nudge.jsonl")"
+    [ ! -s "$home/orca.log" ] || fail "a $state lock must not read the configured pane: $(cat "$home/orca.log")"
+    [ ! -s "$home/send.log" ] || fail "a $state lock must not type: $(cat "$home/send.log")"
+  done
+  pass "fm-captain-nudge: a captain home without a held lock is reported unknown and never typed into"
+}
+
+test_once_refuses_a_send_after_the_lock_moves() {
+  local home now=2000000000
+  home=$(orca_captain_home lock-moved)
+  orca_once "$home" "$now" 'CAPTAIN v1 pid=4242 handle=term_live state=held' 'CAPTAIN v1 pid=5151 handle=term_new state=held'
+  [ "$(sort -u "$home/orca.log")" = term_live ] || fail "the pass observed the first owner: $(cat "$home/orca.log")"
+  [ ! -s "$home/send.log" ] || fail "a send after the lock moved must be refused: $(cat "$home/send.log")"
+  jq -e 'select(.event == "blocker" and .reason == "send failed")' "$home/state/nudge.jsonl" >/dev/null \
+    || fail "the refused send must be recorded as a blocker: $(cat "$home/state/nudge.jsonl")"
+  pass "fm-captain-nudge: a lock handoff between read and send stops the send"
+}
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -466,6 +761,7 @@ fm_test_run \
   test_decide_skip_cooldown \
   test_decide_escalation_no_progress \
   test_decide_modal_beats_idle \
+  test_decide_ladder_escalates_then_councils \
   test_once_fixture_nudge_writes_jsonl_and_beacon \
   test_once_dry_run_does_not_send \
   test_once_modal_never_sends \
@@ -481,4 +777,13 @@ fm_test_run \
   test_example_configs_parse \
   test_expand_path_literal_tilde \
   test_herdr_idle_tracks_screen_change_not_heartbeat \
-  test_once_submits_own_unsent_prompt_only
+  test_once_submits_own_unsent_prompt_only \
+  test_once_ladder_wakes_escalates_councils_and_records_ack \
+  test_once_ladder_does_not_ack_its_own_wake \
+  test_once_settle_keeps_last_reading_when_a_reread_fails \
+  test_once_merge_ready_nudges_once_after_15_minutes \
+  test_once_records_the_captain_home_stall_ledger \
+  test_once_stalled_lane_wakes_with_the_lane_table \
+  test_once_targets_the_lock_owner_not_the_configured_pane \
+  test_once_reports_an_unknown_captain_without_typing \
+  test_once_refuses_a_send_after_the_lock_moves

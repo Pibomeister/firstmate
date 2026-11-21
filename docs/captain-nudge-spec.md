@@ -26,7 +26,7 @@ Required keys:
 | `idle_min` | number | Observed idle minutes at decision time |
 | `open_work` | string | Open-work summary (`none`, `2 open PR(s) (org/repo:2)`, `unreadable: ...`) |
 
-Optional keys the current writer also sets: `epoch` (unix seconds), `should_send` (bool), `dry_run` (bool), `target` (pane/terminal handle), `backend` (`orca`/`herdr`/`fixture`).
+Optional keys the current writer also sets: `epoch` (unix seconds), `should_send` (bool), `prompt` (the prompt kind typed, or empty), `dry_run` (bool), `target` (pane/terminal handle), `backend` (`orca`/`herdr`/`fixture`), `lanes` (the lane table), `lock_state` (on `captain_unknown`, the home lock state that `fm-captain-locate.sh` reported), and on merge-ready rows `pr` (PR URL, comma-separated when several) and `run` (`<run_id>@<head>`).
 Readers must ignore unknown keys.
 
 ### Events
@@ -38,10 +38,17 @@ Readers must ignore unknown keys.
 | `skip_no_open_work` | `info` | No proven open PRs or queue items |
 | `skip_cooldown` | `info` | Per-captain cooldown still running |
 | `skipped_input_not_empty` | `info` | Composer or Orca `draft` holds text |
-| `blocker` | `medium` | Modal/picker/permission visible, composer unknown, pane send failed, or composer unproven |
+| `blocker` | `medium` | Modal/picker/permission visible, composer unknown, pane send failed (including a captain lock that moved between read and send), or composer unproven |
+| `captain_unknown` | `medium` | An Orca captain's `fm_home` lock is not held by a live endpoint; nothing read or typed |
 | `skip_pane_missing` | `medium` | Configured terminal or pane not found |
 | `skip_read_failed` | `medium` | Pane read failed |
 | `nudge_no_progress` | `high` | Two consecutive nudges with no output/commit/heartbeat advance; nudging this captain stops until progress resumes |
+| `stall_escalate` | `medium` | Second wake of a stall: typed (or would type) the relaunch-or-replace prompt |
+| `stall_council` | `high` | Stall reached `council_min`; nothing typed, the owner's council should rule |
+| `stall_acked` | `info` | The captain progressed after a wake; the ladder resets |
+| `merge_ready` | `info` | A PR head was first seen merge-ready |
+| `merge_ready_wait` | `info` | A merge-ready PR head waited `merge_ready_min`; typed (or would type) the merge prompt |
+| `merge_ready_cleared` | `info` | A PR head left the merge-ready list |
 
 Example:
 
@@ -85,13 +92,19 @@ A remote parser should take the newest `NUDGE v1` line in the pane.
 Treat `event=nudge_no_progress` with `severity=high` as a wake for that `owner` and for firstmate.
 Missing or stale `NUDGE v1` lines are not a stall by themselves; the host heartbeat lines (`BEACON v1` / `ABACO v1` / `GW v1`) remain the liveness signal.
 
-## Fixed prompt
+## Fixed prompts
 
-The only legal typed payload is:
+The legal typed payloads are these strings, by prompt kind:
 
-```
-Continue open work: pick next item, reroute quota if exhausted, never park self-servable work
-```
+| Kind | Text |
+| --- | --- |
+| `continue` | `Continue open work: pick next item, reroute quota if exhausted, never park self-servable work` |
+| `escalate` | `Still stalled with open work: relaunch or replace the stalled worker, then continue open work` |
+| `merge` | `A PR is merge-ready and unmerged: dispatch the merge or record why` |
 
-`bin/fm-captain-nudge-lib.sh`'s `fm_nudge_text` is the implementation of that string.
+A `continue` or `escalate` prompt may end with one space and one lane table: `Stalled lanes: ` then one to five `<subject> <age>m` entries separated by `, `, an optional ` (+<n> more)`, and a final `.`.
+A subject is 1 to 64 characters from `[A-Za-z0-9._-]`, and an age is whole minutes.
+For example: `Stalled lanes: fm-a 25m, fm-b 21m.`
+
+`bin/fm-captain-nudge-lib.sh`'s `fm_nudge_text` and `fm_nudge_prompt_text` implement these strings.
 A send path that would type any other text must refuse.

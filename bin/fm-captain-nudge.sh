@@ -12,9 +12,11 @@
 #   fm-captain-nudge.sh status [--config <path>]
 #   fm-captain-nudge.sh --help
 #
-# A periodic, model-free typer that sends one fixed prompt into a configured
-# captain pane when that captain has been idle long enough and still has open
-# work. docs/captain-nudge.md owns behaviour, install, and hard limits.
+# A periodic, model-free typer that sends fixed prompts into a configured
+# captain pane when that captain stalls with open work (a 15/40/60-minute
+# ladder: wake, relaunch-or-replace wake, council row) or a merge-ready PR has
+# waited too long. docs/captain-nudge.md owns behaviour, install, and hard
+# limits.
 # docs/captain-nudge-spec.md owns the JSONL object and NUDGE v1 beacon line.
 # docs/configuration.md ("Captain self-nudge") owns the config file schema.
 # This header owns commands, flags, files, and the send/guard mechanics.
@@ -22,15 +24,22 @@
 # Hard limits, enforced here:
 #   - never merge, deploy, spend, run git/gh mutations, kill or restart a
 #     captain, or run `herdr server stop`;
-#   - the only typed payload is the fixed prompt from fm_nudge_text;
-#   - a visible modal or a non-empty input line never receives that prompt;
+#   - the only typed payloads are the fixed prompts from fm_nudge_prompt_text;
+#   - a visible modal or a non-empty input line never receives a prompt;
 #   - the outer guard may restart only this tool's own loop process, and only
 #     after the pid file's command line still names fm-captain-nudge.
 #
 # Files, all under the config's state_dir (default ~/.local/state/firstmate/captain-nudge):
 #   loop.heartbeat   epoch of the last run/once tick
 #   loop.pid         pid of a live `run` loop
-#   captains/<id>.json  last nudge epoch, fingerprint, consecutive_no_progress, escalated
+#   captains/<id>.json  last nudge epoch, fingerprint, consecutive_no_progress,
+#                       escalated, stall_tier, and merge_ready (first-seen epoch
+#                       and nudged flag per <run_id>@<head>)
+# Each pass also runs fm-stall-ledger.sh observe for a captain's fm_home and
+# reads fm-ready-pr-discovery.sh --json for it. An Orca captain with fm_home is
+# the terminal fm-captain-locate.sh names as that home's lock owner, read at
+# pass start and again before each send; without a held lock the pass records
+# captain_unknown and types nothing.
 # The JSONL log and beacon log paths are config keys (defaults under state_dir
 # and, when set, the existing host beacon log).
 #
@@ -38,7 +47,9 @@
 # ~/.config/firstmate/captain-nudge.json.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_NUDGE_NOW, FM_NUDGE_SEND_LOG
-# (send writes the payload instead of calling orca/herdr), FM_NUDGE_LAUNCHD_DIR,
+# (send writes the payload instead of calling orca/herdr), FM_NUDGE_READY_PR_BIN
+# (replaces fm-ready-pr-discovery.sh), FM_NUDGE_LOCATE_BIN (replaces
+# fm-captain-locate.sh), FM_NUDGE_LAUNCHD_DIR,
 # FM_NUDGE_SYSTEMD_DIR, FM_NUDGE_CRON_FILE, and a captain backend of `fixture`.
 #
 # Exit status: 0 on success, 2 on a usage error, 1 on any other failure.
@@ -87,18 +98,26 @@ load_config() {
   CFG_HOST=$(fm_nudge_json_get "$CONFIG_JSON" '.host' 'unknown') || true
   CFG_INTERVAL=$(fm_nudge_json_get "$CONFIG_JSON" '.interval_secs' '300') || true
   CFG_GUARD_STALE=$(fm_nudge_json_get "$CONFIG_JSON" '.guard_stale_secs' '660') || true
-  CFG_IDLE=$(fm_nudge_json_get "$CONFIG_JSON" '.idle_min' '20') || true
+  CFG_IDLE=$(fm_nudge_json_get "$CONFIG_JSON" '.idle_min' '15') || true
   CFG_COOL=$(fm_nudge_json_get "$CONFIG_JSON" '.cooldown_min' '30') || true
   CFG_MAX_NP=$(fm_nudge_json_get "$CONFIG_JSON" '.max_no_progress' '2') || true
+  CFG_ESCALATE=$(fm_nudge_json_get "$CONFIG_JSON" '.escalate_min' '40') || true
+  CFG_COUNCIL=$(fm_nudge_json_get "$CONFIG_JSON" '.council_min' '60') || true
+  CFG_MERGE_READY=$(fm_nudge_json_get "$CONFIG_JSON" '.merge_ready_min' '15') || true
+  CFG_LANE=$(fm_nudge_json_get "$CONFIG_JSON" '.lane_stall_min' '20') || true
   CFG_STATE=$(fm_nudge_expand_path "$(fm_nudge_json_get "$CONFIG_JSON" '.state_dir' "${HOME}/.local/state/firstmate/captain-nudge")")
   CFG_JSONL=$(fm_nudge_expand_path "$(fm_nudge_json_get "$CONFIG_JSON" '.jsonl_log' "$CFG_STATE/nudge.jsonl")")
   CFG_BEACON=$(fm_nudge_expand_path "$(fm_nudge_json_get "$CONFIG_JSON" '.beacon_log' "$CFG_STATE/nudge-beacon.log")")
   CFG_MODE=$(fm_nudge_json_get "$CONFIG_JSON" '.mode' 'act') || true
   case "$CFG_INTERVAL" in ''|*[!0-9]*) CFG_INTERVAL=300 ;; esac
   case "$CFG_GUARD_STALE" in ''|*[!0-9]*) CFG_GUARD_STALE=660 ;; esac
-  case "$CFG_IDLE" in ''|*[!0-9]*) CFG_IDLE=20 ;; esac
+  case "$CFG_IDLE" in ''|*[!0-9]*) CFG_IDLE=15 ;; esac
   case "$CFG_COOL" in ''|*[!0-9]*) CFG_COOL=30 ;; esac
   case "$CFG_MAX_NP" in ''|*[!0-9]*) CFG_MAX_NP=2 ;; esac
+  case "$CFG_ESCALATE" in ''|*[!0-9]*) CFG_ESCALATE=40 ;; esac
+  case "$CFG_COUNCIL" in ''|*[!0-9]*) CFG_COUNCIL=60 ;; esac
+  case "$CFG_MERGE_READY" in ''|*[!0-9]*) CFG_MERGE_READY=15 ;; esac
+  case "$CFG_LANE" in ''|*[!0-9]*) CFG_LANE=20 ;; esac
   if [ "$DRY_RUN" = 1 ] || [ "$CFG_MODE" = dry-run ]; then
     DRY_RUN=1
   fi
@@ -115,15 +134,18 @@ read_captain_state() {  # <id>
   if [ -f "$f" ]; then
     cat "$f"
   else
-    printf '%s\n' '{"last_nudge_epoch":0,"fingerprint":"","consecutive_no_progress":0,"escalated":false}'
+    printf '%s\n' '{"last_nudge_epoch":0,"fingerprint":"","consecutive_no_progress":0,"escalated":false,"stall_tier":0,"merge_ready":{}}'
   fi
 }
 
+# Merge <json> over the stored state, so the stall pass and the merge-ready
+# pass each keep the other's keys.
 write_captain_state() {  # <id> <json>
   local f tmp
   f=$(captain_state_path "$1")
   tmp=$f.tmp.$$
-  printf '%s\n' "$2" | jq -c . > "$tmp" && mv "$tmp" "$f"
+  read_captain_state "$1" | jq -c --argjson new "$2" '(if type == "object" then . else {} end) + $new' > "$tmp" \
+    && mv "$tmp" "$f"
 }
 
 heartbeat_write() {
@@ -278,11 +300,12 @@ last_output_sig() {  # <screen> <lastOutputAt>
 
 # --- send (the only typer) --------------------------------------------------
 
-send_fixed_prompt() {  # <backend> <target> [session]
-  local backend=$1 target=$2 session=${3:-} text
-  text=$(fm_nudge_text)
+send_fixed_prompt() {  # <prompt-kind> <backend> <target> [session] [lane-table]
+  local kind=$1 backend=$2 target=$3 session=${4:-} text
+  text=$(fm_nudge_prompt_text "$kind" "${5:-}") || die "unknown prompt kind: $kind"
   text=${text%$'\n'}
-  fm_nudge_send_allowed_text "$text" || die "refusing to send anything but the fixed prompt"
+  fm_nudge_send_allowed_text "$text" || die "refusing to send anything but a fixed prompt"
+  target_is_live_owner "$target" || return 1
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
     printf '%s\t%s\t%s\n' "$backend" "$target" "$text" >> "$FM_NUDGE_SEND_LOG"
     return 0
@@ -316,6 +339,7 @@ send_fixed_prompt() {  # <backend> <target> [session]
 # when a previous pass left it unsent in the composer.
 send_enter_only() {  # <backend> <target> [session]
   local backend=$1 target=$2 session=${3:-}
+  target_is_live_owner "$target" || return 1
   if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_SEND_LOG:-}" ]; then
     printf '%s\t%s\t%s\n' "$backend" "$target" "<Enter>" >> "$FM_NUDGE_SEND_LOG"
     return 0
@@ -339,13 +363,88 @@ send_enter_only() {  # <backend> <target> [session]
   esac
 }
 
-# True when the composer's pending line is exactly the fixed prompt (ours,
-# left unsent), so pressing Enter cannot submit anybody else's text.
+# True when the composer's pending line is exactly one of the fixed prompts
+# (ours, left unsent), so pressing Enter cannot submit anybody else's text.
 pending_is_fixed_prompt() {  # <screen>
-  local text
-  text=$(fm_nudge_text)
-  text=${text%$'\n'}
-  printf '%s\n' "$1" | awk 'NF' | tail -n 8 | LC_ALL=C grep -Fxq -e "› $text" -e "❯ $text" -e "> $text" -e "›  $text"
+  local text kind tail
+  tail=$(printf '%s\n' "$1" | awk 'NF' | tail -n 8)
+  for kind in continue escalate merge; do
+    text=$(fm_nudge_text "$kind")
+    text=${text%$'\n'}
+    printf '%s\n' "$tail" | LC_ALL=C grep -Fxq -e "› $text" -e "❯ $text" -e "> $text" -e "›  $text" && return 0
+  done
+  return 1
+}
+
+# Env prefix that points a home-scoped helper at <home>, not at whatever home
+# overrides this process inherited.
+home_env() {  # <home>
+  printf '%s\0' env -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_ROOT_OVERRIDE \
+    -u FM_PROJECTS_OVERRIDE "FM_HOME=$1"
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_NOW:-}" ]; then
+    printf '%s\0' "FM_NOW=$FM_NUDGE_NOW"
+  fi
+}
+
+# Keep the captain home's stall ledger current from here, because its own
+# watcher is the usual writer and is exactly what goes quiet in a stall.
+record_stall_ledger() {  # <fm_home>
+  local home arg argv=()
+  [ -n "$1" ] || return 0
+  home=$(fm_nudge_expand_path "$1")
+  [ -d "$home/state" ] || return 0
+  while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(home_env "$home")
+  fm_run_timed 60 "${argv[@]}" /bin/bash "$SCRIPT_DIR/fm-stall-ledger.sh" observe >/dev/null 2>&1 || true
+}
+
+# Lock owner of <fm_home>, read at call time through fm-captain-locate.sh.
+# Prints `<state><TAB><handle>`: state is held, free, stale, unknown, or
+# unreadable, and handle is none unless the lock names a live endpoint.
+locate_captain() {  # <fm_home>
+  local home bin out line state handle arg argv=()
+  home=$(fm_nudge_expand_path "$1")
+  bin=$SCRIPT_DIR/fm-captain-locate.sh
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_LOCATE_BIN:-}" ]; then
+    bin=$FM_NUDGE_LOCATE_BIN
+  fi
+  if [ ! -d "$home/state" ] || [ ! -x "$bin" ]; then
+    printf 'unreadable\tnone\n'
+    return 0
+  fi
+  while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(home_env "$home")
+  # Exit 1 is the ordinary not-held answer; the CAPTAIN line still says why.
+  out=$(fm_run_timed 20 "${argv[@]}" "$bin" 2>/dev/null) || true
+  line=$(printf '%s\n' "$out" | grep '^CAPTAIN v1 ' | tail -n 1)
+  state=$(printf '%s\n' "$line" | sed -n 's/.* state=\([a-z]*\).*/\1/p')
+  handle=$(printf '%s\n' "$line" | sed -n 's/.* handle=\([^ ]*\).*/\1/p')
+  case "$state" in held|free|stale|unknown|unreadable) ;; *) state=unreadable ;; esac
+  case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
+  printf '%s\t%s\n' "$state" "$handle"
+}
+
+# True when <target> is still the lock owner's endpoint for the captain this
+# pass resolved through its home, so a handoff between read and send never
+# sends to the old pane. A captain resolved from config alone always passes.
+target_is_live_owner() {  # <target>
+  local row
+  [ -n "${PASS_OWNER_HOME:-}" ] || return 0
+  row=$(locate_captain "$PASS_OWNER_HOME")
+  [ "${row%%$'\t'*}" = held ] && [ "${row#*$'\t'}" = "$1" ]
+}
+
+# bin/fm-ready-pr-discovery.sh --json for the captain home. Fails when the
+# home or the helper is unavailable; the caller then skips the pass.
+ready_discovery_json() {  # <fm_home>
+  local home bin arg argv=()
+  home=$(fm_nudge_expand_path "$1")
+  [ -d "$home" ] || return 1
+  bin=$SCRIPT_DIR/fm-ready-pr-discovery.sh
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_NUDGE_READY_PR_BIN:-}" ]; then
+    bin=$FM_NUDGE_READY_PR_BIN
+  fi
+  [ -x "$bin" ] || return 1
+  while IFS= read -r -d '' arg; do argv+=("$arg"); done < <(home_env "$home")
+  fm_run_timed 90 "${argv[@]}" "$bin" --json 2>/dev/null
 }
 
 # --- one captain ------------------------------------------------------------
@@ -369,14 +468,19 @@ emit_event() {  # <captain-id> <owner> <decision-json> <idle> <open-summary> [ex
       ts:$ts, epoch:$epoch, host:$host, captain:$captain, owner:$owner,
       event:$d.event, severity:$d.severity, reason:$d.reason,
       idle_min:$idle, open_work:$open, should_send:$d.should_send,
-      dry_run:($dry==1)
+      prompt:($d.prompt // ""), dry_run:($dry==1)
     } + $extra')
   fm_nudge_append_logs "$CFG_JSONL" "$CFG_BEACON" "$event"
   printf '%s\n' "$event"
 }
 
-observe_fixture() {  # <captain-json> -> observation fields via globals
+observe_fixture() {  # <captain-json> [after-send-read-index] -> observation fields via globals
   local cap=$1
+  if [ -n "${2:-}" ]; then
+    cap=$(printf '%s' "$cap" | jq -c --argjson i "$2" \
+      '.fixture += ((.fixture.after_send // []) as $r | if ($r | length) == 0 then {} else $r[[$i, ($r | length) - 1] | min] end)')
+    fm_nudge_json_bool "$cap" '.fixture.read_failed' && return 1
+  fi
   OBS_SCREEN=$(fm_nudge_json_get "$cap" '.fixture.screen // ""' '') || true
   OBS_LAST_AT=$(fm_nudge_json_get "$cap" '.fixture.last_activity_epoch // ""' '') || true
   OBS_TARGET=$(fm_nudge_json_get "$cap" '.id' 'fixture') || true
@@ -445,11 +549,36 @@ idle_min_from_obs() {
   printf '%s\n' "$age"
 }
 
+store_post_send_fingerprint() {  # <id> <captain-json>
+  local id=$1 cap=$2 backend prev='' cur reads=0 limit=${FM_NUDGE_SETTLE_READS:-10}
+  case "$limit" in ''|*[!0-9]*|0) limit=10 ;; esac
+  backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
+  while :; do
+    if [ "$backend" = fixture ]; then
+      observe_fixture "$cap" "$reads"
+    else
+      observe_live "$cap" && [ -n "${OBS_SCREEN:-}" ]
+    fi || {
+      [ "$reads" -gt 0 ] || return 0
+      cur=$prev
+      break
+    }
+    reads=$((reads + 1))
+    cur=$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")
+    [ "$cur" != "$prev" ] && [ "$reads" -lt "$limit" ] || break
+    prev=$cur
+    [ "$backend" = fixture ] || sleep "${FM_NUDGE_SETTLE_DELAY:-1}"
+  done
+  write_captain_state "$id" "$(jq -nc --arg fp "$cur" '{fingerprint:$fp}')"
+}
+
 process_captain() {  # <captain-json> [force]
   local cap=$1 force=${2:-0} id owner backend idle_th cool_th maxn
   local st last_nudge fp consec escalated now cool_left
   local open_line open_ok open_sum idle dialog composer obs decision
   local cur_fp progress send_ok=0 extra row session ev
+  local tier esc_th council_th mr_th lane_th fmhome prompt new_tier would_send=0
+  local lanes='' lane_age=0 lane_table='' since since_age
   id=$(fm_nudge_json_get "$cap" '.id' '') || true
   [ -n "$id" ] || return 0
   owner=$(fm_nudge_json_get "$cap" '.owner' 'firstmate') || true
@@ -460,11 +589,32 @@ process_captain() {  # <captain-json> [force]
   case "$idle_th" in ''|*[!0-9]*) idle_th=$CFG_IDLE ;; esac
   case "$cool_th" in ''|*[!0-9]*) cool_th=$CFG_COOL ;; esac
   case "$maxn" in ''|*[!0-9]*) maxn=$CFG_MAX_NP ;; esac
+  esc_th=$(fm_nudge_json_get "$cap" ".escalate_min // $CFG_ESCALATE" "$CFG_ESCALATE") || true
+  council_th=$(fm_nudge_json_get "$cap" ".council_min // $CFG_COUNCIL" "$CFG_COUNCIL") || true
+  mr_th=$(fm_nudge_json_get "$cap" ".merge_ready_min // $CFG_MERGE_READY" "$CFG_MERGE_READY") || true
+  case "$esc_th" in ''|*[!0-9]*) esc_th=$CFG_ESCALATE ;; esac
+  case "$council_th" in ''|*[!0-9]*) council_th=$CFG_COUNCIL ;; esac
+  case "$mr_th" in ''|*[!0-9]*) mr_th=$CFG_MERGE_READY ;; esac
+  lane_th=$(fm_nudge_json_get "$cap" ".lane_stall_min // $CFG_LANE" "$CFG_LANE") || true
+  case "$lane_th" in ''|*[!0-9]*) lane_th=$CFG_LANE ;; esac
+  fmhome=$(fm_nudge_json_get "$cap" '.fm_home // ""' '') || true
+
+  record_stall_ledger "$fmhome"
+  if [ -n "$fmhome" ] && [ "$lane_th" -gt 0 ] && [ "$force" != 1 ]; then
+    lanes=$(fm_nudge_lane_stalls "$(fm_nudge_expand_path "$fmhome")/state/stall-ledger.tsv" "$(fm_nudge_now)" "$lane_th")
+    lane_age=$(printf '%s\n' "$lanes" | awk -F '\t' 'NR == 1 && $1 ~ /^[0-9]+$/ { print $1 }')
+    case "$lane_age" in ''|*[!0-9]*) lane_age=0 ;; esac
+    lane_table=$(fm_nudge_lane_table "$lanes")
+  fi
 
   st=$(read_captain_state "$id")
+  tier=$(fm_nudge_json_get "$st" '.stall_tier' '0') || true
+  case "$tier" in ''|*[!0-9]*) tier=0 ;; esac
   last_nudge=$(fm_nudge_json_get "$st" '.last_nudge_epoch' '0') || true
   fp=$(fm_nudge_json_get "$st" '.fingerprint' '') || true
   consec=$(fm_nudge_json_get "$st" '.consecutive_no_progress' '0') || true
+  since=$(fm_nudge_json_get "$st" '.stall_since_epoch' '0') || true
+  case "$since" in ''|*[!0-9]*) since=0 ;; esac
   escalated=false
   fm_nudge_json_bool "$st" '.escalated' && escalated=true
   case "$last_nudge" in ''|*[!0-9]*) last_nudge=0 ;; esac
@@ -478,6 +628,21 @@ process_captain() {  # <captain-json> [force]
 
   OBS_SCREEN=''; OBS_LAST_AT=''; OBS_TARGET=''; OBS_DRAFT=''
   OBS_DIALOG=''; OBS_COMPOSER=''; OBS_HB=''; OBS_COMMIT=''
+  # An Orca captain with a home is whoever holds that home's lock now, never
+  # the configured handle or title: a successor often leaves the old pane open.
+  PASS_OWNER_HOME=''
+  if [ "$backend" = orca ] && [ -n "$fmhome" ]; then
+    row=$(locate_captain "$fmhome")
+    if [ "${row%%$'\t'*}" = held ] && [ "${row#*$'\t'}" != none ]; then
+      cap=$(printf '%s' "$cap" | jq -c --arg h "${row#*$'\t'}" '.handle = $h | del(.title)')
+      PASS_OWNER_HOME=$fmhome
+    else
+      decision=$(jq -nc --arg s "${row%%$'\t'*}" \
+        '{event:"captain_unknown",severity:"medium",reason:("captain home lock is " + $s + "; endpoint unknown, nothing typed"),should_send:false}')
+      emit_event "$id" "$owner" "$decision" 0 'none' "$(jq -nc --arg s "${row%%$'\t'*}" '{lock_state:$s, backend:"orca"}')" >/dev/null
+      return 0
+    fi
+  fi
   if [ "$backend" = fixture ]; then
     observe_fixture "$cap"
   else
@@ -514,7 +679,9 @@ process_captain() {  # <captain-json> [force]
     decision=$(jq -nc '{event:"nudge",severity:"info",reason:"submitted own fixed prompt left unsent in composer (Enter only)",should_send:true}')
     if cfg_mode_is_act; then
       session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
-      if ! send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
+      if send_enter_only "$backend" "${OBS_TARGET:-$id}" "$session"; then
+        store_post_send_fingerprint "$id" "$cap"
+      else
         decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"submit of pending fixed prompt failed",should_send:false}')
       fi
     fi
@@ -532,6 +699,13 @@ process_captain() {  # <captain-json> [force]
   open_ok=${open_line%%$'\t'*}
   open_sum=${open_line#*$'\t'}
   [ "$open_ok" = true ] || open_ok=false
+  if [ -n "$lane_table" ]; then
+    if [ "$open_ok" = true ]; then
+      open_sum="$open_sum; $lane_table"
+    else
+      open_sum=$lane_table
+    fi
+  fi
 
   cur_fp=$(fm_nudge_fingerprint "$(last_output_sig "${OBS_SCREEN:-}" "${OBS_LAST_AT:-}")" "${OBS_HB:-}" "${OBS_COMMIT:-}")
   progress=false
@@ -552,6 +726,12 @@ process_captain() {  # <captain-json> [force]
     consec=0
     escalated=false
   fi
+  if [ "$progress" = true ]; then
+    since=0
+  elif [ "$force" != 1 ] && [ "$tier" -gt 0 ] && [ "$since" -gt 0 ]; then
+    since_age=$(( (now - since) / 60 ))
+    [ "$since_age" -le "$idle" ] || idle=$since_age
+  fi
 
   # Count a prior nudge that produced no progress only when this captain
   # would otherwise be eligible to send again (idle, open work, empty
@@ -563,6 +743,18 @@ process_captain() {  # <captain-json> [force]
   if [ "$progress" = true ]; then
     consec=0
     escalated=false
+    if [ "$tier" -gt 0 ]; then
+      decision=$(jq -nc --argjson t "$tier" \
+        '{event:"stall_acked",severity:"info",reason:("captain progressed after stall tier " + ($t|tostring)),should_send:false}')
+      emit_event "$id" "$owner" "$decision" "$idle" "$open_sum" >/dev/null
+    fi
+    tier=0
+  fi
+  if [ "$force" = 1 ]; then
+    tier=0
+    esc_th=0
+    council_th=0
+    lane_th=0
   fi
 
   obs=$(jq -nc \
@@ -577,48 +769,155 @@ process_captain() {  # <captain-json> [force]
     --argjson progress "$([ "$progress" = true ] && echo true || echo false)" \
     --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" \
     --argjson maxn "$maxn" \
+    --argjson escmin "$esc_th" \
+    --argjson councilmin "$council_th" \
+    --argjson tier "$tier" \
+    --argjson laneage "$lane_age" \
+    --argjson lanemin "$lane_th" \
     '{
       idle_min:$idle, idle_threshold_min:$th, open_work:$open,
       open_work_summary:$sum, dialog:$dialog, composer:$composer,
       cooldown_remaining_min:$cool, consecutive_no_progress:$consec,
-      progress_since_nudge:$progress, escalated:$esc, max_no_progress:$maxn
+      progress_since_nudge:$progress, escalated:$esc, max_no_progress:$maxn,
+      escalate_min:$escmin, council_min:$councilmin, stall_tier:$tier,
+      lane_age_min:$laneage, lane_stall_min:$lanemin
     }')
   decision=$(fm_nudge_decide "$obs") || die "decide failed for $id"
 
-  extra=$(jq -nc --arg t "${OBS_TARGET:-}" --arg b "$backend" '{target:$t, backend:$b}')
+  extra=$(jq -nc --arg t "${OBS_TARGET:-}" --arg b "$backend" --arg l "$lane_table" \
+    '{target:$t, backend:$b} + (if $l == "" then {} else {lanes:$l} end)')
   emit_event "$id" "$owner" "$decision" "$idle" "$open_sum" "$extra" >/dev/null
 
-  if fm_nudge_json_bool "$decision" '.should_send' && cfg_mode_is_act; then
-    session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
-    if send_fixed_prompt "$backend" "${OBS_TARGET:-$id}" "$session"; then
-      send_ok=1
+  prompt=$(fm_nudge_json_get "$decision" '.prompt // ""' '') || true
+  if fm_nudge_json_bool "$decision" '.should_send'; then
+    if cfg_mode_is_act; then
+      session=$(fm_nudge_json_get "$cap" '.session // ""' '') || true
+      if send_fixed_prompt "${prompt:-continue}" "$backend" "${OBS_TARGET:-$id}" "$session" "$lane_table"; then
+        send_ok=1
+        would_send=1
+      else
+        decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"send failed",should_send:false}')
+        emit_event "$id" "$owner" "$decision" "$idle" "$open_sum" "$extra" >/dev/null
+      fi
     else
-      decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"send failed",should_send:false}')
-      emit_event "$id" "$owner" "$decision" "$idle" "$open_sum" "$extra" >/dev/null
+      # Dry-run climbs the ladder on what it would have typed, so a drill
+      # shows each tier's row at its time.
+      would_send=1
     fi
+  fi
+
+  ev=$(fm_nudge_json_get "$decision" '.event' '') || true
+  new_tier=$tier
+  if [ "$ev" = stall_council ]; then
+    new_tier=3
+  elif [ "$would_send" = 1 ] && [ "$prompt" = escalate ]; then
+    new_tier=2
+  elif [ "$would_send" = 1 ] && [ "$tier" -lt 1 ]; then
+    new_tier=1
   fi
 
   if [ "$send_ok" = 1 ]; then
+    [ "$since" -gt 0 ] || since=$(( now - idle * 60 ))
     write_captain_state "$id" "$(jq -nc \
-      --argjson now "$now" --arg fp "$cur_fp" --argjson consec "$consec" \
-      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false}')"
+      --argjson now "$now" --arg fp "$cur_fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
+      '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:false, stall_tier:$tier, stall_since_epoch:$since}')"
+    store_post_send_fingerprint "$id" "$cap"
   else
-    ev=$(fm_nudge_json_get "$decision" '.event' '') || true
     if [ "$ev" = nudge_no_progress ]; then
       write_captain_state "$id" "$(jq -nc \
-        --argjson now "$last_nudge" --arg fp "$fp" --argjson consec "$consec" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true}')"
+        --argjson now "$last_nudge" --arg fp "$fp" --argjson consec "$consec" --argjson tier "$new_tier" --argjson since "$since" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:true, stall_tier:$tier, stall_since_epoch:$since}')"
     elif [ "$progress" = true ]; then
       write_captain_state "$id" "$(jq -nc \
-        --argjson now "$last_nudge" --arg fp "$cur_fp" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false}')"
+        --argjson now "$last_nudge" --arg fp "$cur_fp" --argjson tier "$new_tier" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:0, escalated:false, stall_tier:$tier, stall_since_epoch:0}')"
     else
       write_captain_state "$id" "$(jq -nc \
         --argjson now "$last_nudge" --arg fp "${fp:-$cur_fp}" --argjson consec "$consec" \
-        --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" \
-        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc}')"
+        --argjson esc "$([ "$escalated" = true ] && echo true || echo false)" --argjson tier "$new_tier" --argjson since "$since" \
+        '{last_nudge_epoch:$now, fingerprint:$fp, consecutive_no_progress:$consec, escalated:$esc, stall_tier:$tier, stall_since_epoch:$since}')"
     fi
   fi
+
+  if [ "$force" != 1 ]; then
+    merge_ready_pass "$id" "$owner" "$fmhome" "$mr_th" "$dialog" "$composer" "$backend" \
+      "${OBS_TARGET:-$id}" "$(fm_nudge_json_get "$cap" '.session // ""' '' || true)" "$idle" "$send_ok" "$cap"
+  fi
+}
+
+# One prompt per merge-ready PR head that has waited merge_ready_min minutes.
+# Waiting time starts when this tool first sees the head merge-ready, because
+# discovery reports run age, not time since ready. A pass that already typed
+# a stall prompt leaves the merge prompt for the next pass.
+merge_ready_pass() {  # <id> <owner> <fm_home> <min> <dialog> <composer> <backend> <target> <session> <idle> <sent> <captain-json>
+  local id=$1 owner=$2 home=$3 min=$4 dialog=$5 composer=$6 backend=$7 target=$8 session=$9
+  local idle=${10} sent=${11} cap=${12}
+  local json rows old new now key pr entry first nudged due='' due_prs='' extra decision summary
+  [ -n "$home" ] && [ "$min" -gt 0 ] || return 0
+  json=$(ready_discovery_json "$home") || return 0
+  printf '%s' "$json" | jq -e '.runs | type == "array"' >/dev/null 2>&1 || return 0
+  rows=$(fm_nudge_merge_ready_rows "$json")
+  old=$(read_captain_state "$id" | jq -c '.merge_ready // {} | if type == "object" then . else {} end')
+  new='{}'
+  now=$(fm_nudge_now)
+  while IFS=$'\t' read -r key pr; do
+    [ -n "$key" ] || continue
+    entry=$(printf '%s' "$old" | jq -c --arg k "$key" '.[$k] // empty')
+    if [ -z "$entry" ]; then
+      entry=$(jq -nc --argjson now "$now" --arg pr "$pr" '{first:$now, nudged:false, pr:$pr}')
+      extra=$(jq -nc --arg pr "$pr" --arg k "$key" '{pr:$pr, run:$k}')
+      decision=$(jq -nc '{event:"merge_ready",severity:"info",reason:"PR merge-ready at head; waiting for its merge",should_send:false}')
+      emit_event "$id" "$owner" "$decision" "$idle" "merge-ready $pr" "$extra" >/dev/null
+    fi
+    first=$(printf '%s' "$entry" | jq -r '.first // 0')
+    nudged=$(printf '%s' "$entry" | jq -r '.nudged // false')
+    case "$first" in ''|*[!0-9]*) first=$now ;; esac
+    if [ "$nudged" != true ] && [ $(( (now - first) / 60 )) -ge "$min" ]; then
+      due="$due$key"$'\n'
+      due_prs="${due_prs:+$due_prs,}$pr"
+    fi
+    new=$(printf '%s' "$new" | jq -c --arg k "$key" --argjson e "$entry" '.[$k] = $e')
+  done <<< "$rows"
+
+  while IFS=$'\t' read -r key pr; do
+    [ -n "$key" ] || continue
+    extra=$(jq -nc --arg pr "$pr" --arg k "$key" '{pr:$pr, run:$k}')
+    decision=$(jq -nc '{event:"merge_ready_cleared",severity:"info",reason:"PR left the merge-ready list (merged, closed, or no longer ready)",should_send:false}')
+    emit_event "$id" "$owner" "$decision" "$idle" "merge-ready $pr" "$extra" >/dev/null
+  done < <(printf '%s' "$old" | jq -r --argjson new "$new" \
+    'to_entries[] | select($new[.key] == null) | [.key, (.value.pr // "-")] | @tsv')
+
+  if [ -n "$due" ] && [ "$sent" != 1 ]; then
+    summary="merge-ready $due_prs"
+    extra=$(jq -nc --arg pr "$due_prs" --arg t "$target" --arg b "$backend" '{pr:$pr, target:$t, backend:$b}')
+    if [ -n "$dialog" ]; then
+      decision=$(jq -nc --arg d "$dialog" '{event:"blocker",severity:"medium",reason:("merge-ready prompt held: modal visible: " + $d),should_send:false}')
+      due=''
+    elif [ "$composer" = pending ]; then
+      decision=$(jq -nc '{event:"skipped_input_not_empty",severity:"info",reason:"merge-ready prompt held: composer holds typed text",should_send:false}')
+      due=''
+    elif [ "$composer" != empty ]; then
+      decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"merge-ready prompt held: composer state unproven",should_send:false}')
+      due=''
+    else
+      decision=$(jq -nc --argjson m "$min" '{event:"merge_ready_wait",severity:"info",reason:("merge-ready PR unmerged for " + ($m|tostring) + "m; asking to dispatch the merge or record why"),should_send:true,prompt:"merge"}')
+      if cfg_mode_is_act; then
+        if send_fixed_prompt merge "$backend" "$target" "$session"; then
+          store_post_send_fingerprint "$id" "$cap"
+        else
+          decision=$(jq -nc '{event:"blocker",severity:"medium",reason:"merge-ready prompt send failed",should_send:false}')
+          due=''
+        fi
+      fi
+    fi
+    emit_event "$id" "$owner" "$decision" "$idle" "$summary" "$extra" >/dev/null
+    while IFS= read -r key; do
+      [ -n "$key" ] || continue
+      new=$(printf '%s' "$new" | jq -c --arg k "$key" '.[$k].nudged = true')
+    done <<< "$due"
+  fi
+
+  write_captain_state "$id" "$(jq -nc --argjson m "$new" '{merge_ready:$m}')"
 }
 
 cmd_once() {

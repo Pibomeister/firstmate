@@ -941,7 +941,11 @@ See [`captain-nudge.md`](captain-nudge.md) for behaviour, install, and hard limi
 | `host` | required | Short host token written on every event (`m4`, `dev01`, ...). |
 | `interval_secs` | `300` | `run` loop sleep. |
 | `guard_stale_secs` | `660` | Outer guard restarts the loop when `loop.heartbeat` is older than this. |
-| `idle_min` | `20` | Default idle minutes before a nudge. A captain may override. |
+| `idle_min` | `15` | Default idle minutes before the first wake. A captain may override. |
+| `lane_stall_min` | `20` | Minutes a lane stall stays open in the captain home's stall ledger before it starts the ladder; `0` turns the lane signal off. |
+| `escalate_min` | `40` | Stall minutes before the second wake (relaunch or replace); `0` turns it off. |
+| `council_min` | `60` | Stall minutes before the `stall_council` row; `0` turns it off. |
+| `merge_ready_min` | `15` | Minutes a PR head stays merge-ready before the merge prompt; `0` turns the merge-ready wake off. |
 | `cooldown_min` | `30` | Default minutes between nudges for one captain. |
 | `max_no_progress` | `2` | Consecutive no-progress nudges before `nudge_no_progress` and stop. |
 | `mode` | `act` | `dry-run` logs decisions and never types. |
@@ -961,8 +965,8 @@ Each `captains[]` object:
 | `handle` | Orca terminal handle, when known. |
 | `pane` | Herdr pane id (`w1:pG`), when known. |
 | `session` | Optional Herdr session name. |
-| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress. |
-| `idle_min` / `cooldown_min` / `max_no_progress` | Optional per-captain overrides. |
+| `fm_home` | That captain's firstmate home, for `heartbeat.json` idle and commit progress, its stall ledger and stalled lanes, and merge-ready discovery; for an Orca captain it also names the home whose lock owner is the terminal typed to, overriding `handle` and `title`. |
+| `idle_min` / `cooldown_min` / `max_no_progress` / `lane_stall_min` / `escalate_min` / `council_min` / `merge_ready_min` | Optional per-captain overrides. |
 | `open_work.repos` | `owner/name` repos probed with read-only `gh pr list --state open`. |
 | `open_work.queue_file` | Local queue; a `- [ ]` item, an `In flight`/`queued` line, or any non-comment body counts as open work. |
 | `open_work.command` | Optional extra probe; only `gh pr list...` or `gh api graphql` without `mutation` is allowed. |
@@ -1205,6 +1209,9 @@ The optional local, gitignored `config/lane-capacity` file says how many ship an
 With the file absent nothing changes: the report prints counts and host figures only, never invents a target, never advises holding dispatch, and nothing is published; a malformed value is reported as invalid rather than guessed.
 Persistent secondmates hold no lane.
 A lane whose task has recorded its ready PR frees its place, as project capacity does, while it still counts among the running lanes.
+A lane that is not live frees its place the same way, but only when both hold: nothing about it changed in two hours (its task record, status, busy state, steering inbox, or the watcher's terminal marker), and its recorded terminal is gone.
+A live terminal keeps its lane's place however long it has been idle, and so does recent activity with a gone terminal.
+Only evidence frees a place: a remote lane and a lane whose terminal check did not answer in 20 seconds keep theirs.
 The file is a per-machine choice and is not inherited by secondmate homes, so each home owns its own numbers.
 
 The first non-comment line is the cap, one non-negative integer, so a file holding only that integer keeps its earlier meaning.
@@ -1947,6 +1954,35 @@ Names present in the registry produce no report; unknown or unverified names do 
 Each relaunch installs a fresh worker extension with the home's current list, so the replacement performs the same check.
 
 [`bin/fm-exclude-tools-lib.sh`](../bin/fm-exclude-tools-lib.sh) implements parsing and pre-launch validation for this contract; [`bin/fm-spawn.sh`](../bin/fm-spawn.sh)'s header owns the launch-flag mechanics.
+
+## Launch quota floor
+
+Firstmate never launches a Claude or Codex worker on an account whose weekly or 5-hour window has less than 15% left.
+The floor is always on and has no setting.
+It applies to fresh ship and scout spawns, relaunches, and secondmate launches, including accounts named by `--account`, `config/claude-account`, or a per-secondmate pin.
+A spawn refuses before any worker endpoint, local copy, or task record exists, and `bin/fm-control.sh <id> relaunch` refuses before it stops the running worker.
+
+The floor reads only the account that launch would spend, through one bounded `quota-axi --json` read.
+A listed or pinned Claude root is read on its own with `--profile-only`, `ordinary` reads the default login, an unpinned Claude launch reads firstmate's own account, and Codex reads its `codex-home` lane.
+Exactly 15% passes.
+A read that fails or reports no weekly or 5-hour window is unknown quota, which keeps the account eligible under `AGENTS.md` section 4: the launch proceeds and prints a notice.
+Without `quota-axi` installed the floor does nothing.
+Other runners have no account Firstmate selects, so the floor does not read them; `backend=t3code` is skipped because its provider instance owns the account.
+
+Refusing Codex below the floor also keeps a new launch from reaching the paid credits a Codex plan falls back to once its windows run out.
+
+A refusal prints a `quota-floor: refused` line naming the window and its percentage, then `reroute:` lines:
+
+- Under `config/claude-accounts`, each other declared entry at or above the floor, and each one whose quota could not be measured, as `--account <entry>`.
+  Pass it to the spawn, or run `bin/fm-control.sh <id> relaunch --account <entry>`.
+- For a secondmate, `bin/fm-supervisor-failover.sh secondmate <id>`.
+- Otherwise, another runtime or account, which `bin/fm-quota-reroute.sh suggest` can name.
+
+A Claude worker whose local copy or account has Claude-specific tooling, such as hooks or MCP servers, cannot be relaunched onto another runner ([agent control](agent-control.md)).
+Moving it to another declared Claude account is not a runner change, so `--account` is how the floor reroutes it.
+When no declared account is at or above the floor, keep the work queued until a window resets.
+
+[`bin/fm-quota-floor-lib.sh`](../bin/fm-quota-floor-lib.sh) owns the rule, the read, and the reroute lines.
 
 ## Worker account pin (config/claude-account, config/pi-account)
 
