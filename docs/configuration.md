@@ -591,7 +591,7 @@ When a provider refuses a worker or the captain with an HTTP 429, a rate or usag
 A ship or scout is detected two ways.
 A Claude worker's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
 For any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
-On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
+On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime in cyclic order after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
 It wakes firstmate with a check naming the switch, or why no runtime took over.
 A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
 The whole failover call, every relaunch included, ends strictly inside the watcher's stale grace, so a slow failover never makes the watcher itself look stopped.
@@ -612,6 +612,7 @@ A `host=` entry is recorded as `host worktree handoff not implemented` in the di
 The remote transport currently cannot relocate a local task worktree.
 Preflight excludes accounts below 30% five-hour remaining.
 Without the file the order is `codex host=hetzner`, then local `codex`, `droid`, and `claude@next`.
+After the final entry, selection resumes at the beginning of the order while skipping the refused runtime and runtimes already attempted during the current failover window.
 Example:
 
 ```text
