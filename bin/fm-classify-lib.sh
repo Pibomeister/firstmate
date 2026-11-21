@@ -1115,9 +1115,11 @@ EOF
 
 # 0, printing `blocked` or `needs-decision`, when the task's newest status event
 # is a line of that verb that the worker wrote and that is still open: its key
-# must hold that verb in status_own_open_decisions, so a supervisor-reserved key
-# never counts, except that a `human-step-` key the worker wrote does count, so
-# an idle worker whose last line reports one is bounded like any blocker. Only the newest event is read, so any later line ends it - a
+# must still hold that verb in status_open_decisions after excluding reserved
+# namespaces, remote-reply-continuity-, and captain-hold-. Unlike
+# status_own_open_decisions, this includes a worker's `human-step-` key, so an
+# idle worker whose last line reports one is bounded like any blocker.
+# Only the newest event is read, so any later line ends it - a
 # resolved line for any key included. A steering-inbox record does not end it
 # here: a steer the worker acknowledged may as easily be "keep waiting" as the
 # answer, so a caller that bounds repeated alarms reads this and lets the

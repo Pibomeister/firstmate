@@ -101,10 +101,12 @@
 #       the paragraph just above the options counts; an unnumbered picker's
 #       cursor row is its option row. A tool permission dialog
 #       (fm_wd_pane_dialog `permission`) and a Codex command-approval or
-#       hook-review dialog (fm_wd_codex_dialog) never count. Otherwise only the
-#       rows below the last composer prompt row count, down to the composer's
-#       bottom border or first blank row, so the footer and status line never
-#       do, and not the indented rows a wrapped draft fills under the prompt.
+#       hook-review dialog (fm_wd_codex_dialog) never count. A composer rule or
+#       `? for shortcuts` footer below the prompt excludes every later row,
+#       including multiline drafts with empty rows. Without a prompt in the
+#       window, that same boundary excludes the whole window. Otherwise only
+#       rows below the last prompt row count, up to the first blank row, after
+#       skipping the indented rows a wrapped draft fills under the prompt.
 #       With no composer rule or footer below it, a prompt row followed by an
 #       empty row and then output, other than one indented footer row, is an
 #       echoed earlier turn, so the rows after that empty row count instead.

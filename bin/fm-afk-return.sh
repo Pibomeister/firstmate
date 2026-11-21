@@ -57,7 +57,7 @@
 # until that blocker's own resolution is proven.
 # Captain-verdict outcomes are listed under "waiting on you", but cannot exempt
 # a blocker: per-blocker decision-key provenance is deferred, with no owner,
-# because the gate fails safe by keeping every open blocker. Away-window
+# because the gate keeps every other open blocker as described above. Away-window
 # attribution uses second-resolution epochs; a durable sequence boundary and
 # archive-chain identity are likewise deferred with no owner. Replacement
 # records carry the original entry boundary and superseded mandates are
@@ -66,7 +66,7 @@
 # The durable state/.afk-return-catchup file is written BEFORE daemon shutdown,
 # so a crash between stopping, wake presentation, and blocker handling fails
 # closed. It retains the presented wake, buffered-escalation, wedge-marker,
-# health, and posture-record evidence until every live open blocker is closed
+# health, and posture-record evidence until every gate-holding blocker is closed
 # and `check` succeeds. Repeated begin/check calls are idempotent. `guard` and
 # `catchup-summary` never mutate state and are suitable for ordinary read
 # entrypoints such as fm-bearings-snapshot.sh. `guard` separates its two
