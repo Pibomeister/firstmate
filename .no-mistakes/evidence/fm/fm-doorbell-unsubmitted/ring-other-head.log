@@ -1,0 +1,10 @@
+== HEAD: other ring cases (tmux, Codex, repeated) ==
+# ROOT={run-worktree}
+ok - inbox: a hostile-name doorbell executes as a no-op in bare shells
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (28408 to 28408): Operation not permitted
+ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+ok - inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths
+ok - inbox: the ring submits whole repeated copies of its own doorbell and protects a same-length paste placeholder and other text
+ok - inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry
+ok - inbox: a ring records a codex turn start that survives the ack and ladder reset, and a non-codex ring records none
+exit=0

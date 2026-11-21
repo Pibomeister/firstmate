@@ -1,0 +1,9 @@
+== pre-fix bin from e2e4bfa7 (= d65c7f63 content), current tests ==
+orca.sh + fm-task-inbox-lib.sh identical between d65c7f63 and e2e4bfa7
+# ROOT=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-orca-test.VagNGP/old
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-orca-test.VagNGP/old/bin/fm-timeout-lib.sh: child setpgid (52601 to 52601): Operation not permitted
+ok - inbox: the ring submits its own doorbell split into Orca draft and protects other split text
+not ok - a stale wrapped doorbell prefix plus the current foreign draft must not be submitted, got rc 0:
+SUBMIT: edited row of foreign text that is not the doorbell.edited row of foreign text that is not the doorbell.edited row of foreign text that is not the doorbell.xxxxxxxxxxxxeach in numeric order, then mv each into its handled/.
+not ok - test_ring_does_not_submit_a_stale_orca_prefix_plus_current_draft (FAILED)
+exit=0
