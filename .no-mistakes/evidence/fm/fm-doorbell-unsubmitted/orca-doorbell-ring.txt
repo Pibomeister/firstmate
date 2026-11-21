@@ -1,0 +1,107 @@
+fixed lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+fixed rev: 711334845ab051cc8875294ba0885b81707f572d
+pre-fix lib: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-pre-doorbell.6qUyQq/bin/fm-task-inbox-lib.sh at d02eb816 (tail-only early return)
+orca on PATH before stub: /opt/homebrew/bin/orca
+
+===== fixed: newline after doorbell puts foo in draft; ring does not submit =====
+lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+mode: fold kind: foreign inject: <none> expect: skip
+ring_rc: 1
+--- send log ---
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+--- composer unchanged: yes ---
+PASS fixed: newline after doorbell puts foo in draft; ring does not submit (rc 1)
+===== pre-fix: same foreign draft is submitted (bug the scenario must catch) =====
+lib: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-pre-doorbell.6qUyQq/bin/fm-task-inbox-lib.sh
+mode: fold kind: foreign inject: <none> expect: bug-submits-foreign
+ring_rc: 0
+--- send log ---
+SEND terminal send --terminal term-t1 --text  --enter --json
+SUBMIT: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+foo
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+READ source=current cache='0' mode=fold draft='' shown_joined=''
+--- composer unchanged: no ---
+composer after:
+
+PASS pre-fix: same foreign draft is submitted (bug the scenario must catch) (rc 0)
+===== fixed: own wrapped doorbell split into a nonempty draft is submitted once =====
+lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+mode: fold kind: owned inject: <none> expect: submit-owned
+ring_rc: 0
+--- send log ---
+SEND terminal send --terminal term-t1 --text  --enter --json
+SUBMIT: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='' shown_joined=''
+--- composer unchanged: no ---
+composer after:
+
+PASS fixed: own wrapped doorbell split into a nonempty draft is submitted once (rc 0)
+===== fixed: empty draft and a tail that is only the doorbell is submitted =====
+lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+mode: empty kind: owned inject: <none> expect: submit-owned
+ring_rc: 0
+--- send log ---
+SEND terminal send --terminal term-t1 --text  --enter --json
+SUBMIT: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=empty draft='' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+READ source=current cache='0' mode=empty draft='' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+READ source=current cache='0' mode=empty draft='' shown_joined=''
+--- composer unchanged: no ---
+composer after:
+
+PASS fixed: empty draft and a tail that is only the doorbell is submitted (rc 0)
+===== fixed: empty draft and a tail that also holds foreign text is not submitted =====
+lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+mode: empty kind: foreign-tail inject: <none> expect: skip
+ring_rc: 1
+--- send log ---
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=empty draft='' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.X'
+READ source=current cache='0' mode=empty draft='' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.X'
+--- composer unchanged: yes ---
+PASS fixed: empty draft and a tail that also holds foreign text is not submitted (rc 1)
+===== fixed: lost Enter then foo on the draft row sends no second Enter =====
+lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+mode: fold kind: owned inject: foo expect: no-second-enter
+ring_rc: 0
+--- send log ---
+SEND terminal send --terminal term-t1 --text  --enter --json
+LOST-ENTER injected=foo
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+--- composer unchanged: no ---
+composer after:
+: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+foo
+PASS fixed: lost Enter then foo on the draft row sends no second Enter (rc 0)
+===== pre-fix: lost Enter then foo on the draft row submits the foreign row =====
+lib: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-pre-doorbell.6qUyQq/bin/fm-task-inbox-lib.sh
+mode: fold kind: owned inject: foo expect: bug-submits-foreign
+ring_rc: 0
+--- send log ---
+SEND terminal send --terminal term-t1 --text  --enter --json
+LOST-ENTER injected=foo
+SEND terminal send --terminal term-t1 --text  --enter --json
+SUBMIT: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+foo
+--- trace (synthetic terminal reads) ---
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='each in numeric order, then mv each into its handled/.' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on '
+READ source=current cache='0' mode=fold draft='foo' shown_joined=': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your \'t1.inbox\' steering inbox, read and act on each in numeric order, then mv each into its handled/.'
+--- composer unchanged: no ---
+composer after:
+
+PASS pre-fix: lost Enter then foo on the draft row submits the foreign row (rc 0)
+
+driver failures: 0

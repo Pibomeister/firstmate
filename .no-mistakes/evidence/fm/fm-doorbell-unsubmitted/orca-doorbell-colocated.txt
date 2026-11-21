@@ -1,0 +1,3 @@
+ok - inbox: the ring submits its own doorbell split into Orca draft and protects other split text
+ok - inbox: a stale Orca prefix joined to the current draft is not submitted
+ok - inbox: a complete Orca doorbell tail plus a foreign draft is not submitted

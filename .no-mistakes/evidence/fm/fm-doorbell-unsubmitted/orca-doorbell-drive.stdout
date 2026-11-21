@@ -1,0 +1,14 @@
+fixed lib: {run-worktree}/bin/fm-task-inbox-lib.sh
+fixed rev: 711334845ab051cc8875294ba0885b81707f572d
+pre-fix lib: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-pre-doorbell.6qUyQq/bin/fm-task-inbox-lib.sh at d02eb816 (tail-only early return)
+orca on PATH before stub: /opt/homebrew/bin/orca
+
+PASS fixed: newline after doorbell puts foo in draft; ring does not submit (rc 1)
+PASS pre-fix: same foreign draft is submitted (bug the scenario must catch) (rc 0)
+PASS fixed: own wrapped doorbell split into a nonempty draft is submitted once (rc 0)
+PASS fixed: empty draft and a tail that is only the doorbell is submitted (rc 0)
+PASS fixed: empty draft and a tail that also holds foreign text is not submitted (rc 1)
+PASS fixed: lost Enter then foo on the draft row sends no second Enter (rc 0)
+PASS pre-fix: lost Enter then foo on the draft row submits the foreign row (rc 0)
+
+driver failures: 0
