@@ -1,0 +1,2 @@
+USER PROMPT: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its han
+doorbell user prompts received by Claude: 1

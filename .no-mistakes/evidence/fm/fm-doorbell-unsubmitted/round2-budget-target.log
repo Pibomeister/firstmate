@@ -1,0 +1,6 @@
+ok - watcher: a spent ring budget emits exactly one ordinary stale wake for recovery
+run1 rc=0
+ok - watcher: a spent ring budget emits exactly one ordinary stale wake for recovery
+run2 rc=0
+not ok - the watcher never escalated a spent ring budget
+run3 rc=1

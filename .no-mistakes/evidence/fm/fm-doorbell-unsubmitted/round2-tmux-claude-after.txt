@@ -1,0 +1,21 @@
+== AFTER ring rc=0 ==
+ ▝▝   ▝▝   /private/tmp/fm-lab.QQWGEu/scratch
+  ⎿  SessionStart:startup says: ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=session-start
+     # claude-mem status
+     This project has no memory yet. This session will seed it.
+     Memory injection starts on your second session in a project.
+     `/learn-codebase` is available if the user wants to front-load the entire repo into memory in a single pass (~5 minutes on a typical repo, optional). Otherwise memory builds passively as work
+     happens.
+     Live activity: http://localhost:37701
+     ✨ 30 Day Free Trial — memory runs off-plan. Get up to 100% more usage from your plan https://cmem.ai/pro?from=welcome-hint
+     How it works: `/how-it-works`
+     This message disappears once the first observation lands.
+     View Observations Live @ http://localhost:37701
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+✽ Processing…
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.                         [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt

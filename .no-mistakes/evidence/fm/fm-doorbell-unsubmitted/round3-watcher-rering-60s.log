@@ -1,0 +1,2 @@
+ok - watcher: an unhandled aged message on an idle pane re-rings without waking firstmate, and the ack silences it
+rc=0

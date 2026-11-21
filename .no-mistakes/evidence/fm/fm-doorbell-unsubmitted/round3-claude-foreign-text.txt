@@ -1,0 +1,16 @@
+=== composer typed: captain half-typed note do not send
+ring rc=1
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and ac…
+  ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ captain half-typed note do not send
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+=== composer typed: : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/. and my own extra words
+ring rc=1
+  ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each
+  in numeric order, then mv each into its handled/. and my own extra words
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)

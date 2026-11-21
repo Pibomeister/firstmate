@@ -1,0 +1,30 @@
+     General
+       #84469  1:50 PM  ○  Host load averages extremely high during test phase
+     tests/fm-send-inbox-doorbell-live-e2e.test.sh
+       #84468           ○  Live doorbell e2e test launches real harnesses, costs model tokens, and is opt-in
+     ~/.no-mistakes/evidence/01M7X72GF460CEA9MT0ZRP11FS/fm-task-inbox.test.log
+       #84467           ○  fm-task-inbox test log shows doorbell ring cases passing, including Orca split draft
+     bin/backends/tmux.sh
+       #84471           ○  tmux backend adapter shares composer submit core with away-mode daemon
+     tests/fm-droid-orca-signals-live-e2e.test.sh
+       #84472  1:51 PM  ○  Orca/Droid live scout guard uses a disposable lab and leaves known live-smoke gaps
+     General
+       #84474  1:52 PM  ○  orca terminal send retry and submit semantics documented in CLI help
+       #84484  1:54 PM  ○  Orca repo listing timed out with no output while checking for leftover scratch labs
+     ~/.no-mistakes/evidence/01M7X72GF460CEA9MT0ZRP11FS/fm-task-inbox.test.log
+       #84485           ○  Inbox prefilter test cases pass for unrelated history, exact matching, and fallback on error
+     General
+       #84486  1:55 PM  ✓  Disposable lab home provisioned with isolated tmux server and baseline bin snapshot
+     View Observations Live @ http://localhost:37701 · 29 lines
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its
+  handled/.
+  Writing ack file and moving message to handled · 15s
+  ⎿  $ L=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.4lTkCp; printf 'WOKE\n' > "$L/ack.txt" && mv "$FM_TASK_INBOX/001.msg"
+     "$FM_TASK_INBOX/handled/" && cat "$L/ack.txt" && ls "$FM_TASK_INBOX" "$FM_TASK_INBOX/handled"
+✶ Twisting… (running PostToolUse hooks… 0/4 · 1m 19s · ↓ 512 tokens)
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each…   [-]
+  ┃
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt

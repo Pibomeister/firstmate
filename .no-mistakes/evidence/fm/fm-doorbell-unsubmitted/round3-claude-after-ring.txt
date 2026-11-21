@@ -1,0 +1,40 @@
+     tests/lib.sh
+       #86133  6:29 PM  ○  Test library reaps orphaned fixture roots by marker, PID identity, and age
+     General
+       #86140  6:31 PM  ●  Doorbell re-ring fix passes inbox and watcher test suites with rc=0
+     tests/.run-one.test.sh
+       #86288  6:43 PM  ○  Busy-Codex owned-doorbell ring test fails with rc 2 during filtered run
+     bin/fm-task-inbox-lib.sh
+       #86290  6:47 PM  ○  Busy-Codex doorbell test flips between fail and pass across FM_SEND_RING_BUDGET settings
+     under host load
+     tests/fm-task-inbox.test.sh
+       #86306           ○  Busy-Codex owned-doorbell test contract and bounded ring behavior
+     #S6510 Pre-push test-phase validation of branch fm/fm-doorbell-unsubmitted: fix failing doorbell re-ring tests
+     (Orca draft-split case) and return a structured result to the outer executor. (Nov 20 at 6:55 PM)
+
+     General
+       #86380  6:57 PM  ○  Doorbell fix branch spans four files across two commits relative to base eb3fb89
+     bin/backends/orca.sh
+       #86381           ●  Doorbell re-ring now proves ownership of a composer split between Orca tail and draft fields
+
+     tests/fm-task-inbox.test.sh
+       #86391  6:58 PM  ○  Watcher test asserts idle due steer skips sticky feedback dialogs
+
+     View Observations Live @ http://localhost:37701 · 35 lines
+
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each
+  in numeric order, then mv each into its handled/.
+
+  Read 1 file, listed 1 directory, ran 3 shell commands · 1 failed
+
+⏺ ROUND3-ACK
+
+✻ Crunched for 1m 50s · done 7:12 PM
+  #1 : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and ac…   [-]
+  ┃
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle)

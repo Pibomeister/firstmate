@@ -1,0 +1,9 @@
+== BEFORE ring: doorbell typed, Enter lost ==
+ ▐▛███▛█   Claude Code v2.1.329
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   /private/tmp/fm-lab.QQWGEu/scratch
+[ Enhance ⌃E ]                                                                                                                                                                                      [-]
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
