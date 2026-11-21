@@ -25,8 +25,11 @@
 #       secrets or credentials, sign-in, security, production or
 #       shared-database writes, PII, messages to people, deletion, or a
 #       failure in the PR's own changed behavior, including code this PR
-#       modified). A read-only shared-database mention, a negated
-#       changed-behavior phrase, or unchanged behavior does not.
+#       modified, added, or introduced). A read-only shared-database
+#       mention, a negated changed-behavior phrase, or unchanged behavior
+#       does not.
+#       Either form split across lines is read the same way.
+#       A real failure that remains after a negation still does.
 #   fm_wd_known_unreachable_timing_flake <text>
 #       Returns 0 when the text describes a known timing flake in a test the
 #       PR cannot reach: a timing word (`timing`, `load-sensitive`, or
@@ -350,6 +353,8 @@ _fm_wd_without_negated_categories() {
     -e 's/(^|[^a-z])not a write/\1/g'
 }
 
+# The guard view's space-joined line, so a category phrase split across rows
+# is one phrase. A negation removed here does not erase a later real failure.
 _fm_wd_category_line() {  # <view>
   printf '%s\n' "$1" | awk '{ space_joined = prev; prev = $0 } END { print space_joined }' | tr '_-' '  ' | _fm_wd_without_negated_categories
 }
@@ -362,7 +367,7 @@ _fm_wd_shared_db_writes() {  # <view>
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote)([^a-z]|$)'
 }
 
-# A failure in the PR's own changed behavior, including code this PR modified.
+# A failure in the PR's own changed behavior, including code this PR modified, added, or introduced.
 FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in this pr|introduced by this pr|code (this|the) pr (changed|modified|added)|pr.s own changed'
 
 _fm_wd_pr_caused_failure() {  # <view>
