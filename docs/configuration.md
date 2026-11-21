@@ -519,7 +519,8 @@ On Orca, failed panes remain available for diagnosis; on every backend, a failed
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
-A second mate never launches its own successor: it appends one relaunch request to its parent channel and stops.
+A second mate never launches its own successor: it runs `bin/fm-handoff-relaunch.sh request <handoff file>`, whose header owns the request, and stops.
+That request is an open blocker on its parent channel until the parent relaunches the mate, so it is not consumed as routine status.
 Each cycle fires at most once, whichever kind it is.
 
 The trigger is on by default at 15% context left, wherever it can resolve the auto-compact point.
@@ -557,7 +558,8 @@ It blocks such a stop once per turn while the recorded handoff document omits an
 A fresh start whose launch failed while the session kept the lock releases the whole gate for that cycle, captain orders included, because no successor is coming and the session goes on supervising.
 The cycle's published reset then reads auto-compaction rather than a fresh start, so a watchdog with `restart=on` never restarts or wedges the surviving session; auto-compaction stays its reset until the next cycle fires again.
 A failure record older than the firing, or one that names another lock holder, releases nothing.
-A primary session with a fresh-start firing in this context cycle is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it; a second mate's stop is not gated this way, because its parent owns the relaunch.
+A primary session with a fresh-start firing in this context cycle is also blocked once per turn until `state/.handoff-successor` is newer than the firing and records a successor whose acknowledgement, process instance, and lock ownership `bin/fm-handoff-lib.sh` validates, so that handoff turn cannot end on ready to restart without a verified transfer; a live pid alone does not clear it.
+A second mate's stop is gated differently, because its parent owns the relaunch: it is blocked once per turn until `bin/fm-handoff-relaunch.sh` reports a relaunch request recorded at or after the firing.
 The handoff record belongs to the session that wrote it, so another session's stop in the same home is never gated by it.
 A caller outside any harness session, such as a restarting leash or sender, reads the record as the captain's, so its `bin/fm-order.sh gate` check clears when the captain's handoff lists every open order.
 The gate has limits: it runs only for a Claude primary, so a non-Claude primary, or a home with no resolvable auto-compact window that never runs `handoff --doc`, is not gated.

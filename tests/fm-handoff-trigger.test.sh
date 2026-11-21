@@ -631,23 +631,132 @@ test_handoff_gates_the_stop_until_a_recorded_successor_is_alive() {
   pass "a firing rejects stale, dead, request-only and unacknowledged live successor records"
 }
 
-test_secondmate_handoff_escalates_to_its_parent() {
-  local rc out launch
-  reset_lab
-  launch="$PRIMARY/state/.handoff-successor"
-  rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$launch"
+# secondmate_lab <parent-home>: make the lab home a second mate of <parent-home>.
+secondmate_lab() {
+  rm -rf "$1" "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" \
+    "$PRIMARY/state/.handoff-relaunch-request"
+  mkdir -p "$1/state" "$PRIMARY/data"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$1" > "$PRIMARY/.fm-secondmate-parent"
   printf 'sm-test\n' > "$PRIMARY/.fm-secondmate-home"
+}
+
+secondmate_lab_end() {
+  rm -rf "$1" "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-relaunch-request" \
+    "$PRIMARY/.fm-secondmate-home" "$PRIMARY/.fm-secondmate-parent"
+}
+
+# relaunch_request <home> <args...>: run the relaunch-request owner in <home>.
+relaunch_request() {
+  local home=$1
+  shift
+  env -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$home" \
+    bash "$ROOT/bin/fm-handoff-relaunch.sh" "$@"
+}
+
+# open_relaunch_request <parent-status-file>: the open handoff-relaunch
+# decision the parent's fold reports for that second mate, if any.
+open_relaunch_request() {
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2" secondmate' _ "$ROOT" "$1" \
+    | grep "^handoff-relaunch$(printf '\t')" || true
+}
+
+test_secondmate_handoff_escalates_to_its_parent() {
+  local rc out parent status doc err
+  reset_lab
+  parent="$TMP_ROOT/sm-parent"
+  status="$parent/state/sm-test.status"
+  doc="$PRIMARY/data/handoff-sm.md"
+  err="$TMP_ROOT/sm-stop.err"
+  secondmate_lab "$parent"
+  printf '# Handoff\n' > "$doc"
   printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$TMP_ROOT/t-sm" 90000
   out=$(run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm")
   expect_fire "$out" PostToolUse "second-mate firing"
-  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and (contains("bin/fm-handoff-launch.sh") | not)' >/dev/null \
-    || fail "a second mate's instruction must escalate to its parent and not self-launch: $out"
+  printf '%s' "$out" | jq -e '.hookSpecificOutput.additionalContext | contains("never launch your own successor") and contains("parent channel") and contains("bin/fm-handoff-relaunch.sh request") and (contains("bin/fm-handoff-launch.sh") | not)' >/dev/null \
+    || fail "a second mate's instruction must name the relaunch request command and not self-launch: $out"
+
+  # The incident shape: the mate asks in ordinary status text and stops. That
+  # text opens nothing for the parent, so the stop is blocked until the request
+  # is recorded.
+  printf 'working [at=1]: handoff written to %s; please relaunch me once\n' "$doc" >> "$status"
+  [ -z "$(open_relaunch_request "$status")" ] || fail "ordinary status text must not open a relaunch request"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>"$err" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a second mate's fresh-start stop must be blocked until its relaunch request is recorded (rc=$rc)"
+  assert_contains "$(cat "$err")" 'bin/fm-handoff-relaunch.sh request' "the blocked stop names the request command"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop '. + {stop_hook_active: true}' >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "the second-mate gate must block at most once per turn (rc=$rc)"
+  printf 'at=1 handoff=%s sha256=0\n' "$doc" > "$PRIMARY/state/.handoff-relaunch-request"
   rc=0
   run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
-  [ "$rc" -eq 0 ] || fail "a second mate's stop with no launch record must not be gated (rc=$rc)"
-  rm -f "$launch" "$PRIMARY/.fm-secondmate-home"
-  pass "a second mate's handoff escalates to its parent once and its stop is never successor-gated (133, 116)"
+  [ "$rc" -eq 2 ] || fail "a request recorded before this firing must not clear the gate (rc=$rc)"
+
+  relaunch_request "$PRIMARY" request "$doc" >/dev/null || fail "the relaunch request must succeed"
+  relaunch_request "$PRIMARY" request "$doc" >/dev/null || fail "a repeated relaunch request must succeed"
+  assert_equals 1 "$(grep -c '^blocked \[key=handoff-relaunch\]' "$status")" "a repeated request must not duplicate the parent's record"
+  out=$(open_relaunch_request "$status")
+  assert_contains "$out" "handoff=$doc sha256=" "the open request names the handoff document and its digest"
+  assert_contains "$out" 'second mate sm-test' "the open request names the second mate"
+  rc=0
+  run_hook "$PRIMARY" s-sm "$TMP_ROOT/t-sm" Stop >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ] || fail "a recorded relaunch request must release the second mate's stop (rc=$rc)"
+
+  # A later unrelated report, including a correlated reply, leaves it open.
+  printf 'done [at=2]: corr=abc reply delivered\n' >> "$status"
+  [ -n "$(open_relaunch_request "$status")" ] || fail "a later done line must not close the relaunch request"
+
+  # Only a completed relaunch closes it, and a later cycle can ask again.
+  relaunch_request "$parent" close sm-test 'test relaunch' || fail "closing the request must succeed"
+  [ -z "$(open_relaunch_request "$status")" ] || fail "a completed relaunch must close the request"
+  assert_equals 1 "$(grep -c '^resolved \[key=handoff-relaunch\]' "$status")" "one resolved line closes the request"
+  relaunch_request "$parent" close sm-test 'test relaunch' || fail "closing with nothing open must succeed"
+  assert_equals 1 "$(grep -c '^resolved \[key=handoff-relaunch\]' "$status")" "closing with nothing open must append nothing"
+  relaunch_request "$PRIMARY" request "$doc" >/dev/null || fail "a request after a completed relaunch must succeed"
+  [ -n "$(open_relaunch_request "$status")" ] || fail "a request after a completed relaunch must open again"
+  rm -f "$doc"
+  secondmate_lab_end "$parent"
+  pass "a second mate's fresh start is gated on one durable relaunch request that stays open with its parent until the relaunch is done (133, 116)"
+}
+
+test_secondmate_relaunch_request_refusals() {
+  local rc out parent status doc
+  reset_lab
+  parent="$TMP_ROOT/sm-parent-refuse"
+  status="$parent/state/sm-test.status"
+  doc="$PRIMARY/data/handoff-sm-refuse.md"
+  secondmate_lab "$parent"
+  printf '# Handoff\n' > "$doc"
+
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order the handoff omits" >/dev/null \
+    || fail "fixture order must be sent"
+  rc=0
+  out=$(relaunch_request "$PRIMARY" request "$doc" 2>&1) || rc=$?
+  [ "$rc" -eq 4 ] || fail "a handoff that omits an open order must be refused with exit 4 (rc=$rc): $out"
+  [ ! -e "$status" ] || fail "a refused request must not reach the parent"
+  [ ! -e "$PRIMARY/state/.handoff-relaunch-request" ] || fail "a refused request must not be recorded"
+  FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" handoff --doc "$doc" >/dev/null || fail "handoff --doc must succeed"
+
+  mv "$PRIMARY/.fm-secondmate-parent" "$TMP_ROOT/sm-parent-binding"
+  rc=0
+  out=$(relaunch_request "$PRIMARY" request "$doc" 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a request that cannot reach the parent must fail (rc=$rc): $out"
+  assert_contains "$out" 'the parent has not been asked' "an unreachable parent is reported"
+  [ ! -e "$PRIMARY/state/.handoff-relaunch-request" ] || fail "an undelivered request must not be recorded as made"
+  mv "$TMP_ROOT/sm-parent-binding" "$PRIMARY/.fm-secondmate-parent"
+
+  relaunch_request "$PRIMARY" request "$doc" >/dev/null || fail "a covered handoff must be requestable"
+  [ -n "$(open_relaunch_request "$status")" ] || fail "the covered request must open with the parent"
+
+  rm -f "$PRIMARY/.fm-secondmate-home"
+  rc=0
+  out=$(relaunch_request "$PRIMARY" request "$doc" 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a primary home must be refused (rc=$rc): $out"
+  assert_contains "$out" 'bin/fm-handoff-launch.sh' "a primary is pointed at its own launcher"
+  rm -f "$doc"
+  secondmate_lab_end "$parent"
+  pass "a relaunch request is refused for an uncovered handoff, an unreachable parent, and a primary home"
 }
 
 # marker_mode <session> <boundaries>: the mode= word of that cycle's marker.
@@ -822,7 +931,7 @@ test_a_failed_fresh_start_launch_releases_the_stop() {
   rm -rf "$PRIMARY/data/orders" "$PRIMARY/state/.order-handoff" "$PRIMARY/state/.handoff-successor" "$record"
   printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$PRIMARY/config/handoff-trigger"
   transcript "$t" 90000
-  sleep 60 &
+  sleep 3600 &
   holder=$!
   printf '%s\n' "$holder" > "$PRIMARY/state/.lock"
   FM_HOME="$PRIMARY" "$ROOT/bin/fm-order.sh" send --from test "order during a failed launch" >/dev/null \
@@ -945,6 +1054,7 @@ EOF
 test_live_guard_config_and_api_failure
 test_handoff_gates_the_stop_until_a_recorded_successor_is_alive
 test_secondmate_handoff_escalates_to_its_parent
+test_secondmate_relaunch_request_refusals
 test_threshold_default_15
 test_capture_is_the_default_before_the_drift_cap
 test_a_capture_cancelled_while_building_its_output_fires_on_the_next_run

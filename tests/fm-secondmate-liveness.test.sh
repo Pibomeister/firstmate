@@ -265,7 +265,8 @@ SH
 
 # make_liveness_tmux <dir>: a controllable tmux stub. FM_TEST_PANE_CMD may be
 # a foreground command, `missing` (readable inventory omits the window), or
-# `unreadable` (both pane and inventory reads fail).
+# `unreadable` (both pane and inventory reads fail). FM_TEST_FAIL_SEND_KEYS=1
+# fails every launch delivery, which is a spawn failure after record publication.
 make_liveness_tmux() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -276,6 +277,7 @@ mode=${FM_TEST_PANE_CMD:-zsh}
 windows="${FM_TMUX_CALL_LOG:?}.windows"
 case "${1:-}" in
   send-keys)
+    [ "${FM_TEST_FAIL_SEND_KEYS:-0}" != 1 ] || exit 1
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       for arg in "$@"; do
         case "$arg" in
@@ -327,7 +329,21 @@ case "${1:-}" in
       done
       grep -Fqx -- "$name" "$windows" 2>/dev/null || printf '%s\n' "$name" >> "$windows"
     fi
-    [ "${1:-}" = kill-window ] && : > "${FM_TMUX_CALL_LOG}.killed"
+    if [ "${1:-}" = kill-window ]; then
+      : > "${FM_TMUX_CALL_LOG}.killed"
+      # A closed window leaves the inventory, so its name can be reused.
+      name=
+      previous=
+      for arg in "$@"; do
+        [ "$previous" = -t ] && name=${arg##*:}
+        previous=$arg
+      done
+      name=${name#=}
+      if [ -n "$name" ] && [ -s "$windows" ]; then
+        grep -Fvx -- "$name" "$windows" > "$windows.next" || true
+        mv -f "$windows.next" "$windows"
+      fi
+    fi
     [ "${FM_TEST_FAIL_NEW_WINDOW:-0}" = 1 ] && [ "${1:-}" = new-window ] && exit 1
     [ "${1:-}" = new-window ] && rm -f "${FM_TMUX_CALL_LOG}.killed"
     exit 0
@@ -840,6 +856,229 @@ test_remote_poll_probe_unreachable_preserves_route() {
   pass "poll probe: unreachable or inconclusive remote reads preserve the route"
 }
 
+# hold_lock <lock-dir> <seconds>: a live foreign process owns <lock-dir> until
+# killed; the caller reads its pid from $!.
+hold_lock() {
+  STATE=${1%/*} bash -c \
+    '. "$1" && fm_lock_try_acquire "$2" && trap '\''fm_lock_release "$2"'\'' EXIT && sleep "$3"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$1" "$2"
+}
+
+wait_for_lock() {  # <lock-dir>
+  local i=0
+  while [ ! -e "$1" ] && [ "$i" -lt 100 ]; do
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -e "$1" ] || fail "the fixture never acquired $1"
+}
+
+# drive_relaunch <world> <fakebin-path> <call-log> <pane-cmd-at-relaunch>
+# [spawn-timeout-secs]: the probe reads a dead endpoint, then the relaunch runs
+# with the pane the fourth argument names, exactly as a watcher tick or
+# session-start sweep would.
+drive_relaunch() {
+  local w=$1 path=$2 log=$3 later=$4 timeout=${5:-5}
+  PATH="$path:$BASE_PATH" FM_HOME="$w/home" FM_BACKEND=tmux \
+    FM_ROOT="$ROOT" FM_TEST_PANE_CMD=zsh FM_TMUX_CALL_LOG="$log" \
+    STATE="$w/home/state" bash -c '
+      . "$1/bin/fm-secondmate-liveness-lib.sh"
+      fm_secondmate_liveness_probe "$2" sm1 poll
+      first=$FM_SM_LIVE_STATUS
+      export FM_TEST_PANE_CMD=$3
+      rc=0
+      fm_secondmate_liveness_relaunch "$2" sm1 "$4" || rc=$?
+      printf "first=%s rc=%s status=%s state=%s reason=%s\n" \
+        "$first" "$rc" "$FM_SM_LIVE_STATUS" "$FM_SM_LIVE_STATE" "$FM_SM_LIVE_REASON"
+    ' _ "$ROOT" "$w/home/state/sm1.meta" "$later" "$timeout"
+}
+
+# The incident this guards (2026-11-17): a manual `fm-control.sh <id> relaunch`
+# had stopped the old agent and was reusing its endpoint when the automatic
+# liveness check read that endpoint dead and closed it under the relaunch.
+test_relaunch_defers_to_a_running_lifecycle_action() {
+  local w fb tmuxfb log out holder lock
+  w=$(new_world relaunch-lifecycle-lock-held)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  lock="$w/home/state/.control-sm1.lock"
+
+  hold_lock "$lock" 30 &
+  holder=$!
+  wait_for_lock "$lock"
+
+  out=$(drive_relaunch "$w" "$tmuxfb:$fb" "$log" zsh)
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+
+  assert_contains "$out" "first=relaunchable rc=1 status=deferred" \
+    "automatic recovery must stand aside while a lifecycle action owns the mate"
+  assert_contains "$out" "lifecycle" \
+    "the deferral must name the lifecycle action it stood aside for"
+  [ ! -s "$log" ] || fail "automatic recovery closed or replaced an endpoint a lifecycle action owned: $(cat "$log")"
+  [ ! -e "$w/home/state/.secondmate-relaunch-sm1" ] \
+    || fail "a deferred relaunch was counted as an attempt"
+  [ ! -e "$w/home/state/.secondmate-relaunch.lock" ] \
+    || fail "a deferred relaunch kept the per-home relaunch lock"
+  pass "relaunch: automatic recovery defers to a running lifecycle action without closing anything"
+}
+
+test_relaunch_rechecks_the_endpoint_under_the_lifecycle_lock() {
+  local w fb tmuxfb log out
+  w=$(new_world relaunch-recheck)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+
+  # Another supervisor finished relaunching the mate between the probe and the
+  # relaunch: the dead verdict is stale by the time the lock is held.
+  out=$(drive_relaunch "$w" "$tmuxfb:$fb" "$log" claude)
+
+  assert_contains "$out" "first=relaunchable rc=1 status=deferred state=alive" \
+    "a relaunch must act on the endpoint state read under the lifecycle lock, not on the earlier probe"
+  [ ! -s "$log" ] || fail "a stale dead verdict closed or replaced a live endpoint: $(cat "$log")"
+  [ ! -e "$w/home/state/.secondmate-relaunch-sm1" ] \
+    || fail "a relaunch abandoned on its recheck was counted as an attempt"
+  [ ! -e "$w/home/state/.control-sm1.lock" ] \
+    || fail "a relaunch abandoned on its recheck kept the lifecycle lock"
+  [ ! -e "$w/home/state/.secondmate-relaunch.lock" ] \
+    || fail "a relaunch abandoned on its recheck kept the per-home relaunch lock"
+  pass "relaunch: the endpoint is re-read under the lifecycle lock before anything is closed"
+}
+
+test_relaunch_holds_the_lifecycle_lock_through_the_respawn() {
+  local w fb tmuxfb log out held="" i=0
+  w=$(new_world relaunch-holds-lifecycle-lock)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+
+  FM_TEST_NEW_WINDOW_PAUSE=3 drive_relaunch "$w" "$tmuxfb:$fb" "$log" zsh 120 > "$w/relaunch.out" &
+  while [ "$i" -lt 200 ]; do
+    if grep -q new-window "$log" 2>/dev/null; then
+      [ ! -d "$w/home/state/.control-sm1.lock" ] || held=yes
+      break
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  wait
+  out=$(cat "$w/relaunch.out")
+
+  [ "$held" = yes ] || fail "the respawn ran without the lifecycle lock, so a lifecycle action could start under it"
+  assert_contains "$out" "rc=0" "the respawn under the lifecycle lock should still succeed"
+  [ ! -e "$w/home/state/.control-sm1.lock" ] \
+    || fail "a finished relaunch kept the lifecycle lock"
+  pass "relaunch: the lifecycle lock is held from the recheck through the respawn"
+}
+
+test_failed_secondmate_respawn_keeps_its_recovery_record() {
+  local w fb tmuxfb log out before
+  w=$(new_world respawn-failure-keeps-record)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  before=$(cat "$w/home/state/sm1.meta")
+
+  # The replacement endpoint opens, then the launch delivery fails: the spawn
+  # has already published its own record over the mate's prior one.
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log" FM_TEST_FAIL_SEND_KEYS=1)
+
+  assert_contains "$out" "SECONDMATE_LIVENESS: secondmate sm1: respawn failed" \
+    "the fixture must fail the respawn after the endpoint opened"
+  assert_contains "$(cat "$log")" "new-window" \
+    "the fixture must fail the respawn after the endpoint opened"
+  [ -f "$w/home/state/sm1.meta" ] \
+    || fail "a failed respawn removed the second mate's recovery record: $out"
+  [ "$(cat "$w/home/state/sm1.meta")" = "$before" ] \
+    || fail "a failed respawn left a record other than the mate's prior one: $(cat "$w/home/state/sm1.meta")"
+
+  # The kept record is what lets the next check recover the mate.
+  : > "$log"
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
+  assert_contains "$(cat "$log")" "new-window" \
+    "the kept record must let the next liveness check relaunch the mate: $out"
+  assert_grep 'kind=secondmate' "$w/home/state/sm1.meta" \
+    "the recovered mate lost its record"
+  pass "respawn: a failed fresh second-mate spawn keeps the prior recovery record"
+}
+
+# drive_spawn <world> <fakebin-path> <call-log>: a fresh second-mate spawn run
+# directly, the way an operator recovers a mate whose endpoint is gone.
+drive_spawn() {
+  PATH="$2:$BASE_PATH" TMUX='' FM_BACKEND=tmux FM_HOME="$1/home" \
+    FM_TEST_PANE_CMD=missing FM_TMUX_CALL_LOG="$3" FM_SPAWN_NO_GUARD=1 \
+    "$ROOT/bin/fm-spawn.sh" sm1 --secondmate --backend tmux 2>&1
+}
+
+# A fresh second-mate spawn replaces the mate's endpoint, so it must not start
+# under a lifecycle action that is already working on that mate.
+test_fresh_spawn_refuses_while_a_lifecycle_action_holds_the_mate() {
+  local w fb tmuxfb log out rc=0 holder owner lock before
+  w=$(new_world fresh-spawn-lifecycle-lock)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  lock="$w/home/state/.control-sm1.lock"
+  before=$(cat "$w/home/state/sm1.meta")
+
+  hold_lock "$lock" 30 &
+  holder=$!
+  wait_for_lock "$lock"
+  owner=$(cat "$lock/pid")
+  out=$(drive_spawn "$w" "$tmuxfb:$fb" "$log") || rc=$?
+  # The lock's owner is the fixture's own child, so end that process itself.
+  kill "$owner" "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+
+  [ "$rc" -ne 0 ] || fail "a fresh spawn ran under another lifecycle action: $out"
+  assert_contains "$out" "another lifecycle action is already running" \
+    "the refusal must name the lifecycle action it stood aside for"
+  [ ! -s "$log" ] || fail "a refused fresh spawn opened or closed an endpoint: $(cat "$log")"
+  [ "$(cat "$w/home/state/sm1.meta")" = "$before" ] \
+    || fail "a refused fresh spawn changed the mate's record: $(cat "$w/home/state/sm1.meta")"
+
+  rc=0
+  out=$(drive_spawn "$w" "$tmuxfb:$fb" "$log") || rc=$?
+  [ "$rc" -eq 0 ] || fail "a fresh spawn with the mate free should succeed: $out"
+  assert_contains "$(cat "$log")" "new-window" \
+    "a fresh spawn with the mate free should open the endpoint: $out"
+  [ ! -e "$lock" ] || fail "a finished fresh spawn kept the mate's lifecycle lock"
+  pass "fresh spawn: a second mate's lifecycle lock is taken, refused when busy, and released"
+}
+
+# The incident shape: a second mate that wrote its handoff and stopped is still
+# a live process, so liveness recovery never acts on it. Its relaunch request
+# (bin/fm-handoff-relaunch.sh) is what stays actionable, through a later
+# unrelated report, until a relaunch actually completes.
+test_handoff_relaunch_request_stays_open_until_the_mate_is_relaunched() {
+  local w fb tmuxfb log out status
+  w=$(new_world handoff-request-open)
+  add_sm_home "$w" sm1 firstmate:fm-sm1
+  fb=$(make_toolchain "$w"); tmuxfb=$(make_liveness_tmux "$w")
+  log="$w/calls.log"; : > "$log"
+  status="$w/home/state/sm1.status"
+  printf 'blocked [key=handoff-relaunch] [at=1]: second mate sm1 wrote its handoff for a planned fresh start and waits to be relaunched once; handoff=/h.md sha256=0\n' > "$status"
+  printf 'done [at=2]: corr=abc reply delivered\n' >> "$status"
+  open_request() {
+    bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2" secondmate' _ "$ROOT" "$status"
+  }
+
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" claude "$log")
+  [ ! -s "$log" ] || fail "a live second mate must not be relaunched by liveness recovery: $(cat "$log")"
+  assert_contains "$(open_request)" handoff-relaunch \
+    "a live, stopped second mate's relaunch request must stay open: $out"
+
+  out=$(run_bootstrap "$tmuxfb:$fb" "$w/home" zsh "$log")
+  assert_contains "$(cat "$log")" "new-window" "the dead second mate must be relaunched: $out"
+  assert_not_contains "$(open_request)" handoff-relaunch \
+    "a completed fresh relaunch must close the relaunch request"
+  assert_grep 'resolved [key=handoff-relaunch]' "$status" \
+    "the completed relaunch did not record the close"
+  pass "handoff relaunch request: stays open while the mate is merely alive and closes when a fresh relaunch completes"
+}
+
 test_tmux_agent_state_classifies
 test_tmux_agent_state_rejects_malformed_targets_before_probe
 test_herdr_agent_state_preserves_husk_classifier
@@ -861,6 +1100,12 @@ test_sweep_noop_with_no_secondmate_meta
 test_sweep_skips_mate_whose_liveness_lock_is_held
 test_relaunch_waits_for_other_mates_relaunch_lock
 test_sweep_refuses_relaunch_on_ledger_errors
+test_relaunch_defers_to_a_running_lifecycle_action
+test_relaunch_rechecks_the_endpoint_under_the_lifecycle_lock
+test_relaunch_holds_the_lifecycle_lock_through_the_respawn
+test_fresh_spawn_refuses_while_a_lifecycle_action_holds_the_mate
+test_failed_secondmate_respawn_keeps_its_recovery_record
+test_handoff_relaunch_request_stays_open_until_the_mate_is_relaunched
 test_remote_poll_probe_maps_states
 test_remote_poll_probe_unreachable_preserves_route
 

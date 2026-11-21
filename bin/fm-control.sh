@@ -1315,10 +1315,14 @@ clear_owned_relaunch_tx() {
   relaunch_meta_unlock
 }
 
+# Put the checkpoint copy of the prior record back. A live record that changed
+# beyond this transaction is a cooperating writer's and is left as found. A
+# live record that is gone is not such an edit: nothing is there to keep, and a
+# task with no record has no recovery identity, so the copy is restored.
 restore_relaunch_prior_record() {
   [ -f "$META_PRIOR" ] || return 0
   relaunch_meta_lock || return 1
-  if relaunch_record_changed_beyond_tx; then
+  if { [ -e "$META" ] || [ -L "$META" ]; } && relaunch_record_changed_beyond_tx; then
     relaunch_meta_unlock
     return 0
   fi
@@ -1408,7 +1412,7 @@ relaunch_rollback() {
       if [ "$RELAUNCH_AGENT_CONFIRMED" = 1 ]; then
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-agent-confirmed" || true
         echo "error: $ID's replacement is running on $TARGET_HARNESS, but transaction completion could not be persisted; its published record was retained for reconciliation" >&2
-      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ]; then
+      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ] && [ -f "$META" ]; then
         # The launch owner published the new incarnation's record. Leaving it
         # in place is the honest state: the task is now recorded on the new
         # harness with no agent confirmed, which is exactly what recovery
@@ -1417,8 +1421,18 @@ relaunch_rollback() {
         # restore_relaunch_prior_record keeps those by skipping the checkpoint copy.
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-record-kept" || true
         echo "error: $ID was relaunched on $TARGET_HARNESS but no running agent could be confirmed; its work is preserved at $WT" >&2
+      elif [ "$RELAUNCH_META_PUBLISHED" = 1 ]; then
+        # The published record is gone, so there is no new record to keep. The
+        # journal names what is on disk, read back, never what was published.
+        if restore_relaunch_prior_record && [ -f "$META" ]; then
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-restored-new-record-missing" || true
+          echo "error: $ID was relaunched on $TARGET_HARNESS but its new durable record is gone and no running agent could be confirmed; the prior record was restored so the task can still be recovered, and its work is preserved at $WT" >&2
+        else
+          journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-restore-failed" || true
+          echo "error: $ID was relaunched on $TARGET_HARNESS but its new durable record is gone, no running agent could be confirmed, and the prior record could not be restored; its checkpoint copy is $META_PRIOR and its work is preserved at $WT" >&2
+        fi
       else
-        if restore_relaunch_prior_record; then
+        if restore_relaunch_prior_record && [ -f "$META" ]; then
           journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
         else
           journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-restore-failed" || true
@@ -1924,6 +1938,13 @@ do_relaunch() {
 
   journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
   RELAUNCH_ACTIVE=0
+  # A confirmed second-mate relaunch is what an open handoff relaunch request
+  # asked for (bin/fm-handoff-relaunch.sh owns the request and its close). A
+  # close that cannot be written is reported by that script and never fails a
+  # relaunch that already succeeded.
+  [ "$KIND" != secondmate ] \
+    || FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-handoff-relaunch.sh" close "$ID" 'bin/fm-control.sh relaunch' \
+    || true
   echo "relaunched $ID harness=$TARGET_HARNESS from=$PRIOR_RECORDED_HARNESS model=$TARGET_MODEL effort=$TARGET_EFFORT backend=$BACKEND endpoint=$T worktree=$WT"
 }
 

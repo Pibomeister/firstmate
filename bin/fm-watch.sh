@@ -1519,6 +1519,8 @@ secondmate_liveness_tick() {
           notify_key="secondmate-relaunch-$id-$now"
         elif [ "$FM_SM_LIVE_STATUS" = skipped ]; then
           err=$FM_SM_LIVE_REASON
+        elif [ "$FM_SM_LIVE_STATUS" = deferred ]; then
+          triage_log "secondmate $id liveness: relaunch deferred: $FM_SM_LIVE_REASON"
         else
           reason="check: secondmate $id auto-relaunch failed after $FM_SM_LIVE_CAUSE: $(fm_sm_live_first_line "$FM_SM_LIVE_OUT")"
           notify_key="secondmate-relaunch-failed-$id-$now"

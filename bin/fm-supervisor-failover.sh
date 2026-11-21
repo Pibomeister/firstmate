@@ -122,7 +122,7 @@ BACKEND=$(fm_backend_name 2>/dev/null) || BACKEND=unknown
 if [ "$SCOPE" = primary ]; then
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
-  fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it'
+  fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to relaunch it: run bin/fm-handoff-relaunch.sh request <handoff-file>'
   case "$BACKEND" in orca|tmux) ;; *) die "the handoff launcher has no successor launcher for backend '$BACKEND'" ;; esac
   [ -f "$TARGET" ] && [ -r "$TARGET" ] || die 'supply a readable handoff document'
   FROM_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null) || FROM_HARNESS=unknown

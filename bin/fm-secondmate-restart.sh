@@ -201,6 +201,11 @@ respawn_gone_mate() {  # <id>
     alive) ;;
     relaunchable)
       fm_secondmate_liveness_relaunch "$meta" "$id" || rc=$?
+      # A deferral that re-read the mate alive is the same convergence as the
+      # alive probe above: another supervisor launched the replacement.
+      if [ "$rc" -ne 0 ] && [ "$FM_SM_LIVE_STATUS" = deferred ] && [ "$FM_SM_LIVE_STATE" = alive ]; then
+        rc=0
+      fi
       if [ "$rc" -ne 0 ]; then
         RESPAWN_REASON=$(first_reported_line "$FM_SM_LIVE_OUT")
         [ -n "$RESPAWN_REASON" ] || RESPAWN_REASON=$FM_SM_LIVE_REASON
