@@ -1,0 +1,41 @@
+lab-create: /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M7YKAZHQEDEB2YX48KA28NVH/.fm-live-worker.joq9cgd9/home
+claude-start: exit=0 
+old-pane: ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M7YKAZHQEDEB2YX48KA28NVH/.fm-live-worker.joq9cgd9/worktree
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,
+ take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+failover: exit=1 candidate runtime=droid eligible verdict=unknown why=no_quota_provider_for_droid
+failed task=livefo to=droid rc=1 detail=error:_Claude-specific_tooling_present__MCP_servers_in_/Users/eduardopicazo/.claude/.claude.json___refusing_to_move_livefo_off_Claude
+candidate runtime=droid skip=refused_in_window
+none task=livefo from=claude reason=rate_limit why=every_relaunch_failed
+metadata: worktree=/Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M7YKAZHQEDEB2YX48KA28NVH/.fm-live-worker.joq9cgd9/worktree harness=claude mode=no-mistakes branch=fm/livefo
+branch: fm/livefo
+unfinished: preserve me
+successor-pane: ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /Users/eduardopicazo/.no-mistakes/worktrees/76ca871d9699/01M7YKAZHQEDEB2YX48KA28NVH/.fm-live-worker.joq9cgd9/worktree
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,
+ take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
