@@ -6,7 +6,11 @@
 #        fm-unpushed-reconcile.sh pending --work-dir <private-directory>
 # discover records local inventory without running publication/landing proofs.
 # A caller supplying --work-dir owns its lifetime and can replay pending after
-# killing the entire scanner process group. Standalone scan owns its temp dir.
+# killing the scanner's own process group. The timed scan runs in a separate
+# group that kill cannot reach, so it records that group in the work directory
+# and pending ends it first when it is still live. The scan names that group with
+# a random token, kept in the work directory and passed as the timed command's
+# last argument. Standalone scan owns its temp dir.
 # The private journal is append-only TSV: P|S, project, branch, full head.
 # P records inventory before any per-branch proof; S settles that exact head
 # when it is excluded, proven published/landed, or its identity is printed.
@@ -46,10 +50,12 @@
 #
 # FM_HOME selects the home. FM_DATA_OVERRIDE, FM_STATE_OVERRIDE and
 # FM_PROJECTS_OVERRIDE select its directories. FM_UNPUSHED_TIMEOUT_SECS bounds
-# the entire scan (default 20, maximum 120). A timeout retains partial output,
+# the entire scan (default 20, maximum 120). FM_UNPUSHED_DEADLINE, an optional
+# absolute epoch second, lowers that bound so the scan ends before it, or skips
+# the scan when no time is left. A timeout retains partial output,
 # names every discovered branch not yet resolved, and prints an actionable
 # incomplete-scan diagnostic. Exit 0 includes
-# findings/unknowns; usage or an invalid bound exits 2.
+# findings/unknowns; usage or an invalid bound or deadline exits 2.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -74,6 +80,33 @@ export FM_HOME
 field() { printf '%s' "$1" | tr '\t\r\n' '   '; }
 
 journal_settled() { printf 'S\t%s\t%s\t%s\n' "$1" "$2" "$3" >> "$FM_UNPUSHED_WORK/journal"; }
+
+# Ends the recorded timed scan group of <work directory> when it is still live,
+# so nothing a cut-short scan started outlives the caller that replays it. Only
+# a group with a member whose command line ends with this work directory's scan
+# token is ended, and never the caller's own group, so a stale or reused id ends
+# nothing else. The token is plain hex, so no work directory path, however
+# spelled, can make another scan match. COLUMNS is pinned wide so an ambient
+# narrow terminal width never cuts the command column the match reads.
+scan_token() { od -An -N12 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n'; }
+end_scan_group() { # <caller-owned work directory>
+  local group own token
+  [ -f "$1/group" ] && [ ! -L "$1/group" ] || return 0
+  [ -f "$1/token" ] && [ ! -L "$1/token" ] || return 0
+  group=$(cat "$1/group" 2>/dev/null) || return 0
+  case "$group" in ''|*[!0-9]*|0|1) return 0 ;; esac
+  token=$(cat "$1/token" 2>/dev/null) || return 0
+  case "$token" in *[!0-9a-f]*) return 0 ;; esac
+  [ "${#token}" -eq 24 ] || return 0
+  own=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
+  [ "$group" != "$own" ] || return 0
+  COLUMNS=10000 ps -A -o pgid= -o command= 2>/dev/null | awk -v g="$group" -v t=" $token" '
+    { sub(/[ \t]+$/, "") }
+    $1 == g && index($0, "fm-unpushed-reconcile.sh") && substr($0, length($0) - length(t) + 1) == t { found=1 }
+    END { exit !found }
+  ' || return 0
+  kill -KILL -- "-$group" 2>/dev/null || true
+}
 
 pending_inventory() { # <caller-owned work directory>; no network or Git reads
   [ -f "$1/journal" ] && [ ! -L "$1/journal" ] || return 0
@@ -286,30 +319,58 @@ case "${1:-}" in
     fi
     case "$work" in /*) ;; *) exit 2 ;; esac
     [ -d "$work" ] && [ ! -L "$work" ] && [ -O "$work" ] || exit 2
-    for record in journal candidates; do
+    for record in journal candidates group token; do
       [ ! -L "$work/$record" ] || exit 2
       { [ ! -e "$work/$record" ] || [ -f "$work/$record" ]; } || exit 2
     done
     [ "$own_work" = 0 ] || trap 'rm -rf "$work"' EXIT
-    if [ "$mode" = pending ]; then pending_inventory "$work"; exit; fi
+    if [ "$mode" = pending ]; then end_scan_group "$work"; pending_inventory "$work"; exit; fi
     : >> "$work/journal" || exit 1
     : > "$work/candidates" || exit 1
     secs=${FM_UNPUSHED_TIMEOUT_SECS:-20}
     case "$secs" in ''|*[!0-9]*) exit 2 ;; esac
     [ "$secs" -gt 0 ] && [ "$secs" -le 120 ] || exit 2
+    # The deadline caps the bound where the timer starts, so time a caller
+    # spent reaching this line cannot push the timed group past it. The
+    # margin covers the floored clock, the one-second kill grace and reaping.
+    case "${FM_UNPUSHED_DEADLINE:-}" in
+      '') ;;
+      *[!0-9]*) exit 2 ;;
+      *)
+        left=$(( FM_UNPUSHED_DEADLINE - $(date +%s) - 3 ))
+        [ "$left" -ge "$secs" ] || secs=$left
+        [ "$secs" -ge 0 ] || secs=0
+        ;;
+    esac
     child_mode=--scan
     [ "$mode" != discover ] || child_mode=--discover
     # A timeout still names every discovered branch the scan had not resolved.
-    FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" "$child_mode" || {
+    # The timer can still start late on a loaded host; the timed group records
+    # itself so a caller's replay can end it (end_scan_group).
+    rm -f "$work/group" "$work/token"
+    # Without a token the scan still runs; a replay just cannot end it.
+    token=$(scan_token)
+    case "$token" in *[!0-9a-f]*) token= ;; esac
+    [ "${#token}" -eq 24 ] || token=
+    [ -z "$token" ] || printf '%s\n' "$token" > "$work/token" || exit 1
+    if [ "$secs" -eq 0 ] || ! FM_UNPUSHED_WORK=$work fm_run_timed "$secs" bash "$SCRIPT_DIR/fm-unpushed-reconcile.sh" "$child_mode" "$work" ${token:+"$token"}; then
       pending_inventory "$work"
       printf 'UNPUSHED: incomplete scan (failed or exceeded %ss); rerun %s scan\n' "$secs" "$SCRIPT_DIR/fm-unpushed-reconcile.sh"
-    }
+    fi
+    rm -f "$work/group" "$work/token"
     ;;
   --scan|--discover)
     DISCOVER_ONLY=0
     [ "$1" != --discover ] || DISCOVER_ONLY=1
     NL=$'\n'; SEEN=$NL
     [ -n "${FM_UNPUSHED_WORK:-}" ] || exit 2
+    # Name this timed group before any read, then stop at once when the
+    # caller's deadline passed before the group started.
+    ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ' > "$FM_UNPUSHED_WORK/group" || exit 1
+    case "${FM_UNPUSHED_DEADLINE:-}" in
+      ''|*[!0-9]*) ;;
+      *) [ "$(date +%s)" -lt "$FM_UNPUSHED_DEADLINE" ] || exit 1 ;;
+    esac
     CANDIDATES=$FM_UNPUSHED_WORK/candidates
     # Read metadata once, rather than forking a read for every branch x task.
     # Missing fields use a placeholder to keep empty TSV fields from shifting.
