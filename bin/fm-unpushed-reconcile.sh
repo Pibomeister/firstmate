@@ -84,7 +84,8 @@ journal_settled() { printf 'S\t%s\t%s\t%s\n' "$1" "$2" "$3" >> "$FM_UNPUSHED_WOR
 # a group whose member still names exactly this work directory, as a whole
 # argument, as a scan is ended, and never the caller's own group, so a stale or
 # reused id ends nothing else, even another scan whose work directory merely
-# starts with this one.
+# starts with this one. COLUMNS is pinned wide so an ambient narrow terminal
+# width never cuts the command column the match reads.
 end_scan_group() { # <caller-owned work directory>
   local group own
   [ -f "$1/group" ] && [ ! -L "$1/group" ] || return 0
@@ -92,7 +93,7 @@ end_scan_group() { # <caller-owned work directory>
   case "$group" in ''|*[!0-9]*|0|1) return 0 ;; esac
   own=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
   [ "$group" != "$own" ] || return 0
-  ps -A -o pgid= -o command= 2>/dev/null | awk -v g="$group" -v w=" $1" '
+  COLUMNS=10000 ps -A -o pgid= -o command= 2>/dev/null | awk -v g="$group" -v w=" $1" '
     function names(line, t,   i, c) {
       while ((i = index(line, t)) > 0) {
         c = substr(line, i + length(t), 1)

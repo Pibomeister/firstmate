@@ -344,7 +344,8 @@ forge_pid=$(cat "$TMP_ROOT/gh.pid")
 kill -KILL "$scan_pid"
 wait "$scan_pid" 2>/dev/null || true
 kill -0 "$forge_pid" 2>/dev/null || fail 'killing the scanner alone already ended its timed scan'
-out=$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work")
+# An ambient narrow terminal width must not hide the scan from the replay.
+out=$(COLUMNS=40 bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work")
 for _ in 1 2 3 4 5; do
   kill -0 "$forge_pid" 2>/dev/null || break
   sleep 0.2
