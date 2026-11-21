@@ -958,7 +958,7 @@ test_a_term_ignoring_bounded_read_is_still_killed() {
 
 # AC-14: the watcher launches publications from an independent single-flight
 # ticker, so slow loop work (here a check that runs about six seconds each
-# cycle) never stretches the launch interval past the cycle period.
+# cycle) never stretches the launch interval past the idle interval.
 test_watcher_publishes_every_cycle_whatever_its_loop_work() {
   local home stub runs count settled fakebin
   home=$(make_home watch-ticker)
@@ -989,7 +989,7 @@ SH
   fm_test_track_watcher_state "$home/state"
   PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_HEARTBEAT_BIN="$stub" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=1 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
     "$WATCH" > "$TMP_ROOT/watch-ticker.out" 2> "$TMP_ROOT/watch-ticker.err" &
   WATCH_PID=$!
   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
@@ -1004,7 +1004,129 @@ SH
   settled=$(wc -l < "$runs" | tr -d ' ')
   sleep 3
   [ "$(wc -l < "$runs" | tr -d ' ')" = "$settled" ] || fail "publications kept launching after the watcher stopped"
-  pass "AC-14: the watcher launches a publication every cycle whatever its loop work, and stops with the watcher"
+  pass "AC-14: the watcher launches a publication every idle interval whatever its loop work, and stops with the watcher"
+}
+
+# A heartbeat stub that logs one epoch line per launch.
+launch_log_stub() {  # <name> -> stub path; launches go to $TMP_ROOT/<name>.runs
+  local runs="$TMP_ROOT/$1.runs" stub="$TMP_ROOT/$1-heartbeat.sh"
+  : > "$runs"
+  printf '#!/usr/bin/env bash\ndate +%%s >> %q\n' "$runs" > "$stub"
+  chmod +x "$stub"
+  printf '%s\n' "$stub"
+}
+
+launch_count() {  # <name>
+  wc -l < "$TMP_ROOT/$1.runs" | tr -d ' '
+}
+
+# Expensive idle collection: an unchanged home collects once per idle interval,
+# not once per poll, while the cheap watcher beat keeps the poll period.
+test_unchanged_home_collects_once_per_idle_interval() {
+  local home stub count beats=0 i gaps
+  home=$(make_home watch-idle)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-idle)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=4 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-idle.out" 2> "$TMP_ROOT/watch-idle.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  i=0
+  while [ "$i" -lt 10 ]; do
+    rm -f "$home/state/.last-watcher-beat"
+    wait_for_file "$home/state/.last-watcher-beat" 3 && beats=$((beats + 1))
+    i=$((i + 1))
+  done
+  count=$(launch_count watch-idle)
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the idle watcher exited: $(cat "$TMP_ROOT/watch-idle.out")"
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$beats" -ge 8 ] || fail "the watcher beat advanced only $beats time(s) across ten polls"
+  [ "$count" -ge 2 ] && [ "$count" -le 5 ] \
+    || fail "an unchanged home collected $count time(s) in about ten seconds at a four-second idle interval"
+  gaps=$(awk 'NR>1 && $1-p < 3 {print $1-p} {p=$1}' "$TMP_ROOT/watch-idle.runs")
+  [ -z "$gaps" ] || fail "an unchanged home collected again after only ${gaps}s"
+  pass "an unchanged home collects once per idle interval while the watcher beat keeps the poll period"
+}
+
+# Each idle due is drawn below the interval by at most the jitter, so the
+# interval stays the longest launch gap. The upper check allows two seconds of
+# launch slip on a loaded host.
+test_jittered_idle_gaps_stay_within_the_interval() {
+  local home stub gaps bad
+  home=$(make_home watch-jitter)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-jitter)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=6 FM_HEARTBEAT_LEDGER_JITTER=4 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-jitter.out" 2> "$TMP_ROOT/watch-jitter.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 26
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-jitter)" -ge 4 ] || fail "only $(launch_count watch-jitter) collection(s) in 26s at a 6s idle interval"
+  gaps=$(awk 'NR>1 {printf "%s ", $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  bad=$(awk 'NR>1 && ($1-p < 1 || $1-p > 8) {print $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  [ -z "$bad" ] || fail "a jittered idle gap left [interval - jitter, interval]: $gaps"
+  pass "jittered idle gaps stay between the interval less the jitter and the interval"
+}
+
+# A relevant change - a wake any producer appends, or a status line the watcher
+# reads - collects at once, without waiting out the idle interval.
+test_a_relevant_change_collects_without_waiting_for_idle() {
+  local home stub before i
+  home=$(make_home watch-change)
+  # A quiet home: no task row, so only the injected changes below wake it.
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-change)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-change.out" 2> "$TMP_ROOT/watch-change.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 3
+  before=$(launch_count watch-change)
+  [ "$before" -ge 1 ] || fail "the watcher never made its first collection"
+  (
+    STATE=$home/state FM_HOME=$home
+    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_append check hb-test-producer "an appended wake"
+  ) || fail "could not append a wake"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 50 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "an appended wake did not collect within 5s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.err")"
+  command -p sleep 2
+  before=$(launch_count watch-change)
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the holding watcher exited: $(cat "$TMP_ROOT/watch-change.out")"
+  printf 'needs-decision: pick one\n' >> "$home/state/hb-task.status"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 60 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "a status line did not collect within 6s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.out")"
+  # A holding watcher keeps its lock through TERM, so stop it outright.
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  pass "an appended wake or a status line collects at once, without waiting for the idle interval"
 }
 
 test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
@@ -1068,9 +1190,21 @@ test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
   WATCH_PID=
   [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
   wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
+  assert_ledger "$home" ".stale_after_secs == $((330 + DEFAULT_RUN_CAP))" \
+    "the watcher's heartbeat bound is not its default idle interval plus the grace plus the run cap"
+  rm -f "$(ledger "$home")"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_HEARTBEAT_LEDGER_IDLE_SECS=1 \
+    FM_POLL=2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
+  wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
   assert_ledger "$home" ".stale_after_secs == $((32 + DEFAULT_RUN_CAP))" \
-    "the watcher's heartbeat bound is not its cycle period plus the grace plus the run cap"
-  pass "AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence"
+    "an idle interval below the poll did not give the poll plus the grace plus the run cap"
+  pass "AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence"
 }
 
 # AC-14: context_left carries the footer and the derived token percentage side
@@ -1196,6 +1330,9 @@ test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+test_unchanged_home_collects_once_per_idle_interval
+test_jittered_idle_gaps_stay_within_the_interval
+test_a_relevant_change_collects_without_waiting_for_idle
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
 test_derived_context_is_unknown_under_directory_overrides
@@ -1228,4 +1365,4 @@ test_weekly_allowance_reports_model_allowance_left() {
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 39
+printf 'ok - %s tests passed\n' 42
