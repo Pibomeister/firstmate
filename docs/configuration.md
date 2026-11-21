@@ -668,7 +668,7 @@ interval=1200
 classifier=jev
 ```
 
-An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout`, including nonnumeric timing values, is a configuration error that stops the check before it reads any screen.
+An invalid `classifier`, model name, `confidence_floor`, `interval`, or `timeout`, including nonnumeric or overlong timing values, is a configuration error that stops the check before it reads any screen.
 A watcher-started tick reports that error with one `check:` notification per distinct file content.
 
 **Deterministic pass**
@@ -711,7 +711,7 @@ Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib
 
 **Actions**
 
-Each unchanged screen is acted on once:
+Each unchanged screen is acted on once; actionful checks for the same target use a bounded lock shared by direct checks and ticks.
 
 - A model-judged `rate_limit`, `usage_limit`, `billing`, or `api_error` runs `bin/fm-failover.sh` with that `--reason`; a captain failover is authorized only as a descendant of this home's watcher.
 - `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.

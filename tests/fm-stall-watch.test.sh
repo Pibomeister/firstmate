@@ -75,6 +75,10 @@ cat > "$DELEGATES/fm-send.sh" <<'SH'
 n=$(( $(cat "$FM_TEST_LOGS/send.n" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$FM_TEST_LOGS/send.n"
 printf '%s\n' "$@" > "$FM_TEST_LOGS/send.argv.$n"
+if [ "${FM_TEST_SEND_HOLD:-0}" = 1 ]; then
+  : > "$FM_TEST_LOGS/send.entered"
+  while [ -f "$FM_TEST_LOGS/send.hold" ]; do sleep 0.1; done
+fi
 exit "${FM_TEST_SEND_RC:-0}"
 SH
 cat > "$DELEGATES/captain-send" <<'SH'
@@ -575,6 +579,32 @@ test_actions() {
   pass 'actions: failover, nudge then failover, escalation, rule refusals left alone, once per screen'
 }
 
+test_actionful_checks_share_target_lock() {
+  local first i=0
+  reset_lab
+  printf 'classifier=grok\n' > "$LAB/config/stall-watch"
+  make_worker concurrent stalled.screen
+  sw check concurrent
+  : > "$LOGS/send.hold"
+  FM_TEST_SEND_HOLD=1 bash "$SW" check concurrent > "$TMP_ROOT/first-check.out" 2> "$TMP_ROOT/first-check.err" &
+  first=$!
+  while [ ! -f "$LOGS/send.entered" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  assert_present "$LOGS/send.entered"
+  sw check concurrent
+  expect_code 1 "$RC" 'a second direct check stops at the held target lock'
+  assert_contains "$ERR" 'check for concurrent is already running' 'the held direct check is named'
+  sw check concurrent --dry-run
+  assert_contains "$OUT" 'action=dry-run' 'a dry run remains available while the target lock is held'
+  sw tick --force
+  assert_contains "$ERR" 'check for concurrent is already running' 'the tick uses the same target lock'
+  assert_equals 1 "$(count send)" 'overlapping checks do not send another nudge'
+  rm -f "$LOGS/send.hold"
+  wait "$first" || fail 'the first check did not finish'
+  assert_contains "$(cat "$TMP_ROOT/first-check.out")" 'action=nudged' 'the first check finishes its action'
+  assert_equals 1 "$(count send)" 'exactly one nudge was delivered'
+  pass 'target lock: direct and tick checks cannot act concurrently'
+}
+
 test_captain_actions() {
   local now
   reset_lab
@@ -767,10 +797,15 @@ test_invalid_timing_configuration() {
     printf '%s=not-a-number\n' "$key" > "$LAB/config/stall-watch"
     sw check badtime
     expect_code 2 "$RC" "check rejects nonnumeric $key"
-    assert_contains "$ERR" "config/stall-watch $key must be a whole number" "check names invalid $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "check names invalid $key"
     sw tick --force
     expect_code 2 "$RC" "tick rejects nonnumeric $key"
-    assert_contains "$ERR" "config/stall-watch $key must be a whole number" "tick names invalid $key"
+    assert_contains "$ERR" "config/stall-watch $key must be a whole number of at most 9 digits" "tick names invalid $key"
+    printf '%s=18446744073709551676\n' "$key" > "$LAB/config/stall-watch"
+    sw check badtime
+    expect_code 2 "$RC" "check rejects overflowing $key"
+    sw tick --force
+    expect_code 2 "$RC" "tick rejects overflowing $key"
   done
   assert_equals 0 "$(ledger_rows badtime)" 'invalid timing never checks a screen'
   pass 'timing configuration: check and tick reject nonnumeric values'
@@ -924,6 +959,7 @@ fm_test_run \
   test_classifier_never_sees_secrets \
   test_unchanged_screen_guard \
   test_actions \
+  test_actionful_checks_share_target_lock \
   test_captain_actions \
   test_declared_status_reads_the_raw_verb \
   test_nudge_ends_with_work \

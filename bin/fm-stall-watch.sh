@@ -131,8 +131,8 @@ sw_check_config() {
   case "$CLASSIFIER" in jev|grok) ;; *) sw_config_error "config/stall-watch classifier must be jev or grok" ;; esac
   case "$GROK_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch grok_model is not a model name" ;; esac
   case "$JEV_MODEL" in ''|-*|*[!A-Za-z0-9._/:-]*) sw_config_error "config/stall-watch jev_model is not a model name" ;; esac
-  case "$INTERVAL" in ''|*[!0-9]*) sw_config_error "config/stall-watch interval must be a whole number" ;; esac
-  case "$MODEL_TIMEOUT" in ''|*[!0-9]*) sw_config_error "config/stall-watch timeout must be a whole number" ;; esac
+  case "$INTERVAL" in ''|*[!0-9]*|??????????*) sw_config_error "config/stall-watch interval must be a whole number of at most 9 digits" ;; esac
+  case "$MODEL_TIMEOUT" in ''|*[!0-9]*|??????????*) sw_config_error "config/stall-watch timeout must be a whole number of at most 9 digits" ;; esac
   INTERVAL=$((10#$INTERVAL))
   MODEL_TIMEOUT=$((10#$MODEL_TIMEOUT))
   awk -v f="$FLOOR" 'BEGIN { exit !(f ~ /^(0(\.[0-9]+)?|1(\.0+)?)$/) }' \
@@ -605,9 +605,26 @@ sw_captain_has_work() {  # <now>
     END { exit !found }' "$STATE/.wake-queue"
 }
 
-cmd_check() {  # <target> <dry-run>
-  local target=$1 dry=$2 now meta kind line='' verb='' status='' open=yes raw red work fp busy=0 rule=1 action=none same=0 ttl verdict
+cmd_check() (  # <target> <dry-run>
+  local target=$1 dry=$2 lock
   sw_valid_target "$target" || die "invalid target: $target"
+  if [ "$dry" = 1 ]; then
+    sw_check_target "$target" "$dry"
+    return
+  fi
+  mkdir -p "$SW_DIR" || return 1
+  command -v fm_lock_acquire_wait_bounded >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
+  lock="$SW_DIR/$target.check.lock"
+  if ! fm_lock_acquire_wait_bounded "$lock" 5; then
+    log "check for $target is already running"
+    return 1
+  fi
+  trap 'fm_lock_release "$lock"' EXIT
+  sw_check_target "$target" "$dry"
+)
+
+sw_check_target() {  # <target> <dry-run>
+  local target=$1 dry=$2 now meta kind line='' verb='' status='' open=yes raw red work fp busy=0 rule=1 action=none same=0 ttl verdict
   now=$(sw_now)
   V_CONF=- V_LAT=- V_COST=- V_NOTE=''
   if [ "$target" = captain ]; then
