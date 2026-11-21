@@ -12,6 +12,7 @@ mkdir -p "$TMP_ROOT/fakebin"
 cat > "$TMP_ROOT/fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_GH_LOG"
+[ -z "${FM_GH_PID:-}" ] || printf '%s\n' "$$" > "$FM_GH_PID"
 [ "${FM_GH_FAIL:-0}" = 0 ] || exit 1
 [ -z "${FM_GH_SLEEP:-}" ] || sleep "$FM_GH_SLEEP"
 if [ "$1" = api ]; then
@@ -324,6 +325,60 @@ rc=0
 FM_UNPUSHED_DEADLINE=soon scan >/dev/null 2>&1 || rc=$?
 assert_equals 2 "$rc" 'an invalid deadline was accepted'
 pass 'a caller deadline bounds the scan from where its timer starts'
+
+new_world stray-group
+group_work="$TMP_ROOT/stray-group-work"
+mkdir -m 700 "$group_work"
+rm -f "$TMP_ROOT/gh.pid"
+# The caller's kill reaches only the scanner, as when a stage bound fires
+# while the timed scan is still reading the forge.
+FM_UNPUSHED_TIMEOUT_SECS=60 FM_GH_SLEEP=60 FM_GH_PID="$TMP_ROOT/gh.pid" \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" scan --work-dir "$group_work" >/dev/null &
+scan_pid=$!
+for _ in $(seq 1 300); do
+  [ ! -s "$TMP_ROOT/gh.pid" ] || break
+  sleep 0.1
+done
+[ -s "$TMP_ROOT/gh.pid" ] || fail 'the scan never reached its forge read'
+forge_pid=$(cat "$TMP_ROOT/gh.pid")
+kill -KILL "$scan_pid"
+wait "$scan_pid" 2>/dev/null || true
+kill -0 "$forge_pid" 2>/dev/null || fail 'killing the scanner alone already ended its timed scan'
+out=$(bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work")
+for _ in 1 2 3 4 5; do
+  kill -0 "$forge_pid" 2>/dev/null || break
+  sleep 0.2
+done
+if kill -0 "$forge_pid" 2>/dev/null; then
+  kill "$forge_pid" 2>/dev/null || true
+  fail 'the replay left the cut-short scan reading the forge'
+fi
+assert_contains "$out" 'branch=fm/task' 'the replay lost the discovered branch'
+pass 'replaying a cut-short scan ends the timed scan its caller could not reach'
+
+# A recorded group that is not this work directory's live scan is never ended.
+printf '%s\n' "$(ps -o pgid= -p $$ | tr -d ' ')" > "$group_work/group"
+bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+if command -v perl >/dev/null 2>&1; then
+  perl -MPOSIX=setpgid -e 'setpgid(0, 0); exec "sleep", "30"' &
+  other=$!
+  sleep 0.5
+  printf '%s\n' "$other" > "$group_work/group"
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" pending --work-dir "$group_work" >/dev/null
+  kill -0 "$other" 2>/dev/null || fail 'the replay ended an unrelated process group'
+  kill "$other" 2>/dev/null || true
+  wait "$other" 2>/dev/null || true
+fi
+pass 'the replay never ends its own or an unrelated process group'
+
+# A timed scan that starts after the caller's deadline reads nothing.
+: > "$FM_GH_LOG"
+rc=0
+FM_UNPUSHED_WORK=$group_work FM_UNPUSHED_DEADLINE=$(( $(date +%s) - 1 )) \
+  bash "$ROOT/bin/fm-unpushed-reconcile.sh" --scan "$group_work" >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || fail 'a scan started after its deadline reported success'
+assert_equals '' "$(cat "$FM_GH_LOG")" 'a scan started after its deadline still read the forge'
+pass 'a timed scan that starts after its deadline stops before any read'
 
 new_world resolved-blocker
 printf 'resolved [at=101] [key=nm-daemon-gate-context]: retry authorized\n' >> "$FM_HOME/state/task.status"

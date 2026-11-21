@@ -942,7 +942,7 @@ EOF
 }
 
 test_outer_timeout_keeps_discovered_branch_names() {
-  local rec home root log project report forge_pid
+  local rec home root log project report forge_pid real_mktemp
   rec=$(new_world outer-unpublished-timeout)
   IFS='|' read -r home root log <<EOF
 $rec
@@ -977,6 +977,22 @@ SH
 exec "$ROOT/bin/fm-unpushed-reconcile.sh" "\$@"
 SH
   chmod +x "$root/bin/fm-unpushed-reconcile.sh"
+  # The timeout helper's own setup can also run late after the scan computed
+  # its bound; delay it once so the scan's timer would outlive the stage.
+  real_mktemp=$(type -P mktemp)
+  cat > "$root/bin/mktemp" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *fm-timeout-status*)
+    if [ ! -e "$home/setup-delayed" ] && ps -o command= -p "\$PPID" | grep -q 'fm-unpushed-reconcile.sh scan'; then
+      : > "$home/setup-delayed"
+      sleep 6
+    fi
+    ;;
+esac
+exec "$real_mktemp" "\$@"
+SH
+  chmod +x "$root/bin/mktemp"
   # A per-scan bound longer than the stage budget must still end inside it:
   # nothing the scan started may outlive the stage that reports it. The stage
   # budget leaves room for the scan to reach the forge read on a loaded host,
@@ -984,9 +1000,12 @@ SH
   FM_FAKE_BOOTSTRAP_LOG="$log" FM_FAKE_BOOTSTRAP_SLEEP=2 \
     FM_OUTER_PROOF_MARK="$home/proof-entered" FM_STARTUP_NETWORK_TIMEOUT=30 FM_UNPUSHED_TIMEOUT_SECS=60 \
     run_stage "$home" "$root" run --locked 1 --lock-pid $$
-  rm "$root/bin/fm-unpushed-reconcile.sh"
+  rm "$root/bin/fm-unpushed-reconcile.sh" "$root/bin/mktemp"
   ln -s "$ROOT/bin/fm-unpushed-reconcile.sh" "$root/bin/fm-unpushed-reconcile.sh"
   [ -f "$home/proof-entered" ] || fail 'the scan never reached the delayed forge read'
+  if type -P timeout >/dev/null 2>&1 || type -P gtimeout >/dev/null 2>&1; then
+    [ -f "$home/setup-delayed" ] || fail 'the timeout setup delay was never exercised'
+  fi
   forge_pid=$(cat "$home/proof-entered")
   # The scan's group is reaped before the stage returns; allow only the
   # moment the killed process needs to disappear.

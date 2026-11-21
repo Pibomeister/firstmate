@@ -23,11 +23,13 @@
 # collected before bootstrap, and pending identities are replayed if the outer
 # deadline stops discovery, refresh, or proofs (fm-unpushed-reconcile.sh).
 # The stage passes its deadline as FM_UNPUSHED_DEADLINE, and the scanner ends
-# its own bound 3 s before that deadline: a GNU
-# or BSD timeout runs its command in a process group the outer bound's signal
-# cannot reach, so a longer scan bound would keep the scan running after the
-# stage replayed, published, and removed its journal. A scan with no time left
-# replays its pending identities without starting.
+# its own bound 3 s before that deadline: a GNU or BSD timeout runs its command
+# in a separate process group that the outer bound's kill does not reach, so a
+# longer scan bound would keep the scan running after the stage replayed,
+# published, and removed its journal. A timer that still starts late on a
+# loaded host is covered by the replay itself, which ends the scan's recorded
+# group before it prints. A scan with no time left replays its pending
+# identities without starting.
 #
 # WHAT IS PRESERVED. Nothing is dropped. bin/fm-bootstrap.sh remains the single
 # owner of every network sweep and still runs all of them, unchanged, via its
@@ -622,6 +624,11 @@ EOF
   fi
   if [ "$rc" -ne 0 ] && [ -n "$unpushed_work" ]; then
     "$SCRIPT_DIR/fm-unpushed-reconcile.sh" pending --work-dir "$unpushed_work" >> "$out" 2>&1 || true
+    # A stage bound that cut the scanner off before it could say so itself
+    # still reports the scan as incomplete.
+    if [ "$rc" -eq 124 ] && ! grep -q '^UNPUSHED: incomplete scan' "$out" 2>/dev/null; then
+      printf 'UNPUSHED: incomplete scan (the startup stage bound ended it); rerun %s/fm-unpushed-reconcile.sh scan\n' "$SCRIPT_DIR" >> "$out"
+    fi
   fi
   [ "$lease_held" -eq 0 ] || fm_lock_release "$STATE/.lock.acquire"
   # The bounded run as a whole, so the per-phase records can be read against the
