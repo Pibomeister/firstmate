@@ -544,6 +544,12 @@ sw_escalate() {  # <target> <now> <what>
 }
 
 # ---- check -------------------------------------------------------------------
+SW_TICK_LOCK='' SW_CHECK_LOCK=''
+sw_release_locks() {
+  [ -z "$SW_CHECK_LOCK" ] || fm_lock_release "$SW_CHECK_LOCK"
+  [ -z "$SW_TICK_LOCK" ] || fm_lock_release "$SW_TICK_LOCK"
+}
+
 # The captain owes work only when a captain goal is overdue for dispatch or a
 # wake has waited in the queue for longer than one interval; idle at its
 # prompt otherwise, it is waiting on its watcher, which is healthy.
@@ -573,7 +579,8 @@ cmd_check() (  # <target> <dry-run>
     log "check for $target is already running"
     return 1
   fi
-  trap 'fm_lock_release "$lock"' EXIT
+  SW_CHECK_LOCK=$lock
+  trap sw_release_locks EXIT
   sw_check_target "$target" "$dry"
 )
 
@@ -751,7 +758,8 @@ cmd_tick() {  # <force> <dry-run>
   # shellcheck source=/dev/null
   command -v fm_lock_try_acquire >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
   fm_lock_try_acquire "$lock" || { log 'another tick is running'; return 0; }
-  trap 'fm_lock_release "$lock"' EXIT
+  SW_TICK_LOCK=$lock
+  trap sw_release_locks EXIT
   rm -f "$SW_DIR/.config-error"
   now=$(sw_now)
   last=$(cat "$SW_DIR/.last-tick" 2>/dev/null || true)

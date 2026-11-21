@@ -808,6 +808,27 @@ test_tick_schedule() {
   pass 'tick: opt-in, interval, force, single-flight, config validation, and one report per invalid file'
 }
 
+test_successful_checks_release_locks() {
+  reset_lab
+  make_worker release1 stalled.screen
+  printf 'interval=600\n' > "$LAB/config/stall-watch"
+  sw check release1
+  expect_code 0 "$RC" "direct check exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'unbound variable' 'direct check has no EXIT trap variable error'
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  sw tick --force
+  expect_code 0 "$RC" "tick exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'unbound variable' 'tick has no EXIT trap variable error'
+  assert_absent "$LAB/state/stall-watch/.tick.lock"
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  sw tick --force
+  expect_code 0 "$RC" "immediate second tick exits cleanly: $ERR"
+  assert_not_contains "$ERR" 'another tick is running' 'a completed tick does not block its successor'
+  assert_absent "$LAB/state/stall-watch/.tick.lock"
+  assert_absent "$LAB/state/stall-watch/release1.check.lock"
+  pass 'successful checks: direct and tick EXIT handlers release their locks'
+}
+
 test_tick_lock_reclaim_is_single_flight() {
   local first dead i=0
   reset_lab
@@ -1027,6 +1048,7 @@ fm_test_run \
   test_equal_length_status_change_ends_nudge \
   test_refusal_after_ordinary_stop_is_judged \
   test_tick_schedule \
+  test_successful_checks_release_locks \
   test_tick_lock_reclaim_is_single_flight \
   test_tick_lock_unpublished_owner_is_preserved \
   test_invalid_timing_configuration \
