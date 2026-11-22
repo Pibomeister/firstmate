@@ -198,18 +198,17 @@ resume_work_open() {
 # An idle Claude auto compaction re-emits context but starts no turn, so a
 # primary with open work would sit idle. Start one detached, model-free resume
 # doorbell (bin/fm-resume-doorbell.sh) that types a fixed resume line only into
-# a provably idle session with an empty composer. Only a Claude auto
-# compaction qualifies: a manual /compact (including the supervision host's
-# warm compact) has someone at the keyboard, and other harnesses deliver their
-# own post-compaction message. FM_RESUME_DOORBELL=0 turns it off. Test seam,
+# a provably idle session with an empty composer. It requires Claude and the
+# newest recorded boundary's auto trigger; docs/sessionstart-nudge.md owns
+# the late-boundary limit for manual compaction. FM_RESUME_DOORBELL=0 turns it
+# off. Test seam,
 # honoured only with FM_TEST_SEAM=1: FM_RESUME_DOORBELL_BIN replaces the launched
 # program and FM_RESUME_DOORBELL_TEST_HARNESS pins the resolved harness.
 # Prints the doorbell program when this open qualifies, else nothing.
 resume_doorbell_bin() {
   local bin harness
   [ "${FM_RESUME_DOORBELL:-1}" != 0 ] || return 0
-  # Under an away or quiet record an unmarked line reads as the captain
-  # returning, and that posture owns supervision anyway.
+  # Away and quiet postures own supervision through their own delivery paths.
   [ ! -e "$STATE/.afk" ] && [ ! -e "$STATE/.afk-contract" ] || return 0
   [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0

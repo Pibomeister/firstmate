@@ -1452,8 +1452,14 @@ test_take_over_owns_a_fresh_cycle_and_keeps_queued_work_surfacing() {
   start_rearm_arm "$dir" "$state" "$fakebin" "$dir/owner.out" "$$"
   owner=$ARM_PID
   SEED_PID=$(cat "$state/.watch.lock/pid")
+  # Keep the owner from delivering this already-handled fixture wake before
+  # main acknowledges it. That delivery would close the cycle before takeover.
+  kill -STOP "$SEED_PID" || fail "fixture: could not pause the owned watcher"
   append_wake "$state" signal take-over "signal: fixture handled by main"
-  ack_wakes "$state" >/dev/null || fail "fixture: main could not acknowledge the handled wake"
+  status=0
+  ack_wakes "$state" >/dev/null || status=$?
+  kill -CONT "$SEED_PID" || fail "fixture: could not resume the owned watcher"
+  expect_code 0 "$status" "fixture: main could not acknowledge the handled wake"
   case "$(cat "$state/.watcher-down" 2>/dev/null)" in acked:*) ;; *) fail "fixture: the episode was not acknowledged" ;; esac
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
@@ -1536,7 +1542,7 @@ SH
 # which the supervision host passes straight back to main: a loop. The stopped
 # wait's reader scratch must not be left behind either.
 test_take_over_confirms_a_watcher_stopped_inside_its_event_wait() {
-  local dir state armout owner watcher fresh acknowledged before i leftover
+  local dir state armout owner watcher fresh acknowledged before i leftover status
   dir=$(make_case take-over-event-wait)
   state="$dir/state"
   armout="$dir/arm.out"
@@ -1561,8 +1567,14 @@ test_take_over_confirms_a_watcher_stopped_inside_its_event_wait() {
   wait_for_file_text "$dir/owner.out" 'watcher: started pid=' \
     || fail "fixture: the successor did not start: $(cat "$dir/owner.out")"
   watcher=$(cat "$state/.watch.lock/pid")
+  # Retire the fixture wake before the owner can deliver it and close the
+  # cycle whose event wait this case must interrupt.
+  kill -STOP "$watcher" || fail "fixture: could not pause the owned watcher"
   append_wake "$state" signal take-over "signal: fixture handled by main"
-  ack_wakes "$state" >/dev/null || fail "fixture: main could not acknowledge the handled wake"
+  status=0
+  ack_wakes "$state" >/dev/null || status=$?
+  kill -CONT "$watcher" || fail "fixture: could not resume the owned watcher"
+  expect_code 0 "$status" "fixture: main could not acknowledge the handled wake"
   acknowledged=$(cat "$state/.watcher-down")
   case "$acknowledged" in acked:*) ;; *) fail "fixture: the episode was not acknowledged: $acknowledged" ;; esac
   # Land the take-over a second into a fresh event wait (each begins with the

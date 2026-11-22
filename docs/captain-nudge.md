@@ -98,3 +98,4 @@ Host notes:
 - A Herdr `pane` pin goes stale when herdr restarts or the captain moves.
   When an explicit `pane` pin cannot be read and the captain names `fm_home`, the nudge reads and types into the live captain terminal that home recorded in `state/captain-handle` at its last session start, provided the session that recorded it still holds the home's lock.
   A `title` selector never falls back this way, even when the pane it matched cannot be read.
+  An explicit `test-nudge --pane` also disables this fallback: a failed read logs `skip_read_failed` and sends nothing.

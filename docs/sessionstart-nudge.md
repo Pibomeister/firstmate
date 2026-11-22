@@ -81,8 +81,9 @@ A re-emit adds context but starts no turn, so an idle automatic compaction would
 For a Claude `compact` whose payload transcript shows the newest compact boundary with trigger `auto`, while supervision is needed for more than the automatic away check, a wake row is queued, or a captain order is open, the wrapper starts one detached `bin/fm-resume-doorbell.sh`.
 It never starts on `clear`, another harness, under an away or quiet record, or with `FM_RESUME_DOORBELL=0`.
 It does not start on a manual `/compact` (including the supervision host's warm compact) whose boundary is already in the transcript; when that boundary publishes late, a manual compaction after an automatic one can read the older `auto` boundary and start it ([`docs/verification/runtime-backends.md`](verification/runtime-backends.md)).
-The doorbell types one resume prompt into the terminal recorded in `state/captain-handle`, only when that session is provably idle with an empty composer, confirms the submit, and logs each outcome to `state/.resume-doorbell.log`; its header owns the exact checks and settings.
-The prompt travels as the shared operational-input record carrier (kind `session-start`; [`bin/fm-operational-input.sh`](../bin/fm-operational-input.sh) "Record-backed carrier"), so the submitted prompt classifies as Firstmate operational input and the host mirror never records it as captain dialog; a submit whose payload check fails never clears the composer, and only a still-pending submit earns resubmit Enters.
+The doorbell types one resume prompt into the terminal recorded in `state/captain-handle`, only when that session is provably idle with an empty composer, checks whether submission landed, and logs each outcome to `state/.resume-doorbell.log`; its header owns the exact checks and settings.
+The prompt uses the record-backed operational-input carrier owned by [`bin/fm-operational-input.sh`](../bin/fm-operational-input.sh) (kind `session-start`); [`bin/fm-host-mirror.sh`](../bin/fm-host-mirror.sh) owns its exclusion from captain dialog.
+A submit whose payload check fails preserves composer text; only `pending` or `pending-unproven` submit verdicts permit additional Enters.
 Proving idle needs a backend that reports a native busy state, so on a backend without one (tmux, zellij, orca, cmux, paseo) the doorbell stands down and an idle auto compaction there still starts no turn.
 
 ### Change from the previous nudge matcher
@@ -437,6 +438,8 @@ It proves the run wrapper's source routing end to end against a real `fm-session
 - Pi CLI continuation classification.
 - An unrecognized source falling through to the full digest.
 - Bounded loud delivery of an oversized Pi digest.
+
+`tests/fm-resume-doorbell.test.sh` and `tests/fm-host-mirror.test.sh` cover the delivery guards described in [Context epoch and resume doorbell](#context-epoch-and-resume-doorbell).
 
 Through the extension's public event surface, the same portable suite proves:
 

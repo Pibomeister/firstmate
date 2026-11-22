@@ -450,9 +450,9 @@ observe_live() {  # <captain-json> [force]
       # named home recorded at its last session start instead of failing every
       # pass. A title selector never falls back, whether it matched nothing or
       # matched a pane whose read failed, and neither does a pane the operator
-      # forced for a one-shot test-nudge pass: it must fail as itself, or the
-      # pass would observe a different terminal than the one named and report
-      # skip_read_failed rather than a quiet success elsewhere.
+      # forced for a one-shot test-nudge pass: its read failure must report
+      # skip_read_failed. Falling back would observe a different terminal
+      # than the one named and conceal that failure behind success elsewhere.
       if [ "$read_ok" = 0 ] && { [ "$force" != 1 ] || [ -z "$FORCE_PANE" ]; } \
         && [ -n "$pinned" ] && row=$(herdr_live_handle "$fmhome") \
         && [ "$row" != "$session"$'\t'"$pane" ]; then

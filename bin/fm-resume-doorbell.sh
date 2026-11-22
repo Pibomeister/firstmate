@@ -16,11 +16,10 @@
 # native busy state never qualifies, so the doorbell stands down there.
 # It then writes the resume instruction to a shared operational-input record
 # (bin/fm-operational-input.sh "Record-backed carrier", kind session-start)
-# and types the constant ASCII doorbell naming that record - Claude strips the
-# invisible protocol mark from typed prompts, and the doorbell text alone
-# proves nothing, so the prompt the primary submits classifies as Firstmate
-# operational input and the host mirror never records it as captain dialog -
-# and confirms the submit: a pending or pending-unproven first verdict is the
+# and types the constant ASCII doorbell naming that record because Claude
+# strips the invisible protocol mark from typed prompts. The shared protocol
+# owns carrier validation; bin/fm-host-mirror.sh owns dialog-mirror exclusions.
+# It then checks submission: a pending or pending-unproven first verdict is the
 # only one that earns resubmit Enters, at most
 # FM_RESUME_DOORBELL_RESUBMIT_TRIES times (default 2)
 # FM_RESUME_DOORBELL_RESUBMIT_DELAY seconds apart (default 1.5, clear of the
