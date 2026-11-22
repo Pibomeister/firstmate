@@ -332,7 +332,10 @@ snapshot_flight_finish() {  # <original-exit-status>
   local rc=$1
   [ "$SNAPSHOT_FLIGHT_HELD" -eq 1 ] || return "$rc"
   trap - EXIT
-  if [ "$SNAPSHOT_FLIGHT_OUT_FD" = 6 ]; then exec 1>&6 6>&-; else exec 1>&7 7>&-; fi
+  # Only the relay owns the original stdout. A probe that detaches after
+  # closing its standard streams cannot keep an extra capture descriptor alive.
+  exec 1>/dev/null
+  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || rc=1
   if {
     printf '%s %s %s\n' "${SNAPSHOT_FLIGHT_TMP##*/}" "$SNAPSHOT_FLIGHT_VIEW" "$rc"
     cat "$SNAPSHOT_FLIGHT_TMP.body"
@@ -341,8 +344,7 @@ snapshot_flight_finish() {  # <original-exit-status>
   else
     rc=1
   fi
-  cat "$SNAPSHOT_FLIGHT_TMP.body" || rc=1
-  rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body"
+  rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body" "$SNAPSHOT_FLIGHT_TMP.pipe"
   fm_lock_release "$SNAPSHOT_FLIGHT_LOCK" || rc=1
   exit "$rc"
 }
@@ -425,9 +427,23 @@ if [ -d "$STATE" ]; then
   (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") || exit 1
   snapshot_stage_fd=${FM_SNAPSHOT_STAGE_FD:-}
   snapshot_stage_fd=${snapshot_stage_fd#"${snapshot_stage_fd%%[!0]*}"}
-  SNAPSHOT_FLIGHT_OUT_FD=7
-  if [ "$snapshot_stage_fd" = 7 ]; then SNAPSHOT_FLIGHT_OUT_FD=6; exec 6>&1; else exec 7>&1; fi
-  exec > "$SNAPSHOT_FLIGHT_TMP.body"
+  mkfifo -m 600 "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+  # The temporary read/write opener makes startup nonblocking even if the
+  # relay exits early. It is closed in both processes before any probes start.
+  # A normal background relay can be waited for on stock macOS Bash 3.2 too.
+  if [ "$snapshot_stage_fd" = 6 ]; then
+    exec 7<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+    tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 7>&- &
+    SNAPSHOT_FLIGHT_RELAY_PID=$!
+    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+    exec 7>&-
+  else
+    exec 6<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+    tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 6>&- &
+    SNAPSHOT_FLIGHT_RELAY_PID=$!
+    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+    exec 6>&-
+  fi
   SNAPSHOT_FLIGHT_HELD=1
   trap 'snapshot_flight_finish "$?"' EXIT
 fi

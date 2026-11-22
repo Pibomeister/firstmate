@@ -487,33 +487,33 @@ test_spawn_gate_follows_load_relief_levels() {
 }
 
 test_replacement_accounting_does_not_waive_host_limits() {
-  local home fakebin out rc
-  home=$(make_home replacement-limits 1 0)
-  printf '1\nmax-load1 150\nmin-avail-gb 3\n' > "$home/config/lane-capacity"
+  local fixture_home fakebin out rc
+  fixture_home=$(make_home replacement-limits 1 0)
+  printf '1\nmax-load1 150\nmin-avail-gb 3\n' > "$fixture_home/config/lane-capacity"
   fakebin=$(make_probes "$TMP_ROOT/p-replacement-hot" 150.00 60 256 20971520)
   printf '68719476736\n' > "$fakebin/memsize"
   # Excluding this same task makes replacement zero-net, but its load must
   # still pass the configured ceiling, including equality at that ceiling.
-  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate ship-0); rc=$?
+  out=$(run_capacity_jq "$fixture_home" "$fakebin" --spawn-gate ship-0); rc=$?
   expect_code 75 "$rc" "zero-net replacement at load 150 must defer: $out"
   assert_contains "$out" 'load: 150.00 at or over its ceiling 150' "replacement must retain the load gate"
   fakebin=$(make_probes "$TMP_ROOT/p-replacement-cool" 149.00 60 256 20971520)
   printf '68719476736\n' > "$fakebin/memsize"
-  out=$(run_capacity_jq "$home" "$fakebin" --spawn-gate ship-0); rc=$?
+  out=$(run_capacity_jq "$fixture_home" "$fakebin" --spawn-gate ship-0); rc=$?
   expect_code 0 "$rc" "zero-net accounting with passing load must admit the lane gate: $out"
   # The full host-admission interface owns the configured memory reserve.
   # A ready lane frees its place but cannot erase that independent constraint.
   # Operational native top unused-RAM pre-spawn/pre-resume receipts remain
   # Firstmate-owned; this test does not claim that --spawn-gate measures them.
-  printf 'pr=https://github.com/o/r/pull/1\n' >> "$home/state/ship-0.meta"
+  printf 'pr=https://github.com/o/r/pull/1\n' >> "$fixture_home/state/ship-0.meta"
   fakebin=$(make_probes "$TMP_ROOT/p-replacement-memory" 1.00 50 256 20971520)
   printf '4294967296\n' > "$fakebin/memsize"
-  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  out=$(run_capacity_jq "$fixture_home" "$fakebin" --admit); rc=$?
   expect_code 75 "$rc" "freeing a lane cannot admit a host with only 2 GB available: $out"
   assert_contains "$out" 'memory:' "the memory admission refusal must remain explicit"
   fakebin=$(make_probes "$TMP_ROOT/p-replacement-passing" 1.00 60 256 20971520)
   printf '68719476736\n' > "$fakebin/memsize"
-  out=$(run_capacity_jq "$home" "$fakebin" --admit); rc=$?
+  out=$(run_capacity_jq "$fixture_home" "$fakebin" --admit); rc=$?
   expect_code 0 "$rc" "free lane with passing independent host limits must admit: $out"
   pass "replacement accounting waives neither the spawn load ceiling nor full host-admission memory reserve"
 }

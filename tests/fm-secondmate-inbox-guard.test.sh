@@ -272,10 +272,10 @@ test_guard_allows_everything_it_does_not_own() {
 }
 
 test_guard_window_does_not_wait_for_process_inventory() {
-  local home slowbin="$TMP_ROOT/slow-ps" real_ps
-  home=$(make_secondmate fast-window)
-  add_record "$home" 001
-  hook_call "$home" "$home" self
+  local fixture_home slowbin="$TMP_ROOT/slow-ps" real_ps
+  fixture_home=$(make_secondmate fast-window)
+  add_record "$fixture_home" 001
+  hook_call "$fixture_home" "$fixture_home" self
   expect_deny "initial inbox-first reminder"
   mkdir -p "$slowbin"
   real_ps=$(command -v ps)
@@ -291,9 +291,9 @@ SH
   . "$ROOT/bin/fm-timeout-lib.sh"
   PAYLOAD=$(jq -cn --arg command "bash '$ROOT/bin/fm-wake-drain.sh'" \
     '{tool_input:{command:$command},session_id:"s1",turn_id:"u1"}') \
-    fm_run_timed_fn 3 hook_call "$home" "$home" self PATH="$slowbin:$PATH" \
+    fm_run_timed_fn 3 hook_call "$fixture_home" "$fixture_home" self PATH="$slowbin:$PATH" \
     || fail "the allowed drain path waited for process inventory past its hook budget"
-  [ "$(cut -f2 "$home/state/.inbox-guard")" = 1 ] || fail "the drain call spent another deny inside the window"
+  [ "$(cut -f2 "$fixture_home/state/.inbox-guard")" = 1 ] || fail "the drain call spent another deny inside the window"
   [ ! -s "$OUT" ] && [ ! -s "$ERR" ] || fail "the allowed drain call emitted a hook denial"
   pass "inbox handling inside the existing re-deny window does not wait for process inventory"
 }
