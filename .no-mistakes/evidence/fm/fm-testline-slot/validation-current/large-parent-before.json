@@ -1,0 +1,244 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-08-28T10:00:00Z",
+  "fm_home": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home",
+  "session": {
+    "endpoint": {
+      "backend": "unknown",
+      "target": "unknown"
+    }
+  },
+  "roots": {
+    "fm_root": "{run-worktree}",
+    "state": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/state",
+    "data": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/data",
+    "config": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/config",
+    "projects": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/projects"
+  },
+  "backlog": {
+    "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/data/backlog.md",
+    "records": [],
+    "present": true
+  },
+  "tasks": [
+    {
+      "id": "large-child",
+      "kind": "secondmate",
+      "harness": "claude",
+      "mode": "secondmate",
+      "yolo": "off",
+      "branch": null,
+      "project": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/state/large-child.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/state/large-child.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+          "present": true
+        },
+        "home": {
+          "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+          "present": true
+        },
+        "report": {
+          "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/data/large-child/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [
+        "firstmate"
+      ],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-large-child",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-large-child",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-large-child",
+        "exists": false,
+        "agent_alive": "dead",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "send": "bin/fm-send.sh fm-large-child '<request>'",
+        "watch": "read status/doc return channel; do not routinely fm-peek a secondmate for answers",
+        "return_channel_note": "Secondmate answers come back through status/doc paths after a marked fm-send request."
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": true,
+      "available": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-parent-home/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-08-28T10:00:00Z"
+      },
+      "records": [
+        {
+          "id": "large-child",
+          "home": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+          "host": null,
+          "root": null,
+          "remote": false,
+          "registered": true,
+          "registry_error": null
+        }
+      ],
+      "input_truncated": false,
+      "records_truncated": false,
+      "complete": true,
+      "reasons": [],
+      "lines_in_window": 1,
+      "records_in_window": 1
+    },
+    "records": [
+      {
+        "id": "large-child",
+        "home": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+        "host": null,
+        "remote": false,
+        "registered": true,
+        "spawn_gen": null,
+        "current": {
+          "state": "unknown",
+          "reason": "invalid home: secondmate home cannot be inside the firstmate repo"
+        },
+        "invalidity": null,
+        "reconcile_inventory": null,
+        "provenance": {
+          "selected": "unknown",
+          "structured_home": "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home",
+          "parent_event_role": "fallback-only-not-current"
+        },
+        "freshness": {
+          "status": "unknown",
+          "observed_at": "2026-08-28T10:00:00Z",
+          "age_seconds": null
+        },
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": [],
+        "parent_event": {
+          "raw": "",
+          "note": "",
+          "age_seconds": null,
+          "open_activities": [],
+          "open_decisions": [],
+          "activity_scan": {
+            "records": [],
+            "available": true,
+            "input_truncated": false,
+            "retained_truncated": false,
+            "reasons": [],
+            "lines_in_window": 0,
+            "records_in_window": 0
+          }
+        },
+        "terminal_evidence": {
+          "provenance": "parent-direct-report-terminal",
+          "trust": "untrusted-supplement",
+          "captured": false,
+          "observed_at": "2026-08-28T10:00:00Z",
+          "freshness": "not-collected",
+          "reason": "no parent event to compare",
+          "lines": 0,
+          "bytes": 0,
+          "event_note_seen": false,
+          "contradiction": false
+        },
+        "contradiction": false
+      }
+    ],
+    "total_registered": 1,
+    "total": 1,
+    "shown": 1,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [
+      "{run-worktree}/.phase-test-tmp/fm-large-child-repro.MqzSNW/large-child-home"
+    ],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

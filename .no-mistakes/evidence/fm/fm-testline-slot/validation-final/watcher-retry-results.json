@@ -1,0 +1,6 @@
+[
+  {
+    "name": "Real watcher keeps liveness beats while failure backoff suppresses publication",
+    "result": "pass"
+  }
+]

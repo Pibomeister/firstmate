@@ -1,0 +1,572 @@
+[
+  {
+    "actions": {
+      "return_channel_note": null,
+      "steer": "bin/fm-send.sh fm-slide-1 '<instruction>'",
+      "watch": "bin/fm-peek.sh fm-slide-1"
+    },
+    "backend": "tmux",
+    "backlog": {
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "blocked_reason": null,
+      "body_excerpt": null,
+      "body_lines": [],
+      "captain_actionable": false,
+      "checked": false,
+      "completion": {
+        "date": null,
+        "verb": null
+      },
+      "current_role": "worker",
+      "done": null,
+      "hold_age_days": 0,
+      "hold_bucket": null,
+      "hold_kind": null,
+      "hold_reason": null,
+      "hold_set": null,
+      "hold_until": null,
+      "id": "slide-1",
+      "kind": "ship",
+      "links": [],
+      "local_note": null,
+      "merged": null,
+      "order": 1,
+      "pr_url": null,
+      "priority": null,
+      "raw": "- [ ] slide-1 - Window task 1 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+      "repo": "firstmate",
+      "report_path": null,
+      "reported": null,
+      "requires_child_metadata": true,
+      "since": "2026-08-28",
+      "state": "in_flight",
+      "structured": true,
+      "title": "Window task 1",
+      "unresolved_blocker_ids": []
+    },
+    "branch": null,
+    "current_state": {
+      "detail": "backend target gone: fmtest:fm-slide-1",
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-1",
+      "source": "none",
+      "state": "unknown"
+    },
+    "endpoint": {
+      "agent_alive": "not_checked",
+      "exists": false,
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "status": "absent",
+      "target": "fmtest:fm-slide-1"
+    },
+    "harness": "claude",
+    "hints": {
+      "blocked_event": false,
+      "last_event_text": "working: window fixture",
+      "open_decisions": [],
+      "pending_decision": false,
+      "scout_report_present": false
+    },
+    "id": "slide-1",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "paths": {
+      "home": {
+        "path": null,
+        "present": false
+      },
+      "meta": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-1.meta",
+        "present": true
+      },
+      "report": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-1/report.md",
+        "present": false
+      },
+      "status_log": {
+        "kind": "event_history",
+        "last_event": {
+          "age_seconds": null,
+          "note": "window fixture",
+          "raw": "working: window fixture",
+          "state": "working"
+        },
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-1.status",
+        "present": true
+      },
+      "worktree": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-1",
+        "present": true
+      }
+    },
+    "pr": {
+      "head": null,
+      "source": "absent",
+      "url": null
+    },
+    "project": "firstmate",
+    "remote": null,
+    "secondmate_projects": [],
+    "spawn_gen": "fm.slide1",
+    "yolo": ""
+  },
+  {
+    "actions": {
+      "return_channel_note": null,
+      "steer": "bin/fm-send.sh fm-slide-2 '<instruction>'",
+      "watch": "bin/fm-peek.sh fm-slide-2"
+    },
+    "backend": "tmux",
+    "backlog": {
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "blocked_reason": null,
+      "body_excerpt": null,
+      "body_lines": [],
+      "captain_actionable": false,
+      "checked": false,
+      "completion": {
+        "date": null,
+        "verb": null
+      },
+      "current_role": "worker",
+      "done": null,
+      "hold_age_days": 0,
+      "hold_bucket": null,
+      "hold_kind": null,
+      "hold_reason": null,
+      "hold_set": null,
+      "hold_until": null,
+      "id": "slide-2",
+      "kind": "ship",
+      "links": [],
+      "local_note": null,
+      "merged": null,
+      "order": 2,
+      "pr_url": null,
+      "priority": null,
+      "raw": "- [ ] slide-2 - Window task 2 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+      "repo": "firstmate",
+      "report_path": null,
+      "reported": null,
+      "requires_child_metadata": true,
+      "since": "2026-08-28",
+      "state": "in_flight",
+      "structured": true,
+      "title": "Window task 2",
+      "unresolved_blocker_ids": []
+    },
+    "branch": null,
+    "current_state": {
+      "detail": "backend target gone: fmtest:fm-slide-2",
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-2",
+      "source": "none",
+      "state": "unknown"
+    },
+    "endpoint": {
+      "agent_alive": "not_checked",
+      "exists": false,
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "status": "absent",
+      "target": "fmtest:fm-slide-2"
+    },
+    "harness": "claude",
+    "hints": {
+      "blocked_event": false,
+      "last_event_text": "working: window fixture",
+      "open_decisions": [],
+      "pending_decision": false,
+      "scout_report_present": false
+    },
+    "id": "slide-2",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "paths": {
+      "home": {
+        "path": null,
+        "present": false
+      },
+      "meta": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-2.meta",
+        "present": true
+      },
+      "report": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-2/report.md",
+        "present": false
+      },
+      "status_log": {
+        "kind": "event_history",
+        "last_event": {
+          "age_seconds": null,
+          "note": "window fixture",
+          "raw": "working: window fixture",
+          "state": "working"
+        },
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-2.status",
+        "present": true
+      },
+      "worktree": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-2",
+        "present": true
+      }
+    },
+    "pr": {
+      "head": null,
+      "source": "absent",
+      "url": null
+    },
+    "project": "firstmate",
+    "remote": null,
+    "secondmate_projects": [],
+    "spawn_gen": "fm.slide2",
+    "yolo": ""
+  },
+  {
+    "actions": {
+      "return_channel_note": null,
+      "steer": "bin/fm-send.sh fm-slide-3 '<instruction>'",
+      "watch": "bin/fm-peek.sh fm-slide-3"
+    },
+    "backend": "tmux",
+    "backlog": {
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "blocked_reason": null,
+      "body_excerpt": null,
+      "body_lines": [],
+      "captain_actionable": false,
+      "checked": false,
+      "completion": {
+        "date": null,
+        "verb": null
+      },
+      "current_role": "worker",
+      "done": null,
+      "hold_age_days": 0,
+      "hold_bucket": null,
+      "hold_kind": null,
+      "hold_reason": null,
+      "hold_set": null,
+      "hold_until": null,
+      "id": "slide-3",
+      "kind": "ship",
+      "links": [],
+      "local_note": null,
+      "merged": null,
+      "order": 3,
+      "pr_url": null,
+      "priority": null,
+      "raw": "- [ ] slide-3 - Window task 3 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+      "repo": "firstmate",
+      "report_path": null,
+      "reported": null,
+      "requires_child_metadata": true,
+      "since": "2026-08-28",
+      "state": "in_flight",
+      "structured": true,
+      "title": "Window task 3",
+      "unresolved_blocker_ids": []
+    },
+    "branch": null,
+    "current_state": {
+      "detail": "backend target gone: fmtest:fm-slide-3",
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-3",
+      "source": "none",
+      "state": "unknown"
+    },
+    "endpoint": {
+      "agent_alive": "not_checked",
+      "exists": false,
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "status": "absent",
+      "target": "fmtest:fm-slide-3"
+    },
+    "harness": "claude",
+    "hints": {
+      "blocked_event": false,
+      "last_event_text": "working: window fixture",
+      "open_decisions": [],
+      "pending_decision": false,
+      "scout_report_present": false
+    },
+    "id": "slide-3",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "paths": {
+      "home": {
+        "path": null,
+        "present": false
+      },
+      "meta": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-3.meta",
+        "present": true
+      },
+      "report": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-3/report.md",
+        "present": false
+      },
+      "status_log": {
+        "kind": "event_history",
+        "last_event": {
+          "age_seconds": null,
+          "note": "window fixture",
+          "raw": "working: window fixture",
+          "state": "working"
+        },
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-3.status",
+        "present": true
+      },
+      "worktree": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-3",
+        "present": true
+      }
+    },
+    "pr": {
+      "head": null,
+      "source": "absent",
+      "url": null
+    },
+    "project": "firstmate",
+    "remote": null,
+    "secondmate_projects": [],
+    "spawn_gen": "fm.slide3",
+    "yolo": ""
+  },
+  {
+    "actions": {
+      "return_channel_note": null,
+      "steer": "bin/fm-send.sh fm-slide-4 '<instruction>'",
+      "watch": "bin/fm-peek.sh fm-slide-4"
+    },
+    "backend": "tmux",
+    "backlog": {
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "blocked_reason": null,
+      "body_excerpt": null,
+      "body_lines": [],
+      "captain_actionable": false,
+      "checked": false,
+      "completion": {
+        "date": null,
+        "verb": null
+      },
+      "current_role": "worker",
+      "done": null,
+      "hold_age_days": 0,
+      "hold_bucket": null,
+      "hold_kind": null,
+      "hold_reason": null,
+      "hold_set": null,
+      "hold_until": null,
+      "id": "slide-4",
+      "kind": "ship",
+      "links": [],
+      "local_note": null,
+      "merged": null,
+      "order": 4,
+      "pr_url": null,
+      "priority": null,
+      "raw": "- [ ] slide-4 - Window task 4 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+      "repo": "firstmate",
+      "report_path": null,
+      "reported": null,
+      "requires_child_metadata": true,
+      "since": "2026-08-28",
+      "state": "in_flight",
+      "structured": true,
+      "title": "Window task 4",
+      "unresolved_blocker_ids": []
+    },
+    "branch": null,
+    "current_state": {
+      "detail": "backend target gone: fmtest:fm-slide-4",
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-4",
+      "source": "none",
+      "state": "unknown"
+    },
+    "endpoint": {
+      "agent_alive": "not_checked",
+      "exists": false,
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "status": "absent",
+      "target": "fmtest:fm-slide-4"
+    },
+    "harness": "claude",
+    "hints": {
+      "blocked_event": false,
+      "last_event_text": "working: window fixture",
+      "open_decisions": [],
+      "pending_decision": false,
+      "scout_report_present": false
+    },
+    "id": "slide-4",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "paths": {
+      "home": {
+        "path": null,
+        "present": false
+      },
+      "meta": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-4.meta",
+        "present": true
+      },
+      "report": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-4/report.md",
+        "present": false
+      },
+      "status_log": {
+        "kind": "event_history",
+        "last_event": {
+          "age_seconds": null,
+          "note": "window fixture",
+          "raw": "working: window fixture",
+          "state": "working"
+        },
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-4.status",
+        "present": true
+      },
+      "worktree": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-4",
+        "present": true
+      }
+    },
+    "pr": {
+      "head": null,
+      "source": "absent",
+      "url": null
+    },
+    "project": "firstmate",
+    "remote": null,
+    "secondmate_projects": [],
+    "spawn_gen": "fm.slide4",
+    "yolo": ""
+  },
+  {
+    "actions": {
+      "return_channel_note": null,
+      "steer": "bin/fm-send.sh fm-slide-5 '<instruction>'",
+      "watch": "bin/fm-peek.sh fm-slide-5"
+    },
+    "backend": "tmux",
+    "backlog": {
+      "blocked_by": null,
+      "blocked_by_ids": [],
+      "blocked_reason": null,
+      "body_excerpt": null,
+      "body_lines": [],
+      "captain_actionable": false,
+      "checked": false,
+      "completion": {
+        "date": null,
+        "verb": null
+      },
+      "current_role": "worker",
+      "done": null,
+      "hold_age_days": 0,
+      "hold_bucket": null,
+      "hold_kind": null,
+      "hold_reason": null,
+      "hold_set": null,
+      "hold_until": null,
+      "id": "slide-5",
+      "kind": "ship",
+      "links": [],
+      "local_note": null,
+      "merged": null,
+      "order": 5,
+      "pr_url": null,
+      "priority": null,
+      "raw": "- [ ] slide-5 - Window task 5 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+      "repo": "firstmate",
+      "report_path": null,
+      "reported": null,
+      "requires_child_metadata": true,
+      "since": "2026-08-28",
+      "state": "in_flight",
+      "structured": true,
+      "title": "Window task 5",
+      "unresolved_blocker_ids": []
+    },
+    "branch": null,
+    "current_state": {
+      "detail": "backend target gone: fmtest:fm-slide-5",
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-5",
+      "source": "none",
+      "state": "unknown"
+    },
+    "endpoint": {
+      "agent_alive": "not_checked",
+      "exists": false,
+      "freshness": "fresh",
+      "observed_at": "2026-08-28T10:00:00Z",
+      "status": "absent",
+      "target": "fmtest:fm-slide-5"
+    },
+    "harness": "claude",
+    "hints": {
+      "blocked_event": false,
+      "last_event_text": "working: window fixture",
+      "open_decisions": [],
+      "pending_decision": false,
+      "scout_report_present": false
+    },
+    "id": "slide-5",
+    "kind": "ship",
+    "mode": "no-mistakes",
+    "paths": {
+      "home": {
+        "path": null,
+        "present": false
+      },
+      "meta": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-5.meta",
+        "present": true
+      },
+      "report": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-5/report.md",
+        "present": false
+      },
+      "status_log": {
+        "kind": "event_history",
+        "last_event": {
+          "age_seconds": null,
+          "note": "window fixture",
+          "raw": "working: window fixture",
+          "state": "working"
+        },
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-5.status",
+        "present": true
+      },
+      "worktree": {
+        "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-5",
+        "present": true
+      }
+    },
+    "pr": {
+      "head": null,
+      "source": "absent",
+      "url": null
+    },
+    "project": "firstmate",
+    "remote": null,
+    "secondmate_projects": [],
+    "spawn_gen": "fm.slide5",
+    "yolo": ""
+  }
+]

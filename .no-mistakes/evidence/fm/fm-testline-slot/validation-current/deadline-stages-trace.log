@@ -1,0 +1,1196 @@
++ set -u
+++ dirname tests/fm-home-summary-refresh.test.sh
++ . tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ umask 022
++++ dirname tests/lib.sh
+++ . tests/git-config-helpers.sh
++++ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
++++ GIT_CONFIG_GLOBAL=/dev/null
++++ GIT_CONFIG_NOSYSTEM=1
++++ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++ export FM_TEST_SEAM=1
+++ FM_TEST_SEAM=1
+++ export FM_HEARTBEAT_BIN=true
+++ FM_HEARTBEAT_BIN=true
+++ export FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
+++ FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
+++ unset FM_TASK_ID
+++ unset TASKS_AXI_FILE TASKS_AXI_BACKEND
+++ unset REX_SESSION REX_BLOCK
+++ unset ORCA_TERMINAL_HANDLE
+++++ dirname tests/lib.sh
++++ cd tests/..
++++ pwd
+++ ROOT={run-worktree}
++++ fm_test_tmpdir
++++ local base={run-worktree}/.phase-test-tmp physical
++++ base={run-worktree}/.phase-test-tmp
++++ '[' -n {run-worktree}/.phase-test-tmp ']'
++++ case "$base" in
+++++ CDPATH=
+++++ cd -- {run-worktree}/.phase-test-tmp
+++++ pwd -P
++++ physical={run-worktree}/.phase-test-tmp
++++ base={run-worktree}/.phase-test-tmp
++++ '[' -e {run-worktree}/.phase-test-tmp/.git ']'
++++ printf '%s\n' {run-worktree}/.phase-test-tmp
+++ FM_TEST_TMPDIR={run-worktree}/.phase-test-tmp
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp {run-worktree}/.phase-test-tmp/.fm-test-cleanup.77428.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY={run-worktree}/.phase-test-tmp/.fm-test-cleanup.77428.dUVPNB
++++ fm_test_pid_identity 77428
++++ local pid=77428
++++ FM_STATE_OVERRIDE={run-worktree}/.phase-test-tmp
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ {run-worktree}/bin/fm-wake-lib.sh 77428
+++ FM_TEST_OWNER_IDENTITY='Sun Nov 22 16:25:14 2026     bash -x tests/fm-home-summary-refresh.test.sh test_locked_deadlines_record_backoff'
++++ mktemp {run-worktree}/.phase-test-tmp/.fm-test-procevent.77428.XXXXXX
+++ FM_TEST_PROCEVENT_REGISTRY={run-worktree}/.phase-test-tmp/.fm-test-procevent.77428.UFFMJY
++++ mktemp {run-worktree}/.phase-test-tmp/.fm-test-watcher.77428.XXXXXX
+++ FM_TEST_WATCHER_REGISTRY={run-worktree}/.phase-test-tmp/.fm-test-watcher.77428.NV0BtR
+++ FM_TEST_STUB_MAX_BLOCK_SECONDS=120
+++ export FM_TEST_STUB_MAX_BLOCK_SECONDS
+++ FM_TEST_SUITE_PID=77428
+++ export FM_TEST_SUITE_PID
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ trap 'fm_test_cleanup; exit 129' HUP
+++ trap 'fm_test_cleanup; exit 131' QUIT
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 0 '!=' 1 ']'
+++ fm_test_reap_orphans
+++ local marker dir mtime now owner_pid owner_identity current_identity
++++ date +%s
+++ now=1795364714
+++ for marker in '"$FM_TEST_TMPDIR"/fm-*/.fm-test-fixture'
+++ '[' -e {run-worktree}/.phase-test-tmp/fm-test-queue.1SpsC8/.fm-test-fixture ']'
++++ sed -n 1p {run-worktree}/.phase-test-tmp/fm-test-queue.1SpsC8/.fm-test-fixture
+++ owner_pid=70008
++++ sed -n '2,$p' {run-worktree}/.phase-test-tmp/fm-test-queue.1SpsC8/.fm-test-fixture
+++ owner_identity='Sun Nov 22 16:17:20 2026     bash tests/fm-test-queue.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 70008
+++ current_identity='Sun Nov 22 16:17:20 2026     bash tests/fm-test-queue.test.sh'
+++ '[' -n 'Sun Nov 22 16:17:20 2026     bash tests/fm-test-queue.test.sh' ']'
+++ '[' 'Sun Nov 22 16:17:20 2026     bash tests/fm-test-queue.test.sh' = 'Sun Nov 22 16:17:20 2026     bash tests/fm-test-queue.test.sh' ']'
+++ continue
++ WRITER={run-worktree}/bin/fm-home-summary-refresh.sh
++ SNAPSHOT={run-worktree}/bin/fm-fleet-snapshot.sh
++ WATCH={run-worktree}/bin/fm-watch.sh
+++ fm_test_tmproot fm-home-summary-refresh
+++ local prefix=fm-home-summary-refresh root tmp_base
++++ fm_test_tmpdir
++++ local base={run-worktree}/.phase-test-tmp physical
++++ base={run-worktree}/.phase-test-tmp
++++ '[' -n {run-worktree}/.phase-test-tmp ']'
++++ case "$base" in
+++++ CDPATH=
+++++ cd -- {run-worktree}/.phase-test-tmp
+++++ pwd -P
++++ physical={run-worktree}/.phase-test-tmp
++++ base={run-worktree}/.phase-test-tmp
++++ '[' -e {run-worktree}/.phase-test-tmp/.git ']'
++++ printf '%s\n' {run-worktree}/.phase-test-tmp
+++ tmp_base={run-worktree}/.phase-test-tmp
+++ tmp_base={run-worktree}/.phase-test-tmp
++++ mktemp -d {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.XXXXXX
+++ root={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++++ cd -P -- {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++++ pwd -P
+++ root={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
+++ printf '%s\n%s\n' 77428 'Sun Nov 22 16:25:14 2026     bash -x tests/fm-home-summary-refresh.test.sh test_locked_deadlines_record_backoff'
+++ printf '%s\n' {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
+++ printf '%s\n' {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ TMP_ROOT={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ HOME_DIR={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/mate-home
++ CADENCE_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/cadence-home
++ PARENT_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/parent-home
++ LARGE_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/large-home
++ STATELESS_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/stateless-home
++ LARGE_CHILD_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/large-child-home
++ LARGE_PARENT_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/large-parent-home
++ PARENT_CODE_ROOT={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/parent-code-root
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/parent-code-root
+++ fm_fakebin {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
+++ local dir={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU fakebin={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin
+++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin
+++ printf '%s\n' {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin
++ FAKEBIN={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin
++ WATCH_PID=
++ SLOW_WRITER_PID=
++ SLOW_WORKER_PGID=
++ SLOW_NM_PID=
++ SLOW_VALIDATOR_PID=
++ LOCK_HOLDER_PID=
++ trap cleanup EXIT
++ trap 'cleanup; exit 130' INT
++ trap 'cleanup; exit 143' TERM
++ command -v jq
++ '[' test_locked_deadlines_record_backoff '!=' --backoff ']'
++ cat
++ cat
++ chmod +x {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin/tmux {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/fakebin/no-mistakes
++ '[' 1 -gt 0 ']'
++ fm_test_run test_locked_deadlines_record_backoff
++ local name kind
++ '[' 1 -gt 0 ']'
++ printf '1..%s\n' 1
+1..1
++ '[' 1 -gt 0 ']'
++ name=test_locked_deadlines_record_backoff
++ shift
+++ type -t test_locked_deadlines_record_backoff
++ kind=function
++ '[' function = function ']'
++ test_locked_deadlines_record_backoff
++ local code home stalls operation attempts expected lib
++ code={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code
++ stalls={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin
++ ln -s {run-worktree}/bin/fm-home-summary-refresh.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh
++ ln -s {run-worktree}/bin/fm-timeout-lib.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-timeout-lib.sh
++ for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh
++ ln -s {run-worktree}/bin/fm-clock-lib.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-clock-lib.sh
++ for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh
++ ln -s {run-worktree}/bin/fm-wake-lib.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-wake-lib.sh
++ for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh
++ ln -s {run-worktree}/bin/fm-bash-compat-lib.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-bash-compat-lib.sh
++ for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh
++ ln -s {run-worktree}/bin/fm-path-lib.sh {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-path-lib.sh
++ cat
++ chmod +x {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-fleet-snapshot.sh
++ cat
++ . {run-worktree}/bin/fm-timeout-lib.sh
++++ d={run-worktree}/bin
++++ '[' {run-worktree}/bin '!=' {run-worktree}/bin/fm-timeout-lib.sh ']'
++++ CDPATH=
++++ cd -- {run-worktree}/bin
++++ pwd
+++ . {run-worktree}/bin/fm-bash-compat-lib.sh
++++ fm_bash_compat_apply
++++ local verdict=unaffected
++++ fm_bash_heredoc_affected
++++ local ostype major minor patch
++++ '[' 0 -ge 4 ']'
++++ '[' 1 = 1 ']'
++++ '[' -n '' ']'
++++ ostype=darwin25
++++ major=3
++++ minor=2
++++ patch=57
++++ case "$ostype" in
++++ case "$major$minor$patch" in
++++ '[' 3 -eq 5 ']'
++++ return 1
++++ '[' 1 = 1 ']'
++++ '[' -n '' ']'
+++ set -u
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=stage
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.QWBweb
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.QWBweb {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ runner_pid=78930
++ wait 78930
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.QWBweb {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.QWBweb
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.QWBweb
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=0
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 0 -eq 0 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-stage/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=mkdir
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.MJZme4
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.MJZme4 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ runner_pid=41210
++ wait 41210
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.MJZme4 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.MJZme4
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.MJZme4
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=0
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 0 -eq 0 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-mkdir/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=ledger-temp
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.GPrk0P
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.GPrk0P {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.GPrk0P {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_pid=91758
++ wait 91758
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.GPrk0P
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.GPrk0P
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=0
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 0 -eq 0 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-ledger-temp/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=error-temp
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.hRoMYE
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.hRoMYE {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.hRoMYE {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_pid=20917
++ wait 20917
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.hRoMYE
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.hRoMYE
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=0
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 0 -eq 0 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-error-temp/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=rm
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.CTLr9y
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.CTLr9y {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ runner_pid=41647
++ wait 41647
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.CTLr9y {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.CTLr9y
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.CTLr9y
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=1
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 1 -eq 1 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-rm/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=chmod
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.oWyzMv
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.oWyzMv {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ runner_pid=68785
++ wait 68785
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.oWyzMv {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.oWyzMv
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.oWyzMv
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=1
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 1 -eq 1 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-chmod/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=replace
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.4A79uP
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.4A79uP {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.4A79uP {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_pid=88700
++ wait 88700
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.4A79uP
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.4A79uP
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=1
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 1 -eq 1 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-replace/state/.home-summary-refresh.backoff ']'
++ for operation in stage mkdir ledger-temp error-temp rm chmod replace log
++ home={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ attempts={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ mkdir -p {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/data {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/config {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/projects
++ :
++ jq -n --arg home {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }'
++ BASH_ENV={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-hooks.sh
++ FM_TEST_STALL_AT=log
++ FM_TEST_STALLED={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/stalled
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_HOME_SUMMARY_TIMEOUT=8
++ FM_TEST_SEAM=1
++ FM_NOW=1000
++ fm_run_timed 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local seconds=30 timeout_path
++ shift
++ case "$(fm_timeout_mechanism)" in
+++ fm_timeout_mechanism
+++ local timeout_path
+++ '[' '' = bash ']'
++++ fm_external_timeout_path
++++ local name timeout_path
++++ for name in timeout gtimeout
+++++ type -P timeout
++++ timeout_path=/opt/homebrew/bin/timeout
++++ '[' -n /opt/homebrew/bin/timeout ']'
++++ '[' -x /opt/homebrew/bin/timeout ']'
++++ printf '%s\n' /opt/homebrew/bin/timeout
++++ return 0
+++ timeout_path=/opt/homebrew/bin/timeout
+++ printf '%s\n' timeout
+++ fm_external_timeout_path
+++ local name timeout_path
+++ for name in timeout gtimeout
++++ type -P timeout
+++ timeout_path=/opt/homebrew/bin/timeout
+++ '[' -n /opt/homebrew/bin/timeout ']'
+++ '[' -x /opt/homebrew/bin/timeout ']'
+++ printf '%s\n' /opt/homebrew/bin/timeout
+++ return 0
++ timeout_path=/opt/homebrew/bin/timeout
++ fm_run_external_timeout /opt/homebrew/bin/timeout 30 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ local runner=/opt/homebrew/bin/timeout seconds=30 status_file runner_pid runner_rc command_rc
++ shift 2
+++ mktemp {run-worktree}/.phase-test-tmp/fm-timeout-status.XXXXXX
++ status_file={run-worktree}/.phase-test-tmp/fm-timeout-status.u3wek2
++ fm_timeout_background /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.u3wek2 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ fm_timeout_stdin_is_redirected
++ '[' '!' -t 0 ']'
++ /opt/homebrew/bin/timeout -k 1 30 bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ {run-worktree}/.phase-test-tmp/fm-timeout-status.u3wek2 {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
++ runner_pid=9603
++ wait 9603
++ runner_rc=0
+++ cat {run-worktree}/.phase-test-tmp/fm-timeout-status.u3wek2
++ command_rc=0
++ rm -f {run-worktree}/.phase-test-tmp/fm-timeout-status.u3wek2
++ case "$command_rc" in
++ '[' 0 -le 255 ']'
++ case "$runner_rc" in
++ return 0
++ '[' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/stalled ']'
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=1030'
++ '[' 'failures=1
+next=1030' = 'failures=1
+next=1030' ']'
+++ wc -l
+++ tr -d ' '
++ expected=1
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=1001
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ wc -l
+++ tr -d ' '
++ '[' 1 -eq 1 ']'
++ FM_TEST_STALL_AT=none
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ FM_ROOT_OVERRIDE={run-worktree}
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
++ cmp -s {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state/home-summary.json
++ '[' '!' -e {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state/.home-summary-refresh.backoff ']'
++ FM_TEST_STALL_AT=log
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=2000
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh --best-effort
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state/.home-summary-refresh.backoff
+++ printf 'failures=1\nnext=2030'
++ '[' 'failures=1
+next=2030' = 'failures=1
+next=2030' ']'
++ FM_TEST_STALL_AT=log
++ FM_TEST_ATTEMPTS={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/attempts
++ FM_TEST_SUMMARY={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/summary.json
++ FM_HOME={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log
++ FM_ROOT_OVERRIDE={run-worktree}
++ FM_TEST_SEAM=1
++ FM_NOW=2030
++ {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-code/bin/fm-home-summary-refresh.sh
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@0 producer@0)
+++ cat {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/locked-deadline-log/state/.home-summary-refresh.backoff
+++ printf 'failures=2\nnext=2090'
++ '[' 'failures=2
+next=2090' = 'failures=2
+next=2090' ']'
++ pass 'every lock-held deadline records bounded backoff before admission resumes'
++ printf 'ok - %s\n' 'every lock-held deadline records bounded backoff before admission resumes'
+ok - every lock-held deadline records bounded backoff before admission resumes
++ '[' 0 -gt 0 ']'
++ printf 'FM_TEST_COMPLETE\n'
+FM_TEST_COMPLETE
++ exit
++ cleanup
++ local pid
++ case "$SLOW_WORKER_PGID" in
++ for pid in '"$WATCH_PID"' '"$SLOW_WRITER_PID"' '"$SLOW_NM_PID"' '"$SLOW_VALIDATOR_PID"' '"$LOCK_HOLDER_PID"'
++ '[' -n '' ']'
++ continue
++ for pid in '"$WATCH_PID"' '"$SLOW_WRITER_PID"' '"$SLOW_NM_PID"' '"$SLOW_VALIDATOR_PID"' '"$LOCK_HOLDER_PID"'
++ '[' -n '' ']'
++ continue
++ for pid in '"$WATCH_PID"' '"$SLOW_WRITER_PID"' '"$SLOW_NM_PID"' '"$SLOW_VALIDATOR_PID"' '"$LOCK_HOLDER_PID"'
++ '[' -n '' ']'
++ continue
++ for pid in '"$WATCH_PID"' '"$SLOW_WRITER_PID"' '"$SLOW_NM_PID"' '"$SLOW_VALIDATOR_PID"' '"$LOCK_HOLDER_PID"'
++ '[' -n '' ']'
++ continue
++ for pid in '"$WATCH_PID"' '"$SLOW_WRITER_PID"' '"$SLOW_NM_PID"' '"$SLOW_VALIDATOR_PID"' '"$LOCK_HOLDER_PID"'
++ '[' -n '' ']'
++ continue
++ fm_test_cleanup
++ local d
++ fm_test_reap_watchers
++ local state lock_home 'seen=
+'
++ '[' -f {run-worktree}/.phase-test-tmp/.fm-test-watcher.77428.NV0BtR ']'
++ IFS=
++ read -r state
++ rm -f {run-worktree}/.phase-test-tmp/.fm-test-watcher.77428.NV0BtR
++ fm_test_reap_procevent_homes
++ local home claim_root 'seen=
+'
++ '[' -f {run-worktree}/.phase-test-tmp/.fm-test-procevent.77428.UFFMJY ']'
++ IFS='	'
++ read -r home claim_root
++ rm -f {run-worktree}/.phase-test-tmp/.fm-test-procevent.77428.UFFMJY
++ for d in '"${FM_TEST_CLEANUP_DIRS[@]:-}"'
++ '[' -n '' ']'
++ '[' -f {run-worktree}/.phase-test-tmp/.fm-test-cleanup.77428.dUVPNB ']'
++ IFS=
++ read -r d
++ '[' -n {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU ']'
++ fm_test_reap_root_processes {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ local root={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU chain pid pids signal i
++ '[' -n {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU ']'
++ '[' {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU '!=' / ']'
++ chain=' '
++ pid=77428
++ '[' -n 77428 ']'
++ '[' 77428 -gt 1 ']'
++ chain=' 77428 '
+++ ps -o ppid= -p 77428
+++ tr -d '[:space:]'
++ pid=77266
++ '[' -n 77266 ']'
++ '[' 77266 -gt 1 ']'
++ chain=' 77428 77266 '
+++ ps -o ppid= -p 77266
+++ tr -d '[:space:]'
++ pid=18019
++ '[' -n 18019 ']'
++ '[' 18019 -gt 1 ']'
++ chain=' 77428 77266 18019 '
+++ ps -o ppid= -p 18019
+++ tr -d '[:space:]'
++ pid=63734
++ '[' -n 63734 ']'
++ '[' 63734 -gt 1 ']'
++ chain=' 77428 77266 18019 63734 '
+++ ps -o ppid= -p 63734
+++ tr -d '[:space:]'
++ pid=1
++ '[' -n 1 ']'
++ '[' 1 -gt 1 ']'
++ for signal in TERM KILL
++ i=0
++ '[' 0 -lt 20 ']'
+++ ps -ww -eo pid=,args=
+++ FM_TEST_REAP_ROOT={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU/
+++ awk -v 'chain= 77428 77266 18019 63734 ' 'index($0, ENVIRON["FM_TEST_REAP_ROOT"]) && index(chain, " " $1 " ") == 0 { print $1 }'
++ pids=
++ '[' -n '' ']'
++ return 0
++ fm_test_remove_tree {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ local dir={run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ '[' -d {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU ']'
++ '[' '!' -L {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU ']'
++ find {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU -type d -exec chmod u+rwx '{}' +
++ rm -rf {run-worktree}/.phase-test-tmp/fm-home-summary-refresh.0VrmpU
++ IFS=
++ read -r d
++ rm -f {run-worktree}/.phase-test-tmp/.fm-test-cleanup.77428.dUVPNB

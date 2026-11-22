@@ -1,0 +1,5 @@
+ok - failed refresh backs off from 30 to 1800 seconds and resets on publication
+ok - a queued refresh checks backoff after taking the lock
+ok - timeout backoff precedes admission and cannot undo a later publication
+ok - a stalled timeout backoff write remains bounded while holding the lock
+ok - backoff eligibility and failure reads cannot hold a lifecycle caller

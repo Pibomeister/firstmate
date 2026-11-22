@@ -1,0 +1,27 @@
+[
+  {
+    "name": "High-load reserved slot, FIFO turnover, and second-slot ceiling",
+    "result": "pass"
+  },
+  {
+    "name": "Real producer failures back off 30 to 1800 seconds and direct publication resets",
+    "result": "pass"
+  },
+  {
+    "name": "Concurrent refreshes recheck backoff and busy if-idle skips preserve it",
+    "result": "pass"
+  },
+  {
+    "name": "Lock-held filesystem stall records bounded backoff and preserves ledger",
+    "result": "pass"
+  },
+  {
+    "name": "Killed lock owner cannot replace a recovered ledger",
+    "result": "pass"
+  },
+  {
+    "name": "Real watcher keeps liveness beats while failure backoff suppresses publication",
+    "result": "fail",
+    "error": ""
+  }
+]

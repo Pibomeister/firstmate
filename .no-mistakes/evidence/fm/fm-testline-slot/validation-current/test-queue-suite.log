@@ -1,0 +1,37 @@
+ok - fm-test-queue.sh: warm delta prepared in 8s; mismatch falls back and uncertain execution does not
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+ok - fm-test-queue.sh: help prints the header and malformed calls are usage errors
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+ok - fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable
+ok - fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+ok - fm-test-queue.sh: runs are served one at a time in ticket order
+ok - fm-test-queue.sh: no more runs are served at once than there are slots
+ok - fm-test-queue.sh: the reserved slot serves the oldest at any load and the second slot obeys the ceiling
+ok - fm-test-queue.sh: a signal releases the ticket and the slot
+ok - fm-test-queue.sh: surviving workload children keep slots and abandoned tickets are reclaimed
+ok - fm-test-queue.sh: nonleader grandchildren follow the documented lifetime limit
+ok - fm-test-queue.sh: a leaked background child in the wrapper's own group is reaped and frees the slot
+ok - fm-test-queue.sh: the next run wakes a dead wrapper's stopped holder, which reaps its straggler, and takes the slot
+ok - fm-test-queue.sh: a killed wrapper's holder reaps its straggler with no later run
+ok - fm-test-queue.sh: a holder outlasting its wrapper waits for a child still recording itself
+ok - fm-test-queue.sh: a wrapper killed mid-reap leaves its holder to finish the reap
+ok - fm-test-queue.sh: a zombie wrapper whose caller still reads its output does not stall its holder
+ok - fm-test-queue.sh: a process substitution started before an exec into the queue keeps its output
+ok - fm-test-queue.sh: a snapshot failure during the exit reap leaves the holder to retry
+ok - fm-test-queue.sh: a dead holder's nap is reaped, not spared as a caller stage
+ok - fm-test-queue.sh: an unread holder start time neither hangs the run nor holds the slot
+ok - fm-test-queue.sh: a matching group id without a live holder in it is never reaped
+ok - fm-test-queue.sh: a pipeline stage that outlives its caller is not reaped
+ok - fm-test-queue.sh: a remote straggler is reaped and cannot hold the SSH output open
+ok - fm-watchdog.test.sh: no fixture outlives its suite, even one killed outright or under the queue
+ok - fm-test-queue.sh: child liveness requires the recorded start time
+ok - fm-test-queue.sh: a lock left by a dead process is broken
+ok - fm-test-queue.sh: a delayed reclaimer cannot remove a replacement live lock
+ok - fm-test-queue.sh: timezones preserve live wrappers, surviving children, and command environments
+ok - fm-test-queue.sh: all callers use shared configuration and reject bad shared values
+ok - fm-test-queue.sh: a run nested inside a served run does not take a second ticket
+ok - fm-test-queue.sh: a lost ticket counter never lets a new run jump the line
+ok - fm-test-queue.sh: commands keep set, empty, and unset locales and the caller's umask
+ok - fm-test-queue.sh: metadata is private and failed probes warn without bypassing slots
+ok - fm-test-queue.sh: terminal foreground, background, input, interrupt, and stop/resume work

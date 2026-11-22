@@ -1,0 +1,18 @@
+{
+  "head": "99e24956b5cfbf6841b43a7853a296833949a291",
+  "exit_statuses": {
+    "live-driver.exit": "0",
+    "test-queue-suite.exit": "0",
+    "home-summary-final.exit": "1",
+    "backoff-focused.exit": "0",
+    "home-summary-retry.exit": "1",
+    "row-probe.exit": "0",
+    "home-summary-suite.exit": "1"
+  },
+  "source_changes": [
+    "tests/fm-home-summary-refresh.test.sh"
+  ],
+  "test_patch_sha256": "ea2fe8cecc740642d45378df279d3fb19845ceb39e903290010698e9f7f67812",
+  "fixtures_removed": true,
+  "owned_fixture_processes": []
+}

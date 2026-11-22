@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Local slow real producer times out without losing the ledger or letting a queued trigger bypass backoff",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-publication-safety.log",
+    "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+  },
+  {
+    "name": "Local killed lock owner cannot overwrite a newer real publication after its older producer deadline",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-publication-safety.log",
+    "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+  }
+]

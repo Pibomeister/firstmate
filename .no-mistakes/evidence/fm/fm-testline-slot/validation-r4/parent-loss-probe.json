@@ -1,0 +1,11 @@
+{
+  "parent_exit": -9,
+  "worker": 82140,
+  "observations": [
+    {
+      "seconds": 0.167,
+      "worker_live": false,
+      "stages": []
+    }
+  ]
+}

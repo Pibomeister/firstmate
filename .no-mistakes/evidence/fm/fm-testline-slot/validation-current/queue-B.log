@@ -1,0 +1,4 @@
+fm-test-queue: ticket 2, position 1: load 400 is not below 96
+fm-test-queue: ticket 2 served
+receipt started B
+receipt completed B

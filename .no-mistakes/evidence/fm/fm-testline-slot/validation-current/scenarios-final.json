@@ -1,0 +1,44 @@
+[
+  {
+    "name": "Local receipts at synthetic load 400 start in FIFO order through the reserved slot",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local second receipt waits above load 96, starts at load 95, and a third receipt never exceeds the two-slot cap",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local real-producer configuration failures back off 30\u20131800 seconds, preserve the ledger, and reset after direct publication",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local overlapping refresh triggers preserve idle-skip state and recheck backoff after lock acquisition",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local slow real producer times out without losing the ledger or letting a queued trigger bypass backoff",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-publication-safety.log",
+    "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+  },
+  {
+    "name": "Local killed lock owner cannot overwrite a newer real publication after its older producer deadline",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-publication-safety.log",
+    "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+  }
+]

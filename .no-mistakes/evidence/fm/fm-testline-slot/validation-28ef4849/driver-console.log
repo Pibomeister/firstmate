@@ -1,0 +1,177 @@
+
+SCENARIO Local queue at synthetic load 400 preserves FIFO progress, load gating, slot cap, and receipt status
+$ {run-worktree}/bin/fm-test-queue.sh status
+exit=0
+test-queue: slots=2 load_ceiling=96 load1=400 serving=1 waiting=2 stale=0 spool={run-worktree}/.phase-test-tmp/.nm-live-objiln_8/queue/spool
+serving ticket=1 pid=60672 age=8s task=- label=A
+waiting position=1 ticket=2 pid=76728 age=4s task=- label=B
+waiting position=2 ticket=3 pid=80532 age=1s task=- label=C
+
+CHECKPOINT high load: one serving, B then C waiting
+child 60672 exit=0
+$ {run-worktree}/bin/fm-test-queue.sh status
+exit=0
+test-queue: slots=2 load_ceiling=96 load1=400 serving=1 waiting=1 stale=0 spool={run-worktree}/.phase-test-tmp/.nm-live-objiln_8/queue/spool
+serving ticket=2 pid=76728 age=6s task=- label=B
+waiting position=1 ticket=3 pid=80532 age=11s task=- label=C
+
+CHECKPOINT reserved slot makes FIFO progress at load 400
+$ {run-worktree}/bin/fm-test-queue.sh status
+exit=0
+test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=0 stale=0 spool={run-worktree}/.phase-test-tmp/.nm-live-objiln_8/queue/spool
+serving ticket=2 pid=76728 age=14s task=- label=B
+serving ticket=3 pid=80532 age=6s task=- label=C
+
+CHECKPOINT load 95 admits second slot
+$ {run-worktree}/bin/fm-test-queue.sh status
+exit=0
+test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=1 stale=0 spool={run-worktree}/.phase-test-tmp/.nm-live-objiln_8/queue/spool
+serving ticket=2 pid=76728 age=23s task=- label=B
+serving ticket=3 pid=80532 age=15s task=- label=C
+waiting position=1 ticket=4 pid=25127 age=4s task=- label=D
+
+CHECKPOINT configured two-slot limit
+child 76728 exit=0
+child 80532 exit=0
+child 25127 exit=0
+$ {run-worktree}/bin/fm-test-queue.sh run --label single-slot -- sh -c echo receipt-at-load-400; exit 7
+exit=7
+receipt-at-load-400
+
+$ {run-worktree}/bin/fm-test-queue.sh status
+exit=0
+test-queue: slots=1 load_ceiling=96 load1=400 serving=0 waiting=0 stale=0 spool={run-worktree}/.phase-test-tmp/.nm-live-objiln_8/queue/spool
+
+CHECKPOINT all receipts finished; private spool empty
+
+SCENARIO Local real-producer configuration failures back off 30–1800 seconds, preserve the ledger, and reset after direct publication
+$ {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.phase-test-tmp/.nm-live-objiln_8/home
+exit=0
+{run-worktree}/.phase-test-tmp/.nm-live-objiln_8/home
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+initial ledger: {"active_children": [], "contributions": {"captain": [], "captain_omitted": 0, "checked": 0, "complete": true, "counts": {"captain": 0, "fleet": 0, "maintainer": 0, "nobody": 0}, "known": 0, "missing_verdicts": 0, "proven_clear": true, "stale_verdicts": 0, "unmeasured": 0, "unreadable_records": 0, "valid_until": 900}, "counts": {"active_children": 0, "decisions_open": 0, "endpoints": 0, "holds": 0, "landed": 0, "queued": 0}, "decisions_open": [], "endpoints": [], "generated": "2026-11-22T15:25:57Z", "generated_epoch": 1795361157, "hold_classifier_schema": "fm-captain-hold-buckets.v1", "holds": [], "home": "{run-worktree}/.phase-test-tmp/.nm-live-objiln_8/home", "invalidity": {"ids": [], "kind": null}, "landed": [], "omitted": [], "queued": [], "reason": null, "schema": "fm-secondmate-home-summary.v1", "state": "no_active_work", "valid": true}
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=1
+next=1030
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 1030; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=2
+next=1090
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 1090; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=3
+next=1210
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 1210; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=4
+next=1450
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 1450; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=5
+next=1930
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 1930; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=6
+next=2890
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 2890; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=7
+next=4690
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 4690; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=8
+next=6490
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+retry suppressed until epoch 6490; previous complete ledger preserved
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=1
+next=1031
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+direct diagnostic refresh bypassed active backoff, published valid JSON, and reset failure count
+
+SCENARIO Local overlapping refresh triggers preserve idle-skip state and recheck backoff after lock acquisition
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
+exit=0
+
+persisted backoff:
+failures=2
+next=900
+
+queued-A reached real lock-wait
+queued-B reached real lock-wait
+child 58903 exit=0
+child 76657 exit=0
+child 81455 exit=0
+persisted backoff:
+failures=1
+next=1030
+
+two queued triggers caused one failure; second trigger honored the locked backoff recheck; idle skip preserved prior count
+All live-driver children reaped; disposable workspace removed.

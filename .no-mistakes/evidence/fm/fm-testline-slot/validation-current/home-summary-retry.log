@@ -1,0 +1,22 @@
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - summary idle jitter shortens a bounded launch gap while watcher beats continue
+ok - persistent summary refresh failures retry once per idle gap while watcher beats continue
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@0 producer@0)
+ok - every lock-held deadline records bounded backoff before admission resumes
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer interruption cannot overwrite a later atomic replacement
+ok - best-effort publication logs and continues
+ok - best-effort refresh bounds publication lock acquisition
+ok - a deadline failure names the slow stage and keeps the last good summary
+ok - a signalled parent removes its stage file
+ok - the producer never recreates a deleted stage log
+ok - stage-file open is bounded by the refresh deadline
+ok - best-effort refresh bounds validation and publication
+ok - a stage file created before a deadline kill is removed
+ok - parent-side stage-file reads and removals are bounded
+ok - an unreadable stage file is reported as unreadable
+not ok - the worker never created its stage file after its parent was killed

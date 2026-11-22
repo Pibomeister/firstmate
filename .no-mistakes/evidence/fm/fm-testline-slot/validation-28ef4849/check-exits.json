@@ -1,0 +1,8 @@
+{
+  "home-summary-suite": 1,
+  "test-queue-suite": 0,
+  "backoff-suite": 0,
+  "deadline-stages": 0,
+  "driver": 0,
+  "safety": 0
+}

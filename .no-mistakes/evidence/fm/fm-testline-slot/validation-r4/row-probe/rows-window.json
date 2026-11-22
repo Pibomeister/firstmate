@@ -1,0 +1,851 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-08-28T10:00:00Z",
+  "fm_home": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home",
+  "session": {
+    "endpoint": {
+      "backend": "unknown",
+      "target": "unknown"
+    }
+  },
+  "roots": {
+    "fm_root": "{run-worktree}",
+    "state": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state",
+    "data": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data",
+    "config": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/config",
+    "projects": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects"
+  },
+  "backlog": {
+    "records": [
+      {
+        "hold_reason": null,
+        "requires_child_metadata": true,
+        "done": null,
+        "since": "2026-08-28",
+        "merged": null,
+        "blocked_by_ids": [],
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "report_path": null,
+        "id": "slide-1",
+        "order": 1,
+        "hold_until": null,
+        "body_lines": [],
+        "local_note": null,
+        "checked": false,
+        "raw": "- [ ] slide-1 - Window task 1 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "links": [],
+        "repo": "firstmate",
+        "hold_kind": null,
+        "body_excerpt": null,
+        "structured": true,
+        "kind": "ship",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "reported": null,
+        "state": "in_flight",
+        "hold_bucket": null,
+        "title": "Window task 1",
+        "priority": null,
+        "pr_url": null,
+        "blocked_reason": null
+      },
+      {
+        "local_note": null,
+        "raw": "- [ ] slide-2 - Window task 2 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "checked": false,
+        "body_lines": [],
+        "repo": "firstmate",
+        "links": [],
+        "hold_kind": null,
+        "structured": true,
+        "body_excerpt": null,
+        "kind": "ship",
+        "requires_child_metadata": true,
+        "done": null,
+        "hold_reason": null,
+        "blocked_by_ids": [],
+        "merged": null,
+        "since": "2026-08-28",
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "hold_until": null,
+        "report_path": null,
+        "id": "slide-2",
+        "order": 2,
+        "priority": null,
+        "pr_url": null,
+        "blocked_reason": null,
+        "captain_actionable": false,
+        "unresolved_blocker_ids": [],
+        "state": "in_flight",
+        "reported": null,
+        "title": "Window task 2",
+        "hold_bucket": null
+      },
+      {
+        "blocked_reason": null,
+        "pr_url": null,
+        "priority": null,
+        "hold_bucket": null,
+        "title": "Window task 3",
+        "reported": null,
+        "state": "in_flight",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "kind": "ship",
+        "hold_kind": null,
+        "structured": true,
+        "body_excerpt": null,
+        "links": [],
+        "repo": "firstmate",
+        "body_lines": [],
+        "local_note": null,
+        "checked": false,
+        "raw": "- [ ] slide-3 - Window task 3 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "report_path": null,
+        "order": 3,
+        "id": "slide-3",
+        "hold_until": null,
+        "blocked_by": null,
+        "hold_set": null,
+        "current_role": "worker",
+        "hold_age_days": 0,
+        "since": "2026-08-28",
+        "merged": null,
+        "blocked_by_ids": [],
+        "hold_reason": null,
+        "done": null,
+        "requires_child_metadata": true
+      },
+      {
+        "hold_bucket": null,
+        "title": "Window task 4",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "reported": null,
+        "state": "in_flight",
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "blocked_by": null,
+        "hold_set": null,
+        "order": 4,
+        "id": "slide-4",
+        "report_path": null,
+        "hold_until": null,
+        "hold_reason": null,
+        "done": null,
+        "requires_child_metadata": true,
+        "since": "2026-08-28",
+        "blocked_by_ids": [],
+        "merged": null,
+        "body_excerpt": null,
+        "structured": true,
+        "hold_kind": null,
+        "kind": "ship",
+        "body_lines": [],
+        "raw": "- [ ] slide-4 - Window task 4 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "checked": false,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "local_note": null,
+        "links": [],
+        "repo": "firstmate"
+      },
+      {
+        "title": "Window task 5",
+        "hold_bucket": null,
+        "captain_actionable": false,
+        "unresolved_blocker_ids": [],
+        "state": "in_flight",
+        "reported": null,
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "current_role": "worker",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_until": null,
+        "id": "slide-5",
+        "order": 5,
+        "report_path": null,
+        "requires_child_metadata": true,
+        "done": null,
+        "hold_reason": null,
+        "merged": null,
+        "blocked_by_ids": [],
+        "since": "2026-08-28",
+        "structured": true,
+        "body_excerpt": null,
+        "hold_kind": null,
+        "kind": "ship",
+        "raw": "- [ ] slide-5 - Window task 5 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "checked": false,
+        "local_note": null,
+        "body_lines": [],
+        "repo": "firstmate",
+        "links": []
+      }
+    ],
+    "present": true,
+    "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/backlog.md"
+  },
+  "tasks": [
+    {
+      "id": "slide-1",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "firstmate",
+      "spawn_gen": "fm.slide1",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-1.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-1.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "window fixture",
+            "raw": "working: window fixture",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-1",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-1/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-slide-1",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-1",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-slide-1",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: window fixture"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-slide-1",
+        "steer": "bin/fm-send.sh fm-slide-1 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "hold_reason": null,
+        "requires_child_metadata": true,
+        "done": null,
+        "since": "2026-08-28",
+        "merged": null,
+        "blocked_by_ids": [],
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "report_path": null,
+        "id": "slide-1",
+        "order": 1,
+        "hold_until": null,
+        "body_lines": [],
+        "local_note": null,
+        "checked": false,
+        "raw": "- [ ] slide-1 - Window task 1 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "links": [],
+        "repo": "firstmate",
+        "hold_kind": null,
+        "body_excerpt": null,
+        "structured": true,
+        "kind": "ship",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "reported": null,
+        "state": "in_flight",
+        "hold_bucket": null,
+        "title": "Window task 1",
+        "priority": null,
+        "pr_url": null,
+        "blocked_reason": null
+      }
+    },
+    {
+      "id": "slide-2",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "firstmate",
+      "spawn_gen": "fm.slide2",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-2.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-2.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "window fixture",
+            "raw": "working: window fixture",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-2",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-2/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-slide-2",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-2",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-slide-2",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: window fixture"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-slide-2",
+        "steer": "bin/fm-send.sh fm-slide-2 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "local_note": null,
+        "raw": "- [ ] slide-2 - Window task 2 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "checked": false,
+        "body_lines": [],
+        "repo": "firstmate",
+        "links": [],
+        "hold_kind": null,
+        "structured": true,
+        "body_excerpt": null,
+        "kind": "ship",
+        "requires_child_metadata": true,
+        "done": null,
+        "hold_reason": null,
+        "blocked_by_ids": [],
+        "merged": null,
+        "since": "2026-08-28",
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "hold_until": null,
+        "report_path": null,
+        "id": "slide-2",
+        "order": 2,
+        "priority": null,
+        "pr_url": null,
+        "blocked_reason": null,
+        "captain_actionable": false,
+        "unresolved_blocker_ids": [],
+        "state": "in_flight",
+        "reported": null,
+        "title": "Window task 2",
+        "hold_bucket": null
+      }
+    },
+    {
+      "id": "slide-3",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "firstmate",
+      "spawn_gen": "fm.slide3",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-3.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-3.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "window fixture",
+            "raw": "working: window fixture",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-3",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-3/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-slide-3",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-3",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-slide-3",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: window fixture"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-slide-3",
+        "steer": "bin/fm-send.sh fm-slide-3 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "blocked_reason": null,
+        "pr_url": null,
+        "priority": null,
+        "hold_bucket": null,
+        "title": "Window task 3",
+        "reported": null,
+        "state": "in_flight",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "kind": "ship",
+        "hold_kind": null,
+        "structured": true,
+        "body_excerpt": null,
+        "links": [],
+        "repo": "firstmate",
+        "body_lines": [],
+        "local_note": null,
+        "checked": false,
+        "raw": "- [ ] slide-3 - Window task 3 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "report_path": null,
+        "order": 3,
+        "id": "slide-3",
+        "hold_until": null,
+        "blocked_by": null,
+        "hold_set": null,
+        "current_role": "worker",
+        "hold_age_days": 0,
+        "since": "2026-08-28",
+        "merged": null,
+        "blocked_by_ids": [],
+        "hold_reason": null,
+        "done": null,
+        "requires_child_metadata": true
+      }
+    },
+    {
+      "id": "slide-4",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "firstmate",
+      "spawn_gen": "fm.slide4",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-4.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-4.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "window fixture",
+            "raw": "working: window fixture",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-4",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-4/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-slide-4",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-4",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-slide-4",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: window fixture"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-slide-4",
+        "steer": "bin/fm-send.sh fm-slide-4 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "hold_bucket": null,
+        "title": "Window task 4",
+        "unresolved_blocker_ids": [],
+        "captain_actionable": false,
+        "reported": null,
+        "state": "in_flight",
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "hold_age_days": 0,
+        "current_role": "worker",
+        "blocked_by": null,
+        "hold_set": null,
+        "order": 4,
+        "id": "slide-4",
+        "report_path": null,
+        "hold_until": null,
+        "hold_reason": null,
+        "done": null,
+        "requires_child_metadata": true,
+        "since": "2026-08-28",
+        "blocked_by_ids": [],
+        "merged": null,
+        "body_excerpt": null,
+        "structured": true,
+        "hold_kind": null,
+        "kind": "ship",
+        "body_lines": [],
+        "raw": "- [ ] slide-4 - Window task 4 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "checked": false,
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "local_note": null,
+        "links": [],
+        "repo": "firstmate"
+      }
+    },
+    {
+      "id": "slide-5",
+      "kind": "ship",
+      "harness": "claude",
+      "mode": "no-mistakes",
+      "yolo": "",
+      "branch": null,
+      "project": "firstmate",
+      "spawn_gen": "fm.slide5",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-5.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/state/slide-5.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "working",
+            "note": "window fixture",
+            "raw": "working: window fixture",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/projects/slide-5",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/slide-5/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:fm-slide-5",
+        "raw": "state: unknown · source: none · backend target gone: fmtest:fm-slide-5",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fmtest:fm-slide-5",
+        "exists": false,
+        "agent_alive": "not_checked",
+        "status": "absent",
+        "observed_at": "2026-08-28T10:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": "working: window fixture"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-slide-5",
+        "steer": "bin/fm-send.sh fm-slide-5 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": {
+        "title": "Window task 5",
+        "hold_bucket": null,
+        "captain_actionable": false,
+        "unresolved_blocker_ids": [],
+        "state": "in_flight",
+        "reported": null,
+        "blocked_reason": null,
+        "priority": null,
+        "pr_url": null,
+        "current_role": "worker",
+        "hold_age_days": 0,
+        "blocked_by": null,
+        "hold_set": null,
+        "hold_until": null,
+        "id": "slide-5",
+        "order": 5,
+        "report_path": null,
+        "requires_child_metadata": true,
+        "done": null,
+        "hold_reason": null,
+        "merged": null,
+        "blocked_by_ids": [],
+        "since": "2026-08-28",
+        "structured": true,
+        "body_excerpt": null,
+        "hold_kind": null,
+        "kind": "ship",
+        "raw": "- [ ] slide-5 - Window task 5 (repo: firstmate) (kind: ship) (since 2026-08-28)",
+        "completion": {
+          "date": null,
+          "verb": null
+        },
+        "checked": false,
+        "local_note": null,
+        "body_lines": [],
+        "repo": "firstmate",
+        "links": []
+      }
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "{run-worktree}/.validation-r4/test-tmp/fm-row-probe.zWmCCZ/slide-home/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-08-28T10:00:00Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

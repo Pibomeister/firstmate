@@ -1,0 +1,8 @@
+[2026-11-22T17:12:53Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+[2026-11-22T17:12:54Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+[2026-11-22T17:12:57Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+[2026-11-22T17:12:59Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+[2026-11-22T17:13:01Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+[2026-11-22T17:13:04Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@1)
+[2026-11-22T17:13:07Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@1 backlog@1)
+[2026-11-22T17:13:10Z] summary producer failed with exit 1: fm-fleet-snapshot: backlog read failed  in stage backlog (stages: lock-wait@0 producer@0 backlog@0)

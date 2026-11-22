@@ -1,0 +1,4 @@
+1..1
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@0 producer@1)
+ok - every lock-held deadline records bounded backoff before admission resumes
+FM_TEST_COMPLETE

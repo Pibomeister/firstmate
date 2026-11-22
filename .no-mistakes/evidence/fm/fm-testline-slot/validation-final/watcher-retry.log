@@ -1,0 +1,7 @@
+
+SCENARIO Real watcher keeps liveness beats while failure backoff suppresses publication
+$ tmux -S {run-worktree}/.v.sock new-session -d -s fm-lab-watch sleep 180 => 0
+real watcher beats during active failure backoff: [1795372528029704539, 1795372536290812000, 1795372537717307000, 1795372552987781000]
+$ tmux -S {run-worktree}/.v.sock kill-server => 0
+RESULT pass
+all directly owned children reaped; disposable homes removed

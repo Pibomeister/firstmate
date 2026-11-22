@@ -1,0 +1,85 @@
+
+SCENARIO High-load reserved slot, FIFO turnover, and second-slot ceiling
+load=200, ceiling=96
+test-queue: slots=2 load_ceiling=96 load1=200 serving=1 waiting=2 stale=0 spool={run-worktree}/.validation-tmp/live-de4fgmux/queue/spool
+serving ticket=1 pid=28567 age=4s task=- label=A
+waiting position=1 ticket=2 pid=31282 age=2s task=- label=B
+waiting position=2 ticket=3 pid=32417 age=0s task=- label=C
+
+A released; B takes reserved slot; C remains queued
+test-queue: slots=2 load_ceiling=96 load1=200 serving=1 waiting=1 stale=0 spool={run-worktree}/.validation-tmp/live-de4fgmux/queue/spool
+serving ticket=2 pid=31282 age=2s task=- label=B
+waiting position=1 ticket=3 pid=32417 age=4s task=- label=C
+
+load lowered to 95
+test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=0 stale=0 spool={run-worktree}/.validation-tmp/live-de4fgmux/queue/spool
+serving ticket=2 pid=31282 age=4s task=- label=B
+serving ticket=3 pid=32417 age=1s task=- label=C
+
+completion order: A
+B
+C
+
+test-queue: slots=2 load_ceiling=96 load1=95 serving=0 waiting=0 stale=0 spool={run-worktree}/.validation-tmp/live-de4fgmux/queue/spool
+
+RESULT pass
+
+SCENARIO Real producer failures back off 30 to 1800 seconds and direct publication resets
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=1 next=1030
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=2 next=1090
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=3 next=1210
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=4 next=1450
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=5 next=1930
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=6 next=2890
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=7 next=4690
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+persisted failures=8 next=6490
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+direct recovery publishes complete schema and clears backoff
+RESULT pass
+
+SCENARIO Concurrent refreshes recheck backoff and busy if-idle skips preserve it
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+busy if-idle attempt preserved failures=2 next=900
+two queued failures admitted only one producer: failures=1 next=1030
+[2026-11-22T18:34:14Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@6)
+
+RESULT pass
+
+SCENARIO Lock-held filesystem stall records bounded backoff and preserves ledger
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort => 0
+unread FIFO failure-log deadline returned best-effort success in 14.74s
+failures=1
+next=1030
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+recovery cleared backoff and released publication lock
+RESULT pass
+
+SCENARIO Killed lock owner cannot replace a recovered ledger
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh => 0
+killed publication lock owner; prior ledger stayed complete; replacement survives old attempt exit
+RESULT pass
+
+SCENARIO Real watcher keeps liveness beats while failure backoff suppresses publication
+$ tmux -S {run-worktree}/.validation-tmp/live-de4fgmux/watcher/tmux.sock new-session -d -s fm-lab-watch sleep 180 => 1
+RESULT fail: AssertionError()
+all directly owned children reaped; disposable homes removed

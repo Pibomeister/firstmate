@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Local queue at synthetic load 400 preserves FIFO progress, load gating, slot cap, and receipt status",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local real-producer configuration failures back off 30\u20131800 seconds, preserve the ledger, and reset after direct publication",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  },
+  {
+    "name": "Local overlapping refresh triggers preserve idle-skip state and recheck backoff after lock acquisition",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/validation-current/live-validation.log",
+    "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+  }
+]

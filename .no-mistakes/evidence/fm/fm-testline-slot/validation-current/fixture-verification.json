@@ -1,0 +1,21 @@
+{
+  "before": {
+    "child_ledger_bytes": 153351,
+    "child_invalidity": "orphan_in_flight",
+    "child_ids": 600,
+    "parent_source": null,
+    "parent_invalidity": null,
+    "parent_reason": "invalid home: secondmate home cannot be inside the firstmate repo"
+  },
+  "after": {
+    "child_ledger_bytes": 153351,
+    "child_invalidity": "orphan_in_flight",
+    "child_ids": 600,
+    "parent_source": "local-ledger",
+    "parent_invalidity": {
+      "kind": "orphan_in_flight",
+      "id_count": 600
+    },
+    "parent_reason": "structured home state invalid: in-flight backlog item has no child metadata: orphan-1-iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii"
+  }
+}

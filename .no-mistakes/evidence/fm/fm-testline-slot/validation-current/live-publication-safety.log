@@ -1,0 +1,43 @@
+$ {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.phase-test-tmp/.nm-safety-2icdgz3i/home
+exit=0
+{run-worktree}/.phase-test-tmp/.nm-safety-2icdgz3i/home
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+
+SCENARIO Local slow real producer times out without losing the ledger or letting a queued trigger bypass backoff
+A stage while active:
+lock-wait	0
+producer	0
+
+B is waiting on the real lock:
+lock-wait	0
+
+refresh pid 73235 exit=0
+refresh pid 74376 exit=0
+both callers completed in 22.33 seconds (20-second attempt plus bounded diagnostics)
+backoff=failures=1
+next=1030
+
+failure diagnostics:
+[2026-11-22T16:19:27Z] refresh exceeded its 20-second deadline in stage backlog (stages: lock-wait@0 producer@0 backlog@0)
+
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+backoff=None
+Timeout preserved last good ledger; queued sibling skipped instead of retrying; direct recovery published and reset backoff.
+
+SCENARIO Local killed lock owner cannot overwrite a newer real publication after its older producer deadline
+Stopped actual lock owner pid=4028 pgid=4028 stage=
+lock-wait	1
+producer	1
+
+refresh pid 3705 exit=0
+$ {run-worktree}/bin/fm-home-summary-refresh.sh
+exit=0
+
+Replacement generation stayed 1795348800 through 145 complete JSON reads and past the old producer deadline.
+Publication lock released; no delayed older ledger replacement observed.
+All driver parents reaped; disposable home removed.

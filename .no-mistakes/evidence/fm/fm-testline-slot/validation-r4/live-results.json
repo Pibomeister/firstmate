@@ -1,0 +1,26 @@
+[
+  {
+    "name": "queue",
+    "result": "pass"
+  },
+  {
+    "name": "backoff",
+    "result": "pass"
+  },
+  {
+    "name": "contention",
+    "result": "pass"
+  },
+  {
+    "name": "deadline",
+    "result": "pass"
+  },
+  {
+    "name": "interruption",
+    "result": "pass"
+  },
+  {
+    "name": "watcher",
+    "result": "pass"
+  }
+]
