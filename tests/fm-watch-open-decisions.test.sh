@@ -164,46 +164,31 @@ test_timed_fold_is_incremental() {
 }
 
 
-test_p0_origins_only_for_due_unsurfaced_blockers() {
+test_p0_incremental_deadlines() {
   reset_case
   printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
   printf 'blocked [at=1000]: credentials missing\n' > "$STATE/worker.status"
   P0_BLOCKER_ALARMS=
   export FM_OPEN_DECISIONS_READ_PROBE="$TMP_ROOT/p0-fold.reads"
   : > "$FM_OPEN_DECISIONS_READ_PROBE"
-  (
-    _fm_status_open_decision_origins() { fail 'an early P0 alarm reconstructed history'; }
-    FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
-  ) || fail 'early blocker scan failed'
+  FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 0 ] || fail 'keyless blocker alarmed early'
   FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 1 ] || fail 'due keyless blocker did not alarm'
-  (
-    _fm_status_open_decision_origins() { fail 'a surfaced P0 alarm reconstructed history'; }
-    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
-  ) || fail 'surfaced blocker scan failed'
+  FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
   printf 'resolved [key=default] [at=1800]: answered\nblocked [at=2000]: credentials missing\n' >> "$STATE/worker.status"
-  (
-    _fm_status_open_decision_origins() { fail 'a reopened early P0 alarm reconstructed history'; }
-    FM_WATCH_NOW=2599 p0_blocker_alarm test:worker worker
-  ) || fail 'reopened early blocker scan failed'
+  FM_WATCH_NOW=2599 p0_blocker_alarm test:worker worker
   FM_WATCH_NOW=2600 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 2 ] || fail 'reopened keyless blocker did not get its own deadline'
   printf 'done [at=2700]: finished\n' >> "$STATE/worker.status"
-  (
-    _fm_status_open_decision_origins() { fail 'a terminal P0 task reconstructed history'; }
-    FM_WATCH_NOW=2800 p0_blocker_alarm test:worker worker
-  ) || fail 'terminal blocker scan failed'
+  FM_WATCH_NOW=2800 p0_blocker_alarm test:worker worker
   printf 'needs-decision [key=region] [at=2900]: choose\n' >> "$STATE/worker.status"
-  (
-    _fm_status_open_decision_origins() { fail 'a P0 task without blockers reconstructed history'; }
-    FM_WATCH_NOW=3600 p0_blocker_alarm test:worker worker
-  ) || fail 'non-blocker scan failed'
+  FM_WATCH_NOW=3600 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 2 ] || fail 'an ineligible blocker scan queued an alarm'
   [ "$(wc -l < "$FM_OPEN_DECISIONS_READ_PROBE" | tr -d ' ')" = 4 ] \
     || fail 'unchanged P0 scans reread status history'
   unset FM_OPEN_DECISIONS_READ_PROBE
-  pass 'P0 origin reads occur only for due unsurfaced blockers, including keyless reopens'
+  pass 'incremental P0 scans alarm only due unsurfaced blockers, including keyless reopens'
 }
 
 test_p0_keyed_note_updates_keep_first_opening() {
@@ -222,6 +207,81 @@ test_p0_keyed_note_updates_keep_first_opening() {
   FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 1 ] || fail 'a note update republished an already surfaced opening'
   pass 'unresolved keyed blocker age and once-only alarm survive note updates'
+}
+
+test_p0_keyless_repeats_keep_first_opening() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [at=1000]: need\tcredentials\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1500 p0_blocker_alarm test:worker worker
+  printf 'blocked [at=1500]: need\tcredentials\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 0 ] || fail 'repeated keyless blocker alarmed early'
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'keyless repeat restarted the opening age'
+  grep -F 'open for 600s: blocked [at=1500]: need credentials)' "$FM_WAKE_QUEUE" >/dev/null \
+    || fail 'keyless repeat did not keep the age and latest declaration'
+  printf 'blocked [at=1700]: need\tcredentials\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'keyless repeat republished an already surfaced opening'
+  pass 'keyless repeats keep their original age and declaration text'
+}
+
+test_p0_alarm_keeps_captured_declarations() {
+  local declaration detail reopen_key
+  for declaration in \
+    'blocked [key=key] [at=1000]: original' \
+    'blocked [at=1000]: original' \
+    'blocked [key=key] [at=bad]: original' \
+    'blocked [key=key] [at=2000]: original'; do
+    reset_case
+    printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+    printf '%s\nblocked [key=sibling] [at=900]: original sibling\n' "$declaration" > "$STATE/worker.status"
+    reopen_key=key
+    detail='P0 blocker open for 600s'
+    case "$declaration" in
+      'blocked [at=1000]'*) reopen_key=default ;;
+      *'[at=bad]'*) detail='P0 blocker opening timestamp missing or malformed' ;;
+      *'[at=2000]'*) detail='P0 blocker opening timestamp is in the future' ;;
+    esac
+    (
+      eval "snapshot_saved_$(declare -f fm_watch_now)"
+      fm_watch_now() {
+        snapshot_saved_fm_watch_now "$@"
+        printf 'resolved [key=%s] [at=1600]: answered\nblocked [key=%s] [at=1600]: reopened\nblocked [key=sibling] [at=1600]: updated sibling\n' \
+          "$reopen_key" "$reopen_key" >> "$STATE/worker.status"
+      }
+      FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+    ) || fail 'concurrent reopen alarm failed'
+    [ "$(count_wakes)" = 2 ] || fail 'captured blockers did not each alarm'
+    grep -F "$detail: $declaration)" "$FM_WAKE_QUEUE" >/dev/null \
+      || fail 'alarm mixed opening age with a later declaration'
+    grep -F 'open for 700s: blocked [key=sibling] [at=900]: original sibling)' "$FM_WAKE_QUEUE" >/dev/null \
+      || fail 'sibling alarm read a declaration after the captured fold'
+    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 2 ] || fail 'reopen inherited the previous opening deadline'
+    FM_WATCH_NOW=2200 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 3 ] || fail 'captured alarm marked the later opening as surfaced'
+    grep -F "open for 600s: blocked [key=$reopen_key] [at=1600]: reopened)" "$FM_WAKE_QUEUE" >/dev/null \
+      || fail 'reopened blocker did not surface its own age and declaration'
+    FM_WATCH_NOW=2300 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 3 ] || fail 'captured opening alarm repeated'
+  done
+  pass 'P0 alarms keep captured declarations and give concurrent reopens separate deadlines'
+}
+
+test_p0_old_cursor_rebuilds_declarations() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: original\n' > "$STATE/worker.status"
+  printf 'version=%s:ship:timed-all2\noffset=%s\nident=%s\nkey\tblocked\t1000\t-\told-opening\toriginal\n' \
+    "$FM_OPEN_DECISIONS_FOLD_VERSION" "$(_fm_status_file_size "$STATE/worker.status")" \
+    "$(_fm_open_decisions_file_ident "$STATE/worker.status")" > "$STATE/.worker.open-decisions-cursor.timed-all"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'old cursor prevented a due blocker alarm'
+  grep -F 'open for 600s: blocked [key=key] [at=1000]: original)' "$FM_WAKE_QUEUE" >/dev/null \
+    || fail 'old cursor note was presented as an exact declaration'
+  pass 'P0 alarms rebuild older persisted cursors before presenting declarations'
 }
 
 test_p0_once_only_survives_endpoint_replacement() {
@@ -816,7 +876,8 @@ fi
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
-  test_p0_origins_only_for_due_unsurfaced_blockers \
+  test_p0_incremental_deadlines test_p0_keyless_repeats_keep_first_opening \
+  test_p0_alarm_keeps_captured_declarations test_p0_old_cursor_rebuilds_declarations \
   test_p0_keyed_note_updates_keep_first_opening test_p0_once_only_survives_endpoint_replacement \
   test_p0_marker_survives_unreadable_status test_p0_marker_survives_status_read_failure \
   test_p0_invalid_opening_time_is_explicit_and_reopens \

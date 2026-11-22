@@ -158,8 +158,8 @@
 #                          delivery is recorded per task, so a recovered worker
 #                          on a new endpoint is not re-alarmed for an opening.
 #                          The incremental fold avoids rereading unchanged logs;
-#                          declaration text is read only for due, unsurfaced
-#                          blockers. Independent of open-decision reminders.
+#                          declaration text comes from that same fold.
+#                          Independent of open-decision reminders.
 #   stale: <window> (unread firstmate instruction: ...)
 #   stale: <window> (steering-inbox ladder bookkeeping unwritable: ...)
 #   stale: <window> (steering-inbox busy bookkeeping unwritable: ...)
@@ -709,7 +709,7 @@ hash_pane() {
 
 p0_blocker_alarm() {  # <window> <task>
   local win=$1 task=$2 meta statusf last opened now age marker scope reason read_rc=0
-  local open origins='' key verb until opening note origin_key number surfaced scopes='' detail
+  local open key verb until opening surfaced scopes='' detail
   [ -n "$task" ] || return 0
   meta="$STATE/$task.meta"
   [ "$(fm_meta_get "$meta" priority 2>/dev/null || true)" = 0 ] || return 0
@@ -736,7 +736,7 @@ p0_blocker_alarm() {  # <window> <task>
   esac
   surfaced=$(cat "$marker" 2>/dev/null || true)
   fm_watch_now now
-  while IFS=$'\t' read -r key verb opened until opening note; do
+  while IFS=$'\t' read -r key verb opened until opening last; do
     [ "$verb" = blocked ] || continue
     scope="$key:$opening"
     case "$surfaced" in
@@ -758,15 +758,6 @@ p0_blocker_alarm() {  # <window> <task>
         fi
         ;;
     esac
-    [ -n "$origins" ] || origins=$(_fm_status_open_decision_origins "$statusf") || exit 1
-    last=
-    while IFS=$'\t' read -r origin_key number; do
-      [ "$origin_key" = "$key" ] || continue
-      last=$(sed -n "${number}p" "$statusf")
-      break
-    done <<EOF
-$origins
-EOF
     [ -n "$last" ] || continue
     reason="stale: $win ($detail: $last)"
     fm_wake_append stale "$win" "$reason" || exit 1

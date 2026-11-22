@@ -989,7 +989,7 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
           if [ "$timed" = timed-all ]; then
             old_opening=${old_rest%%$'\t'*}
             case "$old_rest" in
-              *$'\t'*) old_note=${old_rest#*$'\t'} ;;
+              *$'\t'*) old_note=$(status_line_note "${old_rest#*$'\t'}") ;;
               *) old_note='' ;;
             esac
             if [ "$old_verb" = "$verb" ] && { [ -n "$explicit_key" ] || [ "$old_note" = "$note" ]; }; then
@@ -1006,7 +1006,7 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
         done <<EOF
 $open
 EOF
-        if [ "$timed" = timed-all ]; then note="$opening"$'\t'"$note"; fi
+        if [ "$timed" = timed-all ]; then note="$opening"$'\t'"$line"; fi
         note="$epoch"$'\t'"$until"$'\t'"$note"
       fi
       open=$(_fm_decision_drop "$open" "$key")
@@ -1326,7 +1326,7 @@ EOF
 # The cursor format is `version` (FM_OPEN_DECISIONS_FOLD_VERSION plus the task
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
 # Optional timed views use separate cursors: `.timed` with version suffix
-# `:timed3`, or `.timed-all` with `:timed-all2` to age keyless events and retain opening identities.
+# `:timed3`, or `.timed-all` with `:timed-all3` to age keyless events and retain opening identities.
 # status_open_decisions_incremental owns their row format.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
@@ -1503,13 +1503,13 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   cf=$(_fm_open_decisions_cursor_path "$f")
   # A separate cursor keeps the ordinary presentation view byte-compatible.
   # Timed rows are <key> TAB <verb> TAB <epoch-or-unknown> TAB
-  # <until-date, `-` absent, `?` malformed> TAB <note>. timed-all inserts an
-  # opening-event identity (file identity plus original line byte offset) before
-  # the note. This distinguishes identical malformed reopens without inventing
+  # <until-date, `-` absent, `?` malformed> TAB <note>. timed-all replaces the
+  # note with <opening-event identity> TAB <declaration>. The identity is the file
+  # identity plus original line byte offset, distinguishing malformed reopens without inventing
   # a clock value. The suffix retires older row formats and epoch rules.
   case "$timed" in
     timed) cf="$cf.timed"; fold_version="$fold_version:timed3" ;;
-    timed-all) cf="$cf.timed-all"; fold_version="$fold_version:timed-all2" ;;
+    timed-all) cf="$cf.timed-all"; fold_version="$fold_version:timed-all3" ;;
   esac
   offset=0
   ident=''
