@@ -1,0 +1,287 @@
+{
+  "revision": "05e1b84b5b6db20e770357243cd9945943702c78",
+  "runtime_scope": "Real local Firstmate CLI, real tmux and Treehouse, real Codex help-only launches, synthetic disposable backlog and status data. No model inference or production fleet validation.",
+  "live_priority": [
+    {
+      "name": "ordinary-full-lane",
+      "result": "pass",
+      "detail": "Real spawn exits 75 without metadata; synthetic backlog remains queued."
+    },
+    {
+      "name": "priority-full-lane",
+      "result": "pass",
+      "detail": "P0 launches through real tmux/Treehouse despite cap=1 and max-load1=1; metadata records priority=0; no deferred line; ordinary process continues."
+    },
+    {
+      "name": "malformed-lane-refuses",
+      "result": "pass",
+      "detail": "Explicit P0 exits 1 for malformed lane capacity before a worker record exists."
+    },
+    {
+      "name": "backlog-priority-guards",
+      "result": "pass",
+      "detail": "Missing and mismatched priorities refuse before capacity can mask the error; no worker records created."
+    },
+    {
+      "name": "priority-relaunch",
+      "result": "pass",
+      "detail": "Real help-only CLI relaunch retains priority/project/worktree/window and In-flight row; --priority override refuses."
+    }
+  ],
+  "live_priority_extended": [
+    {
+      "name": "ordinary-full-lane",
+      "result": "pass",
+      "evidence": "live-priority-extra-transcript.log",
+      "detail": "Real spawn exits 75 without metadata; synthetic backlog remains queued."
+    },
+    {
+      "name": "ordinary-project-and-away-caps",
+      "result": "pass",
+      "evidence": "live-priority-extra-transcript.log",
+      "detail": "Ordinary spawn defers under project cap; away cap refuses an additional ordinary worker."
+    },
+    {
+      "name": "all-priorities-project-lane-away",
+      "result": "pass",
+      "evidence": "live-priority-extra-transcript.log",
+      "detail": "Real help-only launches for priorities 0-4 bypass full project/lane/load/away caps; each In-flight row and metadata retains its priority; existing process continues."
+    },
+    {
+      "name": "malformed-independent-limits",
+      "result": "pass",
+      "evidence": "live-priority-extra-transcript.log",
+      "detail": "Explicit P0 still refuses malformed project-capacity and load-relief limits before publishing worker metadata."
+    },
+    {
+      "name": "startup-priority-race",
+      "result": "pass",
+      "evidence": "live-priority-extra-transcript.log",
+      "detail": "Actual tmux endpoint starts under priority 1; concurrent tasks-axi reprioritization to 3 is adopted with a warning, keeping the worker record and In-flight row."
+    }
+  ],
+  "live_watcher": [
+    {
+      "name": "local-p0-boundary-and-exclusions",
+      "result": "pass",
+      "detail": "Full real watcher queues both synthetic P0 blockers at 600s, none at 599s; updated note keeps opening age; P1-P4 and needs-decision create no alarm."
+    },
+    {
+      "name": "local-p0-once-per-opening",
+      "result": "pass",
+      "detail": "Full watcher retains marker across real endpoint replacement and chmod-000 status; same opening queues no repeat; resolved/reopened blocker queues exactly one new alarm."
+    },
+    {
+      "name": "local-p0-queue-delivery",
+      "result": "pass",
+      "detail": "Real wake drain presents both distinct P0 alarm payloads for the same task; no alarm is collapsed."
+    }
+  ],
+  "targeted_checks": [
+    {
+      "name": "project-capacity",
+      "command": [
+        "bash",
+        "tests/fm-project-capacity.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 799.81
+    },
+    {
+      "name": "afk-contract",
+      "command": [
+        "bash",
+        "tests/fm-afk-contract.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 97.9
+    },
+    {
+      "name": "backlog-atomicity",
+      "command": [
+        "bash",
+        "tests/fm-backlog-atomicity.test.sh"
+      ],
+      "exit": 1,
+      "timeout": false,
+      "seconds": 686.72
+    },
+    {
+      "name": "classify-decision-key",
+      "command": [
+        "bash",
+        "tests/fm-classify-decision-key.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 25.95
+    },
+    {
+      "name": "classify-corr-token",
+      "command": [
+        "bash",
+        "tests/fm-classify-corr-token.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 130.09
+    },
+    {
+      "name": "branch-priority",
+      "command": [
+        "bash",
+        "tests/fm-branch-supervision.test.sh",
+        "test_branch_prompt_delivers_priority_supervision"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 1.56
+    },
+    {
+      "name": "daemon-priority",
+      "command": [
+        "bash",
+        "tests/fm-daemon.test.sh",
+        "test_p0_alarm_reaches_supervision_after_blocker_signal"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 18.63
+    },
+    {
+      "name": "wake-queue",
+      "command": [
+        "bash",
+        "tests/fm-wake-queue.test.sh"
+      ],
+      "exit": 1,
+      "timeout": false,
+      "seconds": 310.75
+    },
+    {
+      "name": "watch-open-p0",
+      "command": [
+        "bash",
+        "tests/fm-watch-open-decisions.test.sh",
+        "test_p0_origins_only_for_due_unsurfaced_blockers",
+        "test_p0_keyed_note_updates_keep_first_opening",
+        "test_p0_once_only_survives_endpoint_replacement",
+        "test_p0_marker_survives_unreadable_status",
+        "test_p0_invalid_opening_time_is_explicit_and_reopens",
+        "test_timed_cursor_retirement"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 30.62
+    },
+    {
+      "name": "control-priority",
+      "command": [
+        "bash",
+        "tests/fm-control-relaunch.test.sh",
+        "test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it",
+        "test_spawn_relaunch_refuses_contradicting_flags"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 270.39
+    },
+    {
+      "name": "priority-worker-live",
+      "command": [
+        "bash",
+        "tests/fm-priority-worker-live-e2e.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 0.52
+    },
+    {
+      "name": "test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+      "command": [
+        "env",
+        "FM_TEST_ONLY=test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+        "bash",
+        "tests/fm-watch-triage.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 49.19
+    },
+    {
+      "name": "test_p0_alarms_scan_all_workers_before_sibling_signals",
+      "command": [
+        "env",
+        "FM_TEST_ONLY=test_p0_alarms_scan_all_workers_before_sibling_signals",
+        "bash",
+        "tests/fm-watch-triage.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 24.94
+    },
+    {
+      "name": "test_p0_blocker_fold_preserves_open_keys_and_ages",
+      "command": [
+        "env",
+        "FM_TEST_ONLY=test_p0_blocker_fold_preserves_open_keys_and_ages",
+        "bash",
+        "tests/fm-watch-triage.test.sh"
+      ],
+      "exit": 0,
+      "timeout": false,
+      "seconds": 59.61
+    }
+  ],
+  "baseline_controls": [
+    {
+      "name": "base-wake-concurrent-selected",
+      "command": [
+        "bash",
+        "{run-worktree}/.test-timing-comparison/base/tests/fm-wake-queue.test.sh",
+        "test_concurrent_append_and_drain"
+      ],
+      "exit": 1,
+      "seconds": 34.83
+    },
+    {
+      "name": "base-backlog-timeout-selected",
+      "command": [
+        "bash",
+        "{run-worktree}/.test-timing-comparison/base/tests/fm-backlog-atomicity.test.sh",
+        "test_deferred_signal_verification_outlives_an_unresponsive_tasks_axi"
+      ],
+      "exit": 1,
+      "seconds": 38.51
+    },
+    {
+      "name": "target-backlog-timeout-selected",
+      "command": [
+        "bash",
+        "{run-worktree}/.test-timing-comparison/target/tests/fm-backlog-atomicity.test.sh",
+        "test_deferred_signal_verification_outlives_an_unresponsive_tasks_axi"
+      ],
+      "exit": 1,
+      "seconds": 39.35
+    },
+    {
+      "name": "target-wake-dedupe",
+      "command": [
+        "bash",
+        "tests/fm-wake-queue.test.sh",
+        "test_drain_dedupes_obvious_duplicates",
+        "test_drain_presents_every_distinct_check_payload",
+        "test_drain_preserves_p0_alarm_before_later_stale"
+      ],
+      "exit": 0,
+      "seconds": 28.76
+    }
+  ],
+  "limitations": [
+    "Existing concurrent wake-lock and interruption timeout checks fail on both the base and target under host load. No product timeout or test threshold was changed.",
+    "Linux-only synthetic worker e2e skipped on macOS; real local help-only launch/relaunch provided lifecycle evidence."
+  ],
+  "cleanup": "All owned runners completed; private tmux servers stopped; disposable source snapshots and lab homes removed; git status clean."
+}

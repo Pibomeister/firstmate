@@ -1,0 +1,16 @@
+{
+  "name": "watch-open-p0",
+  "command": [
+    "bash",
+    "tests/fm-watch-open-decisions.test.sh",
+    "test_p0_origins_only_for_due_unsurfaced_blockers",
+    "test_p0_keyed_note_updates_keep_first_opening",
+    "test_p0_once_only_survives_endpoint_replacement",
+    "test_p0_marker_survives_unreadable_status",
+    "test_p0_invalid_opening_time_is_explicit_and_reopens",
+    "test_timed_cursor_retirement"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 30.62
+}

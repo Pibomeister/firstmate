@@ -1,0 +1,27 @@
+[
+  {
+    "name": "ordinary-full-lane",
+    "result": "pass",
+    "detail": "Real spawn exits 75 without metadata; synthetic backlog remains queued."
+  },
+  {
+    "name": "priority-full-lane",
+    "result": "pass",
+    "detail": "P0 launches through real tmux/Treehouse despite cap=1 and max-load1=1; metadata records priority=0; no deferred line; ordinary process continues."
+  },
+  {
+    "name": "malformed-lane-refuses",
+    "result": "pass",
+    "detail": "Explicit P0 exits 1 for malformed lane capacity before a worker record exists."
+  },
+  {
+    "name": "backlog-priority-guards",
+    "result": "pass",
+    "detail": "Missing and mismatched priorities refuse before capacity can mask the error; no worker records created."
+  },
+  {
+    "name": "priority-relaunch",
+    "result": "pass",
+    "detail": "Real help-only CLI relaunch retains priority/project/worktree/window and In-flight row; --priority override refuses."
+  }
+]

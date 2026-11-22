@@ -1,0 +1,17 @@
+[
+  {
+    "name": "local-p0-boundary-and-exclusions",
+    "result": "pass",
+    "detail": "Full real watcher queues both synthetic P0 blockers at 600s, none at 599s; updated note keeps opening age; P1-P4 and needs-decision create no alarm."
+  },
+  {
+    "name": "local-p0-once-per-opening",
+    "result": "pass",
+    "detail": "Full watcher retains marker across real endpoint replacement and chmod-000 status; same opening queues no repeat; resolved/reopened blocker queues exactly one new alarm."
+  },
+  {
+    "name": "local-p0-queue-delivery",
+    "result": "pass",
+    "detail": "Real wake drain presents both distinct P0 alarm payloads for the same task; no alarm is collapsed."
+  }
+]

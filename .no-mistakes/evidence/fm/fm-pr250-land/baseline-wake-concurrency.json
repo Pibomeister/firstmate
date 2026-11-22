@@ -1,0 +1,10 @@
+{
+  "name": "baseline-wake-concurrency",
+  "command": [
+    "bash",
+    "{run-worktree}/.test-baseline-lock/tests/fm-wake-queue.test.sh",
+    "test_concurrent_append_and_drain"
+  ],
+  "exit": 1,
+  "seconds": 27.83
+}

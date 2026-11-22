@@ -1,0 +1,12 @@
+{
+  "name": "target-wake-dedupe",
+  "command": [
+    "bash",
+    "tests/fm-wake-queue.test.sh",
+    "test_drain_dedupes_obvious_duplicates",
+    "test_drain_presents_every_distinct_check_payload",
+    "test_drain_preserves_p0_alarm_before_later_stale"
+  ],
+  "exit": 0,
+  "seconds": 28.76
+}

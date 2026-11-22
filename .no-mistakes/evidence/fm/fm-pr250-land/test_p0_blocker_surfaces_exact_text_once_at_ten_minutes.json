@@ -1,0 +1,12 @@
+{
+  "name": "test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+  "command": [
+    "env",
+    "FM_TEST_ONLY=test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+    "bash",
+    "tests/fm-watch-triage.test.sh"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 49.19
+}

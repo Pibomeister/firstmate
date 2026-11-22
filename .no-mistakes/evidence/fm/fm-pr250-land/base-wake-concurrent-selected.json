@@ -1,0 +1,10 @@
+{
+  "name": "base-wake-concurrent-selected",
+  "command": [
+    "bash",
+    "{run-worktree}/.test-timing-comparison/base/tests/fm-wake-queue.test.sh",
+    "test_concurrent_append_and_drain"
+  ],
+  "exit": 1,
+  "seconds": 34.83
+}

@@ -1,0 +1,10 @@
+{
+  "name": "backlog-atomicity",
+  "command": [
+    "bash",
+    "tests/fm-backlog-atomicity.test.sh"
+  ],
+  "exit": 1,
+  "timeout": false,
+  "seconds": 686.72
+}

@@ -1,0 +1,4 @@
+$ env FM_TEST_ONLY=test_p0_alarms_scan_all_workers_before_sibling_signals bash tests/fm-watch-triage.test.sh
+ok - all due P0 alarms surface before sibling signals, which remain deliverable
+
+RESULT {"name": "test_p0_alarms_scan_all_workers_before_sibling_signals", "command": ["env", "FM_TEST_ONLY=test_p0_alarms_scan_all_workers_before_sibling_signals", "bash", "tests/fm-watch-triage.test.sh"], "exit": 0, "timeout": false, "seconds": 24.94}

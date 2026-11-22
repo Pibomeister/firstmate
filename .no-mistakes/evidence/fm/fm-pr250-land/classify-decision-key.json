@@ -1,0 +1,10 @@
+{
+  "name": "classify-decision-key",
+  "command": [
+    "bash",
+    "tests/fm-classify-decision-key.test.sh"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 25.95
+}

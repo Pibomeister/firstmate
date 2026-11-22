@@ -1,0 +1,5 @@
+$ bash {run-worktree}/.test-timing-comparison/target/tests/fm-backlog-atomicity.test.sh test_deferred_signal_verification_outlives_an_unresponsive_tasks_axi
+1..1
+not ok - the verification hung on the unresponsive start instead of timing out: warning: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-backlog-atomicity.1tUmbR/dispatch-signal-hang/home/data/atomic-dispatch-signal-hang-b5/launch-brief.md records no ship branch; defaulting to legacy branch fm/atomic-dispatch-signal-hang-b5
+
+RESULT {"name": "target-backlog-timeout-selected", "command": ["bash", "{run-worktree}/.test-timing-comparison/target/tests/fm-backlog-atomicity.test.sh", "test_deferred_signal_verification_outlives_an_unresponsive_tasks_axi"], "exit": 1, "seconds": 39.35}

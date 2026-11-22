@@ -1,0 +1,640 @@
+
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-priority-extra/home
+{run-worktree}/.test-priority-extra/home
+
+exit=0
+
+$ git init -b main {run-worktree}/.test-priority-extra/project
+Initialized empty Git repository in {run-worktree}/.test-priority-extra/project/.git/
+
+exit=0
+
+$ git add README.md
+
+exit=0
+
+$ git commit -m Seed isolated validation project
+[main (root-commit) 917d2de] Seed isolated validation project
+ 1 file changed, 1 insertion(+)
+ create mode 100644 README.md
+
+exit=0
+
+$ git clone --bare {run-worktree}/.test-priority-extra/project {run-worktree}/.test-priority-extra/origin.git
+Cloning into bare repository '{run-worktree}/.test-priority-extra/origin.git'...
+done.
+
+exit=0
+
+$ git remote add origin {run-worktree}/.test-priority-extra/origin.git
+
+exit=0
+
+$ git fetch origin
+From {run-worktree}/.test-priority-extra/origin
+ * [new branch]      main       -> origin/main
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux-dir {run-worktree}/.test-priority-extra/home
+/tmp/fml.EDRkoe
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-priority-extra/home new-session -d -s proof -n fm-ordinary -x 120 -y 40 while :; do echo alive >> '{run-worktree}/.test-priority-extra/progress'; sleep 1; done
+
+exit=0
+
+$ tmux -S /tmp/fml.EDRkoe/tmux-501/default display-message -p #{pid}
+83427
+
+exit=0
+
+$ tasks-axi add ordinary-probe Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+ok: added ordinary-probe (ship) -> Queued
+task:
+  id: ordinary-probe
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start ordinary-probe --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block ordinary-probe --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh ordinary-probe {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+deferred: lane capacity of this home ({run-worktree}/.test-priority-extra/home/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 178.04 at or over its ceiling 1 (max-load1)
+
+exit=75
+
+$ tasks-axi show ordinary-probe --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: ordinary-probe
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+OBSERVED ordinary-full-lane: Real spawn exits 75 without metadata; synthetic backlog remains queued.
+
+$ tasks-axi add project-ordinary Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+ok: added project-ordinary (ship) -> Queued
+task:
+  id: project-ordinary
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start project-ordinary --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block project-ordinary --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh project-ordinary {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+deferred: project project admits 1 worker(s) at once on this machine ({run-worktree}/.test-priority-extra/home/config/project-capacity) and 1 already hold a place (ordinary); task project-ordinary was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up
+
+exit=75
+
+$ bash bin/fm-afk-contract.sh enter --words Run only these local help probes. --spend 1
+Away posture recorded at 2026-11-22T04:07:37Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 1 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-22T04:07:37Z
+  expected return: not given
+  spend cap: 1 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    Run only these local help probes.
+
+exit=0
+
+$ tasks-axi add away-ordinary Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+ok: added away-ordinary (ship) -> Queued
+task:
+  id: away-ordinary
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start away-ordinary --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block away-ordinary --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh away-ordinary {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+error: spawn refused - the away-posture record caps concurrent workers at 1 and 1 ordinary task(s) are live in this home; task away-ordinary stays queued for the captain's return or for a worker to finish (spend cap: bin/fm-afk-contract.sh)
+
+exit=1
+
+OBSERVED ordinary-project-and-away-caps: Ordinary spawn defers under project cap; away cap refuses an additional ordinary worker.
+
+$ tasks-axi add level-0 Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 0
+ok: added level-0 (ship) -> Queued
+task:
+  id: level-0
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start level-0 --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block level-0 --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh level-0 {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 0 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/level-0/launch-brief.md records no ship branch; defaulting to legacy branch fm/level-0
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching level-0 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned level-0 harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-level-0 worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/1/project
+
+exit=0
+
+$ tasks-axi show level-0 --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: level-0
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ tasks-axi add level-1 Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 1
+ok: added level-1 (ship) -> Queued
+task:
+  id: level-1
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start level-1 --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block level-1 --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh level-1 {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 1 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/level-1/launch-brief.md records no ship branch; defaulting to legacy branch fm/level-1
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching level-1 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned level-1 harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-level-1 worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/2/project
+
+exit=0
+
+$ tasks-axi show level-1 --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: level-1
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ tasks-axi add level-2 Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 2
+ok: added level-2 (ship) -> Queued
+task:
+  id: level-2
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start level-2 --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block level-2 --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh level-2 {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 2 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/level-2/launch-brief.md records no ship branch; defaulting to legacy branch fm/level-2
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching level-2 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned level-2 harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-level-2 worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/3/project
+
+exit=0
+
+$ tasks-axi show level-2 --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: level-2
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ tasks-axi add level-3 Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 3
+ok: added level-3 (ship) -> Queued
+task:
+  id: level-3
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start level-3 --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block level-3 --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh level-3 {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 3
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 3 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/level-3/launch-brief.md records no ship branch; defaulting to legacy branch fm/level-3
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching level-3 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned level-3 harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-level-3 worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/4/project
+
+exit=0
+
+$ tasks-axi show level-3 --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: level-3
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ tasks-axi add level-4 Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 4
+ok: added level-4 (ship) -> Queued
+task:
+  id: level-4
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 4
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start level-4 --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block level-4 --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh level-4 {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 4
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 4 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/level-4/launch-brief.md records no ship branch; defaulting to legacy branch fm/level-4
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching level-4 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned level-4 harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-level-4 worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/5/project
+
+exit=0
+
+$ tasks-axi show level-4 --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: level-4
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 4
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+OBSERVED all-priorities-project-lane-away: Real help-only launches for priorities 0-4 bypass full project/lane/load/away caps; each In-flight row and metadata retains its priority; existing process continues.
+
+$ tasks-axi add bad-project Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 0
+ok: added bad-project (ship) -> Queued
+task:
+  id: bad-project
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start bad-project --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block bad-project --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh bad-project {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+error: spawn refused: the project capacity declaration is unreadable ({run-worktree}/.test-priority-extra/home/config/project-capacity line 1 gives project a capacity that is not a positive integer); fix it so the captain's worker limits are known (docs/configuration.md "Project capacity")
+
+exit=1
+
+$ tasks-axi add bad-load Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 0
+ok: added bad-load (ship) -> Queued
+task:
+  id: bad-load
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start bad-load --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block bad-load --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh bad-load {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+fm-load-relief: config/load-relief line 1: expected key=value
+fm-capacity: the load-relief levels are unreadable; refusing to guess the load ceiling
+error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited 1); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known
+
+exit=1
+
+OBSERVED malformed-independent-limits: Explicit P0 still refuses malformed project-capacity and load-relief limits before publishing worker metadata.
+
+$ tasks-axi add race-priority Local CLI help probe --kind ship --file {run-worktree}/.test-priority-extra/home/data/backlog.md --priority 1
+ok: added race-priority (ship) -> Queued
+task:
+  id: race-priority
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start race-priority --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block race-priority --by <other> --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh race-priority {run-worktree}/.test-priority-extra/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-extra/home
+note: explicit --priority 1 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-extra/home/data/race-priority/launch-brief.md records no ship branch; defaulting to legacy branch fm/race-priority
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-extra/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching race-priority without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+warning: backlog item race-priority priority changed while its worker started: its row is 3, so the task record now carries 3 instead of 1
+spawned race-priority harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-race-priority worktree={run-worktree}/.test-priority-extra/pool/.treehouse/project-96826a/6/project
+
+exit=0
+CONCURRENT BACKLOG UPDATE
+ok: updated race-priority (priority)
+task:
+  id: race-priority
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[1]:
+  - Run `tasks-axi show race-priority --full --file={run-worktree}/.test-priority-extra/home/data/backlog.md` to see the result
+
+exit=0
+
+$ tasks-axi show race-priority --file {run-worktree}/.test-priority-extra/home/data/backlog.md
+task:
+  id: race-priority
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+OBSERVED startup-priority-race: Actual tmux endpoint starts under priority 1; concurrent tasks-axi reprioritization to 3 is adopted with a warning, keeping the worker record and In-flight row.
+
+$ tmux -S /tmp/fml.EDRkoe/tmux-501/default kill-server
+
+exit=0
+
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-priority-extra/home
+
+exit=0
+
+CLEANUP disposable lab removed.

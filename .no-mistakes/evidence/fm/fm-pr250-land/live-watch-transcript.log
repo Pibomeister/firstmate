@@ -1,0 +1,321 @@
+
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-watch-live/home
+{run-worktree}/.test-watch-live/home
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux-dir {run-worktree}/.test-watch-live/home
+/tmp/fml.tNGWLt
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-watch-live/home new-session -d -s watch -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default display-message -p #{pid}
+18133
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p0 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p1 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p2 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p3 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p4 /bin/bash --noprofile --norc
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-question /bin/bash --noprofile --norc
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+heartbeat
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p0-replacement /bin/bash --noprofile --norc
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+heartbeat
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+signal: {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+stale: watch:fm-p1
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+stale: watch:fm-p0-replacement
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
+
+exit=0
+
+$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
+
+exit=0
+
+$ bash bin/fm-watch.sh
+stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
+
+exit=0
+
+PERSISTED P0 WAKE ROWS
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+1795320421	9	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
+
+$ bash bin/fm-wake-drain.sh
+1795320324	4	heartbeat	heartbeat	heartbeat
+1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
+1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
+1795320378	6	signal	p0.status	signal: {run-worktree}/.test-watch-live/home/state/p0.status
+1795320405	7	stale	watch:fm-p1	stale: watch:fm-p1
+1795320418	8	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement
+1795320421	9	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 9 --recovery-generation 45281.1795320422.C4TnCB
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=deploy] [at=1000]: synthetic deployment key missing
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=network] [at=1000]: synthetic network route missing
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=deploy] [at=1500]: synthetic deployment key still missing
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: resolved [key=deploy] [at=1950]: synthetic key supplied
+wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=deploy] [at=2000]: synthetic key missing again
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+p0 [key=network] blocked: synthetic network route missing
+p0 [key=deploy] blocked: synthetic key missing again
+p1 [key=default] blocked: lower-priority synthetic blocker
+p2 [key=default] blocked: lower-priority synthetic blocker
+p3 [key=default] blocked: lower-priority synthetic blocker
+p4 [key=default] blocked: lower-priority synthetic blocker
+question [key=region] needs-decision: synthetic region choice
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  6 task(s) in flight, but no live watcher process holds this home lock (last beat: 12s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+
+exit=0
+
+$ tmux -S /tmp/fml.tNGWLt/tmux-501/default kill-server
+
+exit=0
+
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-watch-live/home
+
+exit=0
+
+CLEANUP disposable watcher lab removed.

@@ -1,0 +1,4 @@
+$ env FM_TEST_ONLY=test_p0_blocker_fold_preserves_open_keys_and_ages bash tests/fm-watch-triage.test.sh
+ok - P0 alarms follow open keys, retain opening ages, and retire resolved episodes
+
+RESULT {"name": "test_p0_blocker_fold_preserves_open_keys_and_ages", "command": ["env", "FM_TEST_ONLY=test_p0_blocker_fold_preserves_open_keys_and_ages", "bash", "tests/fm-watch-triage.test.sh"], "exit": 0, "timeout": false, "seconds": 59.61}

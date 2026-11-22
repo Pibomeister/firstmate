@@ -1,0 +1,10 @@
+{
+  "name": "wake-queue",
+  "command": [
+    "bash",
+    "tests/fm-wake-queue.test.sh"
+  ],
+  "exit": 1,
+  "timeout": false,
+  "seconds": 310.75
+}

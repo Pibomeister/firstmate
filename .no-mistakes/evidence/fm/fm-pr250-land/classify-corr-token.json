@@ -1,0 +1,10 @@
+{
+  "name": "classify-corr-token",
+  "command": [
+    "bash",
+    "tests/fm-classify-corr-token.test.sh"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 130.09
+}

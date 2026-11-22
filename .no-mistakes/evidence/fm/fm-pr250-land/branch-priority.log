@@ -1,0 +1,6 @@
+$ bash tests/fm-branch-supervision.test.sh test_branch_prompt_delivers_priority_supervision
+1..1
+ok - emitted branch prompt delivers priority dispatch and inspection within existing authority
+FM_TEST_COMPLETE
+
+RESULT {"name": "branch-priority", "command": ["bash", "tests/fm-branch-supervision.test.sh", "test_branch_prompt_delivers_priority_supervision"], "exit": 0, "timeout": false, "seconds": 1.56}

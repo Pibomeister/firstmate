@@ -1,0 +1,41 @@
+$ bash tests/fm-wake-queue.test.sh test_concurrent_append_and_drain test_drain_dedupes_obvious_duplicates test_drain_presents_every_distinct_check_payload test_drain_preserves_p0_alarm_before_later_stale
+1..4
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74087 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+not ok - concurrent append/drain subprocess failed
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+fm-wake: the lock /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.kBXKFd/concurrent/state/.wake-queue.lock is still held by pid 74012 (fm-wake-lib.sh) after 30s; the state it guards was left untouched
+
+RESULT {"command": ["bash", "tests/fm-wake-queue.test.sh", "test_concurrent_append_and_drain", "test_drain_dedupes_obvious_duplicates", "test_drain_presents_every_distinct_check_payload", "test_drain_preserves_p0_alarm_before_later_stale"], "exit": 1, "seconds": 43.8}

@@ -1,0 +1,10 @@
+{
+  "name": "project-capacity",
+  "command": [
+    "bash",
+    "tests/fm-project-capacity.test.sh"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 799.81
+}

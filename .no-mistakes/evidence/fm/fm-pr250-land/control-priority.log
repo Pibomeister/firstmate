@@ -1,0 +1,7 @@
+$ bash tests/fm-control-relaunch.test.sh test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it test_spawn_relaunch_refuses_contradicting_flags
+1..2
+ok - relaunch preserves ordinary and prioritized In-flight items without rewriting the transition
+ok - fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses
+FM_TEST_COMPLETE
+
+RESULT {"name": "control-priority", "command": ["bash", "tests/fm-control-relaunch.test.sh", "test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it", "test_spawn_relaunch_refuses_contradicting_flags"], "exit": 0, "timeout": false, "seconds": 270.39}

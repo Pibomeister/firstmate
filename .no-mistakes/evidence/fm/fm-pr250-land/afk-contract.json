@@ -1,0 +1,10 @@
+{
+  "name": "afk-contract",
+  "command": [
+    "bash",
+    "tests/fm-afk-contract.test.sh"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 97.9
+}

@@ -1,0 +1,401 @@
+
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-priority-live/home
+{run-worktree}/.test-priority-live/home
+
+exit=0
+
+$ git init -b main {run-worktree}/.test-priority-live/project
+Initialized empty Git repository in {run-worktree}/.test-priority-live/project/.git/
+
+exit=0
+
+$ git add README.md
+
+exit=0
+
+$ git commit -m Seed isolated validation project
+[main (root-commit) dbc1bcb] Seed isolated validation project
+ 1 file changed, 1 insertion(+)
+ create mode 100644 README.md
+
+exit=0
+
+$ git clone --bare {run-worktree}/.test-priority-live/project {run-worktree}/.test-priority-live/origin.git
+Cloning into bare repository '{run-worktree}/.test-priority-live/origin.git'...
+done.
+
+exit=0
+
+$ git remote add origin {run-worktree}/.test-priority-live/origin.git
+
+exit=0
+
+$ git fetch origin
+From {run-worktree}/.test-priority-live/origin
+ * [new branch]      main       -> origin/main
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux-dir {run-worktree}/.test-priority-live/home
+/tmp/fml.8qckuA
+
+exit=0
+
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-priority-live/home new-session -d -s proof -n fm-ordinary -x 120 -y 40 while :; do echo alive >> '{run-worktree}/.test-priority-live/progress'; sleep 1; done
+
+exit=0
+
+$ tmux -S /tmp/fml.8qckuA/tmux-501/default display-message -p #{pid}
+78949
+
+exit=0
+
+$ tasks-axi add ordinary-probe Local CLI help probe --kind ship --file {run-worktree}/.test-priority-live/home/data/backlog.md
+ok: added ordinary-probe (ship) -> Queued
+task:
+  id: ordinary-probe
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start ordinary-probe --file={run-worktree}/.test-priority-live/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block ordinary-probe --by <other> --file={run-worktree}/.test-priority-live/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh ordinary-probe {run-worktree}/.test-priority-live/project codex --help --mode no-mistakes --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+deferred: lane capacity of this home ({run-worktree}/.test-priority-live/home/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 68.65 at or over its ceiling 1 (max-load1)
+
+exit=75
+
+$ tasks-axi show ordinary-probe --file {run-worktree}/.test-priority-live/home/data/backlog.md
+task:
+  id: ordinary-probe
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+OBSERVED ordinary-full-lane: Real spawn exits 75 without metadata; synthetic backlog remains queued.
+
+$ tasks-axi add priority-probe Local CLI help probe --kind ship --file {run-worktree}/.test-priority-live/home/data/backlog.md --priority 0
+ok: added priority-probe (ship) -> Queued
+task:
+  id: priority-probe
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-probe --file={run-worktree}/.test-priority-live/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-probe --by <other> --file={run-worktree}/.test-priority-live/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh priority-probe {run-worktree}/.test-priority-live/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+note: explicit --priority 0 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-priority-live/home/data/priority-probe/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-probe
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-live/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-probe without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-probe harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-priority-probe worktree={run-worktree}/.test-priority-live/pool/.treehouse/project-b76b81/1/project
+
+exit=0
+
+PERSISTED TASK RECORD
+window=proof:fm-priority-probe
+tmux_socket=/private/tmp/fml.8qckuA/tmux-501/default
+tmux_server_pid=78949
+tmux_server_identity=Sun Nov 22 04:02:31 2026     tmux -f /dev/null -S /tmp/fml.8qckuA/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 while :; do echo alive >> '{run-worktree}/.test-priority-live/progress'; sleep 1; done
+tmux_window_id=@1
+endpoint_task_id=priority-probe
+worktree={run-worktree}/.test-priority-live/pool/.treehouse/project-b76b81/1/project
+project={run-worktree}/.test-priority-live/project
+harness=codex
+kind=ship
+priority=0
+mode=no-mistakes
+yolo=off
+branch=fm/priority-probe
+tasktmp=/tmp/fm-priority-probe
+model=default
+effort=default
+spawn_gen=s1795320164.91190.8998
+
+$ tasks-axi show priority-probe --file {run-worktree}/.test-priority-live/home/data/backlog.md
+task:
+  id: priority-probe
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ tmux -S /tmp/fml.8qckuA/tmux-501/default capture-pane -p -t proof:fm-priority-probe
+          for running in environments that are externally sandboxed
+
+      --dangerously-bypass-hook-trust
+          Run enabled hooks without requiring persisted hook trust for this invocation. DANGEROUS. Intended only for
+          automation that already vets hook sources
+
+  -C, --cd <DIR>
+          Tell the agent to use the specified directory as its working root
+
+      --worktree
+          Run the session in a new managed Git worktree
+
+      --add-dir <DIR>
+          Additional directories that should be writable alongside the primary workspace
+
+  -a, --ask-for-approval <APPROVAL_POLICY>
+          Configure when the model requires human approval before executing a command
+
+          Possible values:
+          - on-request: The model decides when to ask the user for approval
+          - never:      Never ask for user approval Execution failures are immediately returned to the model
+
+      --search
+          Enable live web search. When enabled, the native Responses `web_search` tool is available to the model (no
+          per‑call approval)
+
+      --no-alt-screen
+          Disable alternate screen mode
+
+          Runs the TUI in inline mode, preserving terminal scrollback history.
+
+      --no-daemon
+          Run without the shared background server, even if it is already running
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+Eduardos-MacBook-Pro-2:project eduardopicazo$
+
+exit=0
+
+OBSERVED priority-full-lane: P0 launches through real tmux/Treehouse despite cap=1 and max-load1=1; metadata records priority=0; no deferred line; ordinary process continues.
+
+$ tasks-axi add bad-lane Local CLI help probe --kind ship --file {run-worktree}/.test-priority-live/home/data/backlog.md --priority 0
+ok: added bad-lane (ship) -> Queued
+task:
+  id: bad-lane
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start bad-lane --file={run-worktree}/.test-priority-live/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block bad-lane --by <other> --file={run-worktree}/.test-priority-live/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh bad-lane {run-worktree}/.test-priority-live/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+fm-capacity: config/lane-capacity: line 2: unknown key 'bogus'
+error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited 1); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known
+
+exit=1
+
+OBSERVED malformed-lane-refuses: Explicit P0 exits 1 for malformed lane capacity before a worker record exists.
+
+$ tasks-axi add missing-priority Local CLI help probe --kind ship --file {run-worktree}/.test-priority-live/home/data/backlog.md --priority 2
+ok: added missing-priority (ship) -> Queued
+task:
+  id: missing-priority
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start missing-priority --file={run-worktree}/.test-priority-live/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block missing-priority --by <other> --file={run-worktree}/.test-priority-live/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh missing-priority {run-worktree}/.test-priority-live/project codex --help --mode no-mistakes --yolo off --backend tmux
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+error: task missing-priority has backlog priority 2; pass --priority 2 so its dedicated worker cannot wait behind ordinary lanes
+
+exit=1
+
+$ tasks-axi add mismatch-priority Local CLI help probe --kind ship --file {run-worktree}/.test-priority-live/home/data/backlog.md --priority 1
+ok: added mismatch-priority (ship) -> Queued
+task:
+  id: mismatch-priority
+  title: Local CLI help probe
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start mismatch-priority --file={run-worktree}/.test-priority-live/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block mismatch-priority --by <other> --file={run-worktree}/.test-priority-live/home/data/backlog.md` to record a dependency
+
+exit=0
+
+$ bash bin/fm-spawn.sh mismatch-priority {run-worktree}/.test-priority-live/project codex --help --mode no-mistakes --yolo off --backend tmux --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+error: task mismatch-priority priority mismatch: its backlog row is 1, but this spawn passed --priority 0
+
+exit=1
+
+OBSERVED backlog-priority-guards: Missing and mismatched priorities refuse before capacity can mask the error; no worker records created.
+
+$ bash bin/fm-spawn.sh priority-probe --relaunch --harness codex --help
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+warning: {run-worktree}/.test-priority-live/home/data/priority-probe/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-probe
+warning: agent-kit supervisor declaration: {run-worktree}/.test-priority-live/user is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-probe without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-probe harness=codex kind=ship mode=no-mistakes yolo=off window=proof:fm-priority-probe worktree={run-worktree}/.test-priority-live/pool/.treehouse/project-b76b81/1/project
+
+exit=0
+
+RELAUNCHED TASK RECORD
+window=proof:fm-priority-probe
+tmux_socket=/private/tmp/fml.8qckuA/tmux-501/default
+tmux_server_pid=78949
+tmux_server_identity=Sun Nov 22 04:02:31 2026     tmux -f /dev/null -S /tmp/fml.8qckuA/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 while :; do echo alive >> '{run-worktree}/.test-priority-live/progress'; sleep 1; done
+tmux_window_id=@1
+endpoint_task_id=priority-probe
+worktree={run-worktree}/.test-priority-live/pool/.treehouse/project-b76b81/1/project
+project={run-worktree}/.test-priority-live/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+branch=fm/priority-probe
+tasktmp=/tmp/fm-priority-probe
+model=default
+effort=default
+spawn_gen=s1795320184.34289.31800
+priority=0
+
+$ tasks-axi show priority-probe --file {run-worktree}/.test-priority-live/home/data/backlog.md
+task:
+  id: priority-probe
+  title: Local CLI help probe
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-21
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+exit=0
+
+$ bash bin/fm-spawn.sh priority-probe --relaunch --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-priority-live/home
+error: --relaunch reuses the task's recorded priority; --priority cannot override it
+
+exit=1
+
+OBSERVED priority-relaunch: Real help-only CLI relaunch retains priority/project/worktree/window and In-flight row; --priority override refuses.
+
+$ tmux -S /tmp/fml.8qckuA/tmux-501/default kill-server
+
+exit=0
+
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-priority-live/home
+
+exit=0
+
+CLEANUP: tmux server and socket stopped; read-only test hooks made writable; disposable lab fully removed.

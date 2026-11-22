@@ -1,0 +1,32 @@
+[
+  {
+    "name": "ordinary-full-lane",
+    "result": "pass",
+    "evidence": "live-priority-extra-transcript.log",
+    "detail": "Real spawn exits 75 without metadata; synthetic backlog remains queued."
+  },
+  {
+    "name": "ordinary-project-and-away-caps",
+    "result": "pass",
+    "evidence": "live-priority-extra-transcript.log",
+    "detail": "Ordinary spawn defers under project cap; away cap refuses an additional ordinary worker."
+  },
+  {
+    "name": "all-priorities-project-lane-away",
+    "result": "pass",
+    "evidence": "live-priority-extra-transcript.log",
+    "detail": "Real help-only launches for priorities 0-4 bypass full project/lane/load/away caps; each In-flight row and metadata retains its priority; existing process continues."
+  },
+  {
+    "name": "malformed-independent-limits",
+    "result": "pass",
+    "evidence": "live-priority-extra-transcript.log",
+    "detail": "Explicit P0 still refuses malformed project-capacity and load-relief limits before publishing worker metadata."
+  },
+  {
+    "name": "startup-priority-race",
+    "result": "pass",
+    "evidence": "live-priority-extra-transcript.log",
+    "detail": "Actual tmux endpoint starts under priority 1; concurrent tasks-axi reprioritization to 3 is adopted with a warning, keeping the worker record and In-flight row."
+  }
+]

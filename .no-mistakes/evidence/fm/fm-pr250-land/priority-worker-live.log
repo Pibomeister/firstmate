@@ -1,0 +1,4 @@
+$ bash tests/fm-priority-worker-live-e2e.test.sh
+skip: synthetic Codex process identity requires Linux
+
+RESULT {"name": "priority-worker-live", "command": ["bash", "tests/fm-priority-worker-live-e2e.test.sh"], "exit": 0, "timeout": false, "seconds": 0.52}

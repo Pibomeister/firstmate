@@ -1,0 +1,11 @@
+{
+  "name": "daemon-priority",
+  "command": [
+    "bash",
+    "tests/fm-daemon.test.sh",
+    "test_p0_alarm_reaches_supervision_after_blocker_signal"
+  ],
+  "exit": 0,
+  "timeout": false,
+  "seconds": 18.63
+}
