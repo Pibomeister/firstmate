@@ -1382,7 +1382,7 @@ Publishing is best-effort and never changes what the watcher does.
 `bin/fm-capacity.sh --admit` is the same verdict as an exit status: it exits 0 when the verdict admits or the file is absent, and reports the reasons on stderr with exit 75 when it does not.
 `bin/fm-spawn.sh` instead runs the narrower `bin/fm-capacity.sh --spawn-gate` for every fresh ship or scout spawn: an ordinary spawn past the lane cap, counting only lanes that hold a place and never the spawning task's own record, or on a host whose load is at or over the load relief's ceiling - `ceiling` in `config/load-relief`, else `max-load1`, else the logical core count - is deferred with exit 75 before anything is created and its backlog item stays queued.
 While any worker is paused for load, the spawn gate holds at the resume level instead, so an ordinary spawn never takes the room a paused worker is waiting for.
-A fresh spawn with an explicit `--priority` is admitted past that deferral, as it is past project capacity, and stops no live lane; a malformed `config/lane-capacity` or `config/load-relief` still refuses it, because an unreadable limit is not permission.
+A fresh spawn with an explicit `--priority` is admitted past that deferral, as it is past project capacity, and stops no live lane; a malformed or unreadable `config/lane-capacity` or `config/load-relief` still refuses it, because an unreadable limit is not permission.
 The other holds in the verdict stay advisory for spawns.
 The watcher also runs `bin/fm-load-relief.sh check` detached beside the publish while the file exists.
 After load stays at or over the ceiling for the sustained window, that check interrupts exactly one lowest-priority live worker in place per pass - never killing it or touching its work - records the pause under `state/load-relief/paused/`, and, while a later check reads load below the resume level (75% of the ceiling unless set), steers one paused worker per pass to resume, highest priority first.
@@ -2412,7 +2412,7 @@ When every place is held, an ordinary `bin/fm-spawn.sh` launch creates no record
 Prioritized orders follow the preemption policy in `AGENTS.md` section 7; [`bin/fm-spawn.sh`](../bin/fm-spawn.sh) owns priority admission, automated-row verification, and caller authority when automatic enforcement is disabled.
 A malformed or unreadable file refuses every fresh ship or scout spawn until it is fixed, rather than guessing the intended limit, and an ordinary spawn also refuses if a local home's state directory or task record cannot be read while counting a capped project's holders.
 Firstmate cannot see which part of a worker's life uses the resource, so ordinary admission counts whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
-[`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
+[`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent ordinary spawns cannot both take the last one.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

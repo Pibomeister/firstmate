@@ -302,12 +302,9 @@
 #   or scout.
 #   Where the tasks-axi backlog gate applies, omission for a prioritized row or
 #   disagreement with that row is refused before launch and before any capacity
-#   admission, so that diagnostic is never masked by a deferral. A row whose
-#   priority changes while the endpoint starts is adopted at the backlog
-#   dispatch commit: priority= takes the row's current value with a warning,
-#   because refusing there would drop the record of a worker already running.
-#   A rewrite that fails keeps the record unchanged and warns with the manual
-#   fix instead.
+#   admission, so that diagnostic is never masked by a deferral.
+#   bin/fm-backlog-transition-lib.sh owns commit-time priority reconciliation
+#   when the row changes while the endpoint starts, including rewrite failures.
 #   When automatic backlog enforcement does not apply (including a manual
 #   backend), --priority is the caller's explicit intake authority and is not
 #   presented as row-verified.
@@ -322,8 +319,8 @@
 #   safety gates.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
-#   the declaration, what holds a place, and the race argument), a fresh ship or
-#   scout spawn counts the places already held while holding that same
+#   the declaration, what holds a place, and the race argument), an ordinary
+#   fresh ship or scout spawn counts the places already held under the shared
 #   project-identity lock - taken on every backend whenever the declaration caps
 #   any project, Orca included, because an uncapped clone's worker still holds a
 #   place for a capped clone of the same origin - and holds it through metadata
@@ -335,6 +332,8 @@
 #   Lane capacity admission runs bin/fm-capacity.sh's --spawn-gate verdict at
 #   the lane-capacity gate below, with the same exit-75 deferral, except an
 #   explicit priority, which is admitted past that deferral too.
+#   The verdict still runs for prioritized spawns; any status other than 0 or
+#   75 refuses with exit 1, including unreadable lane or load-relief limits.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -485,7 +484,7 @@
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
-#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
+#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo/--priority
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
 #   If config/crew-dispatch.json exists, shared --harness is required for crewmate
