@@ -1708,47 +1708,16 @@ state=$(cat "$FM_FAKE_AGY_STATE" 2>/dev/null || true)
 [ ! -f "$FM_FAKE_AGY_STATE.cwd" ] || FM_FAKE_PANE_PATH=$(cat "$FM_FAKE_AGY_STATE.cwd")
 fake_screen() {
   case "$state" in
-    dialog)
-      printf 'Accessing workspace:\n\n%s\n\nDo you trust the contents of this project?\n\nAntigravity CLI requires permission to read, edit, and execute files here.\n\n> Yes, I trust this folder\n  No, exit\n' "$FM_FAKE_PANE_PATH"
-      ;;
-    busy)
-      printf 'Generating...\n└ Tip: press f to see the full diff.\n\nesc to cancel                                Gemini 3.8 Flash · low\n'
-      ;;
     herdr-bg-task)
       printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
       ;;
-    herdr-bg-task-only)
-      printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts             auto · Gemini 4 Argon · high · 1 task(s) · /tasks\n'
-      ;;
-    herdr-turn-done)
-      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
-      ;;
     bare-ruled-idle)
       printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
-      ;;
-    unsubmitted-prompt)
-      printf '──────────────────────────────────────────────────────────────────────────────\n> Thought for 2.4s\n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
-      ;;
-    errored-before-brief)
-      printf 'Got an error: request failed before turn start\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
-      ;;
-    racing)
-      printf 'esc to cancel                                Gemini 3.8 Flash · low\n'
-      printf 'dialog\n' > "$FM_FAKE_AGY_STATE"
-      ;;
-    idle)
-      printf '>\n? for shortcuts                              Gemini 3.8 Flash · low\n'
       ;;
     *)
       printf 'shell starting\n$ \n'
       ;;
   esac
-}
-fake_path_trusted() {
-  [ "${FM_FAKE_AGY_ASSUME_TRUSTED:-0}" = 1 ] && return 0
-  [ "${FM_FAKE_AGY_IGNORE_TRUST:-0}" = 1 ] && return 1
-  node -e 'const fs=require("node:fs");let j={};try{j=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));}catch(e){process.exit(1);}process.exit(Array.isArray(j.trustedWorkspaces)&&j.trustedWorkspaces.includes(process.argv[2])?0:1);' \
-    "$FM_FAKE_AGY_SETTINGS" "$FM_FAKE_PANE_PATH"
 }
 case "${1:-} ${2:-}" in
   "status --json")
@@ -1816,20 +1785,7 @@ case "${1:-} ${2:-}" in
       *' enter '*|*' Enter '*)
         case "$state" in
           launched)
-            if fake_path_trusted && [ "${FM_FAKE_AGY_NEVER_BUSY:-0}" = 1 ]; then
-              printf 'idle\n' > "$FM_FAKE_AGY_STATE"
-            elif fake_path_trusted; then
-              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
-            elif [ "${FM_FAKE_AGY_RACE:-0}" = 1 ]; then
-              printf 'racing\n' > "$FM_FAKE_AGY_STATE"
-            else
-              printf 'dialog\n' > "$FM_FAKE_AGY_STATE"
-            fi
-            ;;
-          dialog)
-            if [ "${FM_FAKE_AGY_ANSWER:-works}" = works ]; then
-              printf '%s\n' "${FM_FAKE_AGY_LAUNCH_STATE:-busy}" > "$FM_FAKE_AGY_STATE"
-            fi
+            printf '%s\n' "$FM_FAKE_AGY_LAUNCH_STATE" > "$FM_FAKE_AGY_STATE"
             ;;
         esac
         ;;
@@ -1852,11 +1808,7 @@ case "${1:-} ${2:-}" in
     fake_screen
     exit 0 ;;
   "agent get")
-    if [ "$state" = busy ]; then
-      printf '%s\n' '{"result":{"agent":{"agent":"agy","agent_status":"working","pane_id":"w3C:p2"}}}'
-    else
-      printf '%s\n' '{"result":{"agent":{"agent":"agy","agent_status":"idle","pane_id":"w3C:p2"}}}'
-    fi
+    printf '%s\n' '{"result":{"agent":{"agent":"agy","agent_status":"idle","pane_id":"w3C:p2"}}}'
     exit 0 ;;
   "pane close")
     : > "$FM_FAKE_AGY_STATE.closed"
