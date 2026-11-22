@@ -377,7 +377,7 @@ _fm_wd_pr_caused_failure() {  # <view>
   local cleaned
   cleaned=$(_fm_wd_category_line "$1" | LC_ALL=C sed -E \
     -e "s/(^|[^a-z])not ($FM_WD_PR_FAILURE_RE)[a-z]*/ /g" \
-    -e "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
+    -e "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+(tests?|checks?))?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
 }
 

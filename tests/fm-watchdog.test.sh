@@ -2208,17 +2208,37 @@ test_human_only_keeps_real_change_and_releases_negation() {
 }
 
 test_human_only_releases_passing_changed_behavior() {
-  local record phrase failure
+  local record phrase failure subject
   for phrase in 'Changed behavior' 'Code modified by this PR' 'Code added in this PR' 'Code introduced by this PR' \
     'Code this PR changed' 'Code this PR modified' 'Code this PR added' 'Code the PR changed' 'Code the PR modified' 'Code the PR added' "PR's own changed behavior"; do
-    record="PR #9 no-mistakes test awaiting_approval. $phrase passed 761/761; only a known unreachable load-sensitive timing flake survived the once-rerun. A approve, or B hold"
-    ! lib fm_wd_human_only "$record" || fail "passing evidence held an unrelated flake: $phrase"
-    for failure in 'failed on changed behavior' 'failed in code modified by this PR' 'failed in code added in this PR' 'failed in code introduced by this PR'; do
-      lib fm_wd_human_only "$record. Another test $failure" || fail "passing evidence hid a real $failure"
+    for subject in '' ' test' ' tests' ' check' ' checks'; do
+      record="PR #9 no-mistakes test awaiting_approval. $phrase$subject passed 761/761; only a known unreachable load-sensitive timing flake survived the once-rerun. A approve, or B hold"
+      ! lib fm_wd_human_only "$record" || fail "passing evidence held an unrelated flake: $phrase$subject"
+      for failure in 'failed on changed behavior' 'failed in code modified by this PR' 'failed in code added in this PR' 'failed in code introduced by this PR'; do
+        lib fm_wd_human_only "$record. Another test $failure" || fail "passing evidence hid a real $failure"
+      done
+      lib fm_wd_human_only "PR #9 no-mistakes test awaiting_approval. $phrase$subject failed; A approve, or B hold" || fail "a genuine $phrase$subject failure escaped"
     done
-    lib fm_wd_human_only "PR #9 no-mistakes test awaiting_approval. $phrase failed; A approve, or B hold" || fail "a genuine $phrase failure escaped"
   done
   pass "human-only: passing changed behavior releases the flake but not a later real failure"
+}
+
+test_council_routes_passing_checks_and_holds_real_failures() {
+  local out record
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:'PROCEED A' ok:'PROCEED A'
+  # The default owner is the council; passing checks are not PR-caused failures.
+  record='PR #562 no-mistakes test awaiting_approval. All changed-behavior checks passed. A approve the park, B schedule a low-load rerun'
+  printf '%s\n' "$record" > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key passing-checks --record-file "$H/record.txt" 2>&1) || fail "passing-checks council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'passing checks reach the council'
+  assert_equals 2 "$(seat_calls)" 'both council seats receive the passing evidence'
+  printf '%s\n' "$record. Another test failed on changed behavior in this PR" > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key failing-checks --record-file "$H/record.txt" 2>&1) || fail "real-failure council failed: $out"
+  assert_contains "$out" 'council=held answer=none' 'a real failure stays held alongside passing checks'
+  assert_equals 2 "$(seat_calls)" 'no seat receives the real PR-caused failure'
+  pass 'council routes passing checks and holds an accompanying real failure'
 }
 
 test_human_only_respects_negative_pr_attribution() {
@@ -8069,6 +8089,7 @@ fm_test_run \
   test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \
   test_human_only_releases_passing_changed_behavior \
+  test_council_routes_passing_checks_and_holds_real_failures \
   test_human_only_respects_negative_pr_attribution \
   test_council_shared_classifier_regressions \
   test_council_routes_passing_code_and_holds_prod_writes \
