@@ -2380,6 +2380,74 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a PR-caused failure stays held, and a negated or read-only flake still defaults to approve, not clean"
 }
 
+test_native_stale_snapshot_cannot_hide_live_failure() {
+  local live out record before snapshot_before
+  for live in 'The test failed in code modified by this PR.' 'modified by this PR'; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    make_native_gate_pointer
+    printf '\nnote: T33 was not modified by this PR.\n' >> "$H/data/t1/nm-01NATIVE-findings.txt"
+    printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
+    fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+    out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "initial snapshot council failed: $out"
+    assert_contains "$out" 'council=ruled answer=PROCEED A' 'the old flake record initially qualifies for approval'
+    record=$(council_record_path rulings t1 nm-01NATIVE-test)
+    before=$(git hash-object "$record")
+    snapshot_before=$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")
+    python3 - "$H/run.toon" "$live" <<'PY'
+import json
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+payload = path.read_text().replace('"See the full finding in the task snapshot."', json.dumps(sys.argv[2]))
+path.write_text(payload)
+PY
+    out=$(run_wd 10 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "changed live council failed: $out"
+    assert_contains "$out" 'council=held answer=none' 'a same-ID live failure cannot replay its obsolete flake approval'
+    out=$(run_wd 20 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" --revisit 2>&1) || fail "changed live revisit failed: $out"
+    assert_contains "$out" 'council=held answer=none' 'a native revisit also retains the live failure'
+    out=$(run_wd 30 council --task t1 --key nm-01NATIVE-test 2>&1) || fail "changed live default-record council failed: $out"
+    assert_contains "$out" 'council=held answer=none' 'the open-decision route retains the live failure'
+    transcript 100 'Working.'
+    run_wd 0 once >/dev/null 2>&1 || fail 'changed live automatic pass failed'
+    assert_grep 'held for the owner' "$H/data/watchdog/status.md" 'automatic classification sees the live PR-caused failure'
+    assert_equals 2 "$(seat_calls)" 'no model sees the stale snapshot after the live failure changes'
+    assert_equals "$before" "$(git hash-object "$record")" 'the held decision preserves the historical ruling bytes'
+    assert_equals "$snapshot_before" "$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")" 'the test exercises an unchanged stale snapshot'
+  done
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'same-ID live failures remain visible despite obsolete snapshots and approvals'
+}
+
+test_native_distinct_descriptions_keep_context_limit() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  make_native_gate_pointer
+  python3 - "$H" <<'PY'
+import json
+import pathlib
+import sys
+home = pathlib.Path(sys.argv[1])
+old = 'The once-rerun failed only on a known unreachable timing flake. ' + 'old context ' * 100
+current = 'A current diagnostic with distinct evidence. ' + 'new context ' * 100
+(home / 'data/t1/nm-01NATIVE-findings.txt').write_text('id: test-1\ndescription: ' + old + '\n')
+path = home / 'run.toon'
+path.write_text(path.read_text().replace('"See the full finding in the task snapshot."', json.dumps(current)))
+PY
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
+  out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "distinct description council failed: $out"
+  assert_contains "$out" 'council=refused' 'distinct complete live and saved evidence retains the existing size boundary'
+  out=$(run_wd 10 council --task t1 --key nm-01NATIVE-test 2>&1) || fail "distinct open-decision council failed: $out"
+  assert_contains "$out" 'council=refused' 'open-decision ingestion retains the complete-evidence size boundary'
+  assert_equals 0 "$(seat_calls)" 'oversized distinct evidence reaches no model'
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'unproven duplicates remain complete and oversized records remain refused'
+}
+
 test_native_revisit_ignores_only_parked_age() {
   local out record before line
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -8011,6 +8079,8 @@ fm_test_run \
   test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council \
   test_council_revisit_on_contradicting_record \
   test_native_revisit_ignores_only_parked_age \
+  test_native_stale_snapshot_cannot_hide_live_failure \
+  test_native_distinct_descriptions_keep_context_limit \
   test_council_failed_revisit_keeps_the_prior_ruling \
   test_decision_nudge_names_pr_by_number \
   test_judge_fallback_and_spend_cap \
