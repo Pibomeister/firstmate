@@ -181,7 +181,7 @@ test_watcher_grok_usage_limit_recover_names_relaunch() {
     '  ┃  ↑/↓ navigate · y copy                                                  Enter:submit' \
     '  ┃' \
     '' \
-    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss' > "$dir/limit.capture"
+    '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss  │  Ctrl+e:expand thinking' > "$dir/limit.capture"
   RECOVER_CAPTURE="$dir/limit.capture" recover_check "$dir"
   [ "$(recover_interrupts "$dir")" = 0 ] || fail "a Grok weekly-limit session was interrupted:"$'\n'"$(cat "$dir/control.log")"
   [ "$(recover_rings "$dir")" = 0 ] || fail "a Grok weekly-limit session was redirected:"$'\n'"$(cat "$dir/send.log")"
