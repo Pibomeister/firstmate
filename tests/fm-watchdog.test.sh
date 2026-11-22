@@ -6284,6 +6284,96 @@ test_default_heartbeat_freeze_stays_above_a_quiet_home() {
   pass "the default heartbeat freeze stays above a quiet home's healthy age and still fires at 900s"
 }
 
+test_default_heartbeat_freeze_uses_published_deadline() {
+  make_home $'Synthetic session\n❯ \n  ? for shortcuts'
+  grep -v '^heartbeat-frozen-secs=' "$H/config/watchdog" > "$H/config/watchdog.new"
+  mv "$H/config/watchdog.new" "$H/config/watchdog"
+  transcript 3000 "Working."
+  # A 400-second collection starts at BASE. The publisher allows 2271
+  # seconds after publication; generated-age readers must retain that offset.
+  jq --argjson generated "$BASE" --argjson published "$((BASE + 400))" \
+    '.generated_epoch=$generated | .published_epoch=$published | .stale_after_secs=2271' \
+    "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+  mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+  run_wd 400 once >/dev/null 2>&1
+  run_wd 1300 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge pending)" "a valid long-cadence heartbeat was nudged at 900 seconds"
+  assert_no_grep 'watcher heartbeat is' "$H/data/watchdog/status.md" "a valid long-cadence heartbeat was reported stale"
+  run_wd 2671 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen detect held)" "the inclusive publication freshness bound was shortened"
+  run_wd 2672 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows heartbeat-frozen detect held)" "an expired long-cadence heartbeat was not detected"
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "an expired long-cadence heartbeat was not nudged"
+  assert_grep 'watcher heartbeat is' "$H/data/watchdog/status.md" "an expired long-cadence heartbeat was not reported stale"
+  pass "default heartbeat recovery and stale reporting honor publication freshness and collection duration"
+}
+
+test_explicit_heartbeat_freeze_thresholds_keep_precedence() {
+  local threshold offset expected before
+  for threshold in 600 0; do
+    make_home $'Synthetic session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=$threshold
+watcher-stale-secs=600"
+    before=$(cat "$H/config/watchdog")
+    transcript 3000 "Working."
+    jq --argjson generated "$BASE" --argjson published "$((BASE + 400))" \
+      '.generated_epoch=$generated | .published_epoch=$published | .stale_after_secs=2271' \
+      "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+    mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+    run_wd 400 once >/dev/null 2>&1
+    offset=600 expected=1
+    [ "$threshold" != 0 ] || { offset=3400; expected=0; }
+    run_wd "$offset" once >/dev/null 2>&1
+    assert_equals "$expected" "$(ledger_rows heartbeat-frozen detect held)" "explicit heartbeat-frozen-secs=$threshold was replaced by the derived default"
+    assert_equals "$expected" "$(ledger_rows heartbeat-frozen nudge pending)" "explicit heartbeat-frozen-secs=$threshold changed recovery behavior"
+    assert_grep 'watcher heartbeat is' "$H/data/watchdog/status.md" "an explicit stale-watcher threshold was replaced"
+    assert_equals "$before" "$(cat "$H/config/watchdog")" "an explicit recovery setting was rewritten"
+  done
+  pass "explicit positive heartbeat recovery thresholds and zero disable retain their behavior"
+}
+
+test_long_cadence_context_uses_the_default_freshness_bound() {
+  local setting expected
+  for setting in default 900; do
+    make_home $'Synthetic session\n> ' 'restart=on
+restart-command=/bin/true'
+    [ "$setting" = default ] || printf 'watcher-stale-secs=%s\n' "$setting" >> "$H/config/watchdog"
+    transcript 3000 "Working."
+    run_wd 0 once >/dev/null 2>&1
+    jq --argjson published "$((BASE + 400))" \
+      '.published_epoch=$published | .stale_after_secs=2271
+        | .primary.context_left.remaining.percent=7' \
+      "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+    mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+    run_wd 1300 once >/dev/null 2>&1
+    expected=1
+    [ "$setting" = default ] || expected=0
+    assert_equals "$expected" "$(ledger_rows handoff-request nudge pending)" \
+      "$setting stale-watcher setting misclassified the current session's fresh context"
+  done
+  pass "long-cadence context stays usable under the derived default and honors explicit staleness"
+}
+
+test_invalid_heartbeat_freshness_keeps_legacy_default() {
+  local variant
+  for variant in string reversed future; do
+    make_home $'Synthetic session\n❯ \n  ? for shortcuts'
+    grep -v '^heartbeat-frozen-secs=' "$H/config/watchdog" > "$H/config/watchdog.new"
+    mv "$H/config/watchdog.new" "$H/config/watchdog"
+    transcript 3000 "Working."
+    jq --arg variant "$variant" --argjson published "$BASE" \
+      '.published_epoch=$published | .stale_after_secs=2271
+        | if $variant == "string" then .stale_after_secs="2271"
+          elif $variant == "reversed" then .published_epoch=($published-1)
+          else .published_epoch=($published+901) end' \
+      "$H/state/heartbeat.json" > "$H/state/heartbeat.new"
+    mv "$H/state/heartbeat.new" "$H/state/heartbeat.json"
+    run_wd 0 once >/dev/null 2>&1
+    run_wd 900 once >/dev/null 2>&1
+    assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "$variant freshness metadata suppressed the legacy default"
+  done
+  pass "unusable publication freshness cannot extend the legacy watchdog default"
+}
+
 test_pending_handoff_suppresses_heartbeat_recovery() {
   local claim=$TMP_ROOT/pending-heartbeat.json now=1793000000
   jq -n --argjson d "$((now + 300))" '{version:1,predecessor_pid:4242,deadline:$d}' > "$claim"
@@ -7119,6 +7209,10 @@ fm_test_run \
   test_manager_units \
   test_never_merges_deploys_or_messages_owner \
   test_default_heartbeat_freeze_stays_above_a_quiet_home \
+  test_default_heartbeat_freeze_uses_published_deadline \
+  test_explicit_heartbeat_freeze_thresholds_keep_precedence \
+  test_long_cadence_context_uses_the_default_freshness_bound \
+  test_invalid_heartbeat_freshness_keeps_legacy_default \
   test_pending_handoff_suppresses_heartbeat_recovery \
   test_heartbeat_recovery_preserves_account_pins \
   test_heartbeat_response_cannot_suppress_recovery_forever \

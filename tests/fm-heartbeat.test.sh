@@ -1139,6 +1139,93 @@ test_a_relevant_change_collects_without_waiting_for_idle() {
   pass "an appended wake or a status line collects at once, without waiting for the idle interval"
 }
 
+test_status_change_collects_before_grace_without_a_wake() {
+  local home stub before seq i=0 child comm
+  home=$(make_home watch-status-before-grace)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-status-before-grace)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=60 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the status-grace watcher never polled"
+  command -p sleep 2
+  before=$(launch_count watch-status-before-grace)
+  [ "$before" -gt 0 ] || fail "the status-grace watcher never collected its initial heartbeat"
+  seq=$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')
+  printf 'working: progress\n' >> "$home/state/hb-task.status"
+  while [ "$(launch_count watch-status-before-grace)" -le "$before" ] && [ "$i" -lt 100 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-status-before-grace)" -gt "$before" ] \
+    || fail "a status change did not refresh the heartbeat during signal grace"
+  assert_equals "$seq" "$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')" \
+    "a new queued wake hid the status-only heartbeat trigger"
+  # End this watcher's own grace sleep before stopping its holding process.
+  for child in $(ps -o pid= -P "$WATCH_PID" 2>/dev/null); do
+    comm=$(ps -o comm= -p "$child" 2>/dev/null)
+    case "$comm" in sleep|*/sleep) kill -TERM "$child" 2>/dev/null || true ;; esac
+  done
+  kill -KILL "$WATCH_PID" 2>/dev/null || true
+  wait "$WATCH_PID" 2>/dev/null || true
+  WATCH_PID=
+  pass "a status-only change refreshes the heartbeat before grace without creating a wake"
+}
+
+assert_fractional_watcher_wait() {  # <poll|checkpoint>
+  local mode=$1 home stub waits waitbin watcher i=0 checkpoint=0
+  home=$(make_home "fractional-wait-$mode")
+  stub=$(launch_log_stub "fractional-wait-$mode")
+  waits=$home/waits.log
+  waitbin=$home/wait-bin
+  mkdir -p "$waitbin" "$home/inbox"
+  : > "$waits"
+  # Observe the actual wait service requested by the main watcher process,
+  # independently of its detached heartbeat ticker and other child processes.
+  cat > "$waitbin/sleep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\t%s\n' "$PPID" "$*" >> "$FM_TEST_WAIT_LOG"
+exec /bin/sleep "$@"
+SH
+  chmod +x "$waitbin/sleep"
+  [ "$mode" != checkpoint ] || checkpoint=1
+  fm_test_track_watcher_state "$home/state"
+  PATH="$waitbin:$PATH" FM_TEST_WAIT_LOG="$waits" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_FOREGROUND_CHECKPOINT="$checkpoint" FM_WATCH_CHECKPOINT_INBOX="$home/inbox" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  watcher=$WATCH_PID
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the fractional $mode watcher never polled"
+  while ! awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits"; do
+    kill -0 "$watcher" 2>/dev/null || break
+    [ "$i" -lt 200 ] || break
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  kill -KILL "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  WATCH_PID=
+  awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits" \
+    || fail "the main $mode watcher never requested its configured fractional wait: $(cat "$home/watch.err")"
+  assert_no_grep 'integer expression expected' "$home/watch.err" "the fractional $mode watcher used an integer wait comparison"
+}
+
+test_fractional_open_work_poll_wait() {
+  assert_fractional_watcher_wait poll
+  pass "an attended open-work watcher retains fractional poll waits without comparison errors"
+}
+
+test_fractional_checkpoint_poll_wait() {
+  assert_fractional_watcher_wait checkpoint
+  pass "a foreground checkpoint waits its fractional budget instead of busy-spinning"
+}
+
 test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
   local home
   home=$(make_home padded-timeouts)
@@ -1382,6 +1469,9 @@ test_unchanged_home_collects_once_per_idle_interval
 test_jittered_idle_gaps_stay_within_the_interval
 test_a_relevant_change_collects_without_waiting_for_idle
 test_a_relevant_change_collects_without_waiting_for_idle 0.2
+test_status_change_collects_before_grace_without_a_wake
+test_fractional_open_work_poll_wait
+test_fractional_checkpoint_poll_wait
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
 test_derived_context_is_unknown_under_directory_overrides
@@ -1389,4 +1479,4 @@ test_derived_context_is_unknown_under_directory_overrides
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 42
+printf 'ok - heartbeat tests passed\n'

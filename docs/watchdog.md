@@ -377,6 +377,7 @@ The heartbeat is read only when it is a regular file, and not a symbolic link, t
 Its top-level key `published_epoch`, spelled with no escape, must hold a positive integer written as plain decimal digits, 15 at most.
 A document that holds a second key named `published_epoch` at any depth is not read.
 An age of exactly 600 seconds is not a gap, and the limit follows no `config/watchdog` key.
+This publication-gap metric is independent of the heartbeat's freshness bound and recovery thresholds.
 A gap row and its observation row share one epoch, and the gap row is appended first.
 Each append starts with one line of three TABs, which is not a row, and the rows follow it.
 That line closes a piece that a cut append left, so the rows start on their own line.
@@ -480,8 +481,8 @@ An absent file means dry-run on the owner home alone.
 | `council-per-pass` | `1` | Councils per home per pass |
 | `quota-secs` | `600` | Quota park age before a reroute nudge |
 | `restart-secs` | `7200` | Minimum time between restarts of one home |
-| `watcher-stale-secs` | `900` | Heartbeat age reported as a stale watcher |
-| `heartbeat-frozen-secs` | `900` | Heartbeat age with a live lock owner that enables heartbeat recovery; `0` disables it; the age is read from `generated_epoch`, which a collection run stamps when it starts but publishes only when it ends, and which an unchanged home advances only once per idle interval, so the age a quiet home shows can reach the larger of `FM_HEARTBEAT_LEDGER_IDLE_SECS` and the previous collection run's length, plus one `FM_POLL`, plus the length of the run in flight (at most the whole-run cap, 411 s by default), which is 837 seconds with those defaults; this default sits above that bound, and a lower value must stay above it |
+| `watcher-stale-secs` | Derived; legacy floor `900` | Generated heartbeat age reported as a stale watcher and used to qualify heartbeat context; the default follows [default heartbeat freshness](#default-heartbeat-freshness), while an explicit value overrides it |
+| `heartbeat-frozen-secs` | Derived; legacy floor `900` | Generated heartbeat age with a live lock owner that enables recovery; the default follows [default heartbeat freshness](#default-heartbeat-freshness), while an explicit positive value overrides it and explicit `0` disables recovery |
 | `heartbeat-restart-secs` | `240` | Wait after a delivered heartbeat recovery nudge before considering a restart |
 | `relaunch-timeout-secs` | `900` | Bound on a second mate relaunch and on a worker trust-dialog relaunch |
 | `permission-route` | the `mode` value | `act` lets the watchdog decline, relaunch, and write status lines for worker permission prompts; `off` runs no classifier and keeps the report-only gap for the dialogs the watchdog's own detector reads; any other value records them as `dry-run`. An explicit `act` acts even when `mode` is `dry-run` |
@@ -489,6 +490,18 @@ An absent file means dry-run on the owner home alone.
 | `permission-relaunch-secs` | `3600` | Minimum time between trust-dialog relaunches of one worker |
 | `call-timeout-secs` | `20` | Bound on each pane capture |
 | `key-settle-secs` | `2` | Wait after a key before checking its effect |
+
+### Default heartbeat freshness
+
+The default stale-watcher and heartbeat-recovery thresholds use the observed home's published heartbeat freshness bound.
+The generated-age threshold is the greater of 900 seconds and `published_epoch - generated_epoch + stale_after_secs + 1`.
+The collection-duration offset keeps these generated-age readers aligned with the publisher's publication-age bound.
+The final second preserves freshness at the inclusive bound and permits detection immediately after it expires.
+The fields must be positive integers in one `fm-heartbeat.v1` document, with `generated_epoch <= published_epoch <=` the watchdog clock.
+Missing or unusable freshness metadata retains the legacy 900-second default.
+An explicit positive `heartbeat-frozen-secs` remains an independent operator override, even when shorter than the published bound, and `0` still disables recovery.
+The watchdog never rewrites those settings.
+The independent [supervisor-gap record](#supervisor-gap-record) keeps its fixed publication-age metric.
 
 ## Verification
 

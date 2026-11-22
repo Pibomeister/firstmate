@@ -27,7 +27,7 @@ It changes no merge, release, or deploy gate.
 | The session lock records an anchor pid and a trusted session id | `bin/fm-lock.sh` and `bin/fm-session-lock-lib.sh` own the anchor and the `state/.lock-session` sidecar | Present |
 | The watchdog publishes a durable captain record | Firstmate PR #147 publishes `state/watchdog/captain` with `live`, `dead`, `unconfirmed`, and `none` verdicts | Merged |
 | The watchdog detects a dead lock owner | The agent-gone row in `docs/watchdog.md` restarts only after the transcript stays quiet for `frozen-secs` | Present |
-| A watcher heartbeat older than a bound is a gap | `watcher-stale-secs` defaults to 900 seconds in `docs/watchdog.md` | Present |
+| A watcher heartbeat older than a bound is a gap | `watcher-stale-secs` uses the per-home default in `docs/watchdog.md` | Present |
 | An outer process manager keeps one watcher arm alive | `bin/fm-monitor-watchdog.sh` runs under launchd or systemd and owns `run`, `status`, and `manager-status` | Present |
 | A home watchdog restores lost watchers | Firstmate PR #61 adds the home watchdog that restores lost watchers | Merged |
 | A second mate whose endpoint vanished on restart respawns on its recorded backend | `respawn_gone_mate` in `bin/fm-secondmate-restart.sh` takes the mate through the secondmate respawn path, and `bin/fm-spawn.sh --secondmate` keeps the backend its record names; Firstmate PR #158 added it | Merged |

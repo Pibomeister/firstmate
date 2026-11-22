@@ -538,7 +538,7 @@ wd_observe() {
   st=$home/state
   now=$(wd_now)
   O_HOME=$home O_PARENT=$parent O_ID=$id O_TAG=$(wd_tag "$home") O_KEY=$(wd_state_key "$home")
-  O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
+  O_BACKEND='' O_TARGET='' O_HARNESS='' O_SESSION='' O_HB_AGE=unknown O_HB_DEFAULT=900 O_CTX='' O_CTX_SRC='' O_CTX_READING='' O_CTX_RESET=''
   O_PANE='' O_HERDR_MISMATCH='' O_DIALOG_PANE='' O_SIG='' O_PANE_STATIC=0 O_DIALOG='' O_HUMAN_STEP='' O_AUTOWAIT=0 O_LIMIT_FOOTER=0 O_COMPOSER=unknown O_TURN=unknown
   O_LOCK_PID='' O_ALIVE=0 O_INSTANCE=unknown O_OWNER=none O_CPU_BUSY=unknown O_TRANSCRIPT='' O_TR_AGE=unknown O_ACT_AGE=unknown O_ACT_SRC=''
   C_BACKEND='' C_TARGET='' C_MOVED=''
@@ -546,12 +546,21 @@ wd_observe() {
   O_AFK=0 O_DAEMON=unknown O_PREV_COMPOSER='' O_PREV_SIG='' O_COMPOSER_TEXT='' O_COMPOSER_ABOVE='' O_DRAFT=''
   hb=$st/heartbeat.json
   hb_sid='' ctx=''
-  if [ -f "$hb" ] && row=$(jq -r 'def known: if type == "object" then "-" else . end;
+  if [ -f "$hb" ] && row=$(jq -r --argjson now "$now" '
+        def known: if type == "object" then "-" else . end;
+        def positive_int: if type == "number" then . > 0 and . == floor and . < 1e15 else false end;
+        def freshness_default:
+          .generated_epoch as $g | .published_epoch as $p | .stale_after_secs as $b
+          | if .schema == "fm-heartbeat.v1"
+              and ($g | positive_int) and ($p | positive_int) and ($b | positive_int)
+              and $p >= $g and $p <= $now
+            then $p - $g + $b + 1 else 900 end;
         [(.primary.terminal.backend // "-" | known), (.primary.terminal.target // "-" | known),
         (.primary.session.trusted_id // "-" | known), (.generated_epoch // 0 | tostring),
         (.primary.context_left.remaining.percent // "-" | tostring),
-        (.primary.writer.anchor_pid // "-" | known | tostring), (.primary.writer.session_id // "-" | known)] | @tsv' "$hb" 2>/dev/null); then
-    IFS=$'\t' read -r O_BACKEND O_TARGET hb_sid row ctx hb_wpid hb_wsid <<EOF
+        (.primary.writer.anchor_pid // "-" | known | tostring), (.primary.writer.session_id // "-" | known),
+        (freshness_default | tostring)] | @tsv' "$hb" 2>/dev/null); then
+    IFS=$'\t' read -r O_BACKEND O_TARGET hb_sid row ctx hb_wpid hb_wsid O_HB_DEFAULT <<EOF
 $row
 EOF
     [ "$O_BACKEND" != - ] || O_BACKEND=''
@@ -561,11 +570,15 @@ EOF
     [ "$hb_sid" != - ] || hb_sid=''
     [ "$hb_wpid" != - ] || hb_wpid=''
     [ "$hb_wsid" != - ] || hb_wsid=''
+    # The inclusive publication bound becomes a generated-age threshold only
+    # after adding the completed collection's duration and one expiry second.
+    case "$O_HB_DEFAULT" in ''|*[!0-9]*) O_HB_DEFAULT=900 ;; esac
+    [ "$O_HB_DEFAULT" -ge 900 ] || O_HB_DEFAULT=900
     [ "$row" -gt 0 ] 2>/dev/null || row=$(wd_mtime "$hb")
     O_HB_AGE=$((now - row)) hb_at=$row
   fi
   wd_read_owner "$st"
-  if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs 900)" ]; then
+  if [ -n "$O_SESSION" ] && [ "$ctx" != - ] && [ -n "$ctx" ] && [ "$hb_sid" = "$O_SESSION" ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -lt "$(cfgi watcher-stale-secs "$O_HB_DEFAULT")" ]; then
     # The heartbeat's percent is the same footer, read by the same parser.
     footer_text="${ctx%%.*}% until auto-compact" footer_src=heartbeat
   fi
@@ -1464,9 +1477,9 @@ wd_heartbeat_owner() {
 
 wd_heartbeat_frozen() {
   local secs
-  # A quiet home's generated_epoch age can reach 837s with the default idle
-  # interval, poll, and run cap (docs/watchdog.md). Stay above that bound.
-  secs=$(cfgi heartbeat-frozen-secs 900)
+  # Explicit positive thresholds and zero disable override the per-home
+  # publication freshness default (docs/watchdog.md).
+  secs=$(cfgi heartbeat-frozen-secs "$O_HB_DEFAULT")
   [ "$O_OWNER" = live ] && [ "$secs" -gt 0 ] && [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$secs" ]
 }
 
@@ -2921,7 +2934,7 @@ wd_handle_subject() {
     [ -n "$symptom" ] || symptom='daemon-dead'
     wd_nudge daemon-dead "away mode is on but the away daemon is not running. Re-arm it with bin/fm-afk-start.sh on this session's own terminal."
   fi
-  if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs 900)" ]; then
+  if [ "$O_HB_AGE" != unknown ] && [ "$O_HB_AGE" -ge "$(cfgi watcher-stale-secs "$O_HB_DEFAULT")" ]; then
     wd_gap "watcher heartbeat is $((O_HB_AGE / 60))m old"
   fi
   if [ "$reachable" = 1 ]; then

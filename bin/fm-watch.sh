@@ -4961,13 +4961,18 @@ heartbeat_scan_finds_actionable() {
 
 # checkpoint_inbox_sleep: the cycle's wait inside a secondmate's foreground
 # checkpoint (bin/fm-watch-checkpoint.sh owns the contract and passes the
-# parent-owned inbox). It sleeps the bounded poll budget in one-second steps and exits 0 with
+# parent-owned inbox). It sleeps the bounded poll budget in one-second steps
+# followed by any fractional remainder, and exits 0 with
 # "checkpoint-inbox: <names>" as soon as that inbox holds a record not yet
 # announced, once the announced names are recorded in
 # state/.checkpoint-inbox-seen; an unwritable record keeps it an ordinary wait.
 # Only record names are printed, never bodies.
 checkpoint_inbox_sleep() {
   local i=0 name names current seen="$STATE/.checkpoint-inbox-seen"
+  local budget=${WATCH_WAIT_BUDGET:-$POLL} whole fraction=''
+  whole=${budget%%.*}
+  [ -n "$whole" ] || whole=0
+  case "$budget" in *.*) fraction=0.${budget#*.} ;; esac
   while :; do
     names=''
     current=$(fm_task_inbox_records_in "$FM_WATCH_CHECKPOINT_INBOX")
@@ -4983,7 +4988,10 @@ EOF
       echo "checkpoint-inbox:$names"
       exit 0
     fi
-    [ "$i" -lt "${WATCH_WAIT_BUDGET:-$POLL}" ] || return 0
+    if [ "$i" -ge "$whole" ]; then
+      [ -z "$fraction" ] || sleep "$fraction"
+      return 0
+    fi
     sleep 1
     i=$((i + 1))
   done
@@ -5304,6 +5312,9 @@ home_summary_refresh_detached() {
   FM_HOME_SUMMARY_IF_IDLE=1 \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
   HOME_SUMMARY_PID=$!
+  if [ "$HOME_SUMMARY_LAST" -eq 0 ] && [ "${FM_TEST_SEAM:-0}" = 1 ] && [ -n "${FM_WATCH_RANDOM_SEED:-}" ]; then
+    RANDOM=$FM_WATCH_RANDOM_SEED
+  fi
   fm_watch_now HOME_SUMMARY_LAST
   watch_idle_due HOME_SUMMARY_GAP 0 "$HOME_SUMMARY_INTERVAL" "$HOME_SUMMARY_JITTER"
 }
@@ -6491,7 +6502,7 @@ EOF
     open_work=1
     [ "$hb" -le 885 ] || hb=885
     remaining=$((hb - $(age_of "$STATE/.last-heartbeat")))
-    if [ "$remaining" -gt 0 ] && [ "$WATCH_WAIT_BUDGET" -gt "$remaining" ]; then
+    if [ "$remaining" -gt 0 ] && [ "$POLL_CEILING" -gt "$remaining" ]; then
       WATCH_WAIT_BUDGET=$remaining
     fi
   fi

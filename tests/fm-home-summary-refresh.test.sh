@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral coverage for per-home summary publication through the real
 # producer, writer, watcher-carried status trigger, and snapshot ledger consumer.
+# Optional arguments select the scheduler test functions below.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -60,6 +61,99 @@ fi
 exit 0
 SH
 chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes"
+
+assert_summary_idle_launches() {  # <jitter|failure>
+  local mode=$1 home runs hook interval jitter wanted i=0 first_beat last_beat gaps
+  home=$TMP_ROOT/scheduler-$mode
+  runs=$home/refresh-starts
+  hook=$home/refresh-boundary.sh
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  printf '# Seeded Firstmate home\n' > "$home/AGENTS.md"
+  printf 'scheduler\n' > "$home/.fm-secondmate-home"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+    || fail "could not seed the scheduler's valid summary"
+  mv "$home/state/home-summary.json" "$home/seed-summary.json"
+  : > "$runs"
+  # Interpose only the public refresh command boundary. Successful calls
+  # publish a valid seeded document quickly; failures return nonzero without
+  # publication, so producer runtime cannot hide a broken launch schedule.
+  cat > "$hook" <<'SH'
+fm_test_refresh_boundary() {
+  trap - DEBUG
+  case "$0" in
+    */fm-home-summary-refresh.sh)
+      if [ "${1:-}" = --best-effort ]; then
+        date +%s >> "$FM_TEST_SUMMARY_RUNS"
+        [ "$FM_TEST_SUMMARY_MODE" != failure ] || exit 1
+        jq --argjson epoch "$(date +%s)" '.generated_epoch=$epoch' \
+          "$FM_HOME/seed-summary.json" > "$FM_HOME/state/home-summary.next" || exit 1
+        mv "$FM_HOME/state/home-summary.next" "$FM_HOME/state/home-summary.json"
+        exit 0
+      fi
+      ;;
+  esac
+}
+# BASH_ENV loads before script arguments are installed; the first command's
+# DEBUG boundary has the public script name and arguments, then disables itself.
+trap 'fm_test_refresh_boundary "$@"' DEBUG
+SH
+  interval=30 jitter=25 wanted=2
+  [ "$mode" != failure ] || { interval=6; jitter=0; wanted=3; }
+  fm_test_track_watcher_state "$home/state"
+  PATH="$FAKEBIN:$PATH" BASH_ENV="$hook" \
+    FM_TEST_SUMMARY_RUNS="$runs" FM_TEST_SUMMARY_MODE="$mode" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_POLL=1 FM_SIGNAL_GRACE=0 \
+    FM_HOME_SUMMARY_INTERVAL="$interval" FM_HOME_SUMMARY_JITTER="$jitter" \
+    FM_TEST_SEAM=1 FM_WATCH_RANDOM_SEED=42 FM_HEARTBEAT_BIN=/usr/bin/true \
+    FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  while [ ! -e "$home/state/.last-watcher-beat" ] && [ "$i" -lt 300 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$home/state/.last-watcher-beat" ] || fail "the summary scheduler watcher never polled"
+  first_beat=$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$home/state/.last-watcher-beat")
+  i=0
+  while [ "$(wc -l < "$runs" | tr -d ' ')" -lt "$wanted" ] && [ "$i" -lt 700 ]; do
+    kill -0 "$WATCH_PID" 2>/dev/null || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  last_beat=$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$home/state/.last-watcher-beat")
+  kill "$WATCH_PID" >/dev/null 2>&1 || true
+  wait "$WATCH_PID" >/dev/null 2>&1 || true
+  WATCH_PID=
+  [ "$(wc -l < "$runs" | tr -d ' ')" -ge "$wanted" ] || fail "only $(cat "$runs") summary launches were observed"
+  [ "$last_beat" -gt "$first_beat" ] || fail "summary scheduling stopped the watcher liveness beat"
+  gaps=$(awk 'NR>1 { print $1-prev } { prev=$1 }' "$runs")
+  if [ "$mode" = failure ]; then
+    [ ! -e "$home/state/home-summary.json" ] || fail "a failed summary refresh published a ledger"
+    [ -z "$(awk 'NR>1 && $1-prev < 5 { print $1-prev } { prev=$1 }' "$runs")" ] \
+      || fail "failed refreshes retried before the six-second idle gap: $gaps"
+  else
+    # Seed 42 shortens the first 30-second interval. The minimum allows one
+    # clock-boundary second; a per-poll launch or absent jitter fails here.
+    [ -z "$(awk 'NR==2 && ($1-prev < 4 || $1-prev >= 30) { print $1-prev } { prev=$1 }' "$runs")" ] \
+      || fail "the seeded summary idle gap was not bounded and shortened: $gaps"
+  fi
+}
+
+test_summary_jitter_shortens_idle_launches() {
+  assert_summary_idle_launches jitter
+  pass "summary idle jitter shortens a bounded launch gap while watcher beats continue"
+}
+
+test_failed_summary_refresh_waits_for_idle() {
+  assert_summary_idle_launches failure
+  pass "persistent summary refresh failures retry once per idle gap while watcher beats continue"
+}
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
 
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/data" "$HOME_DIR/config" \
   "$HOME_DIR/projects/task" "$HOME_DIR/bin"
@@ -315,6 +409,9 @@ kill "$WATCH_PID" >/dev/null 2>&1 || true
 wait "$WATCH_PID" >/dev/null 2>&1 || true
 WATCH_PID=
 pass "live watcher cadence bounds publication staleness without signals"
+
+test_summary_jitter_shortens_idle_launches
+test_failed_summary_refresh_waits_for_idle
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false
