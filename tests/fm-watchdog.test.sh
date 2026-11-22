@@ -5556,6 +5556,11 @@ test_stall_page_reads_the_delivered_pr_and_the_latest_report() {
 
 test_stall_page_captain_hold_is_the_owners_wait() {
   local url=https://github.com/o/r/pull/7
+  # A captain hold lives on a backlog item, which needs tasks-axi.
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    pass "stall page: a ready PR held for the owner is the owner's wait and does not page # SKIP tasks-axi not installed"
+    return
+  fi
   stall_home
   stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
   FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" "$ROOT/bin/fm-tasks-axi.sh" add fm-p "Held merge" --kind ship --repo example \
