@@ -50,7 +50,7 @@
 # handoff_failed reason=unresolved: not final, settled by a later handoff_ack
 # reason=lock_transferred for the same nonce.
 # Each handoff_failed also rewrites state/.handoff-launch-failed, as does an
-# unfinished exit after the launch removed an earlier record, and a launch
+# unfinished exit once clearing an earlier record has begun, and a launch
 # removes it once it holds the launch lock; bin/fm-handoff-lib.sh owns the record and
 # how it releases a planned fresh start's Stop gate for the surviving session.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors

@@ -41,8 +41,9 @@
 # then a watchdog row, and the earliest start wins a tie. The recorded start
 # and detect are the earliest values in that set, so a later source cannot
 # move them forward.
-# A watchdog row that is not a finished restart, nudge, or key is not recovery,
-# and neither is a nudge the watchdog finished without confirming progress.
+# Only a finished restart, confirmed nudge, or key is watchdog recovery.
+# A nudge finished without confirming progress supplies neither recovery nor
+# new stall evidence and leaves any existing watchdog episode intact.
 # The episode stays open while that condition is still evidenced. A later task
 # status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch

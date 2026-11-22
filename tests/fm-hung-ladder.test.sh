@@ -1195,6 +1195,11 @@ test_mode_off_and_absent_do_nothing() {
   pass 'an absent config or mode off observes nothing'
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run \
   test_observe_rungs_and_self_progress \
   test_death_resolves_no \

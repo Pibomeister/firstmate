@@ -506,6 +506,12 @@ printf '%s\n' "$failed" | grep -Eq "^at=[0-9]+ pid=$(cat "$LAB/pred.pid") nonce=
 run_hook_fixture Stop >/dev/null 2>&1 || fail 'a launch interrupted at record removal must release the Stop gate for the surviving session'
 pass 'a launch interrupted while removing the earlier failure record still records its failure'
 
+# A focused run ends after the record-clear regression; the default continues
+# through every successor transport and timeout drill below.
+if [ "${1:-}" = --through-record-clear ]; then
+  exit 0
+fi
+
 # Existing supervisor endpoint metadata outranks an inherited terminal variable.
 META_HOME="$TMP_ROOT/meta-home"
 mkdir -p "$META_HOME/state"
