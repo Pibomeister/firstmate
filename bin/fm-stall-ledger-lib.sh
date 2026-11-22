@@ -679,6 +679,7 @@ _fm_stall_watchdog() {
       fi
       continue
     fi
+    [ "$phase:$action" != done:nudge ] || continue
     extra=$(_fm_stall_wd_extra "$detail")
     if [ "$extra" -gt "$epoch" ]; then
       start=0

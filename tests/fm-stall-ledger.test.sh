@@ -402,7 +402,11 @@ test_unconfirmed_nudge_after_install_is_not_recovery() {
     $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "firstmate" && $8 == end { ok = 1 }
     END { exit !ok }
   ' "$ledger" || fail "an unconfirmed nudge received credit for the fresh heartbeat recovery"
-  pass "a post-install unconfirmed nudge does not receive heartbeat recovery credit"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 660))"
+  observe_ok "$home" "$((T0 + 660))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "an unconfirmed completion must not create a phantom stall"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the installation stall remains closed"
+  pass "a post-install unconfirmed nudge neither receives recovery credit nor creates a stall"
 }
 
 test_observe_secondmate_progress_closes_as_agentkit() {
