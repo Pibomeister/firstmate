@@ -966,6 +966,7 @@ wd_decision_summary() {
     contents=$(cat "$file") || exit 1
     [ -n "$contents" ] || exit 1
     pr=$(fm_wd_pr_label "$line")
+    line=$(printf '%s\n' "$line" | awk -F ' · ' '{ sep=""; for (i=1; i<=NF; i++) if ($i !~ /^question: /) { printf "%s%s", sep, $i; sep=" · " } }')
     printf '%sno-mistakes %s awaiting approval; %s; %s' "${pr:+$pr }" "$step" "$line" "$contents" | tr '\t\r\n' '   '
   ) 2>/dev/null || resolved=
   printf '%s' "${resolved:-$summary}"

@@ -293,8 +293,8 @@ The watchdog never merges, never deploys, never spends beyond existing caps, nev
 - A decision keyed `captain-hold-*` or `human-step-*`, listed in `reserved-keys`, or naming money, merges, releases, deploys, credentials, security, production data, or deletion in its task, key, or summary is never nudged, put to council, or answered; it appears as a held gap. The `council` command holds it the same way.
   One carve-out: a decision naming a no-mistakes `awaiting_approval` step reaches the council despite the merge or release it would unblock, because that step is a council or captain decision by default.
   It stays held only when it also names a human-only category - a deploy, a publish, a force-push or a forced push, spend, secrets or credentials, a sign-in, security, production or shared-database writes, PII, messages to people, deletion, or a failure in the PR's own changed behavior, including code this PR modified, added, or introduced - or it looks like a secret, or its key is reserved above.
-  A production or shared-database mention that names no mutation does not name that category.
-  Neither a negated phrase such as not on changed behavior nor a statement that changed behavior passed names a failure in the PR's own changed behavior.
+  A prod, production or shared-database mention that names no mutation does not name that category.
+  Neither a negated phrase such as not on changed behavior nor a statement that changed behavior or code this PR modified, added or introduced passed names a failure in the PR's own changed behavior.
   Either form split across lines is read the same way.
   A real failure that remains after the negation still does.
   A plain merge decision that names no `awaiting_approval` step stays held exactly as before.

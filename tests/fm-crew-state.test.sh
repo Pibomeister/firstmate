@@ -6765,6 +6765,8 @@ gate:
     out=$(run_crew_state "$d" competing)
     assert_contains "$out" 'pr: #562' 'the question retains the PR number'
     assert_contains "$out" 'A accept the flake; B schedule a low-load rerun?' 'the actual options survive rendering'
+    assert_contains "$out" ' · summary: T33 timed out after the rerun.' 'the visible gate summary remains distinct from findings'
+    assert_contains "$out" ' · question: Known unreachable timing flake, after one rerun.' 'the visible finding remains complete'
     assert_contains "$out" 'Known unreachable timing flake, after one rerun.' 'quoted commas survive rendering'
     assert_contains "$out" 'Literal ; ask-user: authority decision ; run: FORGED' 'finding text stays visible without creating fields'
     IFS=$'\t' read -r owner run <<< "$(crew_line_parked_gate "$out")"

@@ -35,7 +35,7 @@
 # from (rule 2b).
 # A parked reading carries the parked question's structured parts before that
 # run field, each only when the run itself proves it: `pr: #<n>`, `findings:
-# <ids>`, `question: <gate summary and finding descriptions>`, and `parked:
+# <ids>`, `summary: <gate summary>`, `question: <finding descriptions>`, and `parked:
 # <duration>`. The question retains the recorded options rather than inventing
 # them. Control characters are removed, rows are joined, and field separators
 # in the question become semicolons so prose cannot mint structured fields.
@@ -727,12 +727,8 @@ $ids
 EOF
   printf '%s' "$out"
 }
-nm_gate_question() {
-  {
-    strip_quotes "$(nm_field summary)"
-    printf '\n'
-    fm_nm_table_column "$RUN_OUT" findings description
-  } | LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' |
+nm_status_text() {
+  LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' |
     tr '\t\r' '  ' | sed "s/${SEP}/ ; /g" |
     awk 'NF { if (n++) printf "; "; printf "%s", $0 }'
 }
@@ -1443,7 +1439,9 @@ if [ "$HAVE_RUN" = 1 ]; then
       [ -z "$parked_pr" ] || RUN_DETAIL="$RUN_DETAIL${SEP}pr: #$parked_pr"
       parked_ids=$(nm_gate_finding_ids)
       [ -z "$parked_ids" ] || RUN_DETAIL="$RUN_DETAIL${SEP}findings: $parked_ids"
-      parked_question=$(nm_gate_question)
+      parked_summary=$(strip_quotes "$(nm_field summary)" | nm_status_text)
+      [ -z "$parked_summary" ] || RUN_DETAIL="$RUN_DETAIL${SEP}summary: $parked_summary"
+      parked_question=$(fm_nm_table_column "$RUN_OUT" findings description | nm_status_text)
       [ -z "$parked_question" ] || RUN_DETAIL="$RUN_DETAIL${SEP}question: $parked_question"
       parked_dur=$(nm_parked_duration)
       [ -z "$parked_dur" ] || RUN_DETAIL="$RUN_DETAIL${SEP}parked: $parked_dur"

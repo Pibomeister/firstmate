@@ -330,7 +330,7 @@ fm_wd_reserved() {  # <text>
 
 FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign[[:space:]_-]*in|log[[:space:]_-]*in|credential|secret|password|api.?key|security|pii|e-?mail|sms|messages? to|delet|destroy|wipe|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 
-# Phrases that cancel a category or report passing changed behavior.
+# Phrases that cancel a category.
 # BSD grep has no lookbehind,
 # so the category search below runs on the text after these are removed.
 _fm_wd_without_negated_categories() {
@@ -342,7 +342,6 @@ _fm_wd_without_negated_categories() {
     -e 's/(^|[^a-z])without changed behavio[a-z]*/\1/g' \
     -e 's/(^|[^a-z])unchanged behavio[a-z]*/\1/g' \
     -e 's/(^|[^a-z])un changed behavio[a-z]*/\1/g' \
-    -e 's/(^|[^a-z])changed[[:space:]]+behavio[a-z]*([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/\1\4/g' \
     -e 's/(^|[^a-z])read-only/\1/g' \
     -e 's/(^|[^a-z])read only/\1/g' \
     -e 's/(^|[^a-z])readonly/\1/g' \
@@ -365,7 +364,7 @@ _fm_wd_category_line() {  # <view>
 _fm_wd_data_writes() {  # <view>
   local cleaned
   cleaned=$(_fm_wd_category_line "$1")
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(production|shared[[:space:]]*(db|database))([^a-z]|$)' || return 1
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(prod(uction)?|shared[[:space:]]*(db|database))([^a-z]|$)' || return 1
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing))([^a-z]|$)'
 }
 
@@ -374,7 +373,7 @@ FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in thi
 
 _fm_wd_pr_caused_failure() {  # <view>
   local cleaned
-  cleaned=$(_fm_wd_category_line "$1")
+  cleaned=$(_fm_wd_category_line "$1" | LC_ALL=C sed -E "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
 }
 

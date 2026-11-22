@@ -1834,6 +1834,22 @@ test_native_gate_pointer_reaches_council_with_evidence() {
     make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
 council-seats=claude:haiku,agy:flash'
     make_native_gate_pointer
+    python3 - "$H" <<'PY'
+import json
+import pathlib
+import sys
+
+home = pathlib.Path(sys.argv[1])
+description = ('T33 survived the once-rerun only as a known unreachable load-sensitive timing flake. '
+               + 'check ' * 180 + 'A approve the park, or B schedule a low-load rerun?')
+(home / 'description.txt').write_text(description)
+(home / 'data/t1/nm-01NATIVE-findings.txt').write_text(
+    'id: test-1\nseverity: warning\nauthority: ask-user\ndescription: ' + description + '\n')
+payload = (home / 'run.toon').read_text()
+payload = payload.replace('"See the full finding in the task snapshot."', json.dumps(description))
+payload = payload.replace('gate:\n', 'gate:\n  summary: "C schedule a low-load rerun at 04:00 UTC."\n')
+(home / 'run.toon').write_text(payload)
+PY
     fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
     before=$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")
     if [ "$mode" = automatic ]; then
@@ -1857,6 +1873,13 @@ council-seats=claude:haiku,agy:flash'
     record=$(council_record_path rulings t1 nm-01NATIVE-test)
     assert_grep 'PR #562' "$record" 'the persisted native ruling identifies the PR'
     assert_grep 'B schedule a low-load rerun?' "$record" 'the persisted ruling retains the snapshot options'
+    assert_grep 'C schedule a low-load rerun at 04:00 UTC.' "$record" 'the persisted ruling retains unique gate-summary options'
+    python3 - "$record" "$H/description.txt" <<'PY' || fail 'the native ruling duplicated the finding description'
+import pathlib
+import sys
+record, description = (pathlib.Path(path).read_text() for path in sys.argv[1:])
+assert record.count(description) == 1
+PY
     assert_grep 'known unreachable timing flake: default to the option that approves the park' "$H/prompt.log" 'the final seat prompt applies the flake default to native evidence'
     assert_equals 2 "$(seat_calls)" 'the native decision convenes both seats only once'
     assert_equals "$before" "$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")" 'resolution leaves the worker snapshot unchanged'
@@ -2082,20 +2105,52 @@ test_human_only_keeps_real_change_and_releases_negation() {
 }
 
 test_human_only_releases_passing_changed_behavior() {
-  local record='PR #9 no-mistakes test awaiting_approval. Changed behavior passed; only a known unreachable load-sensitive timing flake survived the once-rerun. A approve, or B hold'
-  ! lib fm_wd_human_only "$record" || fail "passing changed behavior held an unrelated flake"
-  lib fm_wd_human_only "$record. Another test failed on changed behavior" \
-    || fail "passing changed behavior hid a later changed-behavior failure"
+  local record phrase failure
+  for phrase in 'Changed behavior' 'Code modified by this PR' 'Code added in this PR' 'Code introduced by this PR' \
+    'Code this PR changed' 'Code this PR modified' 'Code this PR added' 'Code the PR changed' 'Code the PR modified' 'Code the PR added' "PR's own changed behavior"; do
+    record="PR #9 no-mistakes test awaiting_approval. $phrase passed 761/761; only a known unreachable load-sensitive timing flake survived the once-rerun. A approve, or B hold"
+    ! lib fm_wd_human_only "$record" || fail "passing evidence held an unrelated flake: $phrase"
+    for failure in 'failed on changed behavior' 'failed in code modified by this PR' 'failed in code added in this PR' 'failed in code introduced by this PR'; do
+      lib fm_wd_human_only "$record. Another test $failure" || fail "passing evidence hid a real $failure"
+    done
+    lib fm_wd_human_only "PR #9 no-mistakes test awaiting_approval. $phrase failed; A approve, or B hold" || fail "a genuine $phrase failure escaped"
+  done
   pass "human-only: passing changed behavior releases the flake but not a later real failure"
 }
 
 test_human_only_distinguishes_production_mentions_from_mutations() {
   local record='PR #9 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only production database fixture; no writes. A approve, or B hold' phrase
   ! lib fm_wd_human_only "$record" || fail "a read-only production fixture held an unrelated flake"
-  for phrase in 'write production data' 'production database mutations' 'update production records'; do
+  for phrase in 'write production data' 'production database mutations' 'update production records' 'writes to prod DB' 'prod DB writes' 'update prod records' 'prod_db writes'; do
     lib fm_wd_human_only "$record. Also $phrase" || fail "a read-only mention hid a real mutation: $phrase"
   done
+  ! lib fm_wd_human_only 'PR #9 no-mistakes test awaiting_approval. A known unreachable timing flake remains in a read-only prod DB fixture; no writes. A approve, B hold' || fail 'a read-only prod fixture was held'
   pass "human-only: a production mention is not a write, while production mutations stay held"
+}
+
+test_council_routes_passing_code_and_holds_prod_writes() {
+  local out
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. Code this PR modified passed 761/761; only a known unreachable timing flake survived the once-rerun. A approve, B schedule a low-load rerun' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key passing-code --record-file "$H/record.txt" 2>&1) || fail "passing-code council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'passing modified-code evidence reaches the council'
+  assert_contains "$out" '(approved, not clean)' 'the remaining flake receives its approval qualification'
+  printf '%s\n' 'PR #9 no-mistakes test awaiting_approval. A approve writes to prod DB so the PR can merge, or B defer' > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key prod-write --record-file "$H/record.txt" 2>&1) || fail "prod-write council failed: $out"
+  assert_contains "$out" 'council=held answer=none' 'on-demand prod writes stay human-only'
+  assert_equals 2 "$(seat_calls)" 'no seat receives the prod mutation'
+  transcript 100 'Working.'
+  printf 'needs-decision [at=%s] [key=prod-write]: %s\n' "$((BASE - 9000))" "$(cat "$H/record.txt")" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail 'automatic prod hold failed'
+  assert_grep 'held for the owner' "$H/data/watchdog/status.md" 'automatic prod writes stay human-only'
+  assert_equals 2 "$(seat_calls)" 'the automatic pass calls no seats for prod writes'
+  printf '%s\n' 'PR #9 no-mistakes test awaiting_approval. The once-rerun left only a known unreachable timing flake in a read-only prod DB fixture; no writes. A approve, B schedule a low-load rerun' > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key prod-readonly --record-file "$H/record.txt" 2>&1) || fail "read-only prod council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'a read-only prod mention still reaches the council'
+  assert_equals 4 "$(seat_calls)" 'both seats receive the read-only prod flake'
+  pass 'council routes passing-code flakes while prod mutations stay held'
 }
 
 test_awaiting_approval_requires_no_mistakes_step_context() {
@@ -7747,6 +7802,7 @@ fm_test_run \
   test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \
   test_human_only_releases_passing_changed_behavior \
+  test_council_routes_passing_code_and_holds_prod_writes \
   test_human_only_distinguishes_production_mentions_from_mutations \
   test_awaiting_approval_requires_no_mistakes_step_context \
   test_awaiting_approval_recognizes_parked_no_mistakes_steps \
