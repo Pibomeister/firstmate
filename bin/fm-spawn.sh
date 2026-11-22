@@ -6943,7 +6943,9 @@ agy_pane_has_brief_progress() {  # <plain-pane-capture>
       return t == ""
     }
     function is_empty_prompt(s) {
-      return trim(s) == ">"
+      s = trim(s)
+      # AGY renders this hint inside its otherwise empty composer.
+      return s == ">" || s == "> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)"
     }
     function is_progress_line(s) {
       return s ~ /^[[:space:]]*([^[:alnum:]_>[:space:]-]+[[:space:]]+)?(Thought for (<[0-9]|[0-9])|Ran \(|Explored [1-9][0-9]* (file|files|search|searches)([[:space:],()]|$)|Wrote [1-9][0-9]* lines?([[:space:],()]|$)|Edited [1-9][0-9]* files?([[:space:],()]|$))/
@@ -6953,9 +6955,18 @@ agy_pane_has_brief_progress() {  # <plain-pane-capture>
     }
     END {
       if (n < 4 || lines[n] !~ /^[[:space:]]*\?[[:space:]]+for[[:space:]]+shortcuts([[:space:]]|$)/) exit 1
-      if (!is_rule(lines[n - 1]) || !is_empty_prompt(lines[n - 2]) || !is_rule(lines[n - 3])) exit 1
-      comp_start = n - 3
-      if (lines[n] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/) exit 0
+      if (!is_rule(lines[n - 1])) exit 1
+      has_tasks = lines[n] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/
+      comp_end = n - 1
+      # Active tasks can add a ruled panel between the composer and footer.
+      if (has_tasks && !is_empty_prompt(lines[comp_end - 1])) {
+        for (comp_end = n - 2; comp_end > 2; comp_end--) {
+          if (is_rule(lines[comp_end])) break
+        }
+      }
+      if (comp_end < 3 || !is_empty_prompt(lines[comp_end - 1]) || !is_rule(lines[comp_end - 2])) exit 1
+      comp_start = comp_end - 2
+      if (has_tasks) exit 0
       for (i = 1; i < comp_start; i++) {
         if (is_progress_line(lines[i])) {
           exit 0

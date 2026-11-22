@@ -1709,7 +1709,17 @@ state=$(cat "$FM_FAKE_AGY_STATE" 2>/dev/null || true)
 fake_screen() {
   case "$state" in
     herdr-bg-task)
-      printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
+      # AGY 1.5.14 live viewport: the task panel sits below the composer.
+      cat <<'PANE'
+● Running (sleep 180) (ctrl+o to expand)
+
+──────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+──────────────────────────────────────────────────────────────────────────────
+  ● [02:44:22] sleep 180 running
+──────────────────────────────────────────────────────────────────────────────
+? for shortcuts              auto · Gemini 3.8 Flash · low · 1 task(s) · /tasks
+PANE
       ;;
     bare-ruled-idle)
       printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts                           auto · Gemini 4 Neon · high\n'
@@ -1855,6 +1865,21 @@ run_agy_herdr_wait_gate() {  # <preregistered:0|1> <initial-state> [after-enter-
         herdr-bg-task)
           printf 'Thought for 2.4s\nRan (bin/fm-session-start.sh; ...)\nExplored 1 file (AGENTS.md)\n\n──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts              auto · Gemini 4 Neon · high · 1 task(s) · /tasks\n'
           ;;
+        herdr-task-panel|herdr-task-panel-bare|herdr-task-panel-pending|herdr-task-panel-stale|herdr-dead-task-panel|herdr-unknown-task-panel)
+          # Oracle: live AGY 1.5.14 on a 120x40 Herdr lab viewport.
+          # Keeping the four-row assumption rejects a healthy background task;
+          # dropping footer, empty-composer, trust, or liveness guards accepts
+          # the corresponding negative case below.
+          printf '%s\n' '● Running (sleep 180) (ctrl+o to expand)' "$AGY_RULE"
+          case "$state" in
+            herdr-task-panel-bare) printf '>\n' ;;
+            herdr-task-panel-pending) printf '> Thought for 2.4s\n' ;;
+            *) printf '> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)\n' ;;
+          esac
+          printf '%s\n' "$AGY_RULE" '  ● [02:44:22] sleep 180 running' "$AGY_RULE" \
+            '? for shortcuts              auto · Gemini 3.8 Flash · low · 1 task(s) · /tasks'
+          [ "$state" != herdr-task-panel-stale ] || printf 'agy: launch failed\n$ \n'
+          ;;
         herdr-bg-task-only)
           printf '──────────────────────────────────────────────────────────────────────────────\n> \n──────────────────────────────────────────────────────────────────────────────\n? for shortcuts             auto · Gemini 4 Argon · high · 1 task(s) · /tasks\n'
           ;;
@@ -1901,7 +1926,7 @@ run_agy_herdr_wait_gate() {  # <preregistered:0|1> <initial-state> [after-enter-
 
 test_agy_herdr_ready_accepts_confirmed_brief_progress_and_background_tasks() {
   local mode id rec out rc
-  for mode in herdr-bg-task herdr-bg-task-only herdr-turn-done herdr-wrote-edited; do
+  for mode in herdr-task-panel herdr-task-panel-bare herdr-bg-task herdr-bg-task-only herdr-turn-done herdr-wrote-edited; do
     run_agy_herdr_wait_gate 1 "$mode" \
       || fail "agy readiness gate on herdr rejected confirmed brief progress ($mode)"
   done
@@ -1927,12 +1952,12 @@ test_agy_herdr_ready_accepts_confirmed_brief_progress_and_background_tasks() {
 
 test_agy_herdr_ready_refuses_unstarted_unsubmitted_errored_and_untrusted_prompts() {
   local mode id rec out rc
-  for mode in bare-ruled-idle idle unsubmitted-prompt errored-before-brief dialog; do
+  for mode in herdr-task-panel-pending bare-ruled-idle idle unsubmitted-prompt errored-before-brief dialog; do
     if run_agy_herdr_wait_gate 1 "$mode" "$mode"; then
       fail "agy readiness gate on herdr falsely accepted $mode"
     fi
   done
-  if run_agy_herdr_wait_gate 0 herdr-bg-task herdr-bg-task; then
+  if run_agy_herdr_wait_gate 0 herdr-task-panel; then
     fail "agy readiness gate on herdr accepted brief progress on an unregistered worktree that never showed the trust dialog"
   fi
 
@@ -1955,7 +1980,8 @@ test_agy_herdr_ready_refuses_unstarted_unsubmitted_errored_and_untrusted_prompts
 
 test_agy_herdr_ready_refuses_stale_and_unsupported_frames() {
   local mode id rec out rc
-  for mode in herdr-stale-progress herdr-stale-bg herdr-stale-hidden \
+  for mode in herdr-task-panel-stale herdr-dead-task-panel herdr-unknown-task-panel \
+    herdr-stale-progress herdr-stale-bg herdr-stale-hidden \
     herdr-dead-progress herdr-dead-bg herdr-unknown-progress herdr-unknown-bg \
     herdr-unruled-progress herdr-unruled-bg; do
     if run_agy_herdr_wait_gate 1 "$mode"; then
