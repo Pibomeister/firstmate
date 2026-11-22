@@ -2343,8 +2343,8 @@ wd_handle_human_step() {  # <kind>
 }
 
 # --- stall page ------------------------------------------------------------------
-# docs/watchdog.md "Stall page" owns the two triggers, the quiet cases, and the
-# keys. The page reads records only: no lock holder, heartbeat, running turn, or
+# docs/watchdog.md owns the two triggers, the quiet cases, and the keys.
+# The page reads records only: no lock holder, heartbeat, running turn, or
 # pane verdict enters it, so a live process or a fresh beacon cannot hide a
 # stall. It types nothing, restarts nothing, and never touches the session lock.
 

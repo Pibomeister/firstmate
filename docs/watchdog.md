@@ -130,8 +130,8 @@ These checks run on every pass as well:
   It reads only the home's own records, so a live session-lock holder, a fresh heartbeat, a running turn, or a busy pane cannot hide a stall, and a dead holder does not stop the page.
   It pages on two triggers, as ledger symptoms `stall-input` and `stall-pr`.
   `stall-input` fires when a wake-queue row or a captain inbox note has waited at least `stall-secs` while at least one ship or scout task is in flight; a task whose latest status is `done` or `failed` is not in flight.
-  `stall-pr` fires when a ship task with `yolo=on` has a latest `done` status that names a PR, at least `stall-secs` old, and the task has no merge-notification record for that PR.
-  Declared waits stay quiet: a task whose latest status is a `paused:` or captain-held wait is not in flight, a wake row about that task or its pane does not count, and a PR that waits on the owner's merge word (`yolo=off`) is the owner's wait.
+  `stall-pr` fires when a ship task with `yolo=on` has a latest `done` status that names a pull-request URL, at least `stall-secs` old, and the task has no merge-notification record for that URL (`bin/fm-pr-lib.sh` owns the URL and the record).
+  Declared waits stay quiet: a task the declared-wait read still holds (`status_declared_wait_line` in `bin/fm-classify-lib.sh`) is not in flight, a wake row about that task or its recorded endpoint does not count, and a PR that waits on the owner's merge word (`yolo=off`) is the owner's wait.
   Each trigger is a gap on every pass and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
   The page carries counts, ages, and PR URLs, never input or pane text; it types nothing, restarts nothing, lands nothing, and never touches the session lock.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
