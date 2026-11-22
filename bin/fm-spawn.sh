@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--priority <0-4>] [--branch-prefix <prefix>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--priority <0-4>] [--base-branch <branch>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--dispatch-override <reason>] [--hermes-profile <name>] [--account <entry>] [--backend <name>] [--herdr-resume-lock-wait]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -298,6 +298,28 @@
 #   lease and claim, with a warning to preserve the work before manual return.
 #   A failed return also retains the claim. tests/fm-agy-harness.test.sh covers
 #   unpublished cleanup and preservation, including staged and untracked work.
+#   --priority records the backlog priority selected at intake for a fresh ship
+#   or scout.
+#   Where the tasks-axi backlog gate applies, omission for a prioritized row or
+#   disagreement with that row is refused before launch and before any capacity
+#   admission, so that diagnostic is never masked by a deferral. A row whose
+#   priority changes while the endpoint starts is adopted at the backlog
+#   dispatch commit: priority= takes the row's current value with a warning,
+#   because refusing there would drop the record of a worker already running.
+#   A rewrite that fails keeps the record unchanged and warns with the manual
+#   fix instead.
+#   When automatic backlog enforcement does not apply (including a manual
+#   backend), --priority is the caller's explicit intake authority and is not
+#   presented as row-verified.
+#   Every explicit priority 0-4 preempts; this is not restricted to P0 or P1.
+#   A prioritized fresh worker is admitted past an exhausted project-capacity
+#   declaration, the lane-cap and load-ceiling deferral, or away spend cap
+#   without stopping an existing lane, and
+#   priority= is recorded in task metadata so supervision can apply its
+#   priority-specific contract.
+#   Relaunch preserves that recorded priority and refuses --priority overrides.
+#   It never bypasses disk, backend, isolation, task token-budget, or other
+#   safety gates.
 #   Project capacity: when this machine declares how many workers a project
 #   admits at once (config/project-capacity; bin/fm-project-capacity-lib.sh owns
 #   the declaration, what holds a place, and the race argument), a fresh ship or
@@ -308,9 +330,11 @@
 #   publication. A spawn that finds
 #   every place held prints one `deferred:` line and exits 75 before any brief
 #   render, endpoint, worktree, record, or backlog move exists, so the task stays
-#   exactly as queued as it was; an unreadable declaration refuses with exit 1.
+#   exactly as queued as it was, unless this fresh spawn carries an explicit
+#   priority; an unreadable declaration refuses with exit 1.
 #   Lane capacity admission runs bin/fm-capacity.sh's --spawn-gate verdict at
-#   the lane-capacity gate below, with the same exit-75 deferral.
+#   the lane-capacity gate below, with the same exit-75 deferral, except an
+#   explicit priority, which is admitted past that deferral too.
 #   A batch reports such a pair as `batch: DEFERRED` and exits 75 when nothing
 #   else failed. A relaunch and a --secondmate spawn are never counted against
 #   capacity.
@@ -1121,6 +1145,7 @@ DISPATCH_OVERRIDE=
 BACKEND_ARG=
 MODE=
 YOLO=
+PRIORITY=
 BRANCH_PREFIX=fm/
 TRACEPARENT_ARG=
 HARNESS_SET=0
@@ -1131,6 +1156,7 @@ HERMES_PROFILE_SET=0
 BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
+PRIORITY_SET=0
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
@@ -1206,6 +1232,10 @@ for a in "$@"; do
     yolo)
       YOLO=$a
       YOLO_SET=1
+      ;;
+    priority)
+      PRIORITY=$a
+      PRIORITY_SET=1
       ;;
     branch-prefix)
       BRANCH_PREFIX=$a
@@ -1290,6 +1320,11 @@ for a in "$@"; do
   --yolo=*)
     YOLO=${a#--yolo=}
     YOLO_SET=1
+    ;;
+  --priority) want_value=priority ;;
+  --priority=*)
+    PRIORITY=${a#--priority=}
+    PRIORITY_SET=1
     ;;
   --branch-prefix) want_value="branch-prefix" ;;
   --branch-prefix=*)
@@ -1379,6 +1414,10 @@ fi
   echo "error: --yolo requires a non-empty value" >&2
   exit 1
 }
+[ "$PRIORITY_SET" -eq 0 ] || case "$PRIORITY" in
+  [0-4]) ;;
+  *) echo "error: --priority must be one of 0, 1, 2, 3, 4" >&2; exit 1 ;;
+esac
 [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || [ -n "$UPSTREAM_CONSENT" ] || {
   echo "error: --upstream-consent requires a non-empty <host>/<owner>/<repo> value" >&2
   exit 1
@@ -1437,6 +1476,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   }
   [ "$YOLO_SET" -eq 0 ] || {
     echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2
+    exit 1
+  }
+  [ "$PRIORITY_SET" -eq 0 ] || {
+    echo "error: --relaunch reuses the task's recorded priority; --priority cannot override it" >&2
     exit 1
   }
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || {
@@ -1525,6 +1568,10 @@ else
     }
     [ "$UPSTREAM_CONSENT_SET" -eq 0 ] || {
       echo "error: --upstream-consent applies only to ship spawns; a scout publishes nothing and a secondmate records no delivery contract" >&2
+      exit 1
+    }
+    [ "$KIND" != secondmate ] || [ "$PRIORITY_SET" -eq 0 ] || {
+      echo "error: --priority applies only to fresh ships and scouts; a secondmate is not a backlog task" >&2
       exit 1
     }
   fi
@@ -2403,6 +2450,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
+  [ "$PRIORITY_SET" -eq 0 ] || shared_args+=(--priority "$PRIORITY")
   [ "$BRANCH_PREFIX_SET" -eq 0 ] || shared_args+=(--branch-prefix "$BRANCH_PREFIX")
   [ "$BASE_BRANCH_SET" -eq 0 ] || shared_args+=(--base-branch "$BASE_BRANCH")
   [ "$PR_BRANCH_SET" -eq 0 ] || shared_args+=(--pr-branch "$PR_BRANCH")
@@ -2485,8 +2533,8 @@ fi
 # this same entrypoint), so only a fresh spawn refuses the branch actor
 # (contract: bin/fm-lease-lib.sh; no-op in homes without a branch actor). While
 # the away-posture record exists main is parked and a fresh spawn of queued
-# work relocates to the branch, under the record's spend cap below - the same
-# cap main meets in that posture. Queued means a dispatchable backlog item:
+# work relocates to the branch, under the same admission contract below that
+# main meets in that posture. Queued means a dispatchable backlog item:
 # one already queued at entry, or one the branch filed itself because the
 # captain's away words explicitly call for that work (its backlog note cites
 # the words); filing the item the captain asked for is not inventing work.
@@ -2499,6 +2547,7 @@ spawn_refuse_if_away_spend_cap() {
   local cap live
   [ "$RELAUNCH" -ne 1 ] || return 0
   [ "$KIND" != secondmate ] || return 0
+  [ "$PRIORITY_SET" -eq 0 ] || return 0
   [ -f "$STATE/.afk-contract" ] || return 0
   FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" validate >/dev/null 2>&1 || return 0
   [ "$(FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-afk-contract.sh" mode 2>/dev/null)" = away ] || return 0
@@ -2523,9 +2572,10 @@ spawn_refuse_if_away_spend_cap() {
 # spends as attended: bin/fm-afk-contract.sh mode), a fresh ordinary spawn
 # refuses for BOTH actors once this home already holds that many ordinary task
 # records, counted by that script's own `live-workers`, which is also the count
-# its entry records as the cap. A relaunch replaces a worker that already
-# counts, and a secondmate is a persistent home rather than spend, so both are
-# exempt. Checked before any endpoint, worktree, or record
+# its entry records as the cap. A prioritized order is the explicit preemption
+# lane and does not wait for those ordinary workers to finish. A relaunch
+# replaces a worker that already counts, and a secondmate is a persistent home
+# rather than spend, so all three are exempt. Checked before any endpoint, worktree, or record
 # exists, so a refusal costs nothing to unwind; rechecked after the task-set
 # lock so two fresh spawns cannot both publish from a stale count.
 spawn_refuse_if_away_spend_cap
@@ -4891,8 +4941,10 @@ fi
 # declaration, what holds a place, and why this is race-safe). A fresh worker
 # for a project whose declared capacity is already held is deferred here, before
 # any brief render, endpoint, worktree, record, or backlog move exists, so the
-# deferral leaves the task exactly as queued as it was. A relaunch replaces a
-# worker that already holds a place, and a secondmate is not a worker.
+# deferral leaves the task exactly as queued as it was. A prioritized order is
+# the deliberate exception: it adds its own worker without stopping any holder.
+# A relaunch replaces a worker that already holds a place, and a secondmate is
+# not a worker.
 SPAWN_PROJECT_CAPACITY=
 SPAWN_PROJECT_CAPACITY_ANY=
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
@@ -4939,7 +4991,41 @@ if [ "$RELAUNCH" -eq 1 ] && [ "$KIND" != secondmate ] &&
     exit 1
   }
 fi
-if [ -n "$SPAWN_PROJECT_CAPACITY" ]; then
+# Backlog row probe and priority validation (bin/fm-backlog-transition-lib.sh),
+# ahead of the capacity admissions so a missing or mismatched --priority is
+# reported as such rather than masked by a deferral that leaves it looking
+# queued. The rest of the backlog preflight runs further below.
+BACKLOG_TRANSITION=0
+BACKLOG_ROW_STATE=
+BACKLOG_ROW_PRIORITY=
+if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
+  BACKLOG_TRANSITION=1
+  if fm_backlog_row_probe "$DATA" "$ID"; then
+    BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
+    BACKLOG_ROW_PRIORITY=$FM_BACKLOG_ROW_PRIORITY
+  elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (bin/fm-tasks-axi.sh add $ID '<title>' --kind $KIND) and re-run" >&2
+    exit 1
+  else
+    echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
+    exit 1
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 0 ] && [ -n "$BACKLOG_ROW_PRIORITY" ]; then
+    echo "error: task $ID has backlog priority $BACKLOG_ROW_PRIORITY; pass --priority $BACKLOG_ROW_PRIORITY so its dedicated worker cannot wait behind ordinary lanes" >&2
+    exit 1
+  fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$PRIORITY_SET" -eq 1 ] && [ "$PRIORITY" != "$BACKLOG_ROW_PRIORITY" ]; then
+    echo "error: task $ID priority mismatch: its backlog row is ${BACKLOG_ROW_PRIORITY:--}, but this spawn passed --priority $PRIORITY" >&2
+    exit 1
+  fi
+else
+  BACKLOG_GATE_STATUS=$?
+  if [ "$BACKLOG_GATE_STATUS" -eq 2 ]; then
+    echo "error: task $ID cannot be dispatched because its backlog data directory is inaccessible: $DATA ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
+  fi
+fi
+if [ -n "$SPAWN_PROJECT_CAPACITY" ] && [ "$PRIORITY_SET" -eq 0 ]; then
   if ! fm_project_capacity_occupants "$SPAWN_TREEHOUSE_PROJECT_LOCK" "$PROJ_ABS" "$STATE" "$ID"; then
     echo "error: spawn refused: project $(basename "$PROJ_ABS") declares a capacity of $SPAWN_PROJECT_CAPACITY, but this machine's task records cannot all be read to count it ($FM_PROJECT_CAPACITY_ERROR)" >&2
     exit 1
@@ -4961,14 +5047,25 @@ fi
 # task stays queued; exit 75 is that deferral and exit 1 its unreadable-config
 # refusal. With config/lane-capacity absent the verdict admits and nothing
 # changes. A relaunch and a secondmate spawn are never gated here.
+# An explicit --priority is admitted past the exit-75 deferral, as it is past
+# project capacity, and stops no live lane; it still refuses on exit 1, because
+# an unreadable limit is not permission.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
   lane_admit_rc=0
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" || lane_admit_rc=$?
+  lane_admit_msg=$( { FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-capacity.sh" --spawn-gate "$ID" 2>&1 1>&3 3>&-; } 3>&1) || lane_admit_rc=$?
   case "$lane_admit_rc" in
-    0) ;;
-    75) exit 75 ;;
+    0) [ -z "$lane_admit_msg" ] || printf '%s\n' "$lane_admit_msg" >&2 ;;
+    75)
+      if [ "$PRIORITY_SET" -eq 1 ]; then
+        echo "note: explicit --priority $PRIORITY admitted past the lane capacity deferral" >&2
+      else
+        printf '%s\n' "$lane_admit_msg" >&2
+        exit 75
+      fi
+      ;;
     *)
+      [ -z "$lane_admit_msg" ] || printf '%s\n' "$lane_admit_msg" >&2
       echo "error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited $lane_admit_rc); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known" >&2
       exit 1
       ;;
@@ -5755,24 +5852,13 @@ herdr_projection_existing_meta_allows_flat() { # <meta>
   esac
 }
 
-# Backlog preflight (bin/fm-backlog-transition-lib.sh). This spawn is about to
+# Backlog preflight, continued from the row probe above the capacity
+# admissions (bin/fm-backlog-transition-lib.sh). This spawn is about to
 # become the sole owner of the row's In-flight transition, so prove the row is
 # transitionable BEFORE any endpoint, worktree, or record exists: a refusal here
 # costs nothing to unwind, while the same refusal after publication would strand
 # a live pane. The authoritative mutation still runs under the meta lock below.
-BACKLOG_TRANSITION=0
-BACKLOG_ROW_STATE=
-if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
-  BACKLOG_TRANSITION=1
-  if fm_backlog_row_probe "$DATA" "$ID"; then
-    BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
-  elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
-    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (bin/fm-tasks-axi.sh add $ID '<title>' --kind $KIND) and re-run" >&2
-    exit 1
-  else
-    echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
-    exit 1
-  fi
+if [ "$BACKLOG_TRANSITION" = 1 ]; then
   spawn_preflight_actor=$(fm_lease_actor) || exit "$FM_LEASE_REFUSE_EXIT"
   if [ "$RELAUNCH" -ne 1 ] && [ "$spawn_preflight_actor" = branch ] && fm_lease_away_relocated; then
     if [ "$BACKLOG_ROW_STATE" != "queued no no" ]; then
@@ -5786,12 +5872,6 @@ if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
     fi
   elif ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
     echo "error: this home's backlog item $ID is not dispatchable in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
-    exit 1
-  fi
-else
-  BACKLOG_GATE_STATUS=$?
-  if [ "$BACKLOG_GATE_STATUS" -eq 2 ]; then
-    echo "error: task $ID cannot be dispatched because its backlog data directory is inaccessible: $DATA ($FM_BACKLOG_TRANSITION_ERROR)" >&2
     exit 1
   fi
 fi
@@ -8689,6 +8769,7 @@ preserve_relaunch_meta() {
     esac
   fi
   echo "kind=$KIND"
+  [ "$PRIORITY_SET" -eq 0 ] || echo "priority=$PRIORITY"
   [ -z "$MODE" ] || echo "mode=$MODE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   [ -z "${BRANCH:-}" ] || echo "branch=$BRANCH"

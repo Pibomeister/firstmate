@@ -728,6 +728,44 @@ test_retry_keeps_launch_flags_and_strips_every_routing_form() {
   pass "a re-dispatch keeps each launch flag's value and drops the recorded routing in every form"
 }
 
+test_retry_preserves_every_priority() {
+  local home volume out priority kind form id ordinal=0
+  local -a launch
+  home="$TMP_ROOT/retry-priority-home"
+  volume="$TMP_ROOT/retry-priority-volume"
+  mkdir -p "$home/state" "$volume"
+  : > "$home/expected-spawn.log"
+  for priority in 0 1 2 3 4; do
+    for kind in ship scout; do
+      for form in split equals; do
+        id="$kind-$priority-$form"
+        write_brief "$home" "$id"
+        launch=("$id" /p)
+        case "$form" in
+          split) launch+=(--priority "$priority") ;;
+          equals) launch+=("--priority=$priority") ;;
+        esac
+        case "$kind" in
+          ship) launch+=(--mode no-mistakes --yolo off) ;;
+          scout) launch+=(--scout) ;;
+        esac
+        retry_at_level "$home" "$volume" 9437184 record "$id" "${launch[@]}" --harness claude \
+          || fail "record $id"
+        ordinal=$((ordinal + 1))
+        set_epoch "$home" "$id" "$ordinal"
+        { printf '%s\n' "${launch[@]}" --harness codex --model gpt-x --effort high; printf '\n'; } \
+          >> "$home/expected-spawn.log"
+      done
+    done
+  done
+  out=$(retry_at_level "$home" "$volume" 20971520 scan 2>&1) || fail "priority retry scan failed: $out"
+  cmp -s "$home/expected-spawn.log" "$home/stub-spawn.log" \
+    || fail "disk recovery changed a ship or scout priority or its launch arguments"
+  assert_equals "" "$(recorded_ids "$home")" "successful priority retries clear their records"
+  assert_contains "$out" "re-dispatched by bin/fm-spawn.sh:" "priority retries report their dispatch"
+  pass "disk recovery preserves priorities 0-4 in both option forms for ships and scouts"
+}
+
 test_retry_keeps_the_account_only_on_the_same_harness() {
   local home volume out
   home="$TMP_ROOT/retry-account-home"
@@ -873,6 +911,11 @@ test_retry_usage_errors() {
   pass "the retry record refuses malformed input"
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run \
   test_help_and_usage_do_not_probe \
   test_levels_and_boundaries \
@@ -895,6 +938,7 @@ fm_test_run \
   test_admitted_spawn_clears_its_retry_record \
   test_watcher_reports_the_redispatch \
   test_retry_keeps_launch_flags_and_strips_every_routing_form \
+  test_retry_preserves_every_priority \
   test_retry_keeps_the_account_only_on_the_same_harness \
   test_retry_keeps_the_hermes_profile_only_on_the_same_harness \
   test_retry_hands_unclear_routing_to_the_supervisor \

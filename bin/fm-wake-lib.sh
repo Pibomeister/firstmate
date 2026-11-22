@@ -3179,6 +3179,8 @@ fm_wake_queue_prune_task() {  # <state> <task-id> [target]
   fm_lock_release "$lock"
 }
 
+# P0 alarm rows can represent distinct blocker openings with identical payloads.
+# Keep each row so acknowledgement cannot hide an opening from the supervisor.
 fm_wake_print_deduped() {
   local file=$1
   awk -F '\t' '
@@ -3187,11 +3189,11 @@ fm_wake_print_deduped() {
       if ($3 == "heartbeat") {
         dedupe = "heartbeat"
       }
-      # A check payload is the event itself, not a newer view of one state,
-      # and the acknowledgement consumes every row it hides: collapse only
-      # identical check rows.
       if ($3 == "check") {
         dedupe = dedupe SUBSEP $5
+      }
+      if ($3 == "stale" && index($5, " (P0 blocker ")) {
+        dedupe = dedupe SUBSEP NR
       }
       if (!(dedupe in seen)) {
         order[++count] = dedupe

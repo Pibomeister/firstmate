@@ -163,6 +163,142 @@ test_timed_fold_is_incremental() {
   pass "quiet polls reuse the timed fold and only new status bytes are folded"
 }
 
+
+test_p0_origins_only_for_due_unsurfaced_blockers() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [at=1000]: credentials missing\n' > "$STATE/worker.status"
+  P0_BLOCKER_ALARMS=
+  export FM_OPEN_DECISIONS_READ_PROBE="$TMP_ROOT/p0-fold.reads"
+  : > "$FM_OPEN_DECISIONS_READ_PROBE"
+  (
+    _fm_status_open_decision_origins() { fail 'an early P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
+  ) || fail 'early blocker scan failed'
+  [ "$(count_wakes)" = 0 ] || fail 'keyless blocker alarmed early'
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due keyless blocker did not alarm'
+  (
+    _fm_status_open_decision_origins() { fail 'a surfaced P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+  ) || fail 'surfaced blocker scan failed'
+  printf 'resolved [key=default] [at=1800]: answered\nblocked [at=2000]: credentials missing\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a reopened early P0 alarm reconstructed history'; }
+    FM_WATCH_NOW=2599 p0_blocker_alarm test:worker worker
+  ) || fail 'reopened early blocker scan failed'
+  FM_WATCH_NOW=2600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 2 ] || fail 'reopened keyless blocker did not get its own deadline'
+  printf 'done [at=2700]: finished\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a terminal P0 task reconstructed history'; }
+    FM_WATCH_NOW=2800 p0_blocker_alarm test:worker worker
+  ) || fail 'terminal blocker scan failed'
+  printf 'needs-decision [key=region] [at=2900]: choose\n' >> "$STATE/worker.status"
+  (
+    _fm_status_open_decision_origins() { fail 'a P0 task without blockers reconstructed history'; }
+    FM_WATCH_NOW=3600 p0_blocker_alarm test:worker worker
+  ) || fail 'non-blocker scan failed'
+  [ "$(count_wakes)" = 2 ] || fail 'an ineligible blocker scan queued an alarm'
+  [ "$(wc -l < "$FM_OPEN_DECISIONS_READ_PROBE" | tr -d ' ')" = 4 ] \
+    || fail 'unchanged P0 scans reread status history'
+  unset FM_OPEN_DECISIONS_READ_PROBE
+  pass 'P0 origin reads occur only for due unsurfaced blockers, including keyless reopens'
+}
+
+test_p0_keyed_note_updates_keep_first_opening() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: attempt one\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1500 p0_blocker_alarm test:worker worker
+  printf 'blocked [key=key] [at=1500]: attempt two\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1599 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 0 ] || fail 'updated blocker alarmed early'
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'note update restarted the unresolved keyed opening age'
+  grep -F 'open for 600s: blocked [key=key] [at=1500]: attempt two' "$FM_WAKE_QUEUE" >/dev/null \
+    || fail 'alarm did not retain opening age and show the latest blocker text'
+  printf 'blocked [key=key] [at=1700]: attempt three\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a note update republished an already surfaced opening'
+  pass 'unresolved keyed blocker age and once-only alarm survive note updates'
+}
+
+test_p0_once_only_survives_endpoint_replacement() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker-a\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: deployment key missing\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker-a worker
+  [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm on its first endpoint'
+  printf 'priority=0\nkind=ship\nwindow=test:worker-b\n' > "$STATE/worker.meta"
+  FM_WATCH_NOW=1700 p0_blocker_alarm test:worker-b worker
+  [ "$(count_wakes)" = 1 ] || fail 'a replacement endpoint re-alarmed the same blocker opening'
+  printf 'resolved [key=key] [at=1800]: answered\nblocked [key=key] [at=2000]: deployment key missing\n' >> "$STATE/worker.status"
+  FM_WATCH_NOW=2600 p0_blocker_alarm test:worker-b worker
+  [ "$(count_wakes)" = 2 ] || fail 'a new opening on the replacement endpoint did not alarm'
+  pass 'a replacement endpoint keeps the task once-only alarm and still alarms a new opening'
+}
+test_p0_marker_survives_unreadable_status() {
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: deployment key missing\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm'
+  chmod 000 "$STATE/worker.status"
+  FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+  chmod 644 "$STATE/worker.status"
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a momentarily unreadable status log re-alarmed the same opening'
+  rm -f "$STATE/worker.status"
+  FM_WATCH_NOW=1900 p0_blocker_alarm test:worker worker
+  [ ! -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'an absent status log kept the surfaced marker'
+  pass 'an unreadable status log keeps the once-only marker; an absent one clears it'
+}
+test_p0_marker_survives_status_read_failure() {
+  local fail_reader="$TMP_ROOT/p0-failing-reader"
+  printf '#!/bin/sh\nexit 1\n' > "$fail_reader"
+  chmod +x "$fail_reader"
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: deployment key missing\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm'
+  rm -f "$STATE"/.worker.open-decisions-cursor*
+  ( FM_STATUS_IDENTITY_READER="$fail_reader" FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker ) 2>/dev/null || true
+  [ -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'a failed status identity read with no cursor dropped the surfaced marker'
+  printf 'not a cursor\n' > "$STATE/.worker.open-decisions-cursor.timed-all"
+  ( FM_STATUS_SPAN_READER="$fail_reader" FM_WATCH_NOW=1750 p0_blocker_alarm test:worker worker ) 2>/dev/null || true
+  [ -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'a failed status span read with an invalid cursor dropped the surfaced marker'
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a failed status read re-alarmed the same opening'
+  pass 'a status log read failure with no trusted cursor keeps the once-only marker'
+}
+test_p0_invalid_opening_time_is_explicit_and_reopens() {
+  local declaration diagnostic
+  for declaration in \
+    'blocked [key=key]: need key' \
+    'blocked [key=key] [at=<epoch>]: need key' \
+    'blocked [key=key] [at=10:30]: need key' \
+    'blocked [key=key] [at=2000]: need key'; do
+    reset_case
+    printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+    printf '%s\n' "$declaration" > "$STATE/worker.status"
+    FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 1 ] || fail "invalid opening time silently suppressed the alarm: $declaration"
+    diagnostic='P0 blocker opening timestamp missing or malformed'
+    case "$declaration" in *'[at=2000]'*) diagnostic='P0 blocker opening timestamp is in the future' ;; esac
+    grep -F "$diagnostic: $declaration" "$FM_WAKE_QUEUE" >/dev/null \
+      || fail 'invalid opening did not surface explicitly with exact declaration text'
+    grep -F 'open for ' "$FM_WAKE_QUEUE" >/dev/null && fail 'invalid opening invented an elapsed time'
+    FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 1 ] || fail 'unchanged invalid opening repeated'
+    printf 'resolved [key=key] [at=1800]: answered\n%s\n' "$declaration" >> "$STATE/worker.status"
+    FM_WATCH_NOW=1900 p0_blocker_alarm test:worker worker
+    [ "$(count_wakes)" = 2 ] || fail 'identical malformed reopen was mistaken for its resolved predecessor'
+  done
+  pass 'invalid timestamps surface explicitly once per opening without invented ages'
+}
+
 test_invalid_settings() {
   reset_case
   touch "$CONFIG/open-decision-reminders"
@@ -182,8 +318,10 @@ test_timed_cursor_retirement() {
   touch "$CONFIG/open-decision-reminders"
   printf 'blocked [at=1000] [key=api]: help\n' > "$STATE/worker.status"
   open_decision_reminder_tick 1200
+  status_open_decisions_incremental "$STATE/worker.status" '' timed-all >/dev/null
   status_retire_presentation_task "$STATE" worker
   [ ! -e "$STATE/.worker.open-decisions-cursor.timed" ] || fail "task retirement left its timed cursor"
+  [ ! -e "$STATE/.worker.open-decisions-cursor.timed-all" ] || fail "task retirement left its timed-all cursor"
   open_decision_reminder_tick 1600
   [ "$(count_wakes)" = 1 ] || fail "retired task kept generating reminders"
   pass "task retirement removes the timed cursor and ends reminders"
@@ -665,9 +803,18 @@ test_invalid_gate_council_config_keeps_watcher_running() {
   pass 'real watcher logs an invalid gate council config, skips the council, and keeps running'
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct \
   test_numeric_tasks_are_distinct test_resolution_and_reopen \
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
+  test_p0_origins_only_for_due_unsurfaced_blockers \
+  test_p0_keyed_note_updates_keep_first_opening test_p0_once_only_survives_endpoint_replacement \
+  test_p0_marker_survives_unreadable_status test_p0_marker_survives_status_read_failure \
+  test_p0_invalid_opening_time_is_explicit_and_reopens \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \
   test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \

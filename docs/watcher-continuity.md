@@ -3,7 +3,8 @@
 This document explains how Firstmate keeps the watcher re-armed after a wake, how wakes are ordered and acknowledged, and which tests and live evidence cover that contract.
 Read it when debugging a supervision gap or changing a harness's re-arm path.
 
-Except for Grok's handling successor below, the watcher remains intentionally one-shot: one actionable reason closes one watcher cycle.
+Except for Grok's handling successor below, the watcher remains intentionally one-shot: an actionable wake closes one watcher cycle.
+The [P0 alarm contract](../bin/fm-watch.sh) permits multiple due blocker reasons in that wake.
 Must-work continuity now lives above that process boundary instead of depending on the model remembering a re-arm step.
 In this document, an arm is one run of `bin/fm-watch-arm.sh`, which starts a watcher cycle or attaches to one and returns the cycle's reason.
 
@@ -369,7 +370,7 @@ Main is woken for it on that check's own triggering close.
 Under the away-posture record the exclusion lifts and a check row is offered to and claimed by the branch like every other actionable row.
 
 `fm-wake-drain.sh` never reclassifies a row itself.
-It filters the queue to the current actor's opaque claim before same-key deduplication, then presents and acknowledges only that actor-local view.
+It filters the queue to the current actor's opaque claim before applying [`fm_wake_print_deduped`](../bin/fm-wake-lib.sh), then presents and acknowledges only that actor-local view.
 A missing or empty branch snapshot is refused loudly rather than read as "nothing eligible", because reaching the drain without the non-empty handoff promised by the extension is a wiring bug.
 A branch acknowledgement retires the check-row receipts - inactive-outcome, inactive-reconcile notice, and secondmate stall - of exactly the granted sequences it consumes, so a branch-consumed check is never re-queued by its producer.
 Attended, a grant names no check row and each scan finds nothing.

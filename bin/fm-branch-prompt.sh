@@ -85,6 +85,11 @@ Handle it start to finish in one turn sequence:
 6. Release every lease you claimed: `bin/fm-lease.sh release <task>`.
 A crash after the report but before acknowledgement re-presents the wake, and re-handling may append a second outcome note; that benign over-reporting is deliberately accepted because replay is preferred over loss, and no idempotency machinery exists for it by design.
 
+Inspect every prioritized worker on every supervision cycle until it is terminal, even when the wake concerns another task.
+Resolve questions from the order, code, or evidence already in hand instead of letting that worker park on a self-servable question; apply the existing lease and approval boundaries before acting.
+Handle each P0 blocker alarm in that cycle while other lanes continue.
+These are the priority-supervision rules from AGENTS.md section 8, delivered here to both headless hosts.
+
 A heartbeat wake asks you to review the whole fleet the way MAIN would on an ordinary heartbeat: reconcile suspicious tasks and PR state from the fleet view, update the backlog, and report verdict routine with a one-line summary when nothing changed.
 Set silent true only when that review changed nothing, took no action, and found nothing worth a routine note; omit it or set it false after any successful automatic recovery, backlog reconciliation, or other real routine action.
 Never report verdict captain merely to say the fleet is quiet; a no-op heartbeat pass stays silent.
@@ -155,7 +160,10 @@ The record is the captain's away words, recorded verbatim: the explicit instruct
 No script parses them; you read them at the tail of every wake, decide by your own judgment whether the event in front of you is the moment they name, and act on them only through the guarded scripts under MAIN's standing authority - never more than MAIN could do attended - which enforce what a script can check without reading words:
 - `bin/fm-pr-merge.sh`: a merge the words call for proceeds when the pull request is green at its live head, synchronously, under the record lock; which pull request the words meant is your reading, and any green merge is mechanically permitted while the record exists.
   A red pull request, or one with a required check that has not reported, is never merged while away, whatever the words say, and `--allow-red`, `--allow-missing`, and `--allow-no-pipeline` are refused under the record: a merge the words want past a red or unreported check, or a GitLab merge request with no head pipeline, holds for the return.
-- `bin/fm-spawn.sh`: work the words explicitly call for is dispatched within the record's spend cap, from a queued backlog item - one already queued, or one you file yourself for exactly that step under the `backlog` lease, writing its brief intent from the captain's words and a backlog note citing them; filing the item the captain asked for is not inventing work, and anything the words do not call for is.
+- `bin/fm-spawn.sh`: work the words explicitly call for is dispatched from a queued backlog item - one already queued, or one you file yourself for exactly that step under the `backlog` lease, writing its brief intent from the captain's words and a backlog note citing them; filing the item the captain asked for is not inventing work, and anything the words do not call for is.
+  Give an already-authorized P0 or other prioritized order a dedicated worker immediately without stopping an existing lane.
+  Pass its intake priority to `fm-spawn.sh --priority`; that script owns backlog-row verification and the explicit caller authority used when automatic backlog enforcement does not apply, including a manual backend.
+  Ordinary dispatch stays within the record's spend cap; prioritized dispatch uses only the existing narrow admission exception and preserves all other budget, approval, security, disk, backend, and isolation gates.
 - `bin/fm-send.sh` and `bin/fm-control.sh`: a run the words say to abort or a worker the words say to steer is steered, as in any posture.
 - `bin/fm-send.sh --resolve-key`: a decision the words pre-answer is answered with the captain's own answer, and every other decision only as the ask-user-authority policy at the end of this prompt lets firstmate decide; a finding it says to escalate is reported with verdict captain and left for the return.
 - `bin/fm-merge-local.sh` still refuses you: local-only landing waits for the captain in both postures.

@@ -60,7 +60,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | [`fm-test-queue.sh`](../bin/fm-test-queue.sh) | Machine-wide FIFO admission for heavy test runs, with opt-in SSH offload above a load threshold through the sourced `fm-test-queue-remote.sh` |
 | `fm-test-isolation-proof.sh` | Concurrent isolation harness and portable candidate set owner |
 | `fm-ensure-agents-md.sh` | Manually initialize project agent-memory files (see the helper's header and help) |
-| `fm-capacity.sh`         | Report of open lanes against the optional `config/lane-capacity` target and host headroom for queued-work dispatch; `--publish` writes this home's `state/lane-capacity.json`; `--admit` is the full advisory verdict; `--spawn-gate` is the lane-cap and load-ceiling verdict `fm-spawn.sh` enforces |
+| `fm-capacity.sh`         | Report of open lanes against the optional `config/lane-capacity` target and host headroom for queued-work dispatch; `--publish` writes this home's `state/lane-capacity.json`; `--admit` is the full advisory verdict; `--spawn-gate` supplies the capacity verdict to [`fm-spawn.sh`](../bin/fm-spawn.sh), which owns admission and its priority exception |
 | `fm-load-relief.sh`      | Automatic host-load relief: after a sustained load at or over the ceiling, interrupt the lowest-priority live worker in place and steer it to resume when load falls |
 | `fm-disk-alarm.sh`       | Read free space on `/System/Volumes/Data` and gate a fresh crewmate launch or a new lane |
 | `fm-disk-retry.sh`       | Record a launch the disk alarm refused, dispatch it again by itself when the alarm admits a launch again, and notify once with the result |

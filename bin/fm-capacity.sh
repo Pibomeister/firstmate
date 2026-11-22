@@ -7,7 +7,7 @@
 #   fm-capacity.sh --json     the fm-lane-capacity.v1 document on stdout
 #   fm-capacity.sh --publish  write that document to state/lane-capacity.json
 #   fm-capacity.sh --admit    this home's own admission verdict as an exit status
-#   fm-capacity.sh --spawn-gate  the fresh-spawn verdict bin/fm-spawn.sh enforces
+#   fm-capacity.sh --spawn-gate  the capacity verdict supplied to bin/fm-spawn.sh
 #
 # It reads this home's state/*.meta, the optional config/lane-capacity, the
 # pressure files and reserve flags that file names, and the host's own probes.
@@ -115,15 +115,16 @@
 # --admit exits 0 when config/lane-capacity is absent or the verdict admits,
 # and 75 with one `deferred:` line on stderr when it does not.
 #
-# --spawn-gate [<task-id>] is narrower and is the only verdict that blocks a
-# fresh spawn: the named spawning task's own record never counts against it.
+# --spawn-gate [<task-id>] is the narrower fresh-spawn capacity verdict;
+# bin/fm-spawn.sh owns admission and its priority exception.
+# The named spawning task's own record never counts against this verdict.
 # It exits 0 when config/lane-capacity is absent, when the lanes holding a
 # place are under the cap, and when load1 is under the load level that
 # bin/fm-load-relief.sh levels reports: its ceiling (config/load-relief
 # ceiling, else max-load1, else the logical core count) while no worker is
 # paused for load, and its resume level while any record is kept - including
-# one held for an open decision or captain hold - so a new spawn never takes
-# the room a paused worker is waiting for. An unreadable load or core
+# one held for an open decision or captain hold - to reserve room for paused
+# workers. An unreadable load or core
 # probe imposes no load hold; a malformed config/load-relief makes the gate
 # exit 1. Otherwise it exits 75 with one `deferred:` line naming the cause.
 # The memory, disk, pressure, reserve, battery, and report-only cpu holds

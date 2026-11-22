@@ -68,6 +68,10 @@ FM_BACKLOG_ROW_ERROR=
 # the row is not held.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 FM_BACKLOG_ROW_HOLD_KIND=
+# Set by fm_backlog_row_probe on a found row: 0-4, empty when the row carries
+# no explicit priority.
+# shellcheck disable=SC2034 # Output global, read by the sourcing caller.
+FM_BACKLOG_ROW_PRIORITY=
 # Set by fm_backlog_close_marker_replay: closed | closed_incomplete | retained |
 # retained_incomplete | answered | stale | noop.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -423,16 +427,18 @@ fm_backlog_row_list() {  # <resolved-data-dir> [flag...]
 }
 
 fm_backlog_row_probe() {  # <data-dir> <id>
-  local data authorized_data=$1 id=$2 out state held blocked hold_kind command_status source_status
+  local data authorized_data=$1 id=$2 out state held blocked hold_kind priority command_status source_status
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_ROW_RESULT=error
     FM_BACKLOG_ROW_STATE=
+    FM_BACKLOG_ROW_PRIORITY=
     FM_BACKLOG_ROW_ERROR="data directory cannot be resolved: $1"
     return 1
   fi
   FM_BACKLOG_ROW_RESULT=error
   FM_BACKLOG_ROW_STATE=
   FM_BACKLOG_ROW_HOLD_KIND=
+  FM_BACKLOG_ROW_PRIORITY=
   FM_BACKLOG_ROW_ERROR=
   fm_backlog_source_present "$data" "$authorized_data"
   source_status=$?
@@ -462,6 +468,7 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   held=$(printf '%s\n' "$out" | sed -n 's/^  held: *//p' | head -1)
   blocked=$(printf '%s\n' "$out" | sed -n 's/^  blocked: *//p' | head -1)
   hold_kind=$(printf '%s\n' "$out" | sed -n 's/^  hold_kind: *//p' | head -1)
+  priority=$(printf '%s\n' "$out" | sed -n 's/^  priority: *//p' | head -1)
   if [ -z "$state" ]; then
     FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned no state"
     return 1
@@ -471,6 +478,15 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   case "$hold_kind" in
     ''|'"-"'|-) FM_BACKLOG_ROW_HOLD_KIND= ;;
     *) FM_BACKLOG_ROW_HOLD_KIND=$hold_kind ;;
+  esac
+  case "$priority" in
+    ''|'"-"'|-) FM_BACKLOG_ROW_PRIORITY= ;;
+    [0-4]) FM_BACKLOG_ROW_PRIORITY=$priority ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid priority $priority"
+      FM_BACKLOG_ROW_RESULT=error
+      return 1
+      ;;
   esac
   return 0
 }
@@ -849,11 +865,42 @@ fm_backlog_relaunch_admission() {  # <config-dir> <data-dir> <kind> <id>
   return 0
 }
 
+fm_backlog_record_set_priority() {  # <meta> <priority-or-empty> <state>
+  local meta=$1 value=$2 state=$3 tmp line
+  tmp=$(mktemp "$state/.$(basename "$meta").priority.XXXXXX") || {
+    FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"
+    return 1
+  }
+  {
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        priority=*) ;;
+        *) printf '%s\n' "$line" ;;
+      esac
+    done < "$meta" &&
+      { [ -z "$value" ] || printf 'priority=%s\n' "$value"; }
+  } > "$tmp" || {
+    rm -f "$tmp"
+    FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"
+    return 1
+  }
+  if ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$state"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
+
 # <mode> is `relaunch` for a replacement worker, which admits a held In-flight
 # row without moving or releasing it (fm_backlog_row_relaunchable); any other
 # value, or none, is a fresh dispatch.
+# A fresh dispatch whose row priority changed while the endpoint started adopts
+# the row's current priority into the task record and warns, instead of
+# refusing: the endpoint is already running, and a refusal here would roll back
+# the only record that lets supervision find it. For the same reason that
+# adoption is best effort: a failed rewrite keeps the record as it was, warns
+# with the manual fix, and the dispatch still commits.
 fm_backlog_dispatch_transition() {
-  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status
+  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status recorded fix
   fm_backlog_record_present "$meta" "task record" "$state" || return 1
   fm_backlog_row_probe "$data" "$id"
   row_status=$?
@@ -874,6 +921,20 @@ fm_backlog_dispatch_transition() {
   elif ! fm_backlog_row_dispatchable "$row"; then
     FM_BACKLOG_TRANSITION_ERROR="backlog item $id is not dispatchable in state $row"
     return 1
+  else
+    recorded=$(sed -n 's/^priority=//p' "$meta" | tail -n 1)
+    if [ "$recorded" != "$FM_BACKLOG_ROW_PRIORITY" ]; then
+      if fm_backlog_record_set_priority "$meta" "$FM_BACKLOG_ROW_PRIORITY" "$state"; then
+        printf 'warning: backlog item %s priority changed while its worker started: its row is %s, so the task record now carries %s instead of %s\n' \
+          "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" >&2
+      else
+        fix="set priority=$FM_BACKLOG_ROW_PRIORITY"
+        [ -n "$FM_BACKLOG_ROW_PRIORITY" ] || fix='remove the priority line'
+        printf 'warning: backlog item %s priority changed while its worker started: its row is %s but the task record still carries %s, because the record could not be updated (%s); the worker keeps running - %s in %s by hand\n' \
+          "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" "${FM_BACKLOG_TRANSITION_ERROR:-no error recorded}" "$fix" "$meta" >&2
+        FM_BACKLOG_TRANSITION_ERROR=
+      fi
+    fi
   fi
   case "$row" in
     in_flight\ no\ no|in_flight\ yes\ no) return 0 ;;

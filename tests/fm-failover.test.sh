@@ -828,6 +828,37 @@ test_watcher_moves_an_idle_refused_captain_in_one_poll() {
   pass 'watcher: idle captain 429, billing, and usage-limit screens with open goals hand off in one poll'
 }
 
+# A due P0 blocker alarm and an idle refused captain in the same poll: the
+# captain still moves in that poll, and the P0 alarm stays queued for the
+# supervisor instead of ending the poll before the captain check runs.
+test_watcher_moves_a_refused_captain_in_a_poll_with_a_due_p0_alarm() {
+  local dir owner start opened
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+  dir=$(watch_case captain-p0 $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
+  opened=$(( $(date +%s) - 700 ))
+  fm_write_meta "$dir/state/p0w.meta" window=test:fm-p0w kind=ship harness=codex priority=0 spawn_gen=s1.p0w
+  printf 'blocked [at=%s]: deployment key is unavailable\n' "$opened" > "$dir/state/p0w.status"
+  printf '%s' "$(seen_sig "$dir/state/p0w.status")" > "$dir/state/.seen-p0w_status"
+  ln -s "$(command -v sleep)" "$dir/claude"
+  "$dir/claude" 120 &
+  owner=$!
+  FAKE_OWNER=$owner
+  start=$(bash -c '. "$1/bin/fm-session-lock-lib.sh"; fm_session_process_start "$2"' _ "$ROOT" "$owner") || fail 'the owner process has no identity'
+  printf '%s\n' "$owner" > "$dir/state/.lock"
+  printf 'test-session\nanchor_pid=%s\nanchor_start=%s\nbackend=tmux\nterminal=test:fm-fo\nworktree=%s\n' "$owner" "$start" "$dir/home" > "$dir/state/.lock-session"
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/state" bash "$ROOT/bin/fm-dispatch-log.sh" received g-p0 --summary 'open captain work' >/dev/null
+  watch_once "$dir" FM_WATCH_ONCE=1 FM_TEST_HANDOFF_VERIFY_ACTOR=1
+  assert_contains "$(cat "$dir/watch.out")" 'check: captain moved to the next runtime after a rate_limit refusal' \
+    "a due P0 alarm ended the poll before the captain failover check ran: $(cat "$dir/watch.out")"
+  assert_contains "$(awk -F '\t' '$3 == "stale"' "$dir/state/.wake-queue")" "P0 blocker open for" \
+    'the P0 alarm raised in the same poll was not kept for the supervisor'
+  kill "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  FAKE_OWNER=''
+  pass 'watcher: a due P0 alarm does not stop an idle refused captain from moving in the same poll'
+}
+
 # Every stale grace, from the floor to well past the default, and explicit
 # timeouts above and below the cap: the whole call stays strictly inside the
 # grace and each relaunch inside fm-failover.sh's deadline.
@@ -925,5 +956,6 @@ fm_test_run \
   test_preflight_night_plan \
   test_watcher_moves_an_idle_refused_ship_in_one_poll \
   test_watcher_moves_an_idle_refused_captain_in_one_poll \
+  test_watcher_moves_a_refused_captain_in_a_poll_with_a_due_p0_alarm \
   test_watch_bounds_stay_inside_the_stale_grace \
   test_worker_account_identity_is_its_config_root

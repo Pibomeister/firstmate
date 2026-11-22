@@ -192,7 +192,7 @@ resolve_routing() {  # <task-id> <spawn-arg>...
         ;;
       --model | --effort | --dispatch-override) shift ;;
       --model=* | --effort=* | --dispatch-override=*) ;;
-      --mode | --yolo | --branch-prefix | --base-branch | --backend | --pr-branch | --from-branch | \
+      --mode | --yolo | --priority | --branch-prefix | --base-branch | --backend | --pr-branch | --from-branch | \
         --upstream-consent | --traceparent | --budget-inclusive-hard | --budget-inclusive-stop | \
         --budget-fresh-hard | --budget-fresh-stop)
         ROUTED+=("$1")
