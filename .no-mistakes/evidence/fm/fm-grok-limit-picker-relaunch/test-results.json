@@ -1,0 +1,27 @@
+{
+  "revision": "df7cfa0e1b41f8c5ff68dd6b7de3d5b32c05bb59",
+  "focused_regressions": {
+    "grok_classifier_bash32": 0,
+    "grok_classifier_bash52": 0,
+    "grok_classifier_base_expected_red": 1,
+    "control_relaunch_and_interrupt": 0,
+    "herdr_composer_adapter": 0,
+    "watcher_recovery": 0
+  },
+  "composer_suite": {
+    "macos_bash32": {
+      "exit": 1,
+      "reason": "pre-existing multiword Claude session-title case",
+      "base_reproduced": true
+    },
+    "local_bash52": {
+      "exit": 1,
+      "reason": "missing tests/captures/claude-2.1.291-slash-popup/exit-typed.ansi",
+      "base_reproduced": true
+    }
+  },
+  "initial_attempts": "stopped during stale-fixture scan; rerun with FM_TEST_SKIP_ORPHAN_REAP=1",
+  "broader_control_adapter_watcher_runs": "stopped and replaced by changed-behavior focused cases",
+  "live": "Real Grok started on a private 120x38 tmux lab, blocked by global directory trust or fresh-home sign-in; weekly-limit lifecycle untested",
+  "cleanup": "Lab server, lab home, local Bash build, and temporary test selectors removed; no intentional source/test changes"
+}

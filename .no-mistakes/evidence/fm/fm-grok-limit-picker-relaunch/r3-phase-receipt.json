@@ -1,0 +1,88 @@
+{
+  "revision": "df7cfa0e1b41f8c5ff68dd6b7de3d5b32c05bb59",
+  "base": "15bb485a1f31715251633818422931dacb8b8ec7",
+  "focused_selectors": {
+    "composer": [
+      "test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure"
+    ],
+    "control": [
+      "test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter (legacy, Ctrl+e, Ctrl+e --provider-failover)",
+      "test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt",
+      "test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch",
+      "test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text"
+    ],
+    "herdr": [
+      "test_composer_state_grok_weekly_limit_live_shapes"
+    ],
+    "watcher": [
+      "test_watcher_grok_usage_limit_recover_names_relaunch"
+    ]
+  },
+  "focused_results": [
+    {
+      "selector": "composer",
+      "exit": 0,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-composer.log"
+    },
+    {
+      "selector": "base",
+      "exit": 1,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-base.log"
+    },
+    {
+      "selector": "control",
+      "exit": 0,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-control.log"
+    },
+    {
+      "selector": "herdr",
+      "exit": 0,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-herdr.log"
+    },
+    {
+      "selector": "watcher",
+      "exit": 0,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-watcher.log"
+    }
+  ],
+  "composer_suite_modern_bash": {
+    "command": "PATH=$PWD/.test-grok-r3/bash-5.2.37:$PATH FM_TEST_SKIP_ORPHAN_REAP=1 LC_ALL=en_US.UTF-8 bash tests/fm-composer-lib.test.sh",
+    "exit": 1
+  },
+  "live_results": {
+    "quota_picker_reached": false,
+    "draft_control_exit": 1,
+    "draft_unchanged": true,
+    "draft_refused": true
+  },
+  "fixture_diagnosis": "tests/captures/claude-2.1.291-slash-popup absent from both base and target git ls-tree output. No replacement invented.",
+  "live_limit": "Real Grok plus localhost HTTP 429 renders retry failure instead of numbered weekly-limit picker; live picker lifecycle cannot be proved by the emulator.",
+  "source_changes": "none",
+  "related_suites": [
+    {
+      "command": "bash tests/fm-composer-lib.test.sh",
+      "exit": 1,
+      "seconds": 3.5,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-composer-lib.log"
+    },
+    {
+      "command": "bash tests/fm-control-relaunch.test.sh",
+      "exit": "timeout",
+      "seconds": 243.8,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-control-relaunch.log"
+    },
+    {
+      "command": "bash tests/fm-backend-herdr.test.sh",
+      "exit": "timeout",
+      "seconds": 241.7,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-backend-herdr.log"
+    },
+    {
+      "command": "bash tests/fm-watch-inbox-recovery.test.sh",
+      "exit": 0,
+      "seconds": 231.8,
+      "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-watch-inbox-recovery.log"
+    }
+  ],
+  "cleanup": "All command sessions completed. Private tmux stop and teardown returned 0; no exact-GROK_HOME-owned Grok child remains. Local HTTP server stopped and joined. Workspace Bash build, archive, focused runners, and scratch lab removed. No source or test changes."
+}

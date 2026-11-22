@@ -1,0 +1,40 @@
+
+  detached worktree /U/e/.n/w/075d7f40c28a/01M7ZW57ECDC5EVWGNK2YVCK3E                        1.3k / 256k │ [Dashboard]
+
+
+     ❯ Reply OK. Do not use tools.                                                                           4:18 PM
+
+
+  ┃  Retry failed: quota_exceeded: You hit your weekly limit.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰───────────────────────────────────────────────────────────────────────────────── grok-code-fast-1 · auto-review ─╯
+
+  Shift+Tab:mode  │  Ctrl+x:shortcuts
+

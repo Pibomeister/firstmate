@@ -1,0 +1,38 @@
+
+   detached worktree ~/.n/w/075d7f40c28a/01M7ZW57ECDC5EVWGNK2YVCK3E
+
+                                                     ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄
+                                                     ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀
+                                                     ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀
+                                                     ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀
+                                                     ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀
+                                                     ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀
+                                                     ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+
+
+                                      Approve in your browser to finish signing in.
+
+                                                        [device sign-in code redacted]
+
+                                         Make sure your browser shows this code.
+
+                                                Click to copy sign-in URL
+
+
+
+                                                      Show full URL
+
+                                                  Waiting for approval…
+
+
+
+
+
+
+
+
+
+
+
+                                                      ctrl+q  quit
+

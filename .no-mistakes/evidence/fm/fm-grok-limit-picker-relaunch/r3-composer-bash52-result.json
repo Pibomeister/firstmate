@@ -1,0 +1,4 @@
+{
+  "command": "PATH=$PWD/.test-grok-r3/bash-5.2.37:$PATH FM_TEST_SKIP_ORPHAN_REAP=1 LC_ALL=en_US.UTF-8 bash tests/fm-composer-lib.test.sh",
+  "exit": 1
+}

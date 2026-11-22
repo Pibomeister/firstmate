@@ -1,0 +1,10 @@
+ok - watcher: a stuck-busy local secondmate is interrupted and redirected before any alarm
+ok - watcher: a local secondmate's unacked record is interrupted and redirected twice, then alarms exactly once
+ok - watcher: recover skips interrupt on a usage-limit screen
+ok - watcher: recover names relaunch on a Grok weekly-limit composer
+ok - watcher: an fm-send redirect behind an escalated record is rung, then interrupted and redirected on its own ladder
+ok - watcher: only a proven post-enqueue answer makes the first recovery ring-only, and it consumes a slot
+ok - watcher: each recovery restarts the ladder before the next recovery
+ok - watcher: crewmates and remote secondmates keep one alarm, a relaunch resets the budget, and unwritable bookkeeping alarms without interrupting
+ok - watcher: automatic recovery of a spent ladder waits until the record is 300 s old
+Terminated: 15

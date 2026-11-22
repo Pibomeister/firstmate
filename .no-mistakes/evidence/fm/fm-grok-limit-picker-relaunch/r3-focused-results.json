@@ -1,0 +1,27 @@
+[
+  {
+    "selector": "composer",
+    "exit": 0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-composer.log"
+  },
+  {
+    "selector": "base",
+    "exit": 1,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-base.log"
+  },
+  {
+    "selector": "control",
+    "exit": 0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-control.log"
+  },
+  {
+    "selector": "herdr",
+    "exit": 0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-herdr.log"
+  },
+  {
+    "selector": "watcher",
+    "exit": 0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-focused-watcher.log"
+  }
+]

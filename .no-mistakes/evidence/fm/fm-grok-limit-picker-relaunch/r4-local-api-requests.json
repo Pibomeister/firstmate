@@ -1,0 +1,38 @@
+[
+  [
+    "GET",
+    "/v1/models"
+  ],
+  [
+    "GET",
+    "/v1/api-key"
+  ],
+  [
+    "GET",
+    "/"
+  ],
+  [
+    "POST",
+    "/v1/responses",
+    {
+      "status": 402,
+      "code": "usage_limit_reached"
+    }
+  ],
+  [
+    "POST",
+    "/v1/responses",
+    {
+      "status": 402,
+      "code": "usage_limit_reached"
+    }
+  ],
+  [
+    "POST",
+    "/v1/chat/completions",
+    {
+      "status": 402,
+      "code": "usage_limit_reached"
+    }
+  ]
+]

@@ -1,0 +1,2 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-r4/lab-b
+interrupt-delivered guard harness=grok backend=tmux verified=agent-alive cancel=unconfirmed

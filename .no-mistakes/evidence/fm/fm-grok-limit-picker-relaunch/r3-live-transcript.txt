@@ -1,0 +1,9 @@
+This phase ran the real Grok Build CLI against a disposable localhost HTTP API, in a marked FM_HOME and a private tmux server with a 120x40 grid. HOME and GROK_HOME were inside the worktree. The API key was synthetic and usable only against the localhost emulator. No production credential store or fleet pane was used.
+
+The emulator supplied HTTP 429 with error type/code quota_exceeded and message "You hit your weekly limit.". The real Grok client rendered "Retry failed: quota_exceeded: You hit your weekly limit." with an ordinary composer. It did not render the numbered weekly-limit picker. This is evidence of an unsuccessful route to the picker, not evidence of picker relaunch.
+
+A real unsubmitted draft quoted the weekly-limit heading, both choice rows, and the Ctrl+e footer. FM_HOME=<marked lab> bin/fm-control.sh guard exit returned 1 and refused to type /exit because composer state was pending-unproven. Before and after captures were byte-identical.
+
+Private tmux stop and teardown both returned 0. Any surviving Grok child was identified only by an exact GROK_HOME environment field pointing at this phase's lab, then stopped. The disposable HTTP server was stopped and joined.
+
+No screenshot was taken: the TUI ran on a private headless tmux socket with no native GUI window. Exact terminal captures are retained.

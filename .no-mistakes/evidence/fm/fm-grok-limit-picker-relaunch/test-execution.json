@@ -1,0 +1,51 @@
+{
+  "revision": "df7cfa0e1b41f8c5ff68dd6b7de3d5b32c05bb59",
+  "base": "15bb485a1f31715251633818422931dacb8b8ec7",
+  "baseline": {
+    "command": "FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=$PWD/.test-grok-phase/tmp PATH=/opt/homebrew/bin:$PATH bash tests/fm-composer-lib.test.sh",
+    "exit": 1,
+    "reason": "Missing authentic tests/captures/claude-2.1.291-slash-popup/exit-typed.ansi; absent from base and target."
+  },
+  "focused_tests": {
+    "composer": [
+      "test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure"
+    ],
+    "control": [
+      "test_relaunch_closes_a_grok_weekly_limit_composer_without_typing_enter (legacy, Ctrl+e suffix, and provider-failover)",
+      "test_busy_relaunch_closes_a_grok_weekly_limit_after_interrupt",
+      "test_interrupt_refuses_a_grok_weekly_limit_and_names_relaunch",
+      "test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text"
+    ],
+    "herdr": [
+      "test_composer_state_grok_weekly_limit_live_shapes"
+    ],
+    "watcher": [
+      "test_watcher_grok_usage_limit_recover_names_relaunch"
+    ]
+  },
+  "focused_results": {
+    "target_composer_exit": 0,
+    "base_composer_exit": 1,
+    "control_exit": 0,
+    "herdr_exit": 0,
+    "watcher_exit": 0,
+    "live": false
+  },
+  "live_checks": [
+    {
+      "command": "Real grok 1.0.92 in 120x40 private tmux via bin/fm-lab-home.sh; isolated HOME/GROK_HOME",
+      "result": "Browser approval required; no login performed."
+    },
+    {
+      "command": "Real grok against disposable localhost HTTP API with synthetic quota error; no production credentials",
+      "result": "Rendered Retry failed: You hit your weekly limit., not a weekly-limit picker."
+    },
+    {
+      "command": "Real grok draft quoting weekly-limit text; FM_HOME=<marked lab> bin/fm-control.sh guard exit",
+      "exit": 1,
+      "result": "Safety refusal: pending-unproven; before/after terminal captures byte-identical."
+    }
+  ],
+  "interrupted_checks": "Initial related-suite invocations stopped during shared stale-fixture startup sweep; isolated related suites stopped to select only changed-behavior tests. All selected tests completed with captured exit status.",
+  "cleanup": "All owned command sessions completed or were stopped and awaited. Private tmux servers torn down. Local HTTP servers stopped and awaited. Scratch source copies and lab roots removed. No tracked changes."
+}

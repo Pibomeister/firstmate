@@ -1,0 +1,40 @@
+
+   detached worktree /U/e/.n/w/075d7f40c28a/01M7ZW57ECDC5EVWGNK2YVCK3E
+
+
+
+
+                                                     ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄
+                                                     ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀
+                                                     ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀
+                                                     ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀
+                                                     ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀
+                                                     ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀
+                                                     ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+
+
+                                      Do you trust the contents of this directory?
+                   {run-worktree}
+
+                                Grok Build may run or modify contents in this directory,
+                                                 posing security risks.
+
+                                             Yes, proceed                 y
+                                             No, quit                     n
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                    Grok Build  1.0.92
+

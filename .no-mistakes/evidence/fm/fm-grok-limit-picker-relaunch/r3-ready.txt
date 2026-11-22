@@ -1,0 +1,40 @@
+
+   detached worktree /U/e/.n/w/075d7f40c28a/01M7ZW57ECDC5EVWGNK2YVCK3E
+
+
+
+
+
+   ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+   │                                                                                                                │
+   │  ⠀⠀⠀⠀⠀⠀⣀⣀⡀⠀⠀⠀⢀⠄   Grok Build  1.0.92                                                                           │
+   │  ⠀⠀⠀⣠⣾⠿⠛⠛⠛⠛⢀⡴⠁⠀                                                                                                │
+   │  ⠀⠀⣼⡟⠁⠀⠀⠀⢀⡴⠻⣿⡀⠀   Changelog                                                                                    │
+   │  ⠀⠀⣿⡇⠀⠀⠀⠔⠁⠀⠀⣿⡇⠀                                                                                                │
+   │  ⠀⠀⢹⣷⠀⠀⠀⠀⠀⢀⣴⡿⠀⠀    • Question cards in minimal mode now keep the first option visible instead of scrolling …   │
+   │  ⠀⢀⠞⠁⠠⢶⣶⣶⣶⠿⠋⠀⠀⠀    • Headless runs (grok -p) now stop after 5 minutes of no model output instead of hanging…   │
+   │  ⠐⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀    • Session resume errors now give the same helpful instruction on every route instead of …   │
+   │                                                                                                                │
+   │                   Resume session                                                                       ctrl+r  │
+   │                   New worktree                                                                         ctrl+w  │
+   │                   Changelog                                                                                    │
+   │                   Quit                                                                                 ctrl+q  │
+   │                                                                                                                │
+   ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯                                                                                                                │
+  ╰───────────────────────────────────────────────────────────────────────────────── grok-code-fast-1 · auto-review ─╯
+
+                                                                                                Signed in with API key
+

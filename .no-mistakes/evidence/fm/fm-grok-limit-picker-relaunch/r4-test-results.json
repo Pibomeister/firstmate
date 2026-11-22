@@ -1,0 +1,65 @@
+[
+  {
+    "name": "fm-composer-lib",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 33.4,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-fm-composer-lib.log"
+  },
+  {
+    "name": "fm-control-relaunch",
+    "exit": 143,
+    "timed_out": true,
+    "seconds": 182.0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-fm-control-relaunch.log"
+  },
+  {
+    "name": "fm-backend-herdr",
+    "exit": 143,
+    "timed_out": true,
+    "seconds": 181.7,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-fm-backend-herdr.log"
+  },
+  {
+    "name": "fm-watch-inbox-recovery",
+    "exit": 143,
+    "timed_out": true,
+    "seconds": 182.0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-fm-watch-inbox-recovery.log"
+  },
+  {
+    "name": "focused-fm-composer-lib",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 2.0,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-focused-fm-composer-lib.log"
+  },
+  {
+    "name": "focused-fm-control-relaunch",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 85.6,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-focused-fm-control-relaunch.log"
+  },
+  {
+    "name": "focused-fm-backend-herdr",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 3.7,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-focused-fm-backend-herdr.log"
+  },
+  {
+    "name": "focused-fm-watch-inbox-recovery",
+    "exit": 0,
+    "timed_out": false,
+    "seconds": 6.8,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-focused-fm-watch-inbox-recovery.log"
+  },
+  {
+    "name": "focused-base",
+    "exit": 1,
+    "timed_out": false,
+    "seconds": 0.7,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r4-focused-base.log"
+  }
+]

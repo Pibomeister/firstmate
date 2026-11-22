@@ -1,0 +1,3 @@
+GET /v1/models
+GET /v1/api-key
+GET /

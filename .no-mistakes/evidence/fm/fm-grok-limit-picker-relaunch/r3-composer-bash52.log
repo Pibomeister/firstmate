@@ -1,0 +1,17 @@
+ok - fm_composer_classify_content: a bare shell prompt glyph (>/$/%/#) reads unknown, never empty
+ok - fm_composer_classify_content: stripped unbordered content is unknown except verified agent glyphs
+ok - fm_composer_classify_content: a bare shell prompt carrying a command is not empty
+ok - fm_composer_classify_content: a bare prompt glyph inside a bordered composer box reads empty (claude's own idle composer)
+ok - fm_composer_classify_content: agent prompt glyphs (❯ claude, › codex, ⟩ muse) read empty bordered or bare
+ok - fm_composer_classify_content: an empty composer reads empty
+ok - fm_composer_classify_content: idle matching is limited to proven placeholder positions
+ok - fm_composer_classify_content: idle matching preserves the caller's case mode
+ok - fm_composer_classify_content: real unsubmitted text reads pending (including a popup argument-hint fill)
+ok - matrix: claude's ❯+NBSP row reads empty on every profile in both locales (#1988)
+ok - matrix: a named claude session's titled top rule proves its composer; pi stays unchanged
+ok - matrix: claude's arrow statusline is footer furniture, not a composer holding text
+ok - fm_composer_classify_screen: footer demotion needs a contiguous, glyph-proven pair
+ok - fm_composer_classify_screen: the footer zone holds for boxes, not only separator pairs
+ok - fm_composer_classify_screen: the footer zone only ever refuses, never allows
+cat: {run-worktree}/tests/captures/claude-2.1.291-slash-popup/exit-typed.ansi: No such file or directory
+not ok - exit-typed: the composer content must be '/exit', not the popup list, got ''

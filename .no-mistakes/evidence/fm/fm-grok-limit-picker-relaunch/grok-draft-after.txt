@@ -1,0 +1,40 @@
+
+  detached worktree /U/e/.n/w/075d7f40c28a/01M7ZW57ECDC5EVWGNK2YVCK3E                        1.3k / 256k │ [Dashboard]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Draft: You hit your weekly limit. 1 (○) Buy more credits 2 (○) Try Again Tab:next answer │ Esc:scrollback │    │
+  │   Shift+x:dismiss │ Ctrl+e:expand thinking                                                                       │
+  ╰───────────────────────────────────────────────────────────────────────────────── grok-code-fast-1 · auto-review ─╯
+
+  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
+

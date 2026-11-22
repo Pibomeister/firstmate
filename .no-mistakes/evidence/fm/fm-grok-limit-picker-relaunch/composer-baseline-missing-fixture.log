@@ -1,0 +1,2 @@
+cat: {run-worktree}/tests/captures/claude-2.1.291-slash-popup/exit-typed.ansi: No such file or directory
+not ok - exit-typed: the composer content must be '/exit', not the popup list, got ''

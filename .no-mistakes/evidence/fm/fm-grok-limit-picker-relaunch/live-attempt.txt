@@ -1,0 +1,13 @@
+Live Grok preflight for df7cfa0e1b41f8c5ff68dd6b7de3d5b32c05bb59
+
+A disposable marked FM_HOME was created inside the gate worktree using bin/fm-lab-home.sh create.
+A real Grok Build 1.0.92 process ran on the helper-owned private tmux server, at 120 columns by 38 rows.
+Normal-login launch: directory-trust prompt. No trust choice was submitted because the documented action persists trust to the global user store, outside this phase's workspace authority.
+Workspace-isolated launch: GROK_HOME inside the disposable lab. The real CLI requested browser sign-in. No sign-in was performed. Neither XAI_API_KEY nor GROK_AUTH_PATH was set in this environment.
+No weekly-limit picker was reached. No lifecycle action against a real weekly-limit picker is claimed.
+Both lab servers were stopped through bin/fm-lab-home.sh tmux <lab> kill-server, the socket directory was removed through the helper teardown, and the disposable home was removed.
+
+Evidence is text captured from the real terminal. No GUI window was opened, so there is no screenshot. The one-time device sign-in code is redacted from the isolated-login capture.
+To complete live validation, provide an authenticated disposable Grok home with approved worktree trust and access to the real weekly-limit state, or explicitly authorize the existing-login trust-store write. Never substitute a fake login or fabricated picker for that proof.
+
+Additional route checked: Grok documents GROK_AUTH_PATH and its auto-managed ~/.grok/auth.json credential store. The CLI refreshes and saves those tokens automatically. Pointing the lab at that production credential store cannot guarantee the required no-credential-mutation boundary, so that route was not executed. No credentials were copied or manually read.

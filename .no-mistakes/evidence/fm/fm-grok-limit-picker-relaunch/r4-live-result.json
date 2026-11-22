@@ -1,0 +1,11 @@
+{
+  "launch_rc": 0,
+  "draft_control_rc": 1,
+  "draft_unchanged": true,
+  "draft_refusal": true,
+  "picker_reached": true,
+  "picker_exact_two_choices": false,
+  "picker_classification_rc": 1,
+  "picker_interrupt_rc": 0,
+  "tmux_stop_rc": 0
+}

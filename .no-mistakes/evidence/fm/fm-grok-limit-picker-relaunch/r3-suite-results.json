@@ -1,0 +1,26 @@
+[
+  {
+    "command": "bash tests/fm-composer-lib.test.sh",
+    "exit": 1,
+    "seconds": 3.5,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-composer-lib.log"
+  },
+  {
+    "command": "bash tests/fm-control-relaunch.test.sh",
+    "exit": "timeout",
+    "seconds": 243.8,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-control-relaunch.log"
+  },
+  {
+    "command": "bash tests/fm-backend-herdr.test.sh",
+    "exit": "timeout",
+    "seconds": 241.7,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-backend-herdr.log"
+  },
+  {
+    "command": "bash tests/fm-watch-inbox-recovery.test.sh",
+    "exit": 0,
+    "seconds": 231.8,
+    "log": "~/.no-mistakes/evidence/01M7ZW57ECDC5EVWGNK2YVCK3E/r3-fm-watch-inbox-recovery.log"
+  }
+]

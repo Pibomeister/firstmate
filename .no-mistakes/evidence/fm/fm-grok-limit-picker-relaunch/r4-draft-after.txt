@@ -1,0 +1,40 @@
+
+  main /U/e/.n/w/0/0/.test-r4/project                                                        1.3k / 256k │ [Dashboard]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Keep this unsent draft intact.                                                                                 │
+  ╰───────────────────────────────────────────────────────────────────────────────── grok-code-fast-1 · auto-review ─╯
+
+  Enter:send  │  Opt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:shortcuts
+
