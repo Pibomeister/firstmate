@@ -44,6 +44,8 @@ trap 'cleanup; exit 143' TERM
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
+if [ "${1:-}" != --backoff ]; then
+
 cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
 case "${1:-}" in
@@ -1754,6 +1756,8 @@ case "$report_out" in
 esac
 pass "repeated publication failure is reported at session start until it clears"
 
+fi
+
 # A failed refresh must wait longer before the next side-band attempt instead
 # of costing a full producer run on every watcher poll. The delay doubles
 # after each failure and is capped; a success resets it.
@@ -1769,6 +1773,13 @@ cat > "$BACKOFF_HOME/data/backlog.md" <<'EOF'
 
 ## Done
 EOF
+FAILBIN="$TMP_ROOT/backoff-failbin"
+mkdir -p "$FAILBIN"
+cat > "$FAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+exit 7
+SH
+chmod +x "$FAILBIN/jq"
 backoff_failures() {
   grep -c 'summary producer failed' "$BACKOFF_HOME/state/.home-summary-refresh.log" 2>/dev/null || true
 }
@@ -1776,27 +1787,129 @@ backoff_attempt() {  # <now-epoch>
   PATH="$FAILBIN:$FAKEBIN:$PATH" \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
     FM_TEST_SEAM=1 FM_NOW="$1" \
-    FM_HOME_SUMMARY_BACKOFF_BASE_SECS=10 FM_HOME_SUMMARY_BACKOFF_MAX_SECS=25 \
     "$WRITER" --best-effort \
     || fail "backed-off refresh changed the best-effort caller result"
 }
-backoff_attempt 1000
-[ "$(backoff_failures)" -eq 1 ] || fail "the first failed refresh was not recorded"
-backoff_attempt 1005
-[ "$(backoff_failures)" -eq 1 ] || fail "a refresh retried at once after a failure instead of backing off"
-backoff_attempt 1011
-[ "$(backoff_failures)" -eq 2 ] || fail "a refresh did not retry after its first backoff delay"
-backoff_attempt 1020
-[ "$(backoff_failures)" -eq 2 ] || fail "the second backoff was not longer than the first"
-backoff_attempt 1032
-[ "$(backoff_failures)" -eq 3 ] || fail "a refresh did not retry after its second backoff delay"
-backoff_attempt 1050
-[ "$(backoff_failures)" -eq 3 ] || fail "a refresh retried before its capped backoff delay elapsed"
-backoff_attempt 1058
-[ "$(backoff_failures)" -eq 4 ] || fail "the capped backoff delay did not let a refresh retry"
+backoff_epoch=1000
+backoff_count=0
+for backoff_delay in 30 60 120 240 480 960 1800 1800; do
+  backoff_attempt "$backoff_epoch"
+  backoff_count=$((backoff_count + 1))
+  [ "$(backoff_failures)" -eq "$backoff_count" ] || fail "an eligible refresh did not retry"
+  backoff_epoch=$((backoff_epoch + backoff_delay))
+  backoff_attempt "$((backoff_epoch - 1))"
+  [ "$(backoff_failures)" -eq "$backoff_count" ] || fail "a refresh retried before its fixed backoff elapsed"
+done
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
-  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+  FM_TEST_SEAM=1 FM_NOW=1000 \
   "$WRITER" || fail "a direct refresh did not run and clear the backoff"
-backoff_attempt 1059
-[ "$(backoff_failures)" -eq 5 ] || fail "a successful refresh did not reset the backoff"
-pass "failed refresh backs off exponentially with a cap and resets on success"
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "publication did not clear backoff"
+backoff_attempt 1001
+[ "$(backoff_failures)" -eq 9 ] || fail "a successful refresh did not reset the backoff"
+pass "failed refresh backs off from 30 to 1800 seconds and resets on publication"
+
+. "$ROOT/bin/fm-timeout-lib.sh"
+QUEUEDBIN="$TMP_ROOT/queued-bin"
+mkdir -p "$QUEUEDBIN"
+cat > "$QUEUEDBIN/jq" <<'SH'
+#!/usr/bin/env bash
+printf 'attempt\n' >> "$FM_TEST_ATTEMPTS"
+if [ ! -e "$FM_TEST_READY" ]; then
+  : > "$FM_TEST_READY"
+  read -r _ < "$FM_TEST_RELEASE"
+fi
+exit 7
+SH
+chmod +x "$QUEUEDBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+RELEASE="$TMP_ROOT/queued-release"
+READY="$TMP_ROOT/queued-ready"
+ATTEMPTS="$TMP_ROOT/queued-attempts"
+QUEUED_STAGE="$BACKOFF_HOME/state/.home-summary-stage.queued"
+mkfifo "$RELEASE"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_WRITER_PID=$!
+i=0
+while [ ! -e "$READY" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$READY" ] || fail "the first producer did not start"
+printf 'failures=2\nnext=900\n' > "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_SEAM=1 FM_NOW=1000 FM_HOME_SUMMARY_IF_IDLE=1 "$WRITER" --best-effort \
+  || fail "an if-idle refresh did not skip a busy publication lock"
+[ "$(cat "$BACKOFF_HOME/state/.home-summary-refresh.backoff")" = "$(printf 'failures=2\nnext=900')" ] \
+  || fail "an if-idle skip changed the existing backoff record"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_HOME_SUMMARY_STAGE_PATH="$QUEUED_STAGE" \
+  FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_NM_PID=$!
+i=0
+until grep -q '^lock-wait' "$QUEUED_STAGE" 2>/dev/null; do
+  [ "$i" -lt 600 ] || fail "the second refresh never queued for the publication lock"
+  sleep 0.05
+  i=$((i + 1))
+done
+printf 'release\n' > "$RELEASE"
+wait "$SLOW_WRITER_PID" || fail "the first best-effort refresh failed"
+SLOW_WRITER_PID=
+wait "$SLOW_NM_PID" || fail "the queued best-effort refresh failed"
+SLOW_NM_PID=
+[ "$(wc -l < "$ATTEMPTS" | tr -d ' ')" -eq 1 ] || fail "a queued refresh bypassed the preceding failure's backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_TEST_SEAM=1 FM_NOW=1030 "$WRITER" --best-effort \
+  || fail "an eligible refresh failed after contention"
+[ "$(wc -l < "$ATTEMPTS" | tr -d ' ')" -eq 2 ] || fail "the queued skip changed the retry time"
+pass "a queued refresh checks backoff after taking the lock"
+
+STALLBIN="$TMP_ROOT/backoff-stall-bin"
+mkdir -p "$STALLBIN"
+REAL_MV=$(command -v mv)
+cat > "$STALLBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-refresh.backoff)
+      : > "$FM_TEST_BACKOFF_STALLED"
+      sleep 60
+      ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+cat > "$STALLBIN/jq" <<'SH'
+#!/usr/bin/env bash
+sleep 60
+exit 7
+SH
+chmod +x "$STALLBIN/mv" "$STALLBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$STALLBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_REAL_MV="$REAL_MV" FM_TEST_BACKOFF_STALLED="$TMP_ROOT/backoff-write-stalled" \
+  FM_HOME_SUMMARY_TIMEOUT=1 fm_run_timed 20 "$WRITER" --best-effort \
+  || fail "stalled parent-side backoff publication escaped its bound or changed best-effort status"
+[ -e "$TMP_ROOT/backoff-write-stalled" ] || fail "the parent did not attempt to record its timeout"
+pass "a stalled timeout backoff write cannot hold a lifecycle caller"
+
+cat > "$TMP_ROOT/stall-backoff-read.sh" <<'SH'
+read() {
+  case "${HOME_SUMMARY_MODE:-}" in
+    parent|worker)
+      : > "$FM_TEST_BACKOFF_STALLED"
+      sleep 60
+      ;;
+  esac
+  builtin read "$@"
+}
+SH
+printf 'failures=1\nnext=0\n' > "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+BASH_ENV="$TMP_ROOT/stall-backoff-read.sh" \
+  FM_TEST_BACKOFF_STALLED="$TMP_ROOT/backoff-read-stalled" \
+  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_HOME_SUMMARY_TIMEOUT=1 fm_run_timed 20 "$WRITER" --best-effort \
+  || fail "a stalled backoff read escaped its bound or changed best-effort status"
+[ -e "$TMP_ROOT/backoff-read-stalled" ] || fail "the stalled backoff read was not reached"
+pass "backoff eligibility and failure reads cannot hold a lifecycle caller"

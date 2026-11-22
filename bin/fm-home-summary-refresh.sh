@@ -42,9 +42,8 @@
 # for tests and diagnostics.
 #
 # A failed refresh backs off before the next --best-effort attempt: the
-# delay doubles after each consecutive failure, from
-# FM_HOME_SUMMARY_BACKOFF_BASE_SECS (default 30) up to
-# FM_HOME_SUMMARY_BACKOFF_MAX_SECS (default 1800), and a publication clears it.
+# delay doubles after each consecutive failure, from 30 seconds up to
+# 1800 seconds, and a publication clears it.
 # The record is state/.home-summary-refresh.backoff (failures and the next
 # permitted attempt epoch). A direct call without --best-effort always runs,
 # so tests and diagnostics are never deferred. This is the interim relief
@@ -60,8 +59,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 LEDGER="$STATE/home-summary.json"
 BACKOFF_FILE="$STATE/.home-summary-refresh.backoff"
-BACKOFF_BASE=${FM_HOME_SUMMARY_BACKOFF_BASE_SECS:-30}
-BACKOFF_MAX=${FM_HOME_SUMMARY_BACKOFF_MAX_SECS:-1800}
+BACKOFF_BASE=30
+BACKOFF_MAX=1800
 ERROR_LOG="$STATE/.home-summary-refresh.log"
 REFRESH_LOCK="$STATE/.home-summary-refresh.lock"
 ERROR_LOG_MAX_BYTES=${FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES:-65536}
@@ -109,14 +108,6 @@ case "$HOME_SUMMARY_IF_IDLE" in
   0|1) ;;
   *) HOME_SUMMARY_IF_IDLE=0 ;;
 esac
-case "$BACKOFF_BASE" in
-  ''|*[!0-9]*|0) BACKOFF_BASE=30 ;;
-esac
-case "$BACKOFF_MAX" in
-  ''|*[!0-9]*|0) BACKOFF_MAX=1800 ;;
-esac
-[ "$BACKOFF_MAX" -ge "$BACKOFF_BASE" ] || BACKOFF_MAX=$BACKOFF_BASE
-
 BACKOFF_FAILURES=0
 BACKOFF_NEXT=0
 backoff_read() {
@@ -144,20 +135,30 @@ backoff_delay() {  # <consecutive-failures>
   printf '%s\n' "$delay"
 }
 
+backoff_active() {
+  local now
+  [ "$BEST_EFFORT" -eq 1 ] || return 1
+  now=$(fm_now 2>/dev/null) || return 1
+  case "$now" in ''|*[!0-9]*) return 1 ;; esac
+  backoff_read
+  [ "$BACKOFF_NEXT" -gt "$now" ]
+}
+
 backoff_record_failure() {  # <now-epoch>
   local failures delay tmp
   backoff_read
   failures=$((BACKOFF_FAILURES + 1))
   delay=$(backoff_delay "$failures")
-  # Never create the state directory here: this can run in the parent after
-  # its timed worker died, outside that deadline, so a stalled creation
-  # would escape the bound. Without a state directory there is no record.
   [ -d "$STATE" ] || return 0
   tmp="$BACKOFF_FILE.tmp.${BASHPID:-$$}"
   (umask 077; printf 'failures=%s\nnext=%s\n' "$failures" "$(($1 + delay))" > "$tmp") 2>/dev/null \
     && mv -f -- "$tmp" "$BACKOFF_FILE" 2>/dev/null \
     || rm -f -- "$tmp" 2>/dev/null || true
 }
+
+if [ "$HOME_SUMMARY_MODE" = worker ] && backoff_active; then
+  exit 0
+fi
 
 if [ "$HOME_SUMMARY_MODE" != parent ] && [ "$HOME_SUMMARY_MODE" != stage-note ]; then
   # shellcheck source=bin/fm-wake-lib.sh
@@ -233,6 +234,7 @@ home_summary_refresh_once() {
     fm_lock_acquire_wait "$REFRESH_LOCK"
   fi
   HOME_SUMMARY_LOCK_HELD=1
+  backoff_active && return 0
   HOME_SUMMARY_TMP=$(umask 077; mktemp "$STATE/.home-summary.json.XXXXXX") || {
     home_summary_fail "could not create an atomic publication file in $STATE"
     return 1
@@ -370,16 +372,6 @@ home_summary_stage_remove() {  # <path>
 }
 
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
-  backoff_now=$(fm_now 2>/dev/null) || backoff_now=
-  case "$backoff_now" in
-    ''|*[!0-9]*) backoff_now= ;;
-  esac
-  if [ "$BEST_EFFORT" -eq 1 ] && [ -n "$backoff_now" ]; then
-    backoff_read
-    if [ "$BACKOFF_NEXT" -gt "$backoff_now" ]; then
-      exit 0
-    fi
-  fi
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
   stage_file=
   # A signalled parent must not leave its stage file behind in state/, so the
@@ -433,7 +425,7 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
   case "$backoff_failure_now" in
     ''|*[!0-9]*) ;;
-    *) backoff_record_failure "$backoff_failure_now" ;;
+    *) fm_run_timed_fn 2 backoff_record_failure "$backoff_failure_now" >/dev/null 2>&1 || true ;;
   esac
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
