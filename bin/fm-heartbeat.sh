@@ -31,8 +31,8 @@
 #                     (its cycle period), passed as FM_HEARTBEAT_CYCLE_SECS,
 #                     never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
-#                     (docs/configuration.md), plus one whole-run cap; null while
-#                     the cycle period or the grace is missing. The whole-run
+#                     (default 60; docs/configuration.md), plus one whole-run cap;
+#                     null while the cycle period is missing. The whole-run
 #                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
 #                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
 #                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
@@ -768,9 +768,9 @@ heartbeat_publish() {
   local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
   local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null run_cap lead read discovery published
   # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace
-  # plus one whole-run cap (see the header). With no usable cycle period or
-  # grace the bound is null.
-  grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=
+  # plus one whole-run cap (see the header). With no usable cycle period
+  # the bound is null.
+  grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=60
   case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
   lead=$FM_HEARTBEAT_DEADLINE
   [ "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" -le "$lead" ] || lead=$FM_HEARTBEAT_SNAPSHOT_TIMEOUT
@@ -778,7 +778,7 @@ heartbeat_publish() {
   [ "$FM_HEARTBEAT_NM_TIMEOUT" -le "$read" ] || read=$FM_HEARTBEAT_NM_TIMEOUT
   discovery=$(heartbeat_seconds "${FM_HEARTBEAT_DISCOVERY_TIMEOUT:-}" 60)
   run_cap=$((lead + discovery + FM_HEARTBEAT_QUOTA_TIMEOUT + 17 * (read + 1) + 5 * (5 + 1) + 3))
-  [ -z "$cycle" ] || [ -z "$grace" ] || stale_after=$((cycle + grace + run_cap))
+  [ -z "$cycle" ] || stale_after=$((cycle + grace + run_cap))
   ready_pr=$(heartbeat_ready_pr_discovery) || ready_pr='{"unknown":true,"reason":"ready-pr discovery unreadable"}'
   case "$ready_pr" in
     '{'*'}') ;;

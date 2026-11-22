@@ -32,7 +32,8 @@
 # None over 30 minutes means duration is at most 1800 seconds.
 # A heartbeat age, the sample epoch minus the published epoch, fails when it is
 # over that heartbeat's stale bound: its stale_after_secs, at least 600 seconds,
-# as recorded in the hb row's detect field, or 600 seconds when the row has none,
+# as recorded in the hb row's detect field, or 600 seconds for a legacy or
+# externally written heartbeat with no bound,
 # unless a verified handoff of the same class and subject
 # covers that sample and the handoff itself is at most 600 seconds.
 # A gap over 600 seconds between primary heartbeat samples, including from

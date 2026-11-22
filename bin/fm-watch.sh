@@ -5416,6 +5416,9 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
   FLEET_HEARTBEAT_PID=$1 FLEET_HEARTBEAT_SEEN=$2
   trap - EXIT
   trap 'exit 0' HUP INT TERM
+  if [ "${FM_TEST_SEAM:-0}" = 1 ] && [ -n "${FM_WATCH_RANDOM_SEED:-}" ]; then
+    RANDOM=$FM_WATCH_RANDOM_SEED
+  fi
   fm_watch_now now
   watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
   while :; do

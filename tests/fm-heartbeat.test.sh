@@ -1055,8 +1055,7 @@ test_unchanged_home_collects_once_per_idle_interval() {
 
 # Each idle due is drawn below the interval by at most the jitter, so the
 # interval stays the longest launch gap. The upper check allows two seconds of
-# launch slip on a loaded host. At least one recorded gap must be at least two
-# seconds under the full interval, so a ticker that ignores jitter fails.
+# launch slip on a loaded host. A seeded ticker supplies repeatable jitter draws.
 test_jittered_idle_gaps_stay_within_the_interval() {
   local home stub gaps bad short
   home=$(make_home watch-jitter)
@@ -1065,6 +1064,7 @@ test_jittered_idle_gaps_stay_within_the_interval() {
   fm_test_track_watcher_state "$home/state"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TEST_SEAM=1 FM_WATCH_RANDOM_SEED=42 \
     FM_HEARTBEAT_LEDGER_IDLE_SECS=6 FM_HEARTBEAT_LEDGER_JITTER=4 FM_HEARTBEAT_BIN="$stub" \
     "$WATCH" > "$TMP_ROOT/watch-jitter.out" 2> "$TMP_ROOT/watch-jitter.err" &
   WATCH_PID=$!
@@ -1145,7 +1145,7 @@ test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
   assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "all-zero timeouts did not fall back to the defaults"
   rm -f "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=08
-  assert_ledger "$home" '.stale_after_secs == null' "a padded timeout with no grace published a bound"
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP - 2))" "a padded timeout did not use the default grace"
   pass "AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults"
 }
 
@@ -1167,16 +1167,18 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
   done
   rm -f "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-  assert_ledger "$home" '.stale_after_secs == null' "a home with no grace published a bound"
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "a home with no grace did not publish a cadence-safe bound"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=900
+  assert_ledger "$home" '.stale_after_secs == 1371' "a 900-second cadence without grace did not publish a cadence-safe bound"
   for bad in '# stale-grace-secs=30' 'stale-grace-secs=' 'stale-grace-secs=abc' 'stale-grace-secs=030' 'stale-grace-secs=-5'; do
     printf '%s\n' "$bad" > "$home/config/heartbeat"
     publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-    assert_ledger "$home" '.stale_after_secs == null' "the unusable grace line '$bad' published a bound"
+    assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "the unusable grace line '$bad' did not use the default grace"
   done
   printf 'stale-grace-secs=30\nstale-grace-secs=abc\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
   assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "an unusable later line hid the usable grace"
-  pass "AC-14: the stale bound is the watcher cycle period plus the grace plus the run cap, and null while either is missing"
+  pass "AC-14: the stale bound covers the watcher cycle, configured or default grace, and run cap"
 }
 
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {

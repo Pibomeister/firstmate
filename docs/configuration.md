@@ -752,7 +752,7 @@ The file is optional, local to each home, and read on every publication.
 It may hold this line:
 
 - `stale-grace-secs=<n>` sets the grace in seconds, and `0` is a valid grace.
-  Unset, `stale_after_secs` is null and no stale bound is published.
+  Unset or unusable, the grace defaults to 60 seconds; `stale_after_secs` remains null only when the watcher cycle period is unavailable.
 
 The last usable line counts.
 

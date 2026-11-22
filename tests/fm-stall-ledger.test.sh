@@ -319,12 +319,35 @@ test_observe_uses_the_heartbeat_stale_bound() {
     END { exit !ok }
   ' "$ledger" || fail "age 772 under a 771 second bound did not open a stall detected at published+772"
 
+  home=$(new_home long-cadence-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 601))
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":1371}\n' "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  observe_ok "$home" "$((T0 + 299))"
+  assert_equals 0 "$(count_rows "$ledger" stall-open)" "a 900-second cadence stays healthy at ages 601 and 900"
+  run_score "$home" "$T0" "$((T0 + 300))"
+  assert_equals PASS "$OUT" "long-cadence heartbeat samples pass scoring before their deadline"
+  observe_ok "$home" "$((start + 1372))"
+  awk -F '\t' -v detect="$((start + 1372))" '
+    $2 == "stall-open" && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the long-cadence heartbeat did not open a stall at its recorded deadline"
+  run_score "$home" "$((start + 1372))" "$((start + 1380))"
+  assert_contains "$OUT" heartbeat-age "scoring rejects a long-cadence heartbeat after its deadline"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":1371}\n' "$((start + 1380))" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$((start + 1380))"
+  awk -F '\t' -v recover="$((start + 1380))" '
+    $2 == "stall-close" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a fresh long-cadence heartbeat did not close its stall"
+
   home=$(new_home null-bound-hb)
   ledger=$(ledger_of "$home")
   start=$((T0 - 601))
   printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":null,"snapshot":{"schema":9999}}\n' "$start" > "$home/state/heartbeat.json"
   observe_ok "$home" "$T0"
-  assert_equals 1 "$(count_rows "$ledger" stall-open)" "a null stale bound uses 600 seconds, not a later number"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "a legacy heartbeat without a bound retains the 600-second floor"
   pass "the stall ledger honors the heartbeat's own stale bound with a 600 second floor"
 }
 

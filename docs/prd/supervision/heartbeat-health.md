@@ -57,7 +57,7 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 
 - HB-1: One health verdict per home reports `ok`, `stale`, `dead`, `unconfirmed`, or `unknown`.
 - HB-2: The verdict derives only from three named records: the heartbeat age from `generated_epoch` in `state/heartbeat.json`, the lock verdict in `state/watchdog/captain`, and the watcher age from `state/.last-watcher-beat`.
-- HB-3: The heartbeat publisher computes `stale_after_secs` from the active heartbeat interval plus a grace and publishes it in `state/heartbeat.json`.
+- HB-3: The heartbeat publisher computes `stale_after_secs` under the cadence bound and default-grace contract in `bin/fm-heartbeat.sh` and publishes it in `state/heartbeat.json`.
 - HB-4: A heartbeat older than `stale_after_secs` reports `stale` and never `ok`.
 - HB-5: The stale judgment uses the watcher supervision verdict, so a watcher that runs only between turns never reads stale during a long turn.
 - HB-6: A dead lock owner reports `dead` even when the last heartbeat still reads fresh.
