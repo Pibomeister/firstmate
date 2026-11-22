@@ -3456,7 +3456,8 @@ launch_template() {
   # (bin/fm-agy-trust.sh, the claude shape), and the post-launch gate
   # (agy_wait_for_working) answers the preselected safe default ("Yes, I
   # trust this folder") with a single Enter if the dialog renders anyway,
-  # then requires the busy signature before the spawn reports success.
+  # then requires the busy signature or confirmed brief-processing progress
+  # before the spawn reports success.
   # The foreign primary markers are cleared for the same
   # reason cursor clears them: agy publishes no marker of its own and does not
   # clear an inherited CLAUDECODE (verified in the /proc environ of a live 1.2.0
@@ -6908,7 +6909,12 @@ opencode2_wait_for_delivery() {
 # with the preselected safe default if it renders anyway, then require
 # positive proof that the brief is being processed - the same verdict the
 # supervisor reads (Herdr's native working state or the pinned `esc to cancel`
-# status row through fm_busy_classify) - before the spawn reports success.
+# status row through fm_busy_classify), or confirmed brief-processing progress
+# (`Thought for ...`, `Ran (...)`, `Explored N file(s)/search(es)`,
+# `Wrote N line(s)`, `Edited N file(s)` above an empty composer, or active
+# background tasks `N task(s) · /tasks` on the `? for shortcuts` footer) when
+# the initial turn already finished or backgrounded a task between polls -
+# before the spawn reports success.
 # The gate is strict about ordering because on Herdr the native working
 # verdict is known to coexist with an unanswered dialog: a busy verdict counts
 # only when the path was pre-registered or the dialog has been seen and
@@ -6917,18 +6923,67 @@ AGY_TRUST_DIALOG='Do you trust the contents of this project?'
 AGY_TRUST_ANSWERED=0
 
 agy_capture() {
-  fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
+  fm_backend_visible_capture "$BACKEND" "$T" "$W" 2>/dev/null || true
 }
 
 agy_pane_shows_trust_dialog() {  # <plain-pane-capture>
   printf '%s\n' "$1" | grep -Fq "$AGY_TRUST_DIALOG"
 }
 
+agy_pane_has_brief_progress() {  # <plain-pane-capture>
+  printf '%s\n' "$1" | awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      return s
+    }
+    function is_rule(s,    t) {
+      t = trim(s)
+      if (length(t) < 3) return 0
+      gsub(/─/, "", t)
+      return t == ""
+    }
+    function is_empty_prompt(s) {
+      s = trim(s)
+      # AGY renders this hint inside its otherwise empty composer.
+      return s == ">" || s == "> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)"
+    }
+    function is_progress_line(s) {
+      return s ~ /^[[:space:]]*([^[:alnum:]_>[:space:]-]+[[:space:]]+)?(Thought for (<[0-9]|[0-9])|Ran \(|Explored [1-9][0-9]* (file|files|search|searches)([[:space:],()]|$)|Wrote [1-9][0-9]* lines?([[:space:],()]|$)|Edited [1-9][0-9]* files?([[:space:],()]|$))/
+    }
+    /[^[:space:]]/ {
+      lines[++n] = $0
+    }
+    END {
+      if (n < 4 || lines[n] !~ /^[[:space:]]*\?[[:space:]]+for[[:space:]]+shortcuts([[:space:]]|$)/) exit 1
+      if (!is_rule(lines[n - 1])) exit 1
+      has_tasks = lines[n] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/
+      comp_end = n - 1
+      # Active tasks can add a ruled panel between the composer and footer.
+      if (has_tasks && !is_empty_prompt(lines[comp_end - 1])) {
+        for (comp_end = n - 2; comp_end > 2; comp_end--) {
+          if (is_rule(lines[comp_end])) break
+        }
+      }
+      if (comp_end < 3 || !is_empty_prompt(lines[comp_end - 1]) || !is_rule(lines[comp_end - 2])) exit 1
+      comp_start = comp_end - 2
+      if (has_tasks) exit 0
+      for (i = 1; i < comp_start; i++) {
+        if (is_progress_line(lines[i])) {
+          exit 0
+        }
+      }
+      exit 1
+    }
+  '
+}
+
 agy_pane_is_working() {  # <plain-pane-capture>
+  agy_pane_shows_trust_dialog "$1" && return 1
   case "$(fm_busy_classify "$BACKEND" "$T" agy "$ID" "$STATE" "$1")" in
     busy*) return 0 ;;
   esac
-  return 1
+  agy_pane_has_brief_progress "$1" || return 1
+  [ "$(fm_backend_agent_state "$BACKEND" "$T")" = alive ]
 }
 
 agy_wait_for_working() {

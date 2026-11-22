@@ -40,7 +40,7 @@ The brief submitted itself with no extra Enter, the turn ran, and the reply rend
 A second launch into the same directory answered a fresh prompt the same way, so the shape is repeatable, not a first-run accident.
 The footer rendered `Gemini 3.8 Flash · low`, proving both flags were accepted together.
 
-## Trust dialog: pre-registered before launch, gated on a busy turn as the backstop
+## Trust dialog: pre-registered before launch, gated on brief processing
 
 A first launch in a fresh worktree shows this dialog:
 
@@ -66,10 +66,10 @@ Isolated runs in untrusted `/tmp` directories never reached the workspace until 
 One run left unanswered for several minutes wrote its file to agy's scratch directory instead of the workspace once finally answered.
 The mechanism behind the difference was not established; path, backend, and latency were all varied across runs without isolating a single cause.
 The spawn therefore does not depend on it: after pre-registration, `bin/fm-spawn.sh` runs a post-launch readiness gate (`agy_wait_for_working`) in the rovo/kimi launch-then-confirm shape as the backstop.
-It polls the pane capture, answers the dialog with a single Enter the first time the `Do you trust the contents of this project?` text renders, and reports success only once `fm_busy_classify` returns a busy verdict for the pane (Herdr's native `working` status or the pinned `esc to cancel` status row).
-Because Herdr's native `working` verdict is known to coexist with an unanswered dialog, the gate is strict about order: a busy verdict counts as ready only when the worktree was pre-registered before launch or the dialog has already been seen and answered; on an unregistered path it keeps polling for the dialog instead of accepting the early busy verdict.
-The [adapter reference](../../.agents/skills/harness-adapters/references/harness/agy.md#trust-and-where-the-decision-persists) owns failed-launch retention and recovery rules.
+The [adapter reference](../../.agents/skills/harness-adapters/references/harness/agy.md#trust-and-where-the-decision-persists) owns the current readiness alternatives and trust ordering, including confirmation when the brief has already made progress between polls.
+It also owns failed-launch retention and recovery rules.
 `tests/fm-agy-harness.test.sh` covers the helper's registration and scope refusals against a throwaway store, and drives a fake pane whose dialog decision reads the store the spawn just wrote: the pre-trusted launch with no dialog, a dialog that renders anyway answered exactly once, the premature busy verdict on an unregistered path waiting for the dialog, both fail-and-close paths, and a kept record after a failure that closes exactly one window and that `bin/fm-teardown.sh` resolves.
+Its Herdr readiness regressions cover completed tool turns, background tasks with a panel below the composer, and rejection of unstarted, unsubmitted, errored, untrusted, stale, dead, unreadable, and unruled frames.
 
 ## Model and effort
 
@@ -178,8 +178,8 @@ Session lock verification recognizes `agy` process ancestry via `bin/fm-session-
 
 ## Backend readiness: the spawn refuses unproven backends
 
-The readiness gate reads the trust dialog and the pinned `esc to cancel` row from the backend's pane capture, so it is only as good as that capture.
-`bin/fm-spawn.sh` therefore never launches agy on another backend.
+The readiness gate uses the backend's current visible viewport; its accepted signals are owned by the [adapter reference](../../.agents/skills/harness-adapters/references/harness/agy.md#trust-and-where-the-decision-persists).
+`bin/fm-spawn.sh` continues to limit agy launches to tmux and Herdr.
 When the backend comes only from `config/backend` or runtime detection, as with the default orca, the spawn runs that one agy task on Herdr if its tools and version check pass, else on tmux, and prints a notice that names both backends.
 The task record names the backend the task really runs on, so later control commands reach it.
 An explicit `--backend` or `FM_BACKEND`, a relaunch onto another backend, or a host with neither Herdr nor tmux is refused before any worktree, endpoint, task record, or model fetch exists:
@@ -249,7 +249,7 @@ No slash-skill invocation form was verified, so skill invocation stays natural l
 
 ## Refreshing this record
 
-Run the portable suite and the live guard after any agy upgrade, because the process name, marker set, trust dialog text, and rendered busy/interrupt text are all vendor-controlled surfaces that the spawn gate and the busy fallback match verbatim:
+Run the portable suite and the live guard after any agy upgrade, because the process name, marker set, trust dialog text, rendered busy/interrupt text, brief-progress rows, and composer/task-panel layout are vendor-controlled surfaces used by the adapter:
 
 ```
 bin/fm-test-run.sh tests/fm-agy-harness.test.sh
