@@ -1,0 +1,1 @@
+COMMAND: bash tests/fm-herdr-owned-xdg-live-e2e.test.sh

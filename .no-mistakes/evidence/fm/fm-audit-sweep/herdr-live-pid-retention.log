@@ -1,0 +1,11 @@
+fm-herdr-lab: recorded herdr pid 14607 is still running but cannot be proven this fixture's; refusing to forget it
+fixture start exit=1
+fm-herdr-lab: refusing pid 14607: comm is 'sleep', not herdr
+fixture cleanup exit=1
+schema=fm-herdr-owned-xdg.v1
+xdg_root=/private/tmp/hx.fvCAQu
+marker_token=10601.32499.29643
+pid=14607
+pid_start=Sat Nov 21 14:28:28 2026
+OBSERVED: an identity-unproven live process with matching recorded start time was neither forgotten nor signalled; cleanup preserved its fixture until the child was stopped.
+FINAL_EXIT_STATUS: 0

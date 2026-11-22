@@ -1,0 +1,6 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/.phase-hung-focused.test.sh
+1..1
+ok - prune skips a live lock and reclaims a crashed one
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

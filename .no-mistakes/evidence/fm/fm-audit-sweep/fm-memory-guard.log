@@ -1,0 +1,19 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-memory-guard.test.sh
+1..14
+ok - help and usage errors take no sample
+ok - the macOS reader parses swap, etime, and comm with spaces
+ok - the Linux reader parses /proc/meminfo and ps -eo
+ok - a failed read is reported and recorded, never guessed
+ok - a process alarms only after holding the limit for the whole window
+ok - the swap limit is inclusive, deduplicated, and configurable
+ok - the sample log stays bounded
+ok - an alarm is never hidden by a sample that cannot be recorded
+ok - a pass that cannot save its sustained-process or alarm state exits 1
+ok - --json prints one valid object
+ok - observe is the default, does no classification work, and --observe always wins
+ok - reap-scratch names only scratch processes as would-stop and spares every live agent and operator process
+ok - reap-scratch needs an interpreter running a single-link temp-root script
+ok - reap-scratch only reports would-stop, never signals, and deduplicates the alarm
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

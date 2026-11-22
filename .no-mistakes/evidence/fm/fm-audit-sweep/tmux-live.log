@@ -1,0 +1,48 @@
+{run-worktree}/.phase-tmux-a.pxWgHN
+{run-worktree}/.phase-tmux-b.6gfpLL
+clean command reached shell
+bash-3.2$ printf 'clean command reached shell\n' > '{run-worktree}
+ZKNF16YKS1TEKEJ/.phase-tmux-a.pxWgHN/after'
+bash-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+OBSERVED: prepare_relaunch cleared stale shell input before the replacement command; the stale command never ran.
+Other-server paused probe: exit=1 output=
+Addressed-server missing paused probe: exit=0 output=missing
+OBSERVED: a paused window on another live server is not declared gone; a missing window recorded on the addressed server is detected.
+FINAL_EXIT_STATUS: 0

@@ -1,0 +1,95 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-pstack-verify-hook.test.sh
+ok - a STATUS_APPEND command injects principle-prove-it-works
+ok - a loop's closing done line or a quoted done outside a status write is not a completion
+ok - a bare done on a status path is not a completion, and a real done line still is
+ok - Cursor postToolUse Shell STATUS_APPEND injects principle-prove-it-works
+ok - Write content holding a done line injects principle-prove-it-works
+ok - done: merge it on a captain prompt does not inject principle-prove-it-works
+ok - this is faster than main injects principle-explain-the-number
+ok - a working: line does not inject principle-prove-it-works
+ok - are the checks green yet? does not inject principle-prove-it-works
+ok - working: checks green so far does not inject principle-prove-it-works
+ok - is the implementation complete? does not inject principle-prove-it-works
+ok - The PR is ready for review does not inject principle-prove-it-works
+ok - blocked: wait for my review does not inject principle-prove-it-works
+ok - blocked: via STATUS_APPEND Shell/Bash does not inject principle-prove-it-works
+ok - blocked: via a *.status Write does not inject principle-prove-it-works
+ok - needs-decision: pick a design does not inject principle-prove-it-works
+ok - writing a test file injects principle-test-behavior-not-implementation
+ok - a cwd-relative foo.test.sh Write injects principle-test-behavior-not-implementation
+ok - Cursor postToolUse writing a test file injects principle-test-behavior-not-implementation
+ok - a Shell heredoc into a test path injects principle-test-behavior-not-implementation
+ok - a cwd-relative cat > foo.test.sh injects principle-test-behavior-not-implementation
+ok - tee -a tests/... injects principle-test-behavior-not-implementation
+ok - cp into tests/... injects principle-test-behavior-not-implementation
+ok - git diff redirected to /tmp then grep of a test path does not inject
+ok - echo redirected to /tmp then cat of a test path does not inject
+ok - echo of a quoted > tests/foo.test.sh does not inject
+ok - a quoted > in a here-string is silent; a redirect after <<< still injects
+ok - bash <<'EOF' with a body test-file write injects
+ok - cat > /tmp/setup.sh <<'EOF' with a body > tests/foo.test.sh injects
+ok - backup suffixes on test paths do not inject principle-test-behavior-not-implementation
+ok - one Claude Write of a test file injects on PreToolUse only
+ok - a Shell redirect into contest/ does not inject principle-test-behavior-not-implementation
+ok - writing docs/testing.md does not inject principle-test-behavior-not-implementation
+ok - docs/test_plan.md does not inject principle-test-behavior-not-implementation
+ok - a speed claim injects principle-explain-the-number
+ok - the export is 2x as fast? injects principle-explain-the-number
+ok - a Cursor afterAgentResponse speed claim is delivered once on the next postToolUse
+ok - Cursor beforeSubmitPrompt prints continue:true and delivers the claim on postToolUse
+ok - 2x as fast injects principle-explain-the-number
+ok - much faster injects principle-explain-the-number
+ok - got a lot faster injects principle-explain-the-number
+ok - it's faster injects principle-explain-the-number
+ok - please speed up the CI does not inject principle-explain-the-number
+ok - which is faster, A or B? does not inject principle-explain-the-number
+ok - this is sometimes as fast as the old path does not inject principle-explain-the-number
+ok - look at the CI speedup does not inject principle-explain-the-number
+ok - a Cursor beforeSubmitPrompt miss emits continue:true without a principle
+ok - fast-forward does not inject principle-explain-the-number
+ok - faster path does not inject principle-explain-the-number
+ok - fast-forward does not suppress a later 2x as fast claim
+ok - the same TAP red twice after a claimed fix injects principle-attack-the-premise
+ok - two afterShellExecution reruns with equal integer ms duration reach streak 2
+ok - afterShellExecution then postToolUseFailure of one physical command stays at streak 1
+ok - postToolUseFailure then afterShellExecution of one physical command stays at streak 1
+ok - a Claude PostToolUseFailure with TAP in .error, twice after a claim, injects
+ok - Cursor postToolUse is a successful tool use and does not count TAP as a red
+ok - fail()-style not ok - stderr injects principle-attack-the-premise on the second red
+ok - a TAP line not ok - a done: does not key the id as a
+ok - a pytest node id tests/test_export.py::test_it matches a file claim
+ok - Cursor counts one red per run, not one per failing test in the same file
+ok - Jest FAIL src/foo.test.ts injects principle-attack-the-premise on the second red
+ok - a TAP line not ok - tests/* does not glob-expand
+ok - a repeated red payload with the same token does not inject
+ok - the same red twice with no claimed fix does not inject
+ok - a different check id does not inject principle-attack-the-premise
+ok - a stale mkdir lock is broken so recurring-red still fires
+ok - a pending marker is not stored without conversation_id
+ok - pending markers are keyed per conversation_id
+ok - reds TSV is keyed by conversation_id plus test id
+ok - reds without conversation_id are not recorded
+ok - a lock aged about 2s is broken once it goes stale
+ok - missing jq still prints {"continue":true} on beforeSubmitPrompt
+ok - --claude on a Cursor beforeSubmitPrompt still prints continue:true
+ok - --claude is silent on a Cursor-delivered postToolUse payload
+ok - --claude is silent on a Cursor-delivered preToolUse payload
+ok - empty stdin fails open with no output
+ok - malformed JSON fails open
+ok - missing jq fails open without skipping the suite
+ok - afterShellExecution then postToolUse of STATUS_APPEND injects once
+ok - postToolUse then afterShellExecution of STATUS_APPEND injects once
+ok - parallel postToolUse takes a pending principle once
+ok - prefixed tests/export.test.sh is not a claimed fix
+ok - a nested cursor_version key stays on the Claude emit path
+ok - Claude red counting ignores a not ok comment in the command
+ok - tests got faster to write does not inject principle-explain-the-number
+ok - conversation_id .. is not a pending filename component
+ok - two pending principles in one conversation are delivered in order
+ok - postToolUse then afterAgentResponse delivers a speed claim once
+ok - missing generation_id on Cursor postToolUse then afterAgentResponse then postToolUse injects twice
+ok - a second recurring-red test id in the same generation still injects principle-attack-the-premise
+ok - Cursor and Claude hook files register the helper on documented events
+ok - the four principle skills are vendored in both skill dirs
+
+EXIT_STATUS: 0

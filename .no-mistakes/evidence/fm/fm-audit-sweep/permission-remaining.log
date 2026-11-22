@@ -1,0 +1,11 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-permission-prompt.test.sh test_repeated_or_capped_prompts_hold test_trust_dialog_relaunches_without_a_key test_hardstop_prompts_are_never_answered test_hardstop_never_reaches_council test_externally_resolved_hardstop_reopens test_unknown_harness_dry_run_and_off
+1..6
+ok - decline guard: a repeated prompt, a prompt past the cap, and a prompt that stays after Escape are held, each reported once
+ok - trust dialog: no key, a controlled relaunch only on Orca once per window, and a refusal is reported
+ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
+ok - hard stop after Escape: the keyed blocked line is the owner's and never reaches a council
+ok - hard stop: a key another writer resolved does not hide the next hard stop
+ok - guards: no recorded harness holds, dry-run only records, and off keeps the report-only path
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

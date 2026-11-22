@@ -1,0 +1,11 @@
+Private fixture: /private/tmp/hx.8HzDK6
+Named sessions: fm-lab-audit-launch-26726-7746 fm-lab-audit-cancel-26875-26285
+{"client":{"version":"0.8.2","channel":"stable","protocol":20,"binary":"~/.local/bin/herdr","session":"fm-lab-audit-launch-26726-7746"},"server":{"status":"running","running":true,"version":"0.8.2","protocol":20,"capabilities":{"live_handoff":true,"detached_server_daemon":false},"compatible":true,"socket":"/private/tmp/hx.8HzDK6/c/herdr/sessions/fm-lab-audit-launch-26726-7746/herdr.sock","session":"fm-lab-audit-launch-26726-7746","restart_needed":false},"update":{"restart_needed":false}}
+{"id":"cli:workspace:list","result":{"type":"workspace_list","workspaces":[]}}
+OBSERVED: real named session provisioned despite unrelated inherited pane identity, then removed with fleet tripwire intact.
+{run-worktree}/bin/fm-herdr-lab.sh: line 446: 45252 Terminated: 15          env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID HERDR_SESSION="$name" herdr server --session "$name" > /dev/null 2>&1
+fm-herdr-lab: lab session 'fm-lab-audit-cancel-26875-26285' did not report running within 60 seconds
+Delayed real-server provision exit: 1
+{"sessions":[{"default":true,"name":"default","running":true,"session_dir":"/private/tmp/hx.8HzDK6/c/herdr","socket_path":"/private/tmp/hx.8HzDK6/c/herdr/herdr.sock"}]}
+OBSERVED: timed-out provision killed and reaped the delayed launch; release after teardown cannot launch a server; default tripwire unchanged.
+FINAL_EXIT_STATUS: 0

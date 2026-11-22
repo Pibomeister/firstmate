@@ -1,0 +1,13 @@
+{
+  "head": "cc00b68ec903ca64c5cb8a395c97e29deabf827b",
+  "changed_regression_checks": "passed",
+  "live_probes": "passed",
+  "incomplete_full_files": [
+    "fm-hung-ladder",
+    "fm-watchdog",
+    "fm-handoff-launch"
+  ],
+  "permission_cases": "passed across initial and remaining-case batches",
+  "herdr_owned_fixture": "full rerun passed after one timing failure",
+  "remaining_duplicate_jobs": "stopped; see cleanup.log"
+}

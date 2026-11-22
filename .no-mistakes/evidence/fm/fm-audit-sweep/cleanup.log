@@ -1,0 +1,4 @@
+Stopping unfinished duplicate job: 34076 71276 34076 bash tests/fm-handoff-launch.test.sh
+Stopping unfinished duplicate job: 41494 71276 41494 bash tests/fm-control-relaunch.test.sh
+Stopped producer before queued extra jobs could launch.
+No active processes remain in the stopped test process groups.

@@ -1,0 +1,75 @@
+$ bash bin/fm-memory-guard.sh check --json
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999999,"proc_rss_mb":999999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":2747,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
+exit=0
+$ bash bin/fm-memory-guard.sh check --json
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999999,"proc_rss_mb":999999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":2749,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
+memory-guard: cannot write {run-worktree}/.phase-live-04hkudpp/state/memory-guard-seen.tsv
+memory-guard: cannot write {run-worktree}/.phase-live-04hkudpp/state/memory-guard-alarms.tsv
+exit=1
+OBSERVED: state save failed, sample row persisted, and command exited 1.
+INPUT command='for f in state/*.status; do\n echo "$f"\ndone'
+$ bash bin/fm-pstack-verify-hook.sh --claude
+<silent stdout>
+exit=0
+INPUT command='echo "done" >> state/notes.txt'
+$ bash bin/fm-pstack-verify-hook.sh --claude
+<silent stdout>
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --claude
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "Load and follow principle-prove-it-works at .cursor/skills/principle-prove-it-works/SKILL.md (mirrored at .agents/skills/principle-prove-it-works/SKILL.md). A completion report is not proof; verify against the real artifact with a check you can rerun."
+  }
+}
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --claude
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "Load and follow principle-prove-it-works at .cursor/skills/principle-prove-it-works/SKILL.md (mirrored at .agents/skills/principle-prove-it-works/SKILL.md). A completion report is not proof; verify against the real artifact with a check you can rerun."
+  }
+}
+exit=0
+OBSERVED: loop/quoted bare done is silent; both real status report shapes emit context.
+$ bash bin/fm-pstack-verify-hook.sh --cursor
+<silent stdout>
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --cursor
+<silent stdout>
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --cursor
+<silent stdout>
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --cursor
+<silent stdout>
+exit=0
+$ bash bin/fm-pstack-verify-hook.sh --cursor
+{
+  "additional_context": "Load and follow principle-attack-the-premise at .cursor/skills/principle-attack-the-premise/SKILL.md (mirrored at .agents/skills/principle-attack-the-premise/SKILL.md). The same red returned after a claimed fix; write the shared assumption in one sentence and take one observation that would change the outcome if it were false, before the next fix."
+}
+exit=0
+OBSERVED: two failing nodes in one Cursor event count once; second independent event triggers premise context.
+$ bash bin/fm-stall-ledger.sh observe
+<silent stdout>
+exit=0
+$ bash bin/fm-stall-ledger.sh observe
+<silent stdout>
+exit=0
+PERSISTED stall-ledger.tsv:
+1795292067	hb	primary	-	1795291347	-	-	-	-	-
+1795292067	stall-open	primary	-	1795291347	1795291948	-	-	-	primary:-:1795291347
+1795292069	hb	primary	-	1795292069	-	-	-	-	-
+1795292069	stall-close	primary	-	1795291347	1795291948	firstmate	1795292069	722	primary:-:1795291347
+OBSERVED: fresh heartbeat closes installation stall as firstmate; delivery-only nudge receives no credit.
+$ bash bin/fm-hung-ladder.sh prune
+<silent stdout>
+exit=0
+$ bash bin/fm-hung-ladder.sh prune
+<silent stdout>
+exit=0
+$ bash bin/fm-hung-ladder.sh verify
+ledger: empty
+exit=0
+OBSERVED: fresh lock preserved, stale lock reclaimed and released; ledger verifies.
+ALL LOCAL CLI SCENARIOS PASSED

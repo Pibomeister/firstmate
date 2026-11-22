@@ -1,0 +1,6 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-watchdog.test.sh test_heartbeat_failed_send_never_counts_as_delivery
+1..1
+ok - a heartbeat nudge whose send failed never counts as delivery
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

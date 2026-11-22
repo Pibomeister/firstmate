@@ -1,0 +1,48 @@
+{run-worktree}/.phase-handoff.Nfcrnl
+lock acquired: harness pid 50314
+successor: harness=codex model=default account=ambient reason=handoff verdict=ok scope=all_models remaining=98 runway=projected_exhaustion
+
+PERSISTED FAILURE RECORD:
+at=1795292690 pid=50314 nonce=none attempt=0 reason=interrupted
+OBSERVED: real Claude primary ran the launcher; signal during prior-record removal left a new interruption record, before any successor attempt.
+ ▐▛███▛█   Claude Code v2.1.330
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M7ZSQ6KCXZKNF16YKS1TEKEJ
+
+▎ Auto mode is now Claude Code's default permission mode.
+▎ Auto mode lets Claude handle permission prompts automatically. Claude checks each tool call for risky actions and
+▎ prompt injection before executing, runs the ones it assesses as lower-risk, and blocks the rest.
+▎ https://code.claude.com/docs/en/permission-modes
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "create a util logging.py that…"
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle)
+                  tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+FINAL_EXIT_STATUS: 0

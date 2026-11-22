@@ -1,0 +1,11 @@
+ok - stuck inbox escalation follows away delivery policy and survives buffering failure
+ok - stuck inbox escalation follows quiet delivery policy and survives buffering failure
+ok - write inbox escalation follows away delivery policy and survives buffering failure
+ok - write inbox escalation follows quiet delivery policy and survives buffering failure
+ok - reset inbox escalation follows away delivery policy and survives buffering failure
+ok - reset inbox escalation follows quiet delivery policy and survives buffering failure
+1..1
+ok - a paused worker recorded on another tmux server is not reported gone from this one
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

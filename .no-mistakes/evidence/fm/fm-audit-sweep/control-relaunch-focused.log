@@ -1,0 +1,6 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-control-relaunch.test.sh test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+1..1
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+FM_TEST_COMPLETE
+
+EXIT_STATUS: 0

@@ -1,0 +1,17 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-handoff-launch.test.sh
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1795295748 event=handoff_started nonce=957db1e0c74c44aebca4c7bebfe8089f attempt=1 pid=50382 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795295748 event=handoff_failed nonce=957db1e0c74c44aebca4c7bebfe8089f attempt=1 pid=50382 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795295755 event=handoff_started nonce=74713fbf7f0f42b2af027cc3428aeb2f attempt=1 pid=62422 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795295756 event=handoff_failed nonce=74713fbf7f0f42b2af027cc3428aeb2f attempt=1 pid=62422 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+ok - a handoff that omits an open captain order is refused before any claim, record, or launch
+ok - a failed planned fresh start releases its Stop gate and falls back to auto-compaction
+ok - a launch interrupted before any attempt still records its failure for the surviving session
+ok - a launch interrupted while removing the earlier failure record still records its failure
+ok - supervisor endpoint metadata retains precedence and generation
+Terminated: 15
