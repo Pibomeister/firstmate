@@ -1,0 +1,408 @@
+
+======== Unhandled input older than 15 minutes with a working task pages once per hour and does not restart ========
+== Unhandled input older than 15 minutes with a working task pages once per hour and does not restart ==
+ok: watchdog-once-exit@0=0
+ok: stall-input pending=1
+ok: stall-input delivered=1
+ok: page names the count and age
+ok: page says nothing was restarted
+ok: page omitted the wake text
+ok: status gap
+ok: live lock holder still running
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+ok: watchdog-once-exit@600=0
+ok: no second page inside the hour=1
+ok: gap remains between pages
+ok: watchdog-once-exit@3700=0
+ok: page again after stall-page-secs=2
+ok: no PR page=0
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+Firstmate watchdog: home1 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home1/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home1/state/watchdog/actions.tsv.
+Firstmate watchdog: home1 has 1 unhandled inputs, the oldest 78 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home1/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home1/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+1795365501	stall-input	page	pending	stalled: 1 inputs unhandled for 78m while 1 tasks are in flight
+1795365501	stall-input	page	done	owner paged
+--- status lines ---
+11:- 16:38 home1 page stall-input done
+14:- home1: stalled: 1 inputs unhandled for 78m while 1 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home1/state/operational-inbox/1795361821-aa550bbff3b21af8.msg' and handle its contents as Firstmate operational input.
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home1/state/operational-inbox/1795361894-5739ac44c51d838d.msg' and handle its contents as Firstmate operational input.
+
+======== Input younger than 15 minutes with work in flight does not page ========
+== Input younger than 15 minutes with work in flight does not page ==
+ok: watchdog-once-exit@0=0
+ok: input under 15 minutes=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== Old input with no in-flight task does not page ========
+== Old input with no in-flight task does not page ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home3/state/operational-inbox/1795361981-7b8827e7dc8a7695.msg' and handle its contents as Firstmate operational input.
+
+======== A configured stall-secs of 300 pages input that has waited 400 seconds ========
+== A configured stall-secs of 300 pages input that has waited 400 seconds ==
+ok: watchdog-once-exit@0=0
+ok: stall-secs=300 pages a 400s input=1
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+Firstmate watchdog: home4 has 1 unhandled inputs, the oldest 6 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home4/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home4/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 6m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+10:- 15:36 home4 page stall-input done
+13:- home4: stalled: 1 inputs unhandled for 6m while 1 tasks are in flight
+--- typed into captain pane ---
+(nothing typed)
+
+======== A home whose only task is done does not page stall-input ========
+== A home whose only task is done does not page stall-input ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+ok: no stall gap for a done task
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home5/state/operational-inbox/1795362076-83d07fb45b952858.msg' and handle its contents as Firstmate operational input.
+
+======== A failed task is not in flight and an old inbox note does not page or leak its text ========
+== A failed task is not in flight and an old inbox note does not page or leak its text ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+ok: secret note body stayed out of the page and status
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home6/state/operational-inbox/1795362115-d91e89eb08336255.msg' and handle its contents as Firstmate operational input.
+
+======== Done and failed tasks beside one working task page once and count only the working task ========
+== Done and failed tasks beside one working task page once and count only the working task ==
+ok: watchdog-once-exit@0=0
+ok: working task beside finished ones pages=1
+ok: only the working task counts
+ok: page omitted the note
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+Firstmate watchdog: home7 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home7/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home7/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+10:- 15:36 home7 page stall-input done
+13:- home7: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home7/state/operational-inbox/1795362152-1981f5c157c85b60.msg' and handle its contents as Firstmate operational input.
+
+======== Wake rows about a task in a declared wait stay quiet ========
+== Wake rows about a task in a declared wait stay quiet ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home8/state/operational-inbox/1795362200-19116c2dabf99494.msg' and handle its contents as Firstmate operational input.
+
+======== A home whose only work is a declared wait does not page ========
+== A home whose only work is a declared wait does not page ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home9/state/operational-inbox/1795362242-9412585b822f1c9b.msg' and handle its contents as Firstmate operational input.
+
+======== A wake about working-task input still pages beside a declared wait ========
+== A wake about working-task input still pages beside a declared wait ==
+ok: watchdog-once-exit@0=0
+ok: working-task row still pages=1
+ok: only the working row counts
+--- page ---
+Firstmate watchdog: home10 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home10/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home10/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+10:- 15:36 home10 page stall-input done
+13:- home10: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home10/state/operational-inbox/1795362285-03646c70d41a9bf1.msg' and handle its contents as Firstmate operational input.
+
+======== A resolved wait is no longer quiet ========
+== A resolved wait is no longer quiet ==
+ok: watchdog-once-exit@0=0
+ok: resolved wait is in flight again=1
+--- page ---
+Firstmate watchdog: home11 has 1 unhandled inputs, the oldest 33 minutes old, while 2 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home11/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home11/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 33m while 2 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+10:- 15:36 home11 page stall-input done
+13:- home11: stalled: 1 inputs unhandled for 33m while 2 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home11/state/operational-inbox/1795362329-03bbd23c79be054b.msg' and handle its contents as Firstmate operational input.
+
+======== A t3code declared wait stays quiet and a leading-zero wake timestamp is ignored ========
+== A t3code declared wait stays quiet and a leading-zero wake timestamp is ignored ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A yolo=on GitHub PR unlanded 16 minutes pages once until its merge marker matches ========
+== A yolo=on GitHub PR unlanded 16 minutes pages once until its merge marker matches ==
+ok: watchdog-once-exit@0=0
+ok: github PR delivered=1
+ok: page names the PR and the age
+ok: PR gap
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+ok: watchdog-once-exit@600=0
+ok: PR page rate-limited=1
+ok: watchdog-once-exit@3700=0
+ok: landed PR does not page again=1
+ok: landed PR left the gaps
+--- page ---
+Firstmate watchdog: 1 ready PRs on home13 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home13/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A merge marker for another PR number does not suppress stall-pr ========
+== A merge marker for another PR number does not suppress stall-pr ==
+ok: watchdog-once-exit@0=0
+ok: other PR number does not count as landed=1
+--- page ---
+Firstmate watchdog: 1 ready PRs on home14 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home14/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+10:- 15:36 home14 page stall-pr done
+13:- home14: stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+--- typed into captain pane ---
+(nothing typed)
+
+======== A Forgejo /pulls/ URL pages, and only a marker for that host counts as landed ========
+== A Forgejo /pulls/ URL pages, and only a marker for that host counts as landed ==
+ok: watchdog-once-exit@0=0
+ok: forgejo other host still pages=1
+ok: page names the Forgejo URL
+ok: watchdog-once-exit@3700=0
+ok: matching Forgejo marker stops the next page=1
+--- page ---
+Firstmate watchdog: 1 ready PRs on home15 have waited up to 16 minutes without landing under standing authority: https://git.example.com/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home15/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A merge marker with the wrong version does not suppress stall-pr ========
+== A merge marker with the wrong version does not suppress stall-pr ==
+ok: watchdog-once-exit@0=0
+ok: wrong marker version does not count as landed=1
+--- page ---
+Firstmate watchdog: 1 ready PRs on home16 have waited up to 16 minutes without landing under standing authority: https://git.example.com/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home16/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+10:- 15:36 home16 page stall-pr done
+13:- home16: stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+--- typed into captain pane ---
+(nothing typed)
+
+======== A scout task that names a PR URL does not trigger stall-pr ========
+== A scout task that names a PR URL does not trigger stall-pr ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A PR waiting on the owner's merge word stays quiet ========
+== A PR waiting on the owner's merge word stays quiet ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A ready PR younger than 15 minutes does not page ========
+== A ready PR younger than 15 minutes does not page ==
+ok: watchdog-once-exit@0=0
+ok: PR under stall-secs=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A PR held in a declared wait stays quiet ========
+== A PR held in a declared wait stays quiet ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)
+
+======== A dead lock holder still gets the stall page and the watchdog does not take the lock ========
+== A dead lock holder still gets the stall page and the watchdog does not take the lock ==
+ok: watchdog-once-exit@0=0
+ok: dead holder still pages=1
+ok: dead holder's lock was not taken
+ok: restart-rows=0
+--- page ---
+Firstmate watchdog: home21 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home21/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home21/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+10:- 15:36 home21 page stall-input done
+14:- home21: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+(nothing typed)
+
+======== A live lock holder and a fresh heartbeat, with the real pane read, do not hide the stall page ========
+== A live lock holder and a fresh heartbeat, with the real pane read, do not hide the stall page ==
+ok: watchdog-once-exit@0=0
+ok: real pane classification still pages=1
+ok: live holder survived
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+Firstmate watchdog: home22 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home22/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home22/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	done	owner paged
+--- status lines ---
+11:- 15:36 home22 page stall-input done
+14:- home22: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+(nothing typed)
+
+======== Dry-run records the stall page it would send and does not deliver it ========
+== Dry-run records the stall page it would send and does not deliver it ==
+ok: watchdog-once-exit@0=0
+ok: dry-run recorded=1
+ok: dry-run sent nothing
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+1795361801	stall-input	page	dry-run	would page the owner; stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- status lines ---
+11:- 15:36 home23 page stall-input dry-run
+14:- home23: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+(nothing typed)
+
+======== Alerts turned off refuse the stall page and the gap stays visible ========
+== Alerts turned off refuse the stall page and the gap stays visible ==
+ok: watchdog-once-exit@0=0
+ok: alerts off refused=1
+ok: unpaged stall stays a gap
+ok: no page file
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	refused	alerts are off or no alert channel is configured
+--- status lines ---
+10:- 15:36 home24 page stall-input refused
+13:- home24: stall-input not paged: alerts are off or no alert channel is configured
+14:- home24: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home24/state/operational-inbox/1795362676-5b9a8d42bdca9a72.msg' and handle its contents as Firstmate operational input.

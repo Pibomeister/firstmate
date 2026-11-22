@@ -1,0 +1,456 @@
+===== S1 unhandled input pages once, rate-limits, restarts nothing =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home1 pane %0 lock 55576
+watchdog once start=1795358598 pinned=wall
+watchdog once exit=0 elapsed=16s
+OK: S1 first page delivered = 1
+OK: S1 no PR page = 0
+OK: S1 page names unhandled input
+OK: S1 page names work in flight
+OK: S1 page omits the input text
+watchdog once start=1795358615 pinned=wall
+watchdog once exit=0 elapsed=12s
+OK: S1 second pass stays inside the page window = 1
+watchdog once start=1795358627 pinned=1795359627
+watchdog once exit=0 elapsed=26s
+OK: S1 a stall still standing after the window pages again = 2
+---- s1-unhandled-input ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=4
+stall-input pending=2 done=2 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home1 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home1/state/watchdog/actions.tsv.
+Firstmate watchdog: home1 has 1 unhandled inputs, the oldest 33 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home1/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358609	wd1795358609c06799	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1	home1	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795358611	wd1795358609c06799	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1	home1	stall-input	page	done	owner paged
+1795359627	wd179535962798aa54	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1	home1	stall-input	page	pending	stalled: 1 inputs unhandled for 33m while 1 tasks are in flight
+1795359627	wd179535962798aa54	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home1	home1	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:43 home1 page stall-input done
+13:- 15:00 home1 page stall-input done
+17:- home1: stalled: 1 inputs unhandled for 33m while 1 tasks are in flight
+===== S1b input younger than 15 minutes stays quiet =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home2 pane %1 lock 77551
+watchdog once start=1795358654 pinned=wall
+watchdog once exit=0 elapsed=12s
+OK: S1b under stall-secs = 0
+OK: S1b no page file text
+---- s1b-input-too-young ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S1c old input with nothing in flight stays quiet =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home3 pane %2 lock 22844
+watchdog once start=1795358668 pinned=wall
+watchdog once exit=0 elapsed=8s
+OK: S1c no work in flight = 0
+---- s1c-no-work-in-flight ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S1d an old captain inbox note with work in flight pages =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home4 pane %3 lock 41548
+watchdog once start=1795358678 pinned=wall
+watchdog once exit=0 elapsed=14s
+OK: S1d inbox note pages = 1
+OK: S1d page omits the note body
+---- s1d-inbox-note ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home4 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home4/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home4/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358689	wd1795358689897588	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home4	home4	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795358690	wd1795358689897588	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home4	home4	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:44 home4 page stall-input done
+14:- home4: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S2 declared waits stay quiet =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home5 pane %4 lock 62059
+watchdog once start=1795358694 pinned=wall
+watchdog once exit=0 elapsed=14s
+OK: S2 wakes about a declared wait = 0
+---- s2a-declared-wait-rows ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S2b a home whose only task is a declared wait =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home6 pane %5 lock 1933
+watchdog once start=1795358718 pinned=wall
+watchdog once exit=0 elapsed=19s
+OK: S2b only a declared wait = 0
+---- s2b-only-declared-wait ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S2c a working-task row still pages beside a declared wait =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home7 pane %6 lock 90488
+watchdog once start=1795358740 pinned=wall
+watchdog once exit=0 elapsed=19s
+OK: S2c working row pages = 1
+OK: S2c only the working row counts
+---- s2c-working-beside-wait ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home7 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home7/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home7/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358756	wd17953587568ba1ce	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home7	home7	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795358757	wd17953587568ba1ce	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home7	home7	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:45 home7 page stall-input done
+14:- home7: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S2d a resolved wait is no longer quiet =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home8 pane %7 lock 31798
+watchdog once start=1795358762 pinned=wall
+watchdog once exit=0 elapsed=18s
+OK: S2d resolved wait pages = 1
+---- s2d-resolved-wait ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home8 has 1 unhandled inputs, the oldest 33 minutes old, while 2 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home8/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home8/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358776	wd1795358776ca2d5b	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home8	home8	stall-input	page	pending	stalled: 1 inputs unhandled for 33m while 2 tasks are in flight
+1795358777	wd1795358776ca2d5b	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home8	home8	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:46 home8 page stall-input done
+14:- home8: stalled: 1 inputs unhandled for 33m while 2 tasks are in flight
+===== S2e t3code wait and a leading-zero timestamp stay quiet =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home9 pane %8 lock 58372
+watchdog once start=1795358783 pinned=wall
+watchdog once exit=0 elapsed=18s
+OK: S2e t3code wait and leading zero = 0
+---- s2e-t3code-and-leading-zero ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S3 finished tasks are not in flight =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home10 pane %9 lock 21781
+watchdog once start=1795358803 pinned=wall
+watchdog once exit=0 elapsed=13s
+OK: S3 done-only is not in flight = 0
+OK: S3 no stall gap
+---- s3a-done-only ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S3b a failed task is not in flight =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home11 pane %10 lock 68014
+watchdog once start=1795358819 pinned=wall
+watchdog once exit=0 elapsed=17s
+OK: S3b failed-only is not in flight = 0
+---- s3b-failed-only ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S3c a working task beside a finished one still pages once =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home12 pane %11 lock 18603
+watchdog once start=1795358839 pinned=wall
+watchdog once exit=0 elapsed=23s
+OK: S3c mixed home pages once = 1
+OK: S3c only the working task counts
+---- s3c-working-beside-done ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home12 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home12/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home12/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358854	wd1795358854cb141d	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home12	home12	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795358857	wd1795358854cb141d	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home12	home12	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:47 home12 page stall-input done
+14:- home12: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S4 a ready PR under standing authority pages until it lands =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home13 pane %12 lock 53588
+watchdog once start=1795358867 pinned=wall
+watchdog once exit=0 elapsed=20s
+OK: S4 ready PR pages = 1
+OK: S4 page names the PR
+OK: S4 page names ready PRs
+OK: S4 gap records the PR
+watchdog once start=1795358887 pinned=wall
+watchdog once exit=0 elapsed=17s
+OK: S4 second pass stays inside the page window = 1
+watchdog once start=1795358904 pinned=1795359904
+watchdog once exit=0 elapsed=10s
+OK: S4 a matching merge record stops another page = 1
+OK: S4 landed PR leaves the gaps
+---- s4-ready-pr ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=1 done=1 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: 1 ready PRs on home13 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home13/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358885	wd17953588859b4ddf	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home13	home13	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795358886	wd17953588859b4ddf	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home13	home13	stall-pr	page	done	owner paged
+-- status stall lines --
+10:- 14:48 home13 page stall-pr done
+===== S4b a marker for a different PR does not count as landed =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home14 pane %13 lock 80684
+watchdog once start=1795358917 pinned=wall
+watchdog once exit=0 elapsed=14s
+OK: S4b other PR number still pages = 1
+---- s4b-other-number ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=1 done=1 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: 1 ready PRs on home14 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home14/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358929	wd1795358928cfef09	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home14	home14	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795358930	wd1795358928cfef09	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home14	home14	stall-pr	page	done	owner paged
+-- status stall lines --
+10:- 14:48 home14 page stall-pr done
+13:- home14: stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+===== S4c Forgejo /pulls/ URL and a marker for another host =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home15 pane %14 lock 2887
+watchdog once start=1795358933 pinned=wall
+watchdog once exit=0 elapsed=11s
+OK: S4c Forgejo PR pages despite another host = 1
+OK: S4c page names the Forgejo URL
+watchdog once start=1795358944 pinned=1795359944
+watchdog once exit=0 elapsed=24s
+OK: S4c matching Forgejo marker stops another page = 1
+---- s4c-forgejo ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=1 done=1 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: 1 ready PRs on home15 have waited up to 16 minutes without landing under standing authority: https://git.example.com/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home15/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358941	wd17953589418b0a65	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home15	home15	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+1795358943	wd17953589418b0a65	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home15	home15	stall-pr	page	done	owner paged
+-- status stall lines --
+10:- 14:49 home15 page stall-pr done
+===== S4d a wrong marker version does not count as landed =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home16 pane %15 lock 98031
+watchdog once start=1795358971 pinned=wall
+watchdog once exit=0 elapsed=10s
+OK: S4d wrong version still pages = 1
+---- s4d-wrong-version ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=1 done=1 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: 1 ready PRs on home16 have waited up to 16 minutes without landing under standing authority: https://git.example.com/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home16/state/watchdog/actions.tsv.
+-- stall ledger --
+1795358978	wd1795358978ba8ca6	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home16	home16	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+1795358979	wd1795358978ba8ca6	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home16	home16	stall-pr	page	done	owner paged
+-- status stall lines --
+10:- 14:49 home16 page stall-pr done
+13:- home16: stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+===== S4e quiet PR cases =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home17 pane %16 lock 45718
+watchdog once start=1795358983 pinned=wall
+watchdog once exit=0 elapsed=12s
+OK: S4e scout naming a PR does not page = 0
+---- s4e-scout ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home18 pane %17 lock 70221
+watchdog once start=1795358997 pinned=wall
+watchdog once exit=0 elapsed=8s
+OK: S4e yolo off stays quiet = 0
+---- s4e-yolo-off ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home19 pane %18 lock 86858
+watchdog once start=1795359007 pinned=wall
+watchdog once exit=0 elapsed=10s
+OK: S4e PR younger than stall-secs = 0
+---- s4e-young-pr ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home20 pane %19 lock 7446
+watchdog once start=1795359019 pinned=wall
+watchdog once exit=0 elapsed=8s
+OK: S4e a PR in a declared wait stays quiet = 0
+---- s4e-paused-pr ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=0
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+-- status stall lines --
+===== S5 a live holder and a fresh heartbeat do not hide the stall =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home21 pane %20 lock 26612
+S5 heartbeat age before pass=0s holder=alive
+watchdog once start=1795359030 pinned=wall
+watchdog once exit=0 elapsed=12s
+OK: S5 live holder and fresh heartbeat still page = 1
+---- s5-live-holder ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home21 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home21/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home21/state/watchdog/actions.tsv.
+-- stall ledger --
+1795359039	wd179535903991ab0f	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home21	home21	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795359040	wd179535903991ab0f	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home21	home21	stall-input	page	done	owner paged
+-- status stall lines --
+11:- 14:50 home21 page stall-input done
+14:- home21: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S5b a dead holder still pages and the lock is not taken =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home22 pane %21 lock 48177
+watchdog once start=1795359044 pinned=wall
+watchdog once exit=0 elapsed=16s
+OK: S5b dead holder still pages = 1
+---- s5b-dead-holder ----
+lock_holder_alive=no
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=1 dry-run=0 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+Firstmate watchdog: home22 has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home22/state/watchdog/captain and the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home22/state/watchdog/actions.tsv.
+-- stall ledger --
+1795359057	wd1795359057008923	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home22	home22	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795359058	wd1795359057008923	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home22	home22	stall-input	page	done	owner paged
+-- status stall lines --
+10:- 14:50 home22 page stall-input done
+14:- home22: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S5c dry-run records the page and does not send it =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home23 pane %22 lock 89789
+watchdog once start=1795359062 pinned=wall
+watchdog once exit=0 elapsed=10s
+OK: S5c dry-run records the page = 1
+OK: S5c dry-run does not deliver = 0
+---- s5c-dry-run ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=1
+stall-input pending=0 done=0 dry-run=1 refused=0
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+1795359069	wd1795359069542682	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home23	home23	stall-input	page	dry-run	would page the owner; stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+-- status stall lines --
+11:- 14:51 home23 page stall-input dry-run
+14:- home23: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== S5d alerts turned off refuse the page and record the gap =====
+home /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.I3VqYX/home24 pane %23 lock 10589
+watchdog once start=1795359074 pinned=wall
+watchdog once exit=0 elapsed=13s
+OK: S5d alerts off refuse the page = 1
+OK: S5d the unpaged stall is a gap
+---- s5d-alerts-off ----
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=1 done=0 dry-run=0 refused=1
+stall-pr pending=0 done=0 dry-run=0 refused=0
+-- page --
+-- stall ledger --
+1795359084	wd17953590840375a7	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home24	home24	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795359085	wd17953590840375a7	/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.I3VqYX/home24	home24	stall-input	page	refused	alerts are off or no alert channel is configured
+-- status stall lines --
+11:- 14:51 home24 page stall-input refused
+14:- home24: stall-input not paged: alerts are off or no alert channel is configured
+15:- home24: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+===== RESULT fails=0 =====
+DRIVER_EXIT:0

@@ -1,0 +1,7 @@
+1795359943	wd17953599434c4a5d	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	unread-input	nudge	pending	Watchdog (automated, not the captain or the owner): 1 inputs have waited 16 minutes. Drain the wake queue and act on it.
+1795359943	wd17953599430fe8cb	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795359943	wd17953599430fe8cb	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	stall-input	page	done	owner paged
+1795360543	wd17953599434c4a5d	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	unread-input	nudge	failed	no transcript progress
+1795363643	wd1795363643b6503e	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	frozen	nudge	pending	Watchdog (automated, not the captain or the owner): nothing changed for 61 minutes while 1 inputs wait. Drain the wake queue and act on it.
+1795363643	wd179536364337f677	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	stall-input	page	pending	stalled: 1 inputs unhandled for 78m while 1 tasks are in flight
+1795363643	wd179536364337f677	~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/fm-watchdog-tests.Mg1OE8/home1	home1	stall-input	page	done	owner paged

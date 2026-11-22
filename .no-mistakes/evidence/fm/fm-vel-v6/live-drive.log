@@ -1,0 +1,10 @@
+pane=%0 lock=32011 home=~/.no-mistakes/evidence/01M7R2ZFJFRPP8E2BZJBJRS14F/tmp/live-stall/home
+once-exit:0
+PASS failed-task-not-in-flight
+once-exit:0
+PASS inbox-note-pages-without-note-text
+once-exit:0
+PASS inbox-note-rate-limited
+once-exit:0
+PASS running-turn-does-not-hide-stall
+ALL-LIVE-DRIVE-PASS

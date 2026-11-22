@@ -1,0 +1,16 @@
+== Dry-run records the stall page it would send and does not deliver it ==
+ok: watchdog-once-exit@0=0
+ok: dry-run recorded=1
+ok: dry-run sent nothing
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+1795361801	stall-input	page	dry-run	would page the owner; stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- status lines ---
+11:- 15:36 home23 page stall-input dry-run
+14:- home23: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+(nothing typed)

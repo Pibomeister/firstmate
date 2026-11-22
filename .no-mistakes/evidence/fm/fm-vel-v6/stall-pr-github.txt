@@ -1,0 +1,22 @@
+== A yolo=on GitHub PR unlanded 16 minutes pages once until its merge marker matches ==
+ok: watchdog-once-exit@0=0
+ok: github PR delivered=1
+ok: page names the PR and the age
+ok: PR gap
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+ok: watchdog-once-exit@600=0
+ok: PR page rate-limited=1
+ok: watchdog-once-exit@3700=0
+ok: landed PR does not page again=1
+ok: landed PR left the gaps
+--- page ---
+Firstmate watchdog: 1 ready PRs on home13 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home13/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)

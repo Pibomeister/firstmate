@@ -1,0 +1,12 @@
+== A PR held in a declared wait stays quiet ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)

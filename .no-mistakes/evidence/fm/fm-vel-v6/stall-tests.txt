@@ -1,0 +1,8 @@
+1..5
+ok - stall page: input unhandled past stall-secs with work in flight pages the owner once per window and restarts nothing
+ok - stall page: rows about declared waits and homes with only declared waits stay quiet
+ok - stall page: a task whose latest status is done is not in flight
+ok - stall page: a ready PR under standing authority unlanded past stall-secs pages once per window until it lands
+ok - stall page: no live or dead holder and no fresh heartbeat hides it, and mode=dry-run records without paging
+FM_TEST_COMPLETE
+EXIT:0

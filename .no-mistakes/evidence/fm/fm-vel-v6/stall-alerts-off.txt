@@ -1,0 +1,19 @@
+== Alerts turned off refuse the stall page and the gap stays visible ==
+ok: watchdog-once-exit@0=0
+ok: alerts off refused=1
+ok: unpaged stall stays a gap
+ok: no page file
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+1795361801	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795361801	stall-input	page	refused	alerts are off or no alert channel is configured
+--- status lines ---
+10:- 15:36 home24 page stall-input refused
+13:- home24: stall-input not paged: alerts are off or no alert channel is configured
+14:- home24: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home24/state/operational-inbox/1795362676-5b9a8d42bdca9a72.msg' and handle its contents as Firstmate operational input.

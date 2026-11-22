@@ -1,0 +1,14 @@
+== Old input with no in-flight task does not page ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+ok: restart-rows=0
+ok: lock unchanged
+ok: lock session unchanged
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home3/state/operational-inbox/1795361981-7b8827e7dc8a7695.msg' and handle its contents as Firstmate operational input.

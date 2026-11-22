@@ -1,0 +1,13 @@
+== A merge marker for another PR number does not suppress stall-pr ==
+ok: watchdog-once-exit@0=0
+ok: other PR number does not count as landed=1
+--- page ---
+Firstmate watchdog: 1 ready PRs on home14 have waited up to 16 minutes without landing under standing authority: https://github.com/o/r/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home14/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+10:- 15:36 home14 page stall-pr done
+13:- home14: stalled: 1 ready PRs unlanded for up to 16m: https://github.com/o/r/pull/7
+--- typed into captain pane ---
+(nothing typed)

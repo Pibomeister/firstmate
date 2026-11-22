@@ -1,0 +1,12 @@
+== A failed task is not in flight and an old inbox note does not page or leak its text ==
+ok: watchdog-once-exit@0=0
+ok: stall-rows=0
+ok: no page delivered
+ok: secret note body stayed out of the page and status
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+: Firstmate operational input waiting: read '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-stall-live.SNdEmG/home6/state/operational-inbox/1795362115-d91e89eb08336255.msg' and handle its contents as Firstmate operational input.

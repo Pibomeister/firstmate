@@ -1,0 +1,26 @@
+PASS	Unhandled input older than 15 minutes with a working task pages once per hour and does not restart	stall-input-rate
+PASS	Input younger than 15 minutes with work in flight does not page	stall-input-young
+PASS	Old input with no in-flight task does not page	stall-input-idle
+PASS	A configured stall-secs of 300 pages input that has waited 400 seconds	stall-secs-custom
+PASS	A home whose only task is done does not page stall-input	stall-done-only
+PASS	A failed task is not in flight and an old inbox note does not page or leak its text	stall-failed-only
+PASS	Done and failed tasks beside one working task page once and count only the working task	stall-mixed-flight
+PASS	Wake rows about a task in a declared wait stay quiet	stall-wait-rows
+PASS	A home whose only work is a declared wait does not page	stall-wait-only
+PASS	A wake about working-task input still pages beside a declared wait	stall-wait-beside
+PASS	A resolved wait is no longer quiet	stall-wait-resolved
+PASS	A t3code declared wait stays quiet and a leading-zero wake timestamp is ignored	stall-t3-octal
+PASS	A yolo=on GitHub PR unlanded 16 minutes pages once until its merge marker matches	stall-pr-github
+PASS	A merge marker for another PR number does not suppress stall-pr	stall-pr-other-number
+PASS	A Forgejo /pulls/ URL pages, and only a marker for that host counts as landed	stall-pr-forgejo
+PASS	A merge marker with the wrong version does not suppress stall-pr	stall-pr-bad-version
+PASS	A scout task that names a PR URL does not trigger stall-pr	stall-pr-scout
+PASS	A PR waiting on the owner's merge word stays quiet	stall-pr-yolo-off
+PASS	A ready PR younger than 15 minutes does not page	stall-pr-young
+PASS	A PR held in a declared wait stays quiet	stall-pr-paused
+PASS	A dead lock holder still gets the stall page and the watchdog does not take the lock	stall-dead-holder
+PASS	A live lock holder and a fresh heartbeat, with the real pane read, do not hide the stall page	stall-live-pane
+PASS	Dry-run records the stall page it would send and does not deliver it	stall-dry-run
+PASS	Alerts turned off refuse the stall page and the gap stays visible	stall-alerts-off
+PASS	no merge deploy or desktop notification
+failures=0

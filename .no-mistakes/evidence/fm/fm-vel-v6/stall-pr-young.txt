@@ -1,0 +1,13 @@
+== A ready PR younger than 15 minutes does not page ==
+ok: watchdog-once-exit@0=0
+ok: PR under stall-secs=0
+ok: stall-rows=0
+ok: no page delivered
+--- page ---
+(no page delivered)
+--- stall ledger rows ---
+(no ledger)
+--- status lines ---
+(no stall lines)
+--- typed into captain pane ---
+(nothing typed)

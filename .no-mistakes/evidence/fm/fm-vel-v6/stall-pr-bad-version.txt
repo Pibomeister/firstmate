@@ -1,0 +1,13 @@
+== A merge marker with the wrong version does not suppress stall-pr ==
+ok: watchdog-once-exit@0=0
+ok: wrong marker version does not count as landed=1
+--- page ---
+Firstmate watchdog: 1 ready PRs on home16 have waited up to 16 minutes without landing under standing authority: https://git.example.com/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-stall-live.SNdEmG/home16/state/watchdog/actions.tsv.
+--- stall ledger rows ---
+1795361801	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+1795361801	stall-pr	page	done	owner paged
+--- status lines ---
+10:- 15:36 home16 page stall-pr done
+13:- home16: stalled: 1 ready PRs unlanded for up to 16m: https://git.example.com/o/r/pulls/9
+--- typed into captain pane ---
+(nothing typed)

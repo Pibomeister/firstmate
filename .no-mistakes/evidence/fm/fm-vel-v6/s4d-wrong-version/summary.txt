@@ -1,0 +1,6 @@
+lock_holder_alive=yes
+lock_unchanged=yes
+restart_rows=0
+stall_rows=2
+stall-input pending=0 done=0 dry-run=0 refused=0
+stall-pr pending=1 done=1 dry-run=0 refused=0

@@ -1,0 +1,18 @@
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T14:45:58Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T14:56:58Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- home7: UNREAD-INPUT, last turn 0m ago via transcript, owed 2, ctx unknown; captain pid 90488 live on tmux:%6, moved 2026-11-22T14:45:37Z
+
+## Actions since last read (2026-11-22T13:45:58Z)
+- 14:45 home7 nudge unread-input held
+- 14:45 home7 page stall-input done
+
+## Open gaps
+- home7: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+- home7: unread-input held; composer is unknown, so nothing is typed
+- home7: worker fm-a endpoint is gone; its pane is not read
+- home7: worker fm-w endpoint is gone; its pane is not read
+- no model configured; judged symptoms are reported only
