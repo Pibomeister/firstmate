@@ -129,9 +129,13 @@ These checks run on every pass as well:
 - A stall page tells the owner that a home has stopped moving, whatever its process or heartbeat shows.
   It reads only the home's own records, so a live session-lock holder, a fresh heartbeat, a running turn, or a busy pane cannot hide a stall, and a dead holder does not stop the page.
   It pages on two triggers, as ledger symptoms `stall-input` and `stall-pr`.
-  `stall-input` fires when a wake-queue row or a captain inbox note has waited at least `stall-secs` while at least one ship or scout task is in flight; a task whose latest status is `done` or `failed` is not in flight.
-  `stall-pr` fires when a ship task with `yolo=on` has a latest `done` status that names a pull-request URL, at least `stall-secs` old, and the task has no merge-notification record for that URL (`bin/fm-pr-lib.sh` owns the URL and the record).
-  Declared waits stay quiet: a task the declared-wait read still holds (`status_declared_wait_line` in `bin/fm-classify-lib.sh`) is not in flight, a wake row about that task or its recorded endpoint does not count, and a PR that waits on the owner's merge word (`yolo=off`) is the owner's wait.
+  `stall-input` fires when a wake-queue row or a captain inbox note has waited at least `stall-secs` while at least one ship or scout task is in flight.
+  A task whose latest status is `done` or `failed` is not in flight, read past `resolved` and `captain-held` lines because those close a decision and do not report the work.
+  A ship in `no-mistakes` mode stays in flight after its pre-validation `done`, the pipeline handoff, until its CI-ready `done` (`fm_dod_should_gate_ship_done` in `bin/fm-dod-lib.sh`).
+  `stall-pr` fires when a ship task with `yolo=on` has a finished latest `done` status that reports its PR after the leading `PR`, at least `stall-secs` old, and the task has no merge-notification record for that PR (`bin/fm-dod-lib.sh` owns the done-note read, and `bin/fm-pr-lib.sh` owns the URL and the record).
+  Declared waits stay quiet: a task the declared-wait read still holds (`status_declared_wait_line` in `bin/fm-classify-lib.sh`) is not in flight, and a wake row about that task or its recorded endpoint does not count.
+  The owner's waits stay quiet too: a PR that waits on the owner's merge word (`yolo=off`), a task the captain holds (`bin/fm-captain-hold.sh open`), and a Gerrit change, which firstmate never lands.
+  A hold that cannot be read does not hide the PR.
   Each trigger is a gap on every pass and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
   The page carries counts, ages, and PR URLs, never input or pane text; it types nothing, restarts nothing, lands nothing, and never touches the session lock.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.

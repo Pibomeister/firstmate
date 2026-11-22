@@ -5452,6 +5452,91 @@ test_stall_page_ready_pr_unlanded() {
   pass "stall page: a ready PR under standing authority unlanded past stall-secs pages once per window until it lands"
 }
 
+test_stall_page_reads_the_delivered_pr_and_the_latest_report() {
+  local url=https://github.com/o/r/pull/7 old=https://github.com/o/r/pull/6
+  # The delivered PR is the one the done line reports after "PR", as
+  # bin/fm-pr-check.sh registers it, not another URL the note mentions.
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green; replaces $old"
+  printf 'fm-pr-poll-merge-notified-v1\ngithub\ngithub.com\no/r\n7\n' > "$H/state/fm-p.pr-poll-merge-notified"
+  chmod 600 "$H/state/fm-p.pr-poll-merge-notified"
+  run_wd 0 once >/dev/null 2>&1 || fail "landed delivered PR pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a landed delivered PR does not page for another URL in the note: $(ledger | cut -f5-8)"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green; replaces $old"
+  run_wd 0 once >/dev/null 2>&1 || fail "unlanded delivered PR pass failed"
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "an unlanded delivered PR pages: $(ledger | cut -f5-8)"
+  assert_grep "standing authority: $url. The watchdog" "$H/paged.log" "the page names only the delivered PR"
+  assert_no_grep "$old" "$H/paged.log" "the page does not name the replaced PR"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: merged the fix, see $url"
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows stall-pr page pending)" "a done note with a URL but no PR report does not page: $(ledger | cut -f5-8)"
+
+  # A resolved line closes a decision; it does not say whether the work finished.
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
+  printf 'resolved [key=pp-1] [at=%s]: worker fm-p no longer shows the prompt\n' "$((BASE - 50))" >> "$H/state/fm-p.status"
+  run_wd 0 once >/dev/null 2>&1 || fail "resolved-after-done pass failed"
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a ready PR followed by a resolved line still pages: $(ledger | cut -f5-8)"
+  assert_grep "have waited up to 16 minutes" "$H/paged.log" "the PR age comes from the done line, not the resolved line"
+
+  stall_home
+  stall_task fm-d off "done [at=$((BASE - 2000))]: PR $url checks green"
+  printf 'resolved [key=pp-1] [at=%s]: worker fm-d no longer shows the prompt\n' "$((BASE - 50))" >> "$H/state/fm-d.status"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1 || fail "resolved-after-done input pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a finished task followed by a resolved line is not in flight: $(ledger | cut -f5-8)"
+
+  # In no-mistakes mode the pre-validation done: is the pipeline handoff, so the
+  # work is still in flight until the CI-ready done: PR line.
+  stall_home
+  stall_task fm-h off "done [at=$((BASE - 2000))]: implemented the stall fix"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1 || fail "handoff pass failed"
+  assert_equals 1 "$(ledger_rows stall-input page "done")" "a pipeline handoff is work in flight: $(ledger | cut -f5-8)"
+  assert_grep "while 1 tasks are in flight" "$H/paged.log" "the handoff task counts as in flight"
+
+  stall_home
+  stall_task fm-h off "done [at=$((BASE - 2000))]: implemented the stall fix"
+  printf 'mode=direct-PR\n' >> "$H/state/fm-h.meta"
+  owe_input 1000
+  run_wd 0 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "outside no-mistakes mode a done line is finished work: $(ledger | cut -f5-8)"
+
+  # Firstmate never lands a Gerrit change, so it is never a stall under standing authority.
+  stall_home
+  stall_task fm-g on "done [at=$((BASE - 1000))]: PR https://review.example.com/c/proj/+/123 published for review"
+  run_wd 0 once >/dev/null 2>&1 || fail "gerrit pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a Gerrit change does not page stall-pr: $(ledger | cut -f5-8)"
+  assert_no_restart_or_lock_theft "delivered PR and latest report"
+  pass "stall page: the delivered PR, a resolved line after done, the pipeline handoff, and Gerrit changes are read as the records mean"
+}
+
+test_stall_page_captain_hold_is_the_owners_wait() {
+  local url=https://github.com/o/r/pull/7
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
+  FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" "$ROOT/bin/fm-tasks-axi.sh" add fm-p "Held merge" --kind ship --repo example \
+    > "$H/hold-add.out" 2> "$H/hold-add.err" || fail "could not add the task: $(cat "$H/hold-add.err")"
+  FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" "$ROOT/bin/fm-captain-hold.sh" hold fm-p --reason "captain merge approval pending" \
+    > "$H/hold.out" 2> "$H/hold.err" || fail "could not hold the task: $(cat "$H/hold.err")"
+  run_wd 0 once >/dev/null 2>&1 || fail "held PR pass failed"
+  assert_equals 0 "$(ledger | awk -F'\t' '$5 ~ /^stall-/' | wc -l | tr -d ' ')" "a ready PR held for the owner stays quiet: $(ledger | cut -f5-8)"
+  [ ! -e "$H/paged.log" ] || fail "a held PR paged the owner: $(cat "$H/paged.log")"
+
+  stall_home
+  stall_task fm-p on "done [at=$((BASE - 1000))]: PR $url checks green"
+  FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" "$ROOT/bin/fm-tasks-axi.sh" add fm-p "Unheld merge" --kind ship --repo example \
+    > "$H/hold-add.out" 2> "$H/hold-add.err" || fail "could not add the unheld task: $(cat "$H/hold-add.err")"
+  run_wd 0 once >/dev/null 2>&1 || fail "unheld PR pass failed"
+  assert_equals 1 "$(ledger_rows stall-pr page "done")" "a ready PR with a backlog item but no hold still pages: $(ledger | cut -f5-8)"
+  assert_no_restart_or_lock_theft "captain hold"
+  pass "stall page: a ready PR held for the owner is the owner's wait and does not page"
+}
+
 test_stall_page_ignores_a_live_holder_and_fresh_heartbeat() {
   # make_home's lock holder is a live process and its heartbeat is fresh; a
   # dead holder must not hide the stall either.
@@ -8453,6 +8538,8 @@ fm_test_run \
   test_stall_page_declared_waits_stay_quiet \
   test_stall_page_finished_tasks_are_not_in_flight \
   test_stall_page_ready_pr_unlanded \
+  test_stall_page_reads_the_delivered_pr_and_the_latest_report \
+  test_stall_page_captain_hold_is_the_owners_wait \
   test_stall_page_ignores_a_live_holder_and_fresh_heartbeat \
   test_never_merges_deploys_or_messages_owner \
   test_default_heartbeat_freeze_stays_above_a_quiet_home \

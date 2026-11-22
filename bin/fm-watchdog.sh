@@ -134,6 +134,8 @@ export PATH
 . "$SCRIPT_DIR/fm-quiet-hours-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-dod-lib.sh
+. "$SCRIPT_DIR/fm-dod-lib.sh"
 
 die() { printf 'fm-watchdog: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -2348,27 +2350,57 @@ wd_handle_human_step() {  # <kind>
 # pane verdict enters it, so a live process or a fresh beacon cannot hide a
 # stall. It types nothing, restarts nothing, and never touches the session lock.
 
-wd_stall_parse_pr_url() {  # <home> <status-line>
-  local FM_HOME=$1 FM_CONFIG_OVERRIDE=$1/config line=$2 token matched=''
-  while IFS= read -r token; do
-    while :; do
-      case "$token" in
-        *[\).\],\;:\'\"\>]) token=${token%?} ;;
-        *) break ;;
-      esac
-    done
-    if fm_pr_url_parse "$token"; then
-      matched=$FM_PR_URL
-    fi
-  done < <(printf '%s\n' "$line" | grep -oE 'https://[^[:space:]]+' || true)
-  [ -n "$matched" ] || return 1
-  fm_pr_url_parse "$matched"
+# wd_stall_task_line <status-file>: the task's latest event, read past resolved
+# and captain-held lines. Those close a decision; they say nothing about whether
+# the work finished, so a done line stays the task's report after one.
+wd_stall_task_line() {
+  local f=$1 scan=''
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  if ! scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | wd_stall_drop_closers | _fm_status_event_scan); then
+    scan=$(wd_stall_drop_closers < "$f" | _fm_status_event_scan) || :
+  fi
+  printf '%s\n' "${scan##*$'\n'}"
+}
+
+wd_stall_drop_closers() {
+  local line closer_verb
+  while IFS= read -r line || [ -n "$line" ]; do
+    closer_verb=$(status_line_verb "$line" 2>/dev/null) || closer_verb=''
+    case "$closer_verb" in
+      "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}"|"${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}") continue ;;
+    esac
+    printf '%s\n' "$line"
+  done
+}
+
+# wd_stall_delivered_pr <home> <done-line>: parses the PR the done line reports
+# after its leading "PR" (bin/fm-dod-lib.sh owns that read) into the FM_PR_*
+# fields, so another URL the note mentions is never taken for the delivered PR.
+wd_stall_delivered_pr() {
+  local FM_HOME=$1 FM_CONFIG_OVERRIDE=$1/config url
+  url=$(fm_dod_pr_url_from_done_note "$(status_line_note "$2")") || return 1
+  while :; do
+    case "$url" in
+      *[\).\],\;:\'\"\>]) url=${url%?} ;;
+      *) break ;;
+    esac
+  done
+  fm_pr_url_parse "$url"
+}
+
+# wd_stall_captain_held <id>: 0 when the captain holds the task's backlog item
+# (bin/fm-captain-hold.sh owns the hold). An absent item, no hold, or a read that
+# cannot complete returns 1, so a stall is never hidden by an unreadable record.
+wd_stall_captain_held() {
+  FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed "$(cfgi call-timeout-secs 20)" "$SCRIPT_DIR/fm-captain-hold.sh" open "$1" --distinguish-absent \
+    </dev/null >/dev/null 2>&1
 }
 
 # wd_stall_scan: sets S_FLIGHT, S_WAITS, S_IN_N, S_IN_AGE, S_PR_N, S_PR_AGE, and
 # S_PRS for the subject wd_observe just read, from its own home's records.
 wd_stall_scan() {
-  local st=$O_HOME/state now id meta sf last verb url at age key tid f m in_old=''
+  local st=$O_HOME/state now id meta sf last verb kind mode url at age key tid f m in_old=''
   now=$(wd_now)
   S_FLIGHT=0 S_WAITS=$'\n' S_IN_N=0 S_IN_AGE=0 S_PR_N=0 S_PR_AGE=0 S_PRS=''
   while IFS=$'\t' read -r id meta; do
@@ -2383,16 +2415,26 @@ wd_stall_scan() {
       continue
     fi
     last='' verb=''
-    if [ -f "$sf" ] && last=$(last_status_line "$sf" 2>/dev/null); then
+    if [ -f "$sf" ] && last=$(wd_stall_task_line "$sf" 2>/dev/null); then
       verb=$(status_line_verb "$last" 2>/dev/null) || verb=''
+    fi
+    kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=''
+    # In no-mistakes mode a ship's pre-validation done: is the pipeline handoff,
+    # so the work stays in flight until the CI-ready done (bin/fm-dod-lib.sh).
+    if [ "$verb" = "done" ] && [ "$kind" = ship ]; then
+      mode=$(fm_meta_get "$meta" mode 2>/dev/null) || mode=''
+      case "$mode" in
+        no-mistakes|'') fm_dod_should_gate_ship_done ship "$mode" "$last" || verb=handoff ;;
+      esac
     fi
     case "$verb" in done|failed) ;; *) S_FLIGHT=$((S_FLIGHT + 1)) ;; esac
     # Only a ship PR firstmate may land on its own standing authority can stall here;
-    # one that waits on the owner's merge word is the owner's wait.
-    [ "$verb" = "done" ] \
-      && [ "$(fm_meta_get "$meta" kind 2>/dev/null)" = ship ] \
+    # one that waits on the owner's merge word, or a hold the captain placed, is the
+    # owner's wait, and firstmate never lands a Gerrit change.
+    [ "$verb" = "done" ] && [ "$kind" = ship ] \
       && [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] || continue
-    wd_stall_parse_pr_url "$O_HOME" "$last" || continue
+    wd_stall_delivered_pr "$O_HOME" "$last" || continue
+    [ "$FM_PR_PROVIDER" != gerrit ] || continue
     url=$FM_PR_URL
     at=$(status_line_at_epoch "$last" 2>/dev/null) || at=$(wd_mtime "$sf")
     fm_wd_epoch_ok "$at" && [ "$at" -le "$now" ] || continue
@@ -2400,6 +2442,7 @@ wd_stall_scan() {
     [ "$age" -ge "$(cfgi stall-secs 900)" ] || continue
     fm_pr_poll_merge_already_notified "$st" "$id" \
       "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" && continue
+    ! wd_stall_captain_held "$id" || continue
     S_PR_N=$((S_PR_N + 1))
     [ "$age" -le "$S_PR_AGE" ] || S_PR_AGE=$age
     S_PRS="$S_PRS${S_PRS:+ }$url"
