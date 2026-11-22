@@ -101,7 +101,7 @@ A home whose restart awaits pickup gets no action at all until that restart clos
 | Unread input | Input has waited `owed-input-secs` with no running turn | Nudge. |
 | Heartbeat frozen | A live lock owner has a heartbeat older than `heartbeat-frozen-secs`, after the existing ladder checks | Record the stale heartbeat and nudge an empty idle composer; wait `heartbeat-restart-secs` before using the configured restart path when no verified session activity follows, repeat the rate-limited nudge after a response if the heartbeat stays stale, and hold during a pending handoff, active work, draft, or known quota condition without changing account pins. |
 
-Heartbeat recovery requires a successful delivery receipt for the current lock owner and process instance, so dry runs, interrupted delivery, and previous sessions cannot authorize its restart.
+Heartbeat recovery requires a successful delivery receipt for the current lock owner and process instance, so dry runs, interrupted delivery, failed or empty submit verdicts, and previous sessions cannot authorize its restart.
 It uses the existing activity sources and holds the existing handoff launch lock through its final checks and restart.
 
 The frozen, agent-gone, and restart paths need an activity source, the newest of these stamps that is not later than the watchdog clock:
@@ -187,7 +187,7 @@ Under the worker's lock the pane is read again, and only that fresh verdict is a
 A credential or sign-in reason from either read is kept for the page, so a pane text that named a credential is never recorded even when the fresh read finds another hard stop.
 The prompt rows are the rows below the nearest full-width rule above the last row.
 A rule with an odd number of dashed command-box rows below it sits inside the command preview, such as a heredoc, so the search goes on to the rule above it.
-The chosen rule may have at most the box's two dashed rows below it, and no rule above it may enclose a dashed row.
+The chosen rule may have at most the box's two dashed rows below it, and any dashed row above it within the search window makes the boundary unproven.
 A tool-approval prompt whose boundary cannot be proven this way is held, so the whole command is always read.
 Before that hold, the last 60 rows are checked for a hard stop, because a rule inside the command can end the prompt rows below a visible destructive command.
 Those rows can include conversation above the box, so its blocked line can name a category from that conversation; it presses no key either way.

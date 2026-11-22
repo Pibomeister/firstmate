@@ -33,6 +33,8 @@
 # destructive call.
 # Provision records the running fleet session as a fleet-state tripwire and
 # teardown requires that record to be identical afterward.
+# A failed provision cancels and waits for the server process it launched,
+# so a delayed launch cannot start the lab session after teardown.
 # The fleet session is "default" unless FM_HERDR_LAB_FLEET_SESSION names the
 # custom session the live fleet runs in; that name must start with an ASCII
 # letter or digit, contain only ASCII letters, digits, underscores, or dashes,
@@ -60,6 +62,8 @@
 # /usr/bin/python3 is tried first; a missing or CLT-stub interpreter falls
 # back to PATH python3 and the common Homebrew paths. There is no ps -Eww
 # fallback. If neither reader yields an environment, they refuse to signal.
+# Fixture start retains the recorded pid and refuses a second launch while
+# that pid still has its recorded start time but ownership cannot be proven.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
