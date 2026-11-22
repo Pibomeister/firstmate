@@ -20,9 +20,10 @@
 #     unconfirmed (reported as lock=mismatch) or none;
 #   - the age of state/.last-watcher-beat, bounded by watcher-stale-secs in
 #     <home>/config/watchdog, read with the watchdog's own config reader
-#     (fm_wd_conf_int, bin/fm-watchdog-lib.sh); docs/watchdog.md owns the key
-#     and its default. The file is <home>'s own, so the bound matches the
-#     watchdog's only when <home> is the watchdog owner home;
+#     (fm_wd_conf_int, bin/fm-watchdog-lib.sh), with a fixed 900-second default
+#     for this polling-progress check. docs/watchdog.md owns the key's separate
+#     generated-heartbeat-age use. The file is <home>'s own, while the watchdog
+#     reads its owner home's configuration;
 #   - state/monitor-status (docs/watchdog.md "Layer check chain");
 #   - fm_watcher_supervision_verdict (bin/fm-wake-lib.sh): a healthy verdict
 #     while the beacon is older than FM_GUARD_GRACE (default 300) means a

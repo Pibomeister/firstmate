@@ -2,6 +2,7 @@
 # Behavioral coverage for bin/fm-heartbeat.sh: snapshot-backed assembly, atomic
 # --write publication, explicit unknowns, the failure field, bounded reads, stopped
 # runs, and detached single-flight watcher publication.
+# Optional arguments select test functions; no arguments run the full suite.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -958,7 +959,7 @@ test_a_term_ignoring_bounded_read_is_still_killed() {
 
 # AC-14: the watcher launches publications from an independent single-flight
 # ticker, so slow loop work (here a check that runs about six seconds each
-# cycle) never stretches the launch interval past the cycle period.
+# cycle) never stretches the launch interval past the idle interval.
 test_watcher_publishes_every_cycle_whatever_its_loop_work() {
   local home stub runs count settled fakebin
   home=$(make_home watch-ticker)
@@ -989,7 +990,7 @@ SH
   fm_test_track_watcher_state "$home/state"
   PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_HEARTBEAT_BIN="$stub" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=1 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
     "$WATCH" > "$TMP_ROOT/watch-ticker.out" 2> "$TMP_ROOT/watch-ticker.err" &
   WATCH_PID=$!
   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
@@ -1004,7 +1005,225 @@ SH
   settled=$(wc -l < "$runs" | tr -d ' ')
   sleep 3
   [ "$(wc -l < "$runs" | tr -d ' ')" = "$settled" ] || fail "publications kept launching after the watcher stopped"
-  pass "AC-14: the watcher launches a publication every cycle whatever its loop work, and stops with the watcher"
+  pass "AC-14: the watcher launches a publication every idle interval whatever its loop work, and stops with the watcher"
+}
+
+# A heartbeat stub that logs one epoch line per launch.
+launch_log_stub() {  # <name> -> stub path; launches go to $TMP_ROOT/<name>.runs
+  local runs="$TMP_ROOT/$1.runs" stub="$TMP_ROOT/$1-heartbeat.sh"
+  : > "$runs"
+  printf '#!/usr/bin/env bash\ndate +%%s >> %q\n' "$runs" > "$stub"
+  chmod +x "$stub"
+  printf '%s\n' "$stub"
+}
+
+launch_count() {  # <name>
+  wc -l < "$TMP_ROOT/$1.runs" | tr -d ' '
+}
+
+# Expensive idle collection: an unchanged home collects once per idle interval,
+# not once per poll, while the cheap watcher beat keeps the poll period.
+test_unchanged_home_collects_once_per_idle_interval() {
+  local home stub count beats=0 i gaps started elapsed max_count
+  home=$(make_home watch-idle)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-idle)
+  fm_test_track_watcher_state "$home/state"
+  started=$(date +%s)
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=4 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-idle.out" 2> "$TMP_ROOT/watch-idle.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  i=0
+  while [ "$i" -lt 10 ]; do
+    rm -f "$home/state/.last-watcher-beat"
+    wait_for_file "$home/state/.last-watcher-beat" 3 && beats=$((beats + 1))
+    i=$((i + 1))
+  done
+  count=$(launch_count watch-idle)
+  elapsed=$(( $(date +%s) - started ))
+  # Ten observed beats can take longer than ten seconds on a loaded host.
+  # Bound collection by the actual observation window, allowing the initial
+  # launch and one second-boundary sample, and check the launch gaps below.
+  max_count=$((elapsed / 4 + 2))
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the idle watcher exited: $(cat "$TMP_ROOT/watch-idle.out")"
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$beats" -ge 8 ] || fail "the watcher beat advanced only $beats time(s) across ten polls"
+  [ "$count" -ge 2 ] && [ "$count" -le "$max_count" ] \
+    || fail "an unchanged home collected $count time(s) in ${elapsed}s at a four-second idle interval (maximum $max_count)"
+  gaps=$(awk 'NR>1 && $1-p < 3 {print $1-p} {p=$1}' "$TMP_ROOT/watch-idle.runs")
+  [ -z "$gaps" ] || fail "an unchanged home collected again after only ${gaps}s"
+  pass "an unchanged home collects once per idle interval while the watcher beat keeps the poll period"
+}
+
+# Each idle due is drawn below the interval by at most the jitter, so the
+# interval stays the longest launch gap. The upper check allows two seconds of
+# launch slip on a loaded host. A seeded ticker supplies repeatable jitter draws.
+test_jittered_idle_gaps_stay_within_the_interval() {
+  local home stub gaps bad short
+  home=$(make_home watch-jitter)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-jitter)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TEST_SEAM=1 FM_WATCH_RANDOM_SEED=42 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=6 FM_HEARTBEAT_LEDGER_JITTER=4 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-jitter.out" 2> "$TMP_ROOT/watch-jitter.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 48
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-jitter)" -ge 4 ] || fail "only $(launch_count watch-jitter) collection(s) in 48s at a 6s idle interval"
+  gaps=$(awk 'NR>1 {printf "%s ", $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  bad=$(awk 'NR>1 && ($1-p < 1 || $1-p > 8) {print $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  [ -z "$bad" ] || fail "a jittered idle gap left [1, 8]: $gaps"
+  short=$(awk 'NR>1 && $1-p <= 4 {c++} {p=$1} END {print c+0}' "$TMP_ROOT/watch-jitter.runs")
+  [ "$short" -ge 1 ] || fail "every gap stayed at the full interval, so jitter did not shorten a launch: $gaps"
+  pass "jittered idle gaps stay between the interval less the jitter and the interval"
+}
+
+# A relevant change - a wake any producer appends, or a status line the watcher
+# reads - collects at once, without waiting out the idle interval.
+test_a_relevant_change_collects_without_waiting_for_idle() {
+  local home stub before i poll=${1:-1}
+  home=$(make_home "watch-change-$poll")
+  # A quiet home: no task row, so only the injected changes below wake it.
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-change)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-change.out" 2> "$TMP_ROOT/watch-change.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 3
+  before=$(launch_count watch-change)
+  [ "$before" -ge 1 ] || fail "the watcher never made its first collection"
+  (
+    STATE=$home/state FM_HOME=$home
+    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_append check hb-test-producer "an appended wake"
+  ) || fail "could not append a wake"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 50 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "an appended wake did not collect within 5s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.err")"
+  command -p sleep 2
+  before=$(launch_count watch-change)
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the holding watcher exited: $(cat "$TMP_ROOT/watch-change.out")"
+  printf 'needs-decision: pick one\n' >> "$home/state/hb-task.status"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 60 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "a status line did not collect within 6s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.out")"
+  # A holding watcher keeps its lock through TERM, so stop it outright.
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  pass "an appended wake or a status line collects at once, without waiting for the idle interval"
+}
+
+test_status_change_collects_before_grace_without_a_wake() {
+  local home stub before seq i=0 child comm
+  home=$(make_home watch-status-before-grace)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-status-before-grace)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=60 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the status-grace watcher never polled"
+  command -p sleep 2
+  before=$(launch_count watch-status-before-grace)
+  [ "$before" -gt 0 ] || fail "the status-grace watcher never collected its initial heartbeat"
+  seq=$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')
+  printf 'working: progress\n' >> "$home/state/hb-task.status"
+  while [ "$(launch_count watch-status-before-grace)" -le "$before" ] && [ "$i" -lt 100 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-status-before-grace)" -gt "$before" ] \
+    || fail "a status change did not refresh the heartbeat during signal grace"
+  assert_equals "$seq" "$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')" \
+    "a new queued wake hid the status-only heartbeat trigger"
+  # End this watcher's own grace sleep before stopping its holding process.
+  for child in $(ps -o pid= -P "$WATCH_PID" 2>/dev/null); do
+    comm=$(ps -o comm= -p "$child" 2>/dev/null)
+    case "$comm" in sleep|*/sleep) kill -TERM "$child" 2>/dev/null || true ;; esac
+  done
+  kill -KILL "$WATCH_PID" 2>/dev/null || true
+  wait "$WATCH_PID" 2>/dev/null || true
+  WATCH_PID=
+  pass "a status-only change refreshes the heartbeat before grace without creating a wake"
+}
+
+assert_fractional_watcher_wait() {  # <poll|checkpoint>
+  local mode=$1 home stub waits waitbin watcher i=0 checkpoint=0
+  home=$(make_home "fractional-wait-$mode")
+  stub=$(launch_log_stub "fractional-wait-$mode")
+  waits=$home/waits.log
+  waitbin=$home/wait-bin
+  mkdir -p "$waitbin" "$home/inbox"
+  : > "$waits"
+  # Observe the actual wait service requested by the main watcher process,
+  # independently of its detached heartbeat ticker and other child processes.
+  cat > "$waitbin/sleep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\t%s\n' "$PPID" "$*" >> "$FM_TEST_WAIT_LOG"
+exec /bin/sleep "$@"
+SH
+  chmod +x "$waitbin/sleep"
+  [ "$mode" != checkpoint ] || checkpoint=1
+  fm_test_track_watcher_state "$home/state"
+  PATH="$waitbin:$PATH" FM_TEST_WAIT_LOG="$waits" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_FOREGROUND_CHECKPOINT="$checkpoint" FM_WATCH_CHECKPOINT_INBOX="$home/inbox" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  watcher=$WATCH_PID
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the fractional $mode watcher never polled"
+  while ! awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits"; do
+    kill -0 "$watcher" 2>/dev/null || break
+    [ "$i" -lt 200 ] || break
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  kill -KILL "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  WATCH_PID=
+  awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits" \
+    || fail "the main $mode watcher never requested its configured fractional wait: $(cat "$home/watch.err")"
+  assert_no_grep 'integer expression expected' "$home/watch.err" "the fractional $mode watcher used an integer wait comparison"
+}
+
+test_fractional_open_work_poll_wait() {
+  assert_fractional_watcher_wait poll
+  pass "an attended open-work watcher retains fractional poll waits without comparison errors"
+}
+
+test_fractional_checkpoint_poll_wait() {
+  assert_fractional_watcher_wait checkpoint
+  pass "a foreground checkpoint waits its fractional budget instead of busy-spinning"
 }
 
 test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
@@ -1020,7 +1239,7 @@ test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
   assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "all-zero timeouts did not fall back to the defaults"
   rm -f "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=08
-  assert_ledger "$home" '.stale_after_secs == null' "a padded timeout with no grace published a bound"
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP - 2))" "a padded timeout did not use the default grace"
   pass "AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults"
 }
 
@@ -1042,25 +1261,27 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
   done
   rm -f "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-  assert_ledger "$home" '.stale_after_secs == null' "a home with no grace published a bound"
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "a home with no grace did not publish a cadence-safe bound"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=900
+  assert_ledger "$home" '.stale_after_secs == 1371' "a 900-second cadence without grace did not publish a cadence-safe bound"
   for bad in '# stale-grace-secs=30' 'stale-grace-secs=' 'stale-grace-secs=abc' 'stale-grace-secs=030' 'stale-grace-secs=-5'; do
     printf '%s\n' "$bad" > "$home/config/heartbeat"
     publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
-    assert_ledger "$home" '.stale_after_secs == null' "the unusable grace line '$bad' published a bound"
+    assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "the unusable grace line '$bad' did not use the default grace"
   done
   printf 'stale-grace-secs=30\nstale-grace-secs=abc\n' > "$home/config/heartbeat"
   publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
   assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "an unusable later line hid the usable grace"
-  pass "AC-14: the stale bound is the watcher cycle period plus the grace plus the run cap, and null while either is missing"
+  pass "AC-14: the stale bound covers the watcher cycle, configured or default grace, and run cap"
 }
 
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
-  local home script rc
-  home=$(make_home watch-cycle)
+  local home script rc poll=${1:-2} cycle_bound=${2:-32}
+  home=$(make_home "watch-cycle-$poll")
   script=$(canned_snapshot "$home")
   printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
-    FM_POLL=2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
     FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
     "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
   WATCH_PID=$!
@@ -1068,9 +1289,23 @@ test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
   WATCH_PID=
   [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
   wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
-  assert_ledger "$home" ".stale_after_secs == $((32 + DEFAULT_RUN_CAP))" \
-    "the watcher's heartbeat bound is not its cycle period plus the grace plus the run cap"
-  pass "AC-14: the watcher's heartbeat bound uses its cycle period, never the wake heartbeat cadence"
+  assert_ledger "$home" ".stale_after_secs == $((330 + DEFAULT_RUN_CAP))" \
+    "the watcher's heartbeat bound is not its default idle interval plus the grace plus the run cap"
+  home=$(make_home "watch-cycle-short-idle-$poll")
+  script=$(canned_snapshot "$home")
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_HEARTBEAT_LEDGER_IDLE_SECS=1 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
+  wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
+  assert_ledger "$home" ".stale_after_secs == $((cycle_bound + DEFAULT_RUN_CAP))" \
+    "the heartbeat bound did not cover the idle interval and rounded-up poll plus the grace and run cap"
+  pass "AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence"
 }
 
 # AC-14: context_left carries the footer and the derived token percentage side
@@ -1160,6 +1395,38 @@ test_derived_context_is_unknown_under_directory_overrides() {
   pass "AC-14: the derived reading is unknown, with its reason, under a state or config directory override"
 }
 
+test_weekly_allowance_reports_model_allowance_left() {
+  local home quota
+  home=$(make_home weekly)
+  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
+  publish "$home" "FAKE_QUOTA_JSON=$quota"
+  assert_ledger "$home" '
+    .failure == null
+    and .weekly_allowance.status == "ok"
+    and (.weekly_allowance.windows | length) == 2
+    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
+    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
+    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
+  ' "weekly model allowance was not published"
+  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
+  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
+  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
+    "a 3-second quota-axi read was cut off by the default timeout"
+  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
+    "a snapshot with no weekly window was treated as readable allowance"
+  publish "$home" FAKE_QUOTA_JSON='not-json'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
+    "unreadable quota output became a heartbeat failure or a guessed allowance"
+  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
+}
+
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_selection_owner_decides_the_run
@@ -1196,36 +1463,20 @@ test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 0.2 31
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 2.2 33
+test_unchanged_home_collects_once_per_idle_interval
+test_jittered_idle_gaps_stay_within_the_interval
+test_a_relevant_change_collects_without_waiting_for_idle
+test_a_relevant_change_collects_without_waiting_for_idle 0.2
+test_status_change_collects_before_grace_without_a_wake
+test_fractional_open_work_poll_wait
+test_fractional_checkpoint_poll_wait
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
 test_derived_context_is_unknown_under_directory_overrides
 
-test_weekly_allowance_reports_model_allowance_left() {
-  local home quota
-  home=$(make_home weekly)
-  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
-  publish "$home" "FAKE_QUOTA_JSON=$quota"
-  assert_ledger "$home" '
-    .failure == null
-    and .weekly_allowance.status == "ok"
-    and (.weekly_allowance.windows | length) == 2
-    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
-    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
-    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
-  ' "weekly model allowance was not published"
-  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
-  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
-  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
-    "a 3-second quota-axi read was cut off by the default timeout"
-  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
-  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
-    "a snapshot with no weekly window was treated as readable allowance"
-  publish "$home" FAKE_QUOTA_JSON='not-json'
-  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
-    "unreadable quota output became a heartbeat failure or a guessed allowance"
-  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
-}
 
 test_weekly_allowance_reports_model_allowance_left
 
-printf 'ok - %s tests passed\n' 39
+printf 'ok - heartbeat tests passed\n'

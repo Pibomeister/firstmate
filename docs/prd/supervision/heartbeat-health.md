@@ -19,7 +19,7 @@ It changes no merge, release, or deploy gate.
 
 | Capability | Evidence in this repo | State |
 | --- | --- | --- |
-| The watcher publishes a fleet heartbeat ledger each poll | `bin/fm-heartbeat.sh --write` writes `state/heartbeat.json` with schema `fm-heartbeat.v1` | Present |
+| The watcher publishes a fleet heartbeat ledger on a relevant change and otherwise once per idle interval | `bin/fm-heartbeat.sh --write` writes `state/heartbeat.json` with schema `fm-heartbeat.v1` | Present |
 | Each heartbeat read has its own time bound | `FM_HEARTBEAT_READ_TIMEOUT` defaults to 3 seconds and `FM_HEARTBEAT_NM_TIMEOUT` defaults to 2 seconds | Present |
 | The snapshot read is bounded at fleet scale | `FM_HEARTBEAT_SNAPSHOT_TIMEOUT` defaults to 120 seconds and `FM_HEARTBEAT_DEADLINE` defaults to 240 seconds | Present |
 | Unread fields report unknown instead of guessing | The `fm-heartbeat.sh` header states that unread fields carry `{unknown:true,reason}` | Present |
@@ -27,7 +27,7 @@ It changes no merge, release, or deploy gate.
 | The session lock records an anchor pid and a trusted session id | `bin/fm-lock.sh` and `bin/fm-session-lock-lib.sh` own the anchor and the `state/.lock-session` sidecar | Present |
 | The watchdog publishes a durable captain record | Firstmate PR #147 publishes `state/watchdog/captain` with `live`, `dead`, `unconfirmed`, and `none` verdicts | Merged |
 | The watchdog detects a dead lock owner | The agent-gone row in `docs/watchdog.md` restarts only after the transcript stays quiet for `frozen-secs` | Present |
-| A watcher heartbeat older than a bound is a gap | `watcher-stale-secs` defaults to 900 seconds in `docs/watchdog.md` | Present |
+| A watcher heartbeat older than a bound is a gap | `watcher-stale-secs` uses the per-home default in `docs/watchdog.md` | Present |
 | An outer process manager keeps one watcher arm alive | `bin/fm-monitor-watchdog.sh` runs under launchd or systemd and owns `run`, `status`, and `manager-status` | Present |
 | A home watchdog restores lost watchers | Firstmate PR #61 adds the home watchdog that restores lost watchers | Merged |
 | A second mate whose endpoint vanished on restart respawns on its recorded backend | `respawn_gone_mate` in `bin/fm-secondmate-restart.sh` takes the mate through the secondmate respawn path, and `bin/fm-spawn.sh --secondmate` keeps the backend its record names; Firstmate PR #158 added it | Merged |
@@ -56,9 +56,9 @@ Any requirement on that loop is a dependency to confirm with its owner, not a cl
 ## Requirements
 
 - HB-1: One health verdict per home reports `ok`, `stale`, `dead`, `unconfirmed`, or `unknown`.
-- HB-2: The verdict derives only from three named records: the heartbeat age from `generated_epoch` in `state/heartbeat.json`, the lock verdict in `state/watchdog/captain`, and the watcher age from `state/.last-watcher-beat`.
-- HB-3: The heartbeat publisher computes `stale_after_secs` from the active heartbeat interval plus a grace and publishes it in `state/heartbeat.json`.
-- HB-4: A heartbeat older than `stale_after_secs` reports `stale` and never `ok`.
+- HB-2: The verdict reads the inputs owned by the [`bin/fm-health-verdict.sh` header](../../../bin/fm-health-verdict.sh), including heartbeat age from the publication stamp rather than the collection start.
+- HB-3: The heartbeat publisher computes `stale_after_secs` under the cadence bound and default-grace contract in `bin/fm-heartbeat.sh` and publishes it in `state/heartbeat.json`.
+- HB-4: Heartbeat freshness follows the [`bin/fm-health-verdict.sh` rules](../../../bin/fm-health-verdict.sh), including the supervisor-turn and idle-home exemptions.
 - HB-5: The stale judgment uses the watcher supervision verdict, so a watcher that runs only between turns never reads stale during a long turn.
 - HB-6: A dead lock owner reports `dead` even when the last heartbeat still reads fresh.
 - HB-7: An unconfirmed lock owner reports `unconfirmed` and receives no typed signal and no restart.
@@ -108,7 +108,7 @@ Rollout per host requires the watchdog in `act` mode with its status reader enab
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Heartbeat publication and `stale_after_secs` | `bin/fm-heartbeat.sh --write`, started by the watcher poll | Publish `state/heartbeat.json` |
+| Heartbeat publication and `stale_after_secs` | `bin/fm-heartbeat.sh --write`, started by the watcher's independent ticker | Publish `state/heartbeat.json` |
 | Lock liveness verdict | The shared lock contract in `bin/fm-session-lock-lib.sh`, surfaced by `state/watchdog/captain` | Report `live`, `dead`, `unconfirmed`, or `none` |
 | Watcher polling liveness | `bin/fm-supervise-daemon.sh` and the process manager unit from `bin/fm-monitor-watchdog.sh` | Restart the watcher arm only |
 | Watcher freshness escalation | The monitor's `watchdog_alert` in `bin/fm-monitor-watchdog.sh`, through the escalation gate under class `watcher-recovery-failed` | Report one gap per home |

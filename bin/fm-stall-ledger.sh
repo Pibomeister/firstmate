@@ -31,7 +31,10 @@
 # Recovery within 20 minutes means recover minus detect is at most 1200 seconds.
 # None over 30 minutes means duration is at most 1800 seconds.
 # A heartbeat age, the sample epoch minus the published epoch, fails when it is
-# over 600 seconds unless a verified handoff of the same class and subject
+# over that heartbeat's stale bound: its stale_after_secs, at least 600 seconds,
+# as recorded in the hb row's detect field, or 600 seconds for a legacy or
+# externally written heartbeat with no bound,
+# unless a verified handoff of the same class and subject
 # covers that sample and the handoff itself is at most 600 seconds.
 # A gap over 600 seconds between primary heartbeat samples, including from
 # since to the first sample and from the last sample to until, fails. A
@@ -44,7 +47,7 @@
 # intervention when its recover epoch is inside the window.
 # Exactly 600 seconds of duration does not count. Exactly 1200 seconds of
 # recovery latency passes. Exactly 1800 seconds of duration passes. Exactly
-# 600 seconds of age passes. Exactly 600 seconds between samples passes.
+# 600 seconds of age with a 600 second bound passes. Exactly 600 seconds between samples passes.
 #
 # Exit 0 is observe success, rows, a PASS score, window, or help. Exit 1 is a
 # bad flag, an observe write failure, or a FAIL score. An unknown subcommand

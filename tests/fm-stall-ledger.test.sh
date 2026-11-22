@@ -303,6 +303,107 @@ test_observe_opens_and_closes_a_stale_heartbeat() {
   pass "a stale primary heartbeat opens one stall and a fresh one closes it as firstmate"
 }
 
+test_observe_uses_the_heartbeat_stale_bound() {
+  local home ledger start
+  home=$(new_home quiet-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 711))
+  printf '{\n  "schema": "fm-heartbeat.v1",\n  "published_epoch": %s,\n  "generated_epoch": %s,\n  "stale_after_secs": 771\n}\n' "$start" "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  assert_equals 0 "$(count_rows "$ledger" stall-open)" "a quiet home 711 seconds old under a 771 second bound is not a stall"
+  run_score "$home" "$T0" "$((T0 + 600))"
+  assert_equals PASS "$OUT" "the 711 second sample under a 771 second bound passes the score"
+  observe_ok "$home" "$((T0 + 61))"
+  awk -F '\t' -v start="$start" -v detect="$((start + 772))" '
+    $2 == "stall-open" && $5 == start && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "age 772 under a 771 second bound did not open a stall detected at published+772"
+
+  home=$(new_home long-cadence-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 601))
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":1371}\n' "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  observe_ok "$home" "$((T0 + 299))"
+  assert_equals 0 "$(count_rows "$ledger" stall-open)" "a 900-second cadence stays healthy at ages 601 and 900"
+  run_score "$home" "$T0" "$((T0 + 300))"
+  assert_equals PASS "$OUT" "long-cadence heartbeat samples pass scoring before their deadline"
+  observe_ok "$home" "$((start + 1372))"
+  awk -F '\t' -v detect="$((start + 1372))" '
+    $2 == "stall-open" && $6 == detect { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "the long-cadence heartbeat did not open a stall at its recorded deadline"
+  run_score "$home" "$((start + 1372))" "$((start + 1380))"
+  assert_contains "$OUT" heartbeat-age "scoring rejects a long-cadence heartbeat after its deadline"
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":1371}\n' "$((start + 1380))" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$((start + 1380))"
+  awk -F '\t' -v recover="$((start + 1380))" '
+    $2 == "stall-close" && $8 == recover { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a fresh long-cadence heartbeat did not close its stall"
+
+  home=$(new_home null-bound-hb)
+  ledger=$(ledger_of "$home")
+  start=$((T0 - 601))
+  printf '{"schema":"fm-heartbeat.v1","published_epoch":%s,"stale_after_secs":null,"snapshot":{"schema":9999}}\n' "$start" > "$home/state/heartbeat.json"
+  observe_ok "$home" "$T0"
+  assert_equals 1 "$(count_rows "$ledger" stall-open)" "a legacy heartbeat without a bound retains the 600-second floor"
+  pass "the stall ledger honors the heartbeat's own stale bound with a 600 second floor"
+}
+
+test_observe_keeps_one_heartbeat_publication() {
+  local fakebin real_awk real_cat cls key home source ledger start subject
+  fakebin=$TMP_ROOT/publication-bin
+  real_awk=$(command -v awk)
+  real_cat=$(command -v cat)
+  mkdir -p "$fakebin"
+  cat > "$fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+case "${0##*/}" in
+  awk) reader=$HB_REAL_AWK ;;
+  cat) reader=$HB_REAL_CAT ;;
+esac
+"$reader" "$@" || exit $?
+for arg in "$@"; do
+  if [ "$arg" = "$HB_FILE" ] && [ -f "$HB_FILE.next" ]; then
+    mv "$HB_FILE.next" "$HB_FILE" || exit 1
+  fi
+done
+SH
+  cp "$fakebin/cat" "$fakebin/awk"
+  chmod +x "$fakebin/cat" "$fakebin/awk"
+  start=$((T0 - 1000))
+  for cls in primary secondmate; do
+    for key in published_epoch generated_epoch; do
+      home=$(new_home "publication-$cls-$key")
+      source=$home
+      subject=-
+      ledger=$(ledger_of "$home")
+      if [ "$cls" = secondmate ]; then
+        source=$(new_home "publication-$cls-$key-mate")
+        subject=mate1
+        printf 'kind=secondmate\nhome=%s\n' "$source" > "$home/state/mate1.meta"
+        write_hb "$home/state/heartbeat.json" "$T0"
+      fi
+      printf '{"%s":%s,"stale_after_secs":1800}\n' "$key" "$start" > "$source/state/heartbeat.json"
+      printf '{\n"published_epoch":%s,\n"generated_epoch":%s,\n"stale_after_secs":771\n}\n' "$T0" "$T0" > "$source/state/heartbeat.json.next"
+      PATH="$fakebin:$PATH" HB_REAL_AWK="$real_awk" HB_REAL_CAT="$real_cat" \
+        HB_FILE="$source/state/heartbeat.json" observe_ok "$home" "$T0"
+      [ ! -e "$source/state/heartbeat.json.next" ] || fail "the concurrent publication did not occur"
+      awk -F '\t' -v cls="$cls" -v subject="$subject" -v start="$start" -v detect="$((T0 + 801))" '
+        $2 == "hb" && $3 == cls && $4 == subject && $5 == start && $6 == detect { ok = 1 }
+        END { exit !ok }
+      ' "$ledger" || fail "$cls $key mixed heartbeat publications"
+      assert_equals 0 "$(count_rows "$ledger" stall-open)" "replacing a fresh heartbeat must not open a stall"
+      run_score "$home" "$T0" "$((T0 + 600))"
+      assert_equals PASS "$OUT" "the coherent publication stays healthy in scoring"
+      observe_ok "$home" "$((T0 + 1))"
+      assert_equals 0 "$(count_rows "$ledger" stall-open)" "the next observation uses the fresh replacement"
+    done
+  done
+  pass "primary and secondmate observations keep timestamps and bounds from one publication"
+}
+
 test_observe_watchdog_closes_only_on_done() {
   local home ledger actions start
   home=$(new_home wd-step)
@@ -1048,6 +1149,8 @@ fm_test_run \
   test_rows_ignore_malformed_lines \
   test_observe_records_one_fresh_heartbeat \
   test_observe_opens_and_closes_a_stale_heartbeat \
+  test_observe_uses_the_heartbeat_stale_bound \
+  test_observe_keeps_one_heartbeat_publication \
   test_observe_watchdog_closes_only_on_done \
   test_unconfirmed_nudge_is_not_recovery \
   test_unconfirmed_nudge_after_install_is_not_recovery \
