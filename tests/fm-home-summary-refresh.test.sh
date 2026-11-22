@@ -153,6 +153,97 @@ test_failed_summary_refresh_waits_for_idle() {
   pass "persistent summary refresh failures retry once per idle gap while watcher beats continue"
 }
 
+test_locked_deadlines_record_backoff() {
+  local code home stalls operation attempts expected lib
+  code="$TMP_ROOT/locked-deadline-code"
+  stalls="$TMP_ROOT/locked-deadline-hooks.sh"
+  mkdir -p "$code/bin"
+  ln -s "$WRITER" "$code/bin/fm-home-summary-refresh.sh"
+  for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh; do
+    ln -s "$ROOT/bin/$lib" "$code/bin/$lib"
+  done
+  cat > "$code/bin/fm-fleet-snapshot.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'attempt\n' >> "$FM_TEST_ATTEMPTS"
+[ "$FM_TEST_STALL_AT" != log ] || exit 7
+cat "$FM_TEST_SUMMARY"
+SH
+  chmod +x "$code/bin/fm-fleet-snapshot.sh"
+  cat > "$stalls" <<'SH'
+fm_test_stall() {
+  [ "${HOME_SUMMARY_LOCK_HELD:-0}" -eq 1 ] || return 0
+  [ ! -e "$FM_TEST_STALLED" ] || return 0
+  case "$FM_TEST_STALL_AT:$1" in
+    mkdir:mkdir|rm:rm|chmod:chmod) ;;
+    ledger-temp:mktemp) case "$2" in */.home-summary.json.*) ;; *) return 0 ;; esac ;;
+    error-temp:mktemp) case "$2" in */.home-summary-error.*) ;; *) return 0 ;; esac ;;
+    replace:mv) case "${@: -1}" in */home-summary.json) ;; *) return 0 ;; esac ;;
+    stage:printf) [ "${3:-}" = producer ] || return 0 ;;
+    log:printf) [ -n "${HOME_SUMMARY_ERROR:-}" ] || return 0 ;;
+    *) return 0 ;;
+  esac
+  : > "$FM_TEST_STALLED"
+  sleep 60
+}
+mkdir() { fm_test_stall mkdir "$@"; command mkdir "$@"; }
+mktemp() { fm_test_stall mktemp "$@"; command mktemp "$@"; }
+rm() { fm_test_stall rm "$@"; command rm "$@"; }
+chmod() { fm_test_stall chmod "$@"; command chmod "$@"; }
+mv() { fm_test_stall mv "$@"; command mv "$@"; }
+printf() { fm_test_stall printf "$@"; builtin printf "$@"; }
+SH
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  for operation in stage mkdir ledger-temp error-temp rm chmod replace log; do
+    home="$TMP_ROOT/locked-deadline-$operation"
+    attempts="$home/attempts"
+    mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+    : > "$attempts"
+    jq -n --arg home "$home" '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }' > "$home/summary.json"
+    BASH_ENV="$stalls" FM_TEST_STALL_AT="$operation" FM_TEST_STALLED="$home/stalled" \
+      FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_HOME_SUMMARY_TIMEOUT=8 \
+      FM_TEST_SEAM=1 FM_NOW=1000 \
+      fm_run_timed 30 "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+      || fail "$operation deadline escaped its bound or changed the caller result"
+    [ -e "$home/stalled" ] || fail "$operation fixture never reached its lock-held stall"
+    [ "$(cat "$home/state/.home-summary-refresh.backoff" 2>/dev/null)" = "$(printf 'failures=1\nnext=1030')" ] \
+      || fail "$operation deadline did not record exactly one failure before unlock"
+    expected=$(wc -l < "$attempts" | tr -d ' ')
+    FM_TEST_STALL_AT=none FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=1001 \
+      "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+      || fail "$operation retry changed the caller result"
+    [ "$(wc -l < "$attempts" | tr -d ' ')" -eq "$expected" ] \
+      || fail "$operation deadline allowed an immediate producer retry"
+    FM_TEST_STALL_AT=none FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+      "$code/bin/fm-home-summary-refresh.sh" \
+      || fail "$operation recovery did not publish"
+    cmp -s "$home/summary.json" "$home/state/home-summary.json" \
+      || fail "$operation recovery did not publish the complete document"
+    [ ! -e "$home/state/.home-summary-refresh.backoff" ] || fail "$operation recovery did not reset backoff"
+  done
+  FM_TEST_STALL_AT=log FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=2000 \
+    "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+    || fail "an ordinary producer failure changed the best-effort result"
+  [ "$(cat "$home/state/.home-summary-refresh.backoff")" = "$(printf 'failures=1\nnext=2030')" ] \
+    || fail "an ordinary best-effort failure was not recorded exactly once"
+  if FM_TEST_STALL_AT=log FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=2030 \
+      "$code/bin/fm-home-summary-refresh.sh"; then
+    fail "a direct producer failure returned success"
+  fi
+  [ "$(cat "$home/state/.home-summary-refresh.backoff")" = "$(printf 'failures=2\nnext=2090')" ] \
+    || fail "a direct failure did not advance backoff exactly once"
+  pass "every lock-held deadline records bounded backoff before admission resumes"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -227,8 +318,6 @@ jq -e --arg home "$HOME_DIR" --arg now "$NOW_ONE" --argjson epoch "$EPOCH_ONE" '
   and .generated_epoch == $epoch
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "initial ledger did not expose the extended producer schema"
-
-if [ "${1:-}" != --interruption ]; then
 
 PATH="$FAKEBIN:$PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
@@ -417,6 +506,7 @@ pass "live watcher cadence bounds publication staleness without signals"
 
 test_summary_jitter_shortens_idle_launches
 test_failed_summary_refresh_waits_for_idle
+test_locked_deadlines_record_backoff
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false
@@ -453,8 +543,6 @@ jq -e '
 ' "$TMP_ROOT/parent-snapshot.json" >/dev/null \
   || fail "fleet snapshot did not consume the published local ledger: $(jq -c '.secondmate_current.records[0]' "$TMP_ROOT/parent-snapshot.json")"
 pass "fleet snapshot consumes the published local ledger by default"
-
-fi
 
 # Stop the writer after real validation accepts the old document.
 # The prior ledger must stay complete, and replacement publication must survive
@@ -574,7 +662,6 @@ jq -e --arg now "$NOW_THREE" --argjson epoch "$EPOCH_THREE" '
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "an interrupted attempt overwrote the newer replacement ledger"
 pass "writer interruption cannot overwrite a later atomic replacement"
-[ "${1:-}" != --interruption ] || exit 0
 
 # Best-effort mode is the contract used by every lifecycle trigger. A failed
 # producer records the failure and returns success without touching the ledger.

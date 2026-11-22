@@ -105,7 +105,7 @@ case "$ERROR_LOG_MAX_BYTES" in
   ''|*[!0-9]*|0) ERROR_LOG_MAX_BYTES=65536 ;;
 esac
 case "$HOME_SUMMARY_TIMEOUT" in
-  ''|*[!0-9]*|0) HOME_SUMMARY_TIMEOUT=60 ;;
+  ''|*[!0-9]*|0*) HOME_SUMMARY_TIMEOUT=60 ;;
 esac
 case "$HOME_SUMMARY_IF_IDLE" in
   0|1) ;;
@@ -171,6 +171,17 @@ fi
 
 # shellcheck disable=SC2329 # Invoked by the signal and EXIT traps below.
 home_summary_cleanup() {
+  local exit_rc=$? backoff_failure_now cleanup_pid
+  trap '' HUP INT TERM
+  if [ "$HOME_SUMMARY_LOCK_HELD" -eq 1 ] \
+      && { [ "$exit_rc" -ne 0 ] || [ -n "$HOME_SUMMARY_ERROR" ]; } \
+      && fm_current_pid cleanup_pid && [ "$cleanup_pid" = "$$" ]; then
+    backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
+    case "$backoff_failure_now" in
+      ''|*[!0-9]*) ;;
+      *) backoff_record_failure "$backoff_failure_now" ;;
+    esac
+  fi
   home_summary_stage_orphan_cleanup
   [ -z "$HOME_SUMMARY_TMP" ] || rm -f -- "$HOME_SUMMARY_TMP" 2>/dev/null || true
   [ -z "$HOME_SUMMARY_ERR_TMP" ] || rm -f -- "$HOME_SUMMARY_ERR_TMP" 2>/dev/null || true
@@ -395,12 +406,12 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
       && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_PATH"; then
     stage_file=$FM_HOME_SUMMARY_STAGE_PATH
   fi
-  if fm_run_timed "$((HOME_SUMMARY_TIMEOUT + 3))" env \
+  if (fm_exec_timed "$HOME_SUMMARY_TIMEOUT" 3 env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
     FM_HOME_SUMMARY_PARENT_PID="$$" \
-    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker; then
+    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker); then
     home_summary_stage_remove "$stage_file"
     stage_file=
     exit 0
@@ -473,11 +484,6 @@ if home_summary_refresh_once; then
 else
   refresh_rc=$?
 fi
-backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
-case "$backoff_failure_now" in
-  ''|*[!0-9]*) ;;
-  *) backoff_record_failure "$backoff_failure_now" ;;
-esac
 [ "$refresh_rc" -ne 124 ] || exit 124
 
 # A failure the worker handled itself names its stage too, like a deadline the
