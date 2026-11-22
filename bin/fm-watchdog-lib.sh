@@ -367,7 +367,7 @@ _fm_wd_data_writes() {  # <view>
   resource='(prod(uction)?|shared[[:space:]]*(db|database))([[:space:]]+(db|database|data|records|rows|tables|schema))?'
   mutation='(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing)|migrat(e|es|ed|ing|ion|ions))'
   relation='[[:space:]]+((data|records|rows|changes)[[:space:]]+)?((to|into|against|on|in|of|for)[[:space:]]+)?((the|a|an)[[:space:]]+)?'
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "(^|[^a-z])($mutation$relation$resource|$resource[[:space:]]+$mutation)([^a-z]|$)"
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "(^|[^a-z])($mutation$relation$resource|${resource}[[:space:]]+$mutation)([^a-z]|$)"
 }
 
 # A failure in the PR's own changed behavior, including code this PR modified, added, or introduced.
