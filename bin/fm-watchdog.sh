@@ -18,6 +18,8 @@
 #                                 leaves the prior outcome in place. Dry-run never returns an answer. Prints
 #                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
 #                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
+#                                 A qualified flake approval appends
+#                                 qualification=(approved, not clean).
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
 #   pickup <token>                Run by a restarted session to prove it took over.
@@ -1186,7 +1188,7 @@ wd_council_prior_evidence() {  # <record-path>
 }
 
 # cmd_council: one convening on demand, for a supervisor that needs a ruling now.
-# Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
+# Prints the council result line documented in this script's header.
 # It types nothing and nudges nobody; the caller applies the result.
 cmd_council() {
   local task='' key='' home='' file='' summary res id rec revisit=0 prior_path='' archive='' detail prior_evidence

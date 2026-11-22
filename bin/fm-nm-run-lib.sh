@@ -653,10 +653,11 @@ fm_nm_runs_status_for_worktree() {  # <worktree> <branch> <runs-list-output> [ex
 }
 
 # Values of column $3 in table $2 (for example `steps` or `active_steps`) of
-# captured `axi status` TOON $1, one line per row, quotes stripped. The column
+# captured `axi status` TOON $1, one value per row, with quoted JSON escapes
+# decoded (including embedded newlines). The column
 # is found by name in the table's own header, so column order is never
-# assumed; a quoted cell may hold commas. Prints nothing when the table or
-# column is absent.
+# assumed; commas and escaped quotes inside a quoted cell do not split it.
+# Prints nothing when the table or column is absent.
 fm_nm_table_column() {  # <toon-output> <table> <column>
   fm_nm_toon_read "$1" "$2" "$3"
 }

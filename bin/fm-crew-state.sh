@@ -35,8 +35,10 @@
 # from (rule 2b).
 # A parked reading carries the parked question's structured parts before that
 # run field, each only when the run itself proves it: `pr: #<n>`, `findings:
-# <ids>`, `parked: <duration>`, and for an awaiting_approval step `options:
-# approve or hold`.
+# <ids>`, `question: <gate summary and finding descriptions>`, and `parked:
+# <duration>`. The question retains the recorded options rather than inventing
+# them. Control characters are removed, rows are joined, and field separators
+# in the question become semicolons so prose cannot mint structured fields.
 #
 # Logic, numbered for reference; rules 2b and 3 each record that rule 3's
 # status-log reconciliation is applied before rule 2b:
