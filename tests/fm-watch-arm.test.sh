@@ -134,9 +134,23 @@ wait_for_file_text() {  # <file> <fixed-text> [poll-limit]
 }
 
 ack_wakes() {  # <state>
-  local state=$1 sequence generation err
+  local state=$1 sequence generation err out attempt=0
   err="$state/.test-ack.err"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" >/dev/null 2> "$err" || return 1
+  out="$state/.test-ack.out"
+  # A contended presentation is a successful CLI deferral, not an empty
+  # drain. Follow its retry instruction before looking for an acknowledgement.
+  while [ "$attempt" -lt 3 ]; do
+    FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" 2> "$err" || { cat "$err" >&2; return 1; }
+    if ! grep -q '^WAKE DRAIN SKIPPED:' "$out"; then
+      break
+    fi
+    attempt=$((attempt + 1))
+  done
+  if [ "$attempt" -eq 3 ]; then
+    cat "$out" >&2
+    return 1
+  fi
+  rm -f "$out"
   sequence=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-][A-Za-z0-9._-]*$/\1/p' "$err")
   generation=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-][A-Za-z0-9._-]*\)$/\1/p' "$err")
   rm -f "$err"
@@ -414,7 +428,7 @@ exec /bin/mv "$@"
 SH
   chmod +x "$fakebin/mv"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=0 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_GUARD_GRACE=30 FM_WATCHER_STALL_BOUND=120 \
     FM_WATCHER_CLEANUP_LOCK_BOUND=30 FM_ARM_ATTACH_POLL=0.1 FM_WATCH_DELIVERY_MAX_BYTES=4096 \
     "$WATCH_ARM" > "$dir/owned.out" 2> "$dir/owned.err" &
   owned=$!
@@ -424,8 +438,8 @@ SH
   watcher=$(cat "$state/.watch.lock/pid")
   target=$owned
   if [ "$mode" = attached ]; then
-    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=5 \
-      FM_WATCHER_STALL_BOUND=12 FM_ARM_ATTACH_POLL=0.1 \
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=30 \
+      FM_WATCHER_STALL_BOUND=120 FM_ARM_ATTACH_POLL=0.1 \
       "$WATCH_ARM" > "$dir/attached.out" 2> "$dir/attached.err" &
     attached=$!
     target=$attached
@@ -435,7 +449,7 @@ SH
   fi
   printf 'done: wake before stalled cleanup\n' > "$state/stalled.status"
   i=0
-  while [ ! -e "$dir/delivery-ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  while [ ! -e "$dir/delivery-ready" ] && [ "$i" -lt "$REARM_REPORT_POLLS" ]; do sleep 0.05; i=$((i + 1)); done
   [ -e "$dir/delivery-ready" ] || fail "watcher did not reach its delivery publication"
   FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
@@ -450,12 +464,19 @@ SH
   while [ ! -e "$dir/cleanup-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
   [ -e "$dir/cleanup-held" ] || fail "stalled delivery fixture never held the recovery lock"
   : > "$dir/delivery-go"
+  # Delivery holds this lock through rotation. Only age the beacon once that
+  # publication finishes and the recovery lock above holds cleanup in place.
+  # Cold-start and poll latency must not trigger the stall we intend to inject.
+  i=0
+  while [ -e "$state/.watch-deliveries.lock" ] && [ "$i" -lt "$REARM_REPORT_POLLS" ]; do sleep 0.05; i=$((i + 1)); done
+  [ ! -e "$state/.watch-deliveries.lock" ] || fail "watcher did not finish its delivery publication"
   i=0
   while ! grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" 2>/dev/null \
     && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
   grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" \
     || fail "watcher did not publish its delivered reason before stalling"
   cp "$state/.wake-queue" "$dir/queued-before-stall"
+  fm_touch_epoch "$(( $(date +%s) - 121 ))" "$state/.last-watcher-beat" "$state/.watch.lock/pid"
   wait_for_exit "$target" 400 || status=$?
   : > "$dir/cleanup-release"
   wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "stalled delivery lock holder did not finish"
@@ -1095,6 +1116,49 @@ test_append_wakes_live_announced_watcher() {
   grep "$(printf '\tcheck\tinbox:fixture\t')" "$state/.wake-queue" >/dev/null \
     || fail "the appended wake was not durable when recovery surfaced"
   pass "watch-arm: appending work reopens an announced empty recovery"
+}
+
+# The drain CLI explicitly defers a presentation whose queue lock is busy.
+# Exercise that real response, then release the lock at the CLI boundary so
+# the retry can present and acknowledge the same durable row.
+test_ack_wakes_retries_skipped_presentation() {
+  local dir state holder old_drain i=0 status=0
+  dir=$(make_case ack-skipped-presentation)
+  state="$dir/state"
+  append_wake "$state" check inbox:fixture 'check: fixture awaiting acknowledgement'
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_wake_queue_lock_acquire || exit 1
+    : > "$FM_HOME/queue-held"
+    while [ ! -e "$FM_HOME/queue-release" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" &
+  holder=$!
+  while [ ! -e "$dir/queue-held" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$dir/queue-held" ] || fail "ack fixture did not hold the queue"
+  cat > "$dir/drain" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_DRAIN" "$@" > "$FM_TEST_ACK_DIR/drain.out"
+status=$?
+cat "$FM_TEST_ACK_DIR/drain.out"
+if grep -q '^WAKE DRAIN SKIPPED:' "$FM_TEST_ACK_DIR/drain.out"; then
+  : > "$FM_TEST_ACK_DIR/skipped"
+  : > "$FM_TEST_ACK_DIR/queue-release"
+fi
+exit "$status"
+SH
+  chmod +x "$dir/drain"
+  old_drain=$DRAIN
+  DRAIN="$dir/drain"
+  FM_HOME="$dir" FM_TEST_REAL_DRAIN="$old_drain" FM_TEST_ACK_DIR="$dir" \
+    FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 ack_wakes "$state" || status=$?
+  DRAIN=$old_drain
+  : > "$dir/queue-release"
+  wait_for_exit "$holder" 100 || fail "ack fixture did not release its queue lock"
+  [ -e "$dir/skipped" ] || fail "ack fixture did not exercise a skipped presentation"
+  expect_code 0 "$status" "a skipped presentation must be retried before acknowledging"
+  [ ! -s "$state/.wake-queue" ] || fail "retry did not acknowledge the queued wake"
+  pass "watch-arm: acknowledgement retries a skipped queue presentation"
 }
 
 test_append_wakes_handling_successor() {
@@ -2585,6 +2649,7 @@ test_detach_hold_refuses_away_mode_and_reports_failure
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_grok_hold_survives_a_wake_after_a_process_event_wake
 test_grok_successor_holds_across_quiet_polls_after_a_process_event
+test_ack_wakes_retries_skipped_presentation
 test_append_wakes_handling_successor after-ack
 test_append_wakes_handling_successor before-ack
 test_append_wakes_handling_successor after-ack missing
