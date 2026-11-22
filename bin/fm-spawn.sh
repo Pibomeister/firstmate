@@ -6923,7 +6923,7 @@ AGY_TRUST_DIALOG='Do you trust the contents of this project?'
 AGY_TRUST_ANSWERED=0
 
 agy_capture() {
-  fm_backend_capture "$BACKEND" "$T" 120 "$W" 2>/dev/null || true
+  fm_backend_visible_capture "$BACKEND" "$T" "$W" 2>/dev/null || true
 }
 
 agy_pane_shows_trust_dialog() {  # <plain-pane-capture>
@@ -6952,32 +6952,10 @@ agy_pane_has_brief_progress() {  # <plain-pane-capture>
       lines[++n] = $0
     }
     END {
-      if (n < 2) exit 1
-      start = (n > 12 ? n - 11 : 1)
-      footer = 0
-      for (i = n; i >= start; i--) {
-        if (lines[i] ~ /^[[:space:]]*\?[[:space:]]+for[[:space:]]+shortcuts([[:space:]]|$)/) {
-          footer = i
-          break
-        }
-      }
-      if (!footer) exit 1
-      comp_start = 0
-      if (footer >= 2 && is_rule(lines[footer - 1])) {
-        if (footer >= 4 && is_empty_prompt(lines[footer - 2]) && is_rule(lines[footer - 3])) {
-          comp_start = footer - 3
-        }
-      } else if (footer >= 2 && is_empty_prompt(lines[footer - 1])) {
-        if (footer < 3 || (!is_rule(lines[footer - 2]) && lines[footer - 2] !~ /^[[:space:]]*>/)) {
-          comp_start = footer - 1
-        }
-      }
-      if (!comp_start) exit 1
-      for (i = footer; i <= n; i++) {
-        if (lines[i] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/) {
-          exit 0
-        }
-      }
+      if (n < 4 || lines[n] !~ /^[[:space:]]*\?[[:space:]]+for[[:space:]]+shortcuts([[:space:]]|$)/) exit 1
+      if (!is_rule(lines[n - 1]) || !is_empty_prompt(lines[n - 2]) || !is_rule(lines[n - 3])) exit 1
+      comp_start = n - 3
+      if (lines[n] ~ /[1-9][0-9]*[[:space:]]+task\(s\)[[:space:]]*·[[:space:]]*\/tasks([[:space:]]|$)/) exit 0
       for (i = 1; i < comp_start; i++) {
         if (is_progress_line(lines[i])) {
           exit 0
@@ -6993,7 +6971,8 @@ agy_pane_is_working() {  # <plain-pane-capture>
   case "$(fm_busy_classify "$BACKEND" "$T" agy "$ID" "$STATE" "$1")" in
     busy*) return 0 ;;
   esac
-  agy_pane_has_brief_progress "$1"
+  agy_pane_has_brief_progress "$1" || return 1
+  [ "$(fm_backend_agent_state "$BACKEND" "$T")" = alive ]
 }
 
 agy_wait_for_working() {
