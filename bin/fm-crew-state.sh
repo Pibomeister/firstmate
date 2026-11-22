@@ -729,8 +729,10 @@ EOF
   printf '%s' "$out"
 }
 nm_status_text() {
+  # Prefixing and joining prose can add the spaces around a delimiter, so
+  # remove its character before either operation can mint a status field.
   LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' |
-    tr '\t\r' '  ' | sed "s/${SEP}/ ; /g" |
+    tr '\t\r' '  ' | sed 's/·/;/g' |
     awk 'NF { if (n++) printf "; "; printf "%s", $0 }'
 }
 nm_parked_duration() {
