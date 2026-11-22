@@ -967,11 +967,9 @@ if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" 
 fi
 pass "an unreadable stage file is reported as unreadable"
 
-# A worker whose parent is killed right before the worker opens the stage file
-# creates it after the parent's cleanup ran. The worker removes its own file when
-# its parent is gone. mkdir stalls once inside the worker, before the open, so the
-# kill lands in that window, and a slow validation keeps the worker alive long
-# enough to see the file exist before it must vanish.
+# Kill the parent before the worker opens its stage file. The timeout runner may
+# cancel the worker before that open, or the worker may finish and clean up its
+# own stage file. Neither path may leave a running worker or a stage file behind.
 SLOWBIN="$TMP_ROOT/slow-orphan-bin"
 REAL_MKDIR=$(command -v mkdir)
 mkdir -p "$SLOWBIN"
@@ -979,21 +977,12 @@ cat > "$SLOWBIN/mkdir" <<'SH'
 #!/usr/bin/env bash
 if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] && [ -n "${FM_TEST_MKDIR_MARK:-}" ] \
     && [ ! -e "$FM_TEST_MKDIR_MARK" ]; then
-  : > "$FM_TEST_MKDIR_MARK"
+  printf '%s\n' "$PPID" > "$FM_TEST_MKDIR_MARK"
   sleep 3
 fi
 exec "$FM_TEST_REAL_MKDIR" "$@"
 SH
-cat > "$SLOWBIN/jq" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    */.home-summary.json.*) sleep 4 ;;
-  esac
-done
-exec "$FM_TEST_REAL_JQ" "$@"
-SH
-chmod +x "$SLOWBIN/mkdir" "$SLOWBIN/jq"
+chmod +x "$SLOWBIN/mkdir"
 ORPHAN_MARK="$TMP_ROOT/orphan-mkdir.mark"
 rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.* "$HOME_DIR/state/.home-summary-refresh.backoff"
 printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
@@ -1005,21 +994,28 @@ ORPHAN_PARENT=$!
 i=0
 while [ ! -e "$ORPHAN_MARK" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
 [ -e "$ORPHAN_MARK" ] || fail "the worker never reached its state-directory step"
+ORPHAN_WORKER_PID=$(cat "$ORPHAN_MARK")
+SLOW_WORKER_PGID=$(ps -o pgid= -p "$ORPHAN_WORKER_PID" 2>/dev/null | tr -d '[:space:]')
+test_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d '[:space:]')
+case "$SLOW_WORKER_PGID" in
+  ''|*[!0-9]*) fail "the orphan fixture did not record its worker process group" ;;
+esac
+[ "$SLOW_WORKER_PGID" != "$test_pgid" ] \
+  || fail "the orphan fixture worker did not have an isolated process group"
 kill -KILL "$ORPHAN_PARENT" >/dev/null 2>&1 || true
 wait "$ORPHAN_PARENT" >/dev/null 2>&1 || true
 i=0
-until ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
-  [ "$i" -lt 150 ] || fail "the worker never created its stage file after its parent was killed"
+while ps -p "$ORPHAN_WORKER_PID" -o stat= 2>/dev/null \
+    | awk '$1 !~ /^Z/ { alive=1 } END { exit !alive }'; do
+  [ "$i" -lt 900 ] || fail "a refresh worker outlived its parent's death and refresh deadline"
   sleep 0.1
   i=$((i + 1))
 done
-i=0
-while ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
-  [ "$i" -lt 300 ] || fail "a worker outliving its parent left its stage file behind"
-  sleep 0.1
-  i=$((i + 1))
-done
-pass "a worker whose parent is gone removes its own stage file"
+SLOW_WORKER_PGID=
+if ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; then
+  fail "a worker whose parent is gone left its stage file behind"
+fi
+pass "parent loss leaves no running refresh worker or stage file"
 
 # A fresh home has no state directory when the refresh starts. The wake library
 # creates it in the worker before the stage file is opened, so a deadline hit on a
@@ -1149,6 +1145,8 @@ pass "a failure the worker handles itself names its stage"
 # fake gives up, and the event order below fails. The assertion counts reads and
 # their overlap, never elapsed time. Give the intentionally blocked read enough
 # budget for all four peer reads, rather than the production per-read timeout.
+# Endpoint observations must also finish before comparing windows. Short liveness
+# deadlines can expire under host load and change otherwise identical task rows.
 SLIDE_HOME="$TMP_ROOT/slide-home"
 mkdir -p "$SLIDE_HOME/state" "$SLIDE_HOME/data" "$SLIDE_HOME/config" "$SLIDE_HOME/projects"
 SLIDE_HOME=$(cd "$SLIDE_HOME" && pwd -P)
@@ -1194,6 +1192,7 @@ run_slide() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_ENDPOINT_TIMEOUT=90 FM_CREW_STATE_PANE_TIMEOUT=90 \
     FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --secondmate-home-summary
 }
@@ -1264,6 +1263,7 @@ run_rows() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_ENDPOINT_TIMEOUT=90 FM_CREW_STATE_PANE_TIMEOUT=90 \
     FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --json
 }
@@ -1283,12 +1283,18 @@ run_rows 16 > "$TMP_ROOT/rows-wide.json" || fail "the wide row run failed"
 jq -S '.tasks' "$TMP_ROOT/rows-serial.json" > "$TMP_ROOT/rows-serial.norm"
 jq -S '.tasks' "$TMP_ROOT/rows-window.json" > "$TMP_ROOT/rows-window.norm"
 jq -S '.tasks' "$TMP_ROOT/rows-wide.json" > "$TMP_ROOT/rows-wide.norm"
-[ "$(jq 'length' "$TMP_ROOT/rows-serial.norm")" -eq 5 ] \
-  || fail "the serial run did not produce five task rows"
+# The fake tmux inventory has no windows. A timed-out probe is not an equivalent
+# observation, even if every run happened to time out in the same way.
+for row_run in serial window wide; do
+  jq -e '(.tasks | length) == 5 and all(.tasks[];
+    .endpoint.exists == false and .endpoint.status == "absent")' \
+    "$TMP_ROOT/rows-$row_run.json" >/dev/null \
+    || fail "the $row_run run did not observe all five absent fixture endpoints"
+done
 cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" \
   || fail "overlapping row composition changed a task row: $(diff "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" | head -5)"
 cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" \
-  || fail "a wide window changed a task row"
+  || fail "a wide window changed a task row: $(diff -u "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" | head -40)"
 pass "row composition overlaps behind the window and keeps every task row identical"
 
 # Task ids may contain dots, so a task named like another task's row file ("ship"
@@ -2019,8 +2025,12 @@ cat > "$TIMEOUTBIN/tail" <<'SH'
 for arg in "$@"; do
   case "$arg" in
     */.home-summary-stage.timeout-race)
-      kill -STOP "$(cat "$FM_TEST_TIMEOUT_PARENT_FILE")"
-      : > "$FM_TEST_TIMEOUT_PARENT_STOPPED"
+      # Worker failure reporting reads this path too. Pause only the parent's
+      # diagnostics; stopping it twice would strand the test after its resume.
+      if [ -z "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]; then
+        kill -STOP "$(cat "$FM_TEST_TIMEOUT_PARENT_FILE")"
+        : > "$FM_TEST_TIMEOUT_PARENT_STOPPED"
+      fi
       ;;
   esac
 done
