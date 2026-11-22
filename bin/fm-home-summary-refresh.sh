@@ -268,6 +268,7 @@ home_summary_refresh_once() {
   home_summary_stage validate
   remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
   [ "$remaining" -gt 0 ] || return 124
+  # shellcheck disable=SC2016 # jq, not the shell, expands $home.
   if fm_run_timed "$remaining" jq -e --arg home "$FM_HOME" '
     .schema == "fm-secondmate-home-summary.v1"
     and .hold_classifier_schema == "fm-captain-hold-buckets.v1"
