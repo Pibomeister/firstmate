@@ -818,15 +818,19 @@ test_handled_mv_dedups_by_sequence() {
 }
 
 test_concurrent_writers_never_clobber() {
-  local state i pids=() count
+  local state i pids=() count failed=0
   state="$TMP_ROOT/race/state"; mkdir -p "$state"
+  # This asserts serialization, not throughput within the production 5s wait.
+  # Allow the six writers to take turns even on a heavily loaded test host.
   for i in 1 2 3 4 5 6; do
-    inbox_lib "$state" fm_task_inbox_write "$state" t1 "steer number $i" >/dev/null &
+    FM_TASK_INBOX_LOCK_WAIT_SECS=120 \
+      inbox_lib "$state" fm_task_inbox_write "$state" t1 "steer number $i" >/dev/null &
     pids+=($!)
   done
   for i in "${pids[@]}"; do
-    wait "$i" || fail "a concurrent inbox write failed"
+    wait "$i" || failed=1
   done
+  [ "$failed" = 0 ] || fail "a concurrent inbox write failed"
   count=$(find "$state/t1.inbox" -maxdepth 1 -name '*.msg' | wc -l | tr -d ' ')
   [ "$count" = 6 ] || fail "6 concurrent writes should yield 6 records, got $count:"$'\n'"$(ls "$state/t1.inbox")"
   for i in 1 2 3 4 5 6; do
