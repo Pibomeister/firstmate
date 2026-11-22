@@ -1,0 +1,3 @@
+command=FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=/tmp bash tests/fm-agy-harness.test.sh
+exit_status=0
+revision=df2a91ab296a821486572759bcf283f2129a9636

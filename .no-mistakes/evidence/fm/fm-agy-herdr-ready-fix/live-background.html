@@ -1,0 +1,37 @@
+<!doctype html><html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Real AGY background-task readiness failure</title><style>body{background:#1f1e1d;color:#faf9f5;margin:32px;font:16px/1.5 system-ui}main{max-width:1100px;margin:auto}p{max-width:78ch}pre{background:#141413;border:1px solid #3d3d3a;border-radius:8px;padding:24px;font:13px/1.55 ui-monospace,Menlo,monospace;overflow:auto}strong{color:#f0b09a}</style><main><h1>Background task rejected by readiness</h1><p><b>TL;DR:</b> The real AGY 1.5.14 pane on an isolated Herdr session was alive and displayed an active background task. The target readiness wait returned 1. The task panel below the composer adds rows that the four-row parser rejects. No decision is required on this evidence page.</p><p><strong>Observed:</strong> wait_exit=1 · native=unknown agy-regex · agent=alive</p><p>Actual visible terminal output below. The account identifier is redacted. This is a rendered terminal capture.</p><pre>      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Compute 12345 plus 67890. Reply with the computed sum. Do not use tools.
+
+  80235
+
+────────────────────────────────────────────────────────────
+&gt; Use the terminal tool once to execute pwd. Reply with the output. Do not read files.
+
+● Ran (pwd) (ctrl+o to expand)
+
+  Command failed to run: failed to create PTY: operation not permitted.
+
+────────────────────────────────────────────────────────────
+&gt; Use the terminal tool to run sleep 90 as a background terminal task. Return control
+  immediately while it is running. Do not wait or poll for completion. Then reply Background
+  started.
+
+● Ran (sleep 90) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt;
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                 auto · Gemini 3.8 Flash · low
+</pre></main></html>

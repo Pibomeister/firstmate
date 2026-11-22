@@ -1,0 +1,26 @@
+ok - fm-spawn: a hung agy listing is cut off by the shared bound and launches unvalidated
+ok - fm-spawn: a zero FM_AGY_MODELS_TIMEOUT is clamped to the default bound
+ok - fm-agy-trust.sh: registers the logical and resolved worktree paths and preserves the store
+ok - fm-agy-trust.sh: creates agy's settings store when none exists
+ok - fm-agy-trust.sh: refuses every out-of-scope path and never rewrites a broken store
+ok - fm-spawn: agy pre-registers the worktree and launches straight into a busy turn
+ok - fm-spawn: agy answers a dialog that renders anyway exactly once, then confirms busy
+ok - fm-spawn: on an unregistered path a premature busy verdict waits for the dialog to be answered
+ok - fm-spawn: a busy verdict on an unregistered path without a dialog fails and closes the endpoint
+ok - fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint
+ok - fm-spawn: an agy readiness failure closes only its window and keeps a record fm-teardown resolves
+ok - fm-spawn: AGY send, signal, and backlog failures preserve published records
+ok - AGY live guard requires a fresh correct recovery report and always stops its isolated server
+ok - AGY refuses missing Treehouse custody capabilities before endpoint creation
+ok - fm-spawn: agy is refused on orca, zellij, cmux, and paseo before anything launches
+ok - fm-spawn: agy on a configured orca backend falls back to tmux when herdr is unavailable
+ok - fm-spawn: agy on a configured orca backend prefers herdr over tmux
+ok - fm-spawn: agy refuses when neither herdr nor tmux is available
+ok - fm-spawn: agy refuses an FM_BACKEND choice it cannot verify instead of falling back
+ok - fm-spawn: agy on a configured but stopped orca still falls back to tmux
+ok - fm-spawn: agy on configured t3code falls back without running t3code's runtime check
+ok - fm-spawn: agy on configured rex falls back without running rex's server check
+ok - fm-spawn: agy refuses a macOS HOME with no login keychain before anything launches
+ok - fm-spawn: agy accepts a macOS HOME that has only the legacy login.keychain
+ok - fm-spawn: a missing agy executable refuses before pane creation
+not ok - agy secondmate spawn should succeed (error: secondmate home cannot be inside the firstmate repo: {run-worktree}/.test-agy-tail/tmp/fm-agy-harness.0WM5m8/secondmate-launch/sm-home): expected exit 0, got 1

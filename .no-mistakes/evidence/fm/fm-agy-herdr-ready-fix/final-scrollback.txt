@@ -1,0 +1,42 @@
+
+Resume with -c (or command below):
+agy --conversation=073d0719-8867-4bea-97bf-06435b9e6959
+
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+> Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+────────────────────────────────────────────────────────────
+> Use the terminal tool to run sleep 180 as a background task with a short async wait.
+  Return control immediately. Do not poll or wait for its completion. Reply Background
+  started.
+
+● Running (sleep 180) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ● [05:03:43] sleep 180 running
+─────────────────────────────────────────────────────────────────────────────────────────────
+
+Resume with -c (or command below):
+agy --conversation=073d0719-8867-4bea-97bf-06435b9e6959

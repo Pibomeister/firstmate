@@ -1,0 +1,6 @@
+Same live completed tool turn: base predicate=1 target predicate=0
+Unsubmitted composer text that looks like progress: wait_exit=1
+Returned shell with prior real progress: wait_exit=1 agent=dead
+Real idle AGY with no launch brief: wait_exit=1 agent=unreadable
+Unanswered actual trust dialog: readiness=1
+After wait answered safe trust choice: wait_exit=0 agent=alive

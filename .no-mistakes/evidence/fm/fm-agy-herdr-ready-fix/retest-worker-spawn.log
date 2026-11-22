@@ -1,0 +1,7 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-agy-retest/fmhome
+warning: herdr presentation parent is absent or ambiguous; using the ordinary flat layout without projection
+🌳 Setting up worktree...
+🌳 Leased worktree at {run-worktree}/.test-agy-retest/pool/.treehouse/scratch-34d156/1/scratch. Run 'treehouse return {run-worktree}/.test-agy-retest/pool/.treehouse/scratch-34d156/1/scratch' to release it.
+warning: agent-kit supervisor declaration: {run-worktree}/.test-agy-retest/home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching agy-worker without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned agy-worker harness=agy kind=scout window=fm-lab-agy-retest-42269-29308:w3:p2 worktree={run-worktree}/.test-agy-retest/pool/.treehouse/scratch-34d156/1/scratch

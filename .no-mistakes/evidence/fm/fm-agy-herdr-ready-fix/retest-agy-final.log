@@ -1,0 +1,5 @@
+ok - fm-spawn: agy secondmate pre-trusts the secondmate home and records kind=secondmate
+ok - fm-spawn: agy arms no busy wiring and writes no sidecar
+ok - fm-spawn: agy on herdr recognizes confirmed brief-processing progress and background tasks
+ok - fm-spawn: agy on herdr still refuses bare unstarted, unsubmitted, errored, and untrusted prompts
+ok - fm-spawn: agy rejects stale scrollback, returned shells, and unsupported composers

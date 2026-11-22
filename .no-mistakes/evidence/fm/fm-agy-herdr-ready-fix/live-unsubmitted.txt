@@ -1,0 +1,37 @@
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+> Compute 12345 plus 67890. Reply with the computed sum. Do not use tools.
+
+  80235
+
+────────────────────────────────────────────────────────────
+> Use the terminal tool once to execute pwd. Reply with the output. Do not read files.
+
+● Ran (pwd) (ctrl+o to expand)
+
+  Command failed to run: failed to create PTY: operation not permitted.
+
+────────────────────────────────────────────────────────────
+> Use the terminal tool to run sleep 90 as a background terminal task. Return control
+  immediately while it is running. Do not wait or poll for completion. Then reply Background
+  started.
+
+● Ran (sleep 90) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+> Thought for 2.4s
+─────────────────────────────────────────────────────────────────────────────────────────────
+                                                                auto · Gemini 3.8 Flash · low

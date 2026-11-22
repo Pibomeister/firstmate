@@ -1,0 +1,6 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-agy-live/fmhome
+warning: secondmate agy-smoke sync skipped before launch: primary default-branch commit cannot be resolved
+warning: agent-kit supervisor declaration: {run-worktree}/.test-agy-live/home/.local/state is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching agy-smoke without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+error: agy did not start processing its brief in the pre-trusted worktree in window fm-lab-agy-final-92164-28357:w3:p2; inspect window fm-lab-agy-final-92164-28357:w3:p2
+warning: closed the endpoint fm-lab-agy-final-92164-28357:w3:p2 of this failed spawn and kept task agy-smoke's record; recover it with 'bin/fm-control.sh agy-smoke relaunch --note "<what happened>"' or clean it up with 'bin/fm-teardown.sh agy-smoke'

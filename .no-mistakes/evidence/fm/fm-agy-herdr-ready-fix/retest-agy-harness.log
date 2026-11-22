@@ -1,0 +1,26 @@
+ok - AGY returns an unpublished allocation and closes its endpoint after a failed cwd handoff
+ok - AGY retains unpublished dirty or unreadable work and its reservation on every abort path
+ok - AGY allocation and recovery use the caller's custody pool despite endpoint environment differences
+ok - fm-harness.sh: ancestry detects a natively-named agy command
+ok - fm-harness.sh: ancestry rejects unrelated agy mentions
+ok - fm-harness.sh: no inherited launcher marker claims the agy identity
+ok - fm-control-lib: agy mechanics are Escape once, no clear key, and /quit
+ok - fm-busy-lib: only the pinned esc-to-cancel row carries the agy busy verdict
+ok - fm-composer-lib: agy delivery signatures never cross harnesses
+ok - fm-composer-lib: the agy composer reads empty, pending, and unknown exactly
+ok - fm-tmux-lib: the composer identity probe names the agy process
+ok - fm-busy-lib: agy classifies busy on its marker and unknown without it
+ok - bin/fm-agent-process-lib.sh: agy is an agent, fragments are not
+ok - herdr exit detection: done with a live registry and an agy process view stays live and refuses replacement
+ok - herdr exit detection: a registered status over a shell-only pane is stale-agent and still refuses closing
+ok - herdr exit detection: a registered pane with an agy foreground stays live however its shell ranks
+ok - herdr exit detection: only a positively unregistered pane is agent-free
+ok - herdr exit detection: malformed and failed reads stay unknown
+ok - fm-spawn: agy launch carries brief, model, effort, and autonomy with cleared markers
+ok - fm-spawn: agy omits xhigh from the launch but records it in task metadata
+ok - fm-spawn: agy passes xhigh and max through when its help lists them
+ok - fm-spawn: an unlisted agy model refuses before pane creation
+ok - fm-spawn: an unreachable agy listing establishes nothing and launches
+ok - fm-spawn: an unreachable agy listing with no --model names the default-model sign-in check
+ok - fm-spawn: an empty agy model catalog refuses as signed out, with or without --model
+not ok - the model probe was not cut off by its bound (took 71s)

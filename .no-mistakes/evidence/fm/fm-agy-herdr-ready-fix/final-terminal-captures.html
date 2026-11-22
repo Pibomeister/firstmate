@@ -1,0 +1,171 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>AGY live terminal captures</title><style>:root{color-scheme:light dark;--page:#FAF9F5;--surface:#F0EEE6;--border:#E8E6DC;--text:#141413;--muted:#5E5D59;--accent:#D97757}@media(prefers-color-scheme:dark){:root{--page:#1F1E1D;--surface:#262624;--border:#3D3D3A;--text:#FAF9F5;--muted:#B7B5A9}}body{margin:0;padding:32px;background:var(--page);color:var(--text);font:16px/1.6 system-ui,sans-serif}main{max-width:1120px;margin:auto}p{max-width:68ch}h1{font:36px/1.2 Georgia,serif}details{margin:32px 0;border:1px solid var(--border);border-radius:8px;overflow:hidden}summary{padding:16px 24px;cursor:pointer;background:var(--surface);font-weight:600}pre{padding:24px;margin:0;overflow:auto;font:13px/1.5 ui-monospace,monospace}.note{color:var(--muted)}</style><main><p><strong>TL;DR.</strong> These are terminal viewports captured from real AGY 1.5.14 in the disposable Herdr lab during validation of df2a91ab. They show the accepted progress layouts and rejected guard states. No decision is required.</p><h1>AGY live terminal captures</h1><p class="note">Exact plain-text viewport captures, with the account identifier redacted. This HTML renders the captured terminal text for review; it is not a native screenshot. Launch receipts and readiness return codes are in final-results.log.</p><details open><summary>Active background task accepted</summary><pre>
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+────────────────────────────────────────────────────────────
+&gt; Use the terminal tool to run sleep 180 as a background task with a short async wait.
+  Return control immediately. Do not poll or wait for its completion. Reply Background
+  started.
+
+● Running (sleep 180) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt;
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ● [05:03:43] sleep 180 running
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                            auto · Gemini 3.8 Flash · low · 1 task(s) · /tasks
+</pre></details><details open><summary>Completed tool turn accepted</summary><pre>
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt;
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                 auto · Gemini 3.8 Flash · low
+</pre></details><details open><summary>Unanswered trust refused</summary><pre>Accessing workspace:
+
+{run-worktree}/.test-agy-
+final/fmhome/projects/scratch
+
+Do you trust the contents of this project?
+
+Antigravity CLI requires permission to read, edit, and execute files here.
+
+&gt; Yes, I trust this folder
+  No, exit
+
+  ↑/↓ Navigate · enter Confirm
+                                                                 auto · Gemini 3.8 Flash · low
+</pre></details><details open><summary>Unsubmitted input refused</summary><pre>
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+────────────────────────────────────────────────────────────
+&gt; Use the terminal tool to run sleep 180 as a background task with a short async wait.
+  Return control immediately. Do not poll or wait for its completion. Reply Background
+  started.
+
+● Running (sleep 180) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt; Thought for 2.4s
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ● [05:03:43] sleep 180 running
+─────────────────────────────────────────────────────────────────────────────────────────────
+                                           auto · Gemini 3.8 Flash · low · 1 task(s) · /tasks
+</pre></details><details open><summary>Returned shell refused</summary><pre>
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+────────────────────────────────────────────────────────────
+&gt; Use the terminal tool to run sleep 180 as a background task with a short async wait.
+  Return control immediately. Do not poll or wait for its completion. Reply Background
+  started.
+
+● Running (sleep 180) (ctrl+o to expand)
+
+  Background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt;
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ● [05:03:43] sleep 180 running
+─────────────────────────────────────────────────────────────────────────────────────────────
+
+Resume with -c (or command below):
+agy --conversation=073d0719-8867-4bea-97bf-06435b9e6959
+</pre></details><details open><summary>Command-error composer refused</summary><pre>
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 4 Neon (High)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+&gt; Compute 43 plus 59.
+
+  102
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+&gt; Unknown command: /fm-nonexistent-command
+─────────────────────────────────────────────────────────────────────────────────────────────
+                                                                  auto · Gemini 4 Neon · high
+</pre></details></main></html>

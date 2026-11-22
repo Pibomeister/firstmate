@@ -1,0 +1,4 @@
+Disposable live lab tree removed after guarded session teardown and fixture cleanup. Read-only disposable Treehouse directories were made user-writable for removal.
+Live-lab path process lookup exit=1; matching pids=''
+live lab: directory_exists=False process_lookup_exit=1 matching_pids=none
+suite fixture: directory_exists=False process_lookup_exit=1 matching_pids=none

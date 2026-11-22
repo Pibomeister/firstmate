@@ -1,0 +1,25 @@
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+> Run pwd using the terminal tool. Then write proof.txt with the computed result of 12345
+  plus 67890. Do not read other files or launch any agent. Reply only with the sum.
+
+● Ran (pwd)
+● Edited 1 file (proof.txt) (ctrl+o to expand)
+
+  80235
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                 auto · Gemini 3.8 Flash · low

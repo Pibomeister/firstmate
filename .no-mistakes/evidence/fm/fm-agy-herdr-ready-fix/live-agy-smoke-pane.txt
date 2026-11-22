@@ -1,0 +1,33 @@
+eduardopicazo@Eduardos-MacBook-Pro-2 secondmate % export GOTMPDIR=/tmp/fm-agy-smoke/gotmp
+eduardopicazo@Eduardos-MacBook-Pro-2 secondmate % export COMPACT_ADVISER_DISABLE=1
+eduardopicazo@Eduardos-MacBook-Pro-2 secondmate % . '/tmp/fm-agy-smoke+90f653375cbbceb129f10b
+cc83b350a5f3706a0cbf939f84f098351d6a8efd1f/launch.s1795335701.50118.5025.sh'
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+> FIRSTMATE_OP: v1 launch-brief: # Disposable secondmate readiness check
+  Compute 12345 plus 67890. Write the computed sum and SECOND_MATE_RECEIVED in
+  {run-worktree}/.test-
+  agy-live/secondmate/data/report.md.
+  Do not read outside this disposable home. Do not launch agents, commit, push, publish, or
+  arm any watchers. Then stop and wait.
+
+● Edited 1 file (report.md) (ctrl+o to expand)
+
+  The sum of 12345 and 67890 (80235) and SECOND_MATE_RECEIVED have been written to
+  data/report.md. Standing by.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                 auto · Gemini 3.8 Flash · low

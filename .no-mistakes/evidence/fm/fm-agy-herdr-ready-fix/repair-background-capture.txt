@@ -1,0 +1,27 @@
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted] (Google AI Ultra)
+  Gemini 3.8 Flash (Low)
+  {run-worktree}/.test-a
+
+────────────────────────────────────────────────────────────
+> Use the terminal tool to start sleep 180 as a background terminal task with a short async
+  wait. Return control immediately without waiting or polling. Reply Background started. Do
+  not inspect any files.
+
+● Running (sleep 180) (ctrl+o to expand)
+
+  Captain, background started.
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+─────────────────────────────────────────────────────────────────────────────────────────────
+  ● [02:44:22] sleep 180 running
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                            auto · Gemini 3.8 Flash · low · 1 task(s) · /tasks

@@ -1,0 +1,12 @@
+Real AGY 1.5.14 on Herdr 0.8.2, guarded named session fm-lab-agy-fix-52764-21834.
+Capture: repair-background-capture.txt (account redacted).
+Before source changes: agy_wait_for_working exit 1, agent alive, native unknown agy-regex.
+After source changes: agy_wait_for_working exit 0, agent alive, native unknown agy-regex.
+On the same live capture: target 8ee2414f agy_pane_is_working exit 1; repaired predicate exit 0.
+The actual viewport has an empty prompt with AGY's Auto mode hint and a task panel before the current shortcuts footer.
+Regression before fix: focused readiness acceptance test exit 1, rejected herdr-task-panel.
+Isolated HOME reused the existing onboarding state and read the existing login keychain through a symlink. No sign-in or credential mutation was performed. AGY ran under a write sandbox.
+Focused verification: the three readiness test functions from tests/fm-agy-harness.test.sh ran through a temporary driver with FM_TEST_SKIP_ORPHAN_REAP=1; exit 0. This includes full fm-spawn success without pane closure and readiness-failure endpoint cleanup against the Herdr external-boundary fake.
+Final source-state verification: acceptance cases, dialog-to-task-panel transition, and pending-input, stale-frame, missing/unknown liveness, untrusted, idle/error and unruled-composer refusal cases all passed; exit 0.
+No full repository suite, linters, formatters, or static-analysis tools were run.
+Lab driver exit 0 after guarded teardown and fixture cleanup. Viewer ownership records removed; fixture /tmp/hx.SvqRyO absent. Process scan found no owned AGY or Herdr process naming the disposable workspace.

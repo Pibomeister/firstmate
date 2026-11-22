@@ -1,0 +1,4 @@
+fm-herdr-lab: tripwire already exists for 'fm-lab-agy-retest-42269-29308'; refusing ambiguous ownership
+viewer attached to fm-lab-agy-retest-42269-29308 (pid 83851)
+{run-worktree}/.test-agy-retest/fmhome
+SETUP session=fm-lab-agy-retest-42269-29308 pane=w1:p1 fixture=/private/tmp/hx.ByN91w

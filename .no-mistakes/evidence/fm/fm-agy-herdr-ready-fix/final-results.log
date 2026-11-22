@@ -1,0 +1,13 @@
+Unanswered live folder-trust dialog: predicate_exit=1
+Readiness loop answered trust=1, unstarted prompt wait_exit=1
+Completed real tool turn: wait_exit=0 agent=alive proof=80235
+Worker full spawn exit=0
+Worker report verified sum=80235 cwd={run-worktree}/.test-agy-final/pool/.treehouse/scratch-185680/1/scratch endpoint=fm-lab-agy-final-48252-32450:w2:p2 agent=alive
+Active real background task: wait_exit=0 native=unknown agy-regex agent=alive
+Unsubmitted progress-like input with real task panel: wait_exit=1
+Returned shell with prior real AGY progress: wait_exit=1 agent=dead
+Same live completed worker pane: base=1 target=0 native=unknown agy-regex agent=alive
+Real progress without pre-registration or observed trust answer: wait_exit=1
+Secondmate full spawn exit=0
+Secondmate report verified sum=80235 cwd={run-worktree}/.test-agy-final/secondmate endpoint=fm-lab-agy-final-48252-32450:w3:p2 agent=alive
+Actual unknown-command error composer: wait_exit=1 agent=alive

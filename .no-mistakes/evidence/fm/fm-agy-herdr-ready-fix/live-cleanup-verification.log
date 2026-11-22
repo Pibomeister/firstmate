@@ -1,0 +1,1 @@
+Named Herdr lab teardown and owned-XDG cleanup: exit 0. Chrome test session stopped. Disposable worktree fixtures removed. No remaining non-ancestor process names an owned lab path. Git worktree clean. Targeted harness suite: exit 0 with FM_TEST_SKIP_ORPHAN_REAP=1.

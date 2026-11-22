@@ -1,0 +1,38 @@
+  If any captain call remains, ask firstmate to register the inventory and attest completion
+  before you report done.
+  If the command refuses, report the refusal to firstmate and stop rather than bypassing the
+  completion gate.
+  When the report is complete, append `done [at=<epoch>]: {one-line conclusion}` to the
+  status file and stop.
+  If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is
+  clear), say so in the report; firstmate may promote this task in place, and you would then
+  receive mode-specific ship instructions as a follow-up message.
+
+○ Thought for 33.0s (Initial attempt: the completion command will be executed for 'agy-l...)
+● Ran (pwd; find '{run-worktree})
+● Explored 1 file (SKILL.md)
+● Edited 1 file (report.md)
+● Ran (FM_HOME='{worktrees}) (ctrl+o to expand)
+
+▸ Thought for 4s, 298 tokens
+
+  Completed agy-live2 launch-brief verification:
+
+  • Status: BRIEF_RECEIVED
+  • Sum (12345 + 67890): 80235
+  • Working directory (pwd): ~/.no-
+  mistakes/worktrees/075d7f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-live/pool/.
+  treehouse/scratch-3aa0cd/2/scratch
+  • Report:
+  {run-worktree}/.tes
+  t-agy-live/fmhome/data/agy-live2/report.md
+  • Completion gate & status: Attested empty captain-call inventory via fm-captain-hold.sh
+  complete 'agy-live2' --none and appended done [at=1795335671] to
+  {run-worktree}/.tes
+  t-agy-live/fmhome/state/agy-live2.status. Nothing was committed or published, and no
+  agents were launched.
+
+ How's the CLI experience so far? Help us improve:
+ [1] Good  [2] Fine  [3] Bad  [0] Skip
+
+? for shortcuts                                                   auto · Gemini 4 Neon · high

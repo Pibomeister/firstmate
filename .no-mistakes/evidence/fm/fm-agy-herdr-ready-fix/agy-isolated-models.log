@@ -1,0 +1,1 @@
+Initial isolation probe: agy 1.5.14 authenticated using the existing login. Sandbox denied attempted writes to the operator configuration directory. ANTIGRAVITY_GEMINI_DIR did not redirect CLI storage. Repeated probe with a disposable HOME and a read-only login-keychain link returned the available model catalog successfully. Operator-identifying diagnostic output omitted.

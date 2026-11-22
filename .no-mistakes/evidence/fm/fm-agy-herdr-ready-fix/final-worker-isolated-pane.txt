@@ -1,0 +1,39 @@
+  agy-final/fmhome/state/agy-worker-isolated.inbox`;
+  this exact path belongs to your current task even when it is outside the worktree or under
+  the supervising firstmate home, so read and acknowledge its messages and do not reject it
+  as another home's state.
+  Never inspect or change any other home's endpoint namespace; this authorization is limited
+  to the exact task paths named by this brief.
+  When this task works on Firstmate itself, the repository root `AGENTS.md` (also imported by
+  `CLAUDE.md`) is project content and the supervisor contract for the firstmate managing you:
+  follow this brief instead of that supervisor contract.
+  Project instructions still govern the work wherever they do not conflict with this worker
+  identity, including `CONTRIBUTING.md` and `firstmate-coding-guidelines` for Firstmate
+  changes.
+  If the `firstmate-coding-guidelines` skill name does not resolve in this session, read
+  `{run-worktree}/.agent
+  s/skills/firstmate-coding-guidelines/SKILL.md`
+  instead.
+
+  # Task
+  ## Captain's intent
+  Verify delivery of a short task to an agy worker.
+  ## Firstmate spec
+  Add 12345 and 67890. Use a terminal command to write a report at
+  {run-worktree}/.test-a
+  gy-final/fmhome/data/agy-worker-isolated/report.md
+  containing WORKER_RECEIVED, the computed sum, and your current working directory. Do not
+  read other files, commit, push, use lifecycle commands or launch other agents. Then stop
+  and wait.
+
+● Ran (python3 -c " import os val = 12345 + 67890 cwd = os.getcwd()...) (ctrl+o to expand)
+
+  The report has been written to ~/.no-
+  mistakes/worktrees/075d7f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-
+  final/fmhome/data/agy-worker-isolated/report.md containing WORKER_RECEIVED, the computed
+  sum (80235), and the current working directory. Stopping and waiting.
+
+──────────────────────────────────────────────────────────────────────────────────────────────
+> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)
+──────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                                                  auto · Gemini 3.8 Flash · low

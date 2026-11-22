@@ -1,0 +1,10 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-agy-live/fmhome
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at {run-worktree}/.test-agy-live/pool/.treehouse/scratch-3aa0cd/2/scratch. Run 'treehouse return {run-worktree}/.test-agy-live/pool/.treehouse/scratch-3aa0cd/2/scratch' to release it.
+warning: agent-kit supervisor declaration: {run-worktree}/.test-agy-live/home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching agy-live2 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+error: agy did not start processing its brief in the pre-trusted worktree in window fm-lab-agy-final-92164-28357:w2:p2; inspect window fm-lab-agy-final-92164-28357:w2:p2
+warning: closed the endpoint fm-lab-agy-final-92164-28357:w2:p2 of this failed spawn and kept task agy-live2's record; recover it with 'bin/fm-control.sh agy-live2 relaunch --note "<what happened>"' or clean it up with 'bin/fm-teardown.sh agy-live2'

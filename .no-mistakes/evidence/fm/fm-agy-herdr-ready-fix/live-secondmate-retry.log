@@ -1,0 +1,3 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-agy-live/fmhome
+error: --relaunch of a gone secondmate is refused except through fm-control relaunch that named --harness or --model on a proven-gone endpoint; recover it with --secondmate
+secondmate_retry_exit=4

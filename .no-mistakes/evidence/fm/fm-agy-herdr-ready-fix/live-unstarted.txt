@@ -1,0 +1,27 @@
+HOME='{run-worktree}/.te
+st-agy-live/home' /usr/bin/sandbox-exec -f '{worktrees}
+f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-live/agy.sb' '~/.local/bin/ag
+y' --log-file '{run-worktree}
+4M2M2/.test-agy-live/idle-cli.log' --model gemini-3.8-flash-low --effort low --dangerously-sk
+ip-permissions
+eduardopicazo@Eduardos-MacBook-Pro-2 scratch % HOME='~/.no-mistakes/worktr
+ees/075d7f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-live/home' /usr/bin/sandbox-exec -f '/U
+sers/eduardopicazo/.no-mistakes/worktrees/075d7f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-l
+ive/agy.sb' '~/.local/bin/agy' --log-file '~/.no-mistak
+es/worktrees/075d7f40c28a/01M8101Q8Q67QA7N3HWCG4M2M2/.test-agy-live/idle-cli.log' --model gem
+ini-3.8-flash-low --effort low --dangerously-skip-permissions
+
+      ▄▀▀▄
+     ▀▀▀▀▀▀
+    ▀▀▀▀▀▀▀▀
+   ▄▀▀    ▀▀▄
+  ▄▀▀      ▀▀▄
+
+  Antigravity CLI 1.5.14
+  [account redacted]
+  {run-worktree}/.test-a
+
+─────────────────────────────────────────────────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────────────────────────────────────────────────
+? for shortcuts
