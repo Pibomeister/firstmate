@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Input threshold, live holder, fresh beacon, rate limit and inbox",
+    "result": "pass"
+  },
+  {
+    "name": "Finished statuses, decision closers and no-mistakes handoff",
+    "result": "pass"
+  },
+  {
+    "name": "Declared waits and malformed timestamps",
+    "result": "pass"
+  },
+  {
+    "name": "Owner hold and failed hold read",
+    "result": "pass"
+  },
+  {
+    "name": "Stall pages during pending restart pickup",
+    "result": "pass"
+  },
+  {
+    "name": "Delivered PR identity, merge markers and authority guards",
+    "result": "pass"
+  }
+]

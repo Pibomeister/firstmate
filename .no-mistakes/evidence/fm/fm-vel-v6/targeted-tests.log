@@ -1,0 +1,14 @@
+1..8
+ok - stall page: input unhandled past stall-secs with work in flight pages the owner once per window and restarts nothing
+ok - stall page: both triggers page during restart and pickup without changing restart, endpoint, or lock state
+ok - stall page: rows about declared waits and homes with only declared waits stay quiet
+ok - stall page: a task whose latest status is done is not in flight
+ok - stall page: a ready PR under standing authority unlanded past stall-secs pages once per window until it lands
+ok - stall page: the delivered PR, a resolved line after done, the pipeline handoff, and Gerrit changes are read as the records mean
+ok - stall page: a ready PR held for the owner is the owner's wait and does not page
+ok - stall page: no live or dead holder and no fresh heartbeat hides it, and mode=dry-run records without paging
+FM_TEST_COMPLETE
+
+Observed process exit: 0
+Setup: TMPDIR=$PWD/.test-targeted-tmp TMUX_TMPDIR=/tmp FM_TEST_SKIP_ORPHAN_REAP=1
+Initial default-temp attempt stopped during global orphan-fixture glob; focused retry completed.
