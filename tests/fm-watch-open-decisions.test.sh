@@ -245,6 +245,11 @@ test_p0_marker_survives_unreadable_status() {
   FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
   [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm'
   chmod 000 "$STATE/worker.status"
+  if [ -r "$STATE/worker.status" ]; then
+    chmod 644 "$STATE/worker.status"
+    pass 'skipped: this user can read a mode-000 file, so the status log cannot be made unreadable'
+    return 0
+  fi
   FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker
   chmod 644 "$STATE/worker.status"
   FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker

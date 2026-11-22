@@ -866,18 +866,16 @@ fm_backlog_relaunch_admission() {  # <config-dir> <data-dir> <kind> <id>
 }
 
 fm_backlog_record_set_priority() {  # <meta> <priority-or-empty> <state>
-  local meta=$1 value=$2 state=$3 tmp line
+  local meta=$1 value=$2 state=$3 tmp
   tmp=$(mktemp "$state/.$(basename "$meta").priority.XXXXXX") || {
     FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"
     return 1
   }
+  # grep, unlike the shell's line reader, reports a read error (status 2)
+  # instead of ending as if at end of file; status 1 only means no other line.
   {
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in
-        priority=*) ;;
-        *) printf '%s\n' "$line" ;;
-      esac
-    done < "$meta" &&
+    LC_ALL=C grep -av '^priority=' "$meta"
+    [ "$?" -le 1 ] &&
       { [ -z "$value" ] || printf 'priority=%s\n' "$value"; }
   } > "$tmp" || {
     rm -f "$tmp"

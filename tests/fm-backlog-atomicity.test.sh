@@ -790,6 +790,42 @@ test_priority_rewrite_keeps_an_unreadable_record() (
   pass "a priority rewrite refuses to publish when its source record cannot be read"
 )
 
+# A reader that fails after copying part of the record (a mid-file I/O error)
+# must refuse the same way, instead of publishing the partial copy.
+test_priority_rewrite_refuses_a_failed_read_after_open() (
+  local case_dir state meta leftover real_grep rc=0
+  case_dir="$TMP_ROOT/priority-read-error"
+  state="$case_dir/home/state"
+  meta="$state/task-r.meta"
+  mkdir -p "$state" "$case_dir/fakebin"
+  printf '%s\n' 'window=fm-task-r' 'spawn_gen=g1' 'priority=2' > "$meta"
+  cp "$meta" "$case_dir/meta-before"
+  real_grep=$(command -v grep)
+  cat > "$case_dir/fakebin/grep" <<SHIM
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  if [ "\$arg" = '^priority=' ]; then
+    head -n 1 "\${@: -1}"
+    echo "grep: \${@: -1}: Input/output error" >&2
+    exit 2
+  fi
+done
+exec '$real_grep' "\$@"
+SHIM
+  chmod +x "$case_dir/fakebin/grep"
+  . "$ROOT/bin/fm-tasks-axi-lib.sh"
+  . "$ROOT/bin/fm-backlog-transition-lib.sh"
+  PATH="$case_dir/fakebin:$PATH" fm_backlog_record_set_priority "$meta" 0 "$state" 2>/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || fail "the priority rewrite reported success although reading its source record failed"
+  cmp -s "$case_dir/meta-before" "$meta" \
+    || fail "the priority rewrite published a partial record: $(cat "$meta")"
+  leftover=$(find "$state" -name '.task-r.meta.priority.*' -print)
+  [ -z "$leftover" ] || fail "the refused priority rewrite left its staging file: $leftover"
+  assert_contains "$FM_BACKLOG_TRANSITION_ERROR" "could not stage the task record's priority update" \
+    "the refused priority rewrite did not say why"
+  pass "a priority rewrite refuses to publish when reading its source record fails partway"
+)
+
 test_captain_hold_preserves_relocated_backlog_on_backend_error() {
   local case_dir home data config_state id out rc show
   id='backend-hold-row'
@@ -3099,6 +3135,7 @@ test_backend_resolution_preserves_config_errors
 test_backend_resolution_preserves_precedence_and_defaults
 test_backlog_callers_refuse_unreadable_backend_config
 test_priority_rewrite_keeps_an_unreadable_record
+test_priority_rewrite_refuses_a_failed_read_after_open
 test_captain_hold_preserves_relocated_backlog_on_backend_error
 test_dispatch_moves_the_item_in_flight_in_the_same_run
 test_dispatch_omits_the_file_for_a_beads_show
