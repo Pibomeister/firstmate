@@ -348,6 +348,67 @@ test_observe_watchdog_closes_only_on_done() {
   pass "watchdog dry-run and held stay open until a restart done closes them"
 }
 
+# observe_fresh <home> <from> <until> <step>: observe at each step with a fresh
+# primary heartbeat, as the supervision poll publishes it.
+observe_fresh() {
+  local home=$1 t=$2 until=$3 step=$4
+  while [ "$t" -le "$until" ]; do
+    write_hb "$home/state/heartbeat.json" "$((t - 5))"
+    observe_ok "$home" "$t"
+    t=$((t + step))
+  done
+}
+
+# A nudge the watchdog finished without confirming progress is delivery only.
+test_unconfirmed_nudge_is_not_recovery() {
+  local home ledger actions tag
+  home=$(new_home wd-unconfirmed)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  tag=${home##*/}
+  mkdir -p "$home/state/watchdog"
+  observe_fresh "$home" "$((T0 - 100))" "$((T0 - 100))" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tpending\tWatchdog (automated): frozen 12 minutes\n' "$T0" "$home" "$tag" > "$actions"
+  observe_fresh "$home" "$T0" "$T0" 600
+  printf '%s\twd1\t%s\t%s\tfrozen\tnudge\tdone\tdelivered; no transcript to confirm\n' "$((T0 + 600))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$((T0 + 600))" "$((T0 + 600))" 600
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "the frozen primary did not open a stall"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "an unconfirmed nudge closed the stall as recovered"
+  printf '%s\twd2\t%s\t%s\tfrozen\tnudge\tdone\ttranscript advanced\n' "$((T0 + 900))" "$home" "$tag" >> "$actions"
+  observe_fresh "$home" "$((T0 + 900))" "$((T0 + 900))" 600
+  awk -F '\t' -v end="$((T0 + 900))" '
+    $2 == "stall-close" && $3 == "primary" && $7 == "watchdog" && $8 == end { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "a confirmed nudge did not close the stall as watchdog: $(awk -F '\t' '$2 != "hb"' "$ledger")"
+  pass "an unconfirmed nudge keeps the stall open and a confirmed one closes it"
+}
+
+test_unconfirmed_nudge_after_install_is_not_recovery() {
+  local home ledger actions
+  home=$(new_home wd-unconfirmed-after-install)
+  ledger=$(ledger_of "$home")
+  actions=$home/state/watchdog/actions.tsv
+  mkdir -p "$home/state/watchdog"
+  printf '%s\twd1\t\tprimary\tfrozen\tnudge\tpending\tWatchdog (automated): frozen 12 minutes\n' "$T0" > "$actions"
+  write_hb "$home/state/heartbeat.json" "$((T0 - 600))"
+  observe_ok "$home" "$((T0 + 120))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "the stale heartbeat opens a stall at installation"
+  assert_equals 0 "$(count_rows "$ledger" stall-close -)" "the stale heartbeat remains open"
+  printf '%s\twd1\t\tprimary\tfrozen\tnudge\tdone\tdelivered; no transcript to confirm\n' "$((T0 + 600))" >> "$actions"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 600))"
+  observe_ok "$home" "$((T0 + 600))"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the fresh heartbeat closes the installation stall"
+  awk -F '\t' -v end="$((T0 + 600))" '
+    $2 == "stall-close" && $3 == "primary" && $4 == "-" && $7 == "firstmate" && $8 == end { ok = 1 }
+    END { exit !ok }
+  ' "$ledger" || fail "an unconfirmed nudge received credit for the fresh heartbeat recovery"
+  write_hb "$home/state/heartbeat.json" "$((T0 + 660))"
+  observe_ok "$home" "$((T0 + 660))"
+  assert_equals 1 "$(count_rows "$ledger" stall-open -)" "an unconfirmed completion must not create a phantom stall"
+  assert_equals 1 "$(count_rows "$ledger" stall-close -)" "the installation stall remains closed"
+  pass "a post-install unconfirmed nudge neither receives recovery credit nor creates a stall"
+}
+
 test_observe_secondmate_progress_closes_as_agentkit() {
   local home mate other ledger start
   home=$(new_home progress)
@@ -988,6 +1049,8 @@ fm_test_run \
   test_observe_records_one_fresh_heartbeat \
   test_observe_opens_and_closes_a_stale_heartbeat \
   test_observe_watchdog_closes_only_on_done \
+  test_unconfirmed_nudge_is_not_recovery \
+  test_unconfirmed_nudge_after_install_is_not_recovery \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \
   test_window_maps_chicago_kickoff \

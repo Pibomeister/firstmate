@@ -70,6 +70,63 @@ SH
   chmod +x "$FAKEBIN/tmux"
 }
 
+# wrap_tmux_literal_send_fails: a literal text send fails as tmux reports a
+# command it cannot send, while every other tmux call reaches the real server.
+wrap_tmux_literal_send_fails() {
+  cat > "$FAKEBIN/tmux" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = send-keys ]; then
+  for a in "\$@"; do
+    [ "\$a" != -l ] || { echo "command too long" >&2; exit 1; }
+  done
+fi
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+SH
+  chmod +x "$FAKEBIN/tmux"
+}
+
+# echoing_composer_pane: replace the captain pane with a Claude-shaped composer
+# whose terminal echoes typed text into the composer row, so the real composer
+# classifier reads typed-but-unsubmitted text as pending. The window is widened
+# first so a doorbell naming a long temporary path stays on the composer row
+# instead of wrapping over the rule below it.
+echoing_composer_pane() {
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" resize-window -t "$T" -x 600 -y 40
+  cat > "$H/echo-agent.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'Captain session\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  ? for shortcuts\033[2A\033[3G'
+exec cat > /dev/null
+SH
+  chmod +x "$H/echo-agent.sh"
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" respawn-pane -k -t "$T" "$H/echo-agent.sh"
+  local drawn=0
+  until [ "$(composer_line)" = '❯' ]; do
+    drawn=$((drawn + 1))
+    [ "$drawn" -le 300 ] || fail "echoing_composer_pane: the composer never drew"
+    sleep 0.1
+  done
+}
+
+# composer_line [row]: one captain pane row (default the composer row 3),
+# trailing blanks trimmed.
+composer_line() {
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null | sed -n "${1:-3}p" | sed 's/[[:space:]]*$//'
+}
+
+# wrap_tmux_enter_swallowed: a bare Enter is accepted but never reaches the
+# pane, so typed text stays in the composer, while every other tmux call
+# reaches the real server.
+wrap_tmux_enter_swallowed() {
+  cat > "$FAKEBIN/tmux" <<SH
+#!/usr/bin/env bash
+if [ "\$1" = send-keys ] && [ "\${*: -1}" = Enter ]; then
+  exit 0
+fi
+exec "$REAL_TMUX" -f /dev/null -L "$SOCKET" "\$@"
+SH
+  chmod +x "$FAKEBIN/tmux"
+}
+
 # Every long-lived fixture process ends its argv with this marked duration, so
 # this suite can find all of its own fixtures, including ones whose pid no case
 # recorded, while another suite's fixtures carry a different marker.
@@ -6371,6 +6428,47 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   pass "dry-run history cannot satisfy the active heartbeat delivery prerequisite"
 }
 
+test_heartbeat_swallowed_enter_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  echoing_composer_pane
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  wrap_tmux_enter_swallowed
+  run_wd 700 once >/dev/null 2>&1
+  case "$(composer_line)" in
+    '❯ '?*) ;;
+    *) fail "the swallowed nudge never stayed in the composer: $(composer_line)" ;;
+  esac
+  [ "$(composer_line 4)" = '────────────────────────────────────────' ] \
+    || fail "the nudge wrapped over the composer's lower rule: $(composer_line 4)"
+  restore_fake_tmux
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the stale heartbeat was not nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge "done")" "a nudge whose Enter was swallowed was recorded as a delivery"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a nudge left unsubmitted in the composer authorized a restart"
+  pass "a heartbeat nudge whose Enter was swallowed never counts as delivery"
+}
+
+test_heartbeat_failed_send_never_counts_as_delivery() {
+  make_home $'Captain session\n❯ \n  ? for shortcuts' "heartbeat-frozen-secs=600
+restart=on
+restart-command=$TMP_ROOT/fake-captain.sh"
+  write_fake_captain
+  transcript 3000 "Working."
+  run_wd 0 once >/dev/null 2>&1
+  wrap_tmux_literal_send_fails
+  run_wd 700 once >/dev/null 2>&1
+  restore_fake_tmux
+  assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the stale heartbeat was not nudged"
+  assert_equals 0 "$(ledger_rows heartbeat-frozen nudge "done")" "a failed send was recorded as a delivery"
+  run_wd 1000 once >/dev/null 2>&1
+  assert_equals 0 "$(ledger_rows heartbeat-frozen restart pending)" "a nudge that never reached the session authorized a restart"
+  pass "a heartbeat nudge whose send failed never counts as delivery"
+}
+
 test_heartbeat_ignores_orphan_and_previous_owner_receipts() {
   local history
   for history in orphan previous-owner; do
@@ -7108,6 +7206,8 @@ fm_test_run \
   test_heartbeat_response_cannot_suppress_recovery_forever \
   test_heartbeat_recovery_preserves_the_running_turn_veto \
   test_heartbeat_dryrun_never_counts_as_delivery \
+  test_heartbeat_failed_send_never_counts_as_delivery \
+  test_heartbeat_swallowed_enter_never_counts_as_delivery \
   test_heartbeat_ignores_orphan_and_previous_owner_receipts \
   test_heartbeat_recovery_serializes_with_handoff_launch \
   test_heartbeat_recovery_respects_recent_wake_activity \

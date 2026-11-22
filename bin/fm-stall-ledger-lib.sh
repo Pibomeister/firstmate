@@ -41,7 +41,9 @@
 # then a watchdog row, and the earliest start wins a tie. The recorded start
 # and detect are the earliest values in that set, so a later source cannot
 # move them forward.
-# A watchdog row that is not a finished restart, nudge, or key is not recovery.
+# Only a finished restart, confirmed nudge, or key is watchdog recovery.
+# A nudge finished without confirming progress supplies neither recovery nor
+# new stall evidence and leaves any existing watchdog episode intact.
 # The episode stays open while that condition is still evidenced. A later task
 # status line that shows the task working, or a captain record whose
 # usage-limit auto-wait has ended, ends it with recoverer -. A missing epoch
@@ -533,12 +535,15 @@ _fm_stall_wd_symptom() {
   return 1
 }
 
-_fm_stall_wd_terminates() {
+_fm_stall_wd_terminates() { # <phase> <action> <detail>
   [ "$1" = "done" ] || return 1
   case "$2" in
-    restart|nudge|key) return 0 ;;
+    # The watchdog finishes a nudge it could not confirm with this detail, so
+    # that row shows delivery only, not recovery.
+    nudge) [ "${3-}" != "delivered; no transcript to confirm" ] ;;
+    restart|key) return 0 ;;
+    *) return 1 ;;
   esac
-  return 1
 }
 
 # actions.tsv has an empty home on a primary row. A tab is IFS whitespace, so a
@@ -663,7 +668,7 @@ _fm_stall_watchdog() {
     task=$sub
     case "$subject" in worker:*) task=$(_fm_stall_subject "${subject#worker:}") ;; esac
     key=$FM_STALL_WORK/ep/${cls}__${sub}
-    if _fm_stall_wd_terminates "$phase" "$action"; then
+    if _fm_stall_wd_terminates "$phase" "$action" "$detail"; then
       if [ -f "$key" ]; then
         IFS=$(printf '\t') read -r estart edetect esymptom elast ehome etask < "$key" || true
         rm -f -- "$key"
@@ -675,6 +680,7 @@ _fm_stall_watchdog() {
       fi
       continue
     fi
+    [ "$phase:$action" != done:nudge ] || continue
     extra=$(_fm_stall_wd_extra "$detail")
     if [ "$extra" -gt "$epoch" ]; then
       start=0
@@ -749,10 +755,10 @@ _fm_stall_wd_done_for() { # <class> <subject> <detect> <now>
   file=$STATE/watchdog/actions.tsv
   [ -f "$file" ] && [ ! -L "$file" ] || return 1
   while IFS=$'\036' read -r epoch _id home subject symptom action phase detail || [ -n "${epoch:-}" ]; do
-    : "$_id" "$detail"
+    : "$_id"
     _fm_stall_is_num "$epoch" || continue
     [ "$epoch" -ge "$detect" ] && [ "$epoch" -le "$now" ] || continue
-    _fm_stall_wd_terminates "$phase" "$action" || continue
+    _fm_stall_wd_terminates "$phase" "$action" "$detail" || continue
     _fm_stall_wd_symptom "$symptom" || continue
     norm=$(_fm_stall_wd_norm "$home" "$subject" "$symptom")
     ncls=${norm%% *}

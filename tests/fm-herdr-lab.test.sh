@@ -57,8 +57,11 @@ case "$1 ${2:-}" in
     fi
     ;;
   "server --session")
-    if [ "${FM_FAKE_HERDR_SERVER_DELAY:-0}" != 0 ]; then
-      "$FM_FAKE_HERDR_REAL_SLEEP" "$FM_FAKE_HERDR_SERVER_DELAY"
+    if [ -n "${FM_FAKE_HERDR_SERVER_RELEASE:-}" ]; then
+      printf '%s\n' "$$" > "$FM_FAKE_HERDR_SERVER_RELEASE.pid"
+      while [ ! -f "$FM_FAKE_HERDR_SERVER_RELEASE" ] && [ -d "${FM_FAKE_HERDR_SERVER_RELEASE%/*}" ]; do
+        "$FM_FAKE_HERDR_REAL_SLEEP" 0.05
+      done
     fi
     printf '%s\n' running > "$state/$session"
     ;;
@@ -99,7 +102,7 @@ run_with_fake() {
     FM_FAKE_HERDR_STATE="$FAKE_STATE" \
     FM_FAKE_HERDR_LOG="$FAKE_LOG" \
     FM_FAKE_HERDR_REAL_SLEEP="$REAL_SLEEP" \
-    FM_FAKE_HERDR_SERVER_DELAY="${FM_FAKE_HERDR_SERVER_DELAY:-0}" \
+    FM_FAKE_HERDR_SERVER_RELEASE="${FM_FAKE_HERDR_SERVER_RELEASE:-}" \
     FM_FAKE_HERDR_FAST_POLL="${FM_FAKE_HERDR_FAST_POLL:-}" \
     FM_FAKE_HERDR_DELETE_FAIL="${FM_FAKE_HERDR_DELETE_FAIL:-}" \
     FM_FAKE_HERDR_TITLE_FAIL="${FM_FAKE_HERDR_TITLE_FAIL:-}" \
@@ -350,7 +353,8 @@ test_failed_delete_retains_tripwire() {
 }
 
 test_timed_out_provision_cancels_late_launch() {
-  local name="fm-lab-late-launch-$$" status=0
+  local name="fm-lab-late-launch-$$" status=0 release server_pid attempt=0
+  release=$(fm_test_tmproot fm-herdr-lab-late-launch)/release
   cat > "$FAKEBIN/sleep" <<'SH'
 #!/usr/bin/env bash
 if [ "${FM_FAKE_HERDR_FAST_POLL:-}" = 1 ]; then
@@ -363,15 +367,24 @@ exec "$FM_FAKE_HERDR_REAL_SLEEP" "$@"
 SH
   chmod +x "$FAKEBIN/sleep"
   : > "$FAKE_LOG"
-  FM_FAKE_HERDR_FAST_POLL=1 FM_FAKE_HERDR_SERVER_DELAY=30 \
+  FM_FAKE_HERDR_FAST_POLL=1 FM_FAKE_HERDR_SERVER_RELEASE="$release" FM_FAKE_HERDR_WAIT_MARKER="$release.pid" \
     run_with_fake fm_herdr_lab_provision "$name" >/dev/null 2>&1 || status=$?
   expect_code 1 "$status" "timed-out provision must fail"
+  server_pid=$(cat "$release.pid")
   assert_present "$TRIPWIRES/$name.fleet-state.json" \
     "timed-out provision must retain its tripwire until teardown"
   run_with_fake fm_herdr_lab_teardown "$name" || fail "teardown after timed-out provision failed"
   assert_absent "$TRIPWIRES/$name.fleet-state.json" \
     "teardown after timed-out provision did not remove its tripwire"
-  "$REAL_SLEEP" 1.1
+  # Release the late server only after the provision poll has finished.
+  : > "$release"
+  while kill -0 "$server_pid" 2>/dev/null && [ "$attempt" -lt 200 ]; do
+    "$REAL_SLEEP" 0.05
+    attempt=$((attempt + 1))
+  done
+  if kill -0 "$server_pid" 2>/dev/null; then
+    fail "the released launch process did not exit"
+  fi
   if [ -f "$FAKE_STATE/$name" ] && [ "$(cat "$FAKE_STATE/$name")" = running ]; then
     fail "timed-out provision left a late-starting lab session after teardown"
   fi

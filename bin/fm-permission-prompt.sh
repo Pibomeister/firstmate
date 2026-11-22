@@ -105,13 +105,11 @@ _fm_pp_ruled_rows() {  # <screen>
         else if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ && dashed % 2 == 0) { top = i; break }
       }
       if (!top) exit 1
-      # A proven box has at most its two dashed rows, and no other rule above
-      # it encloses a dashed row, which would put this rule inside a command.
+      # A proven box has at most its two dashed rows, both below its top rule.
+      # A dashed row above this rule means the rule may sit inside a command
+      # preview, so the boundary is unproven.
       if (dashed > 2) exit 1
-      for (i = top - 1; i >= floor; i--) {
-        if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/) break
-        if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) { for (j = i - 1; j >= floor; j--) if (r[j] ~ /^[ \t]*(─|━){20,}[ \t]*$/) exit 1; break }
-      }
+      for (i = top - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) exit 1
       anchor = 0
       for (i = top + 1; i <= last; i++) {
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*1[.)][ \t]/ || tolower(r[i]) ~ /do you want to |would you like to /) anchor = i
@@ -160,7 +158,7 @@ fm_pp_hardstop_category() {  # <text>
   # An environment dump, bare, wrapped, or with options, prints every
   # exported secret. A command preview can open with a `$ ` prompt, as
   # Codex draws it.
-  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*([$][[:space:]]+)?((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export[[:space:]]+-p|declare[[:space:]]+-[a-z]*x|typeset[[:space:]]+-[a-z]*x|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
+  if fm_wd_lower "${1-}" | LC_ALL=C grep -Eq '(^|[;&|(][[:space:]]*)[[:space:]]*([$][[:space:]]+)?((command|builtin|exec|sudo|nohup)[[:space:]]+)*(([^[:space:]]*/)?(env|printenv)([[:space:]]+-[^[:space:]|;&>]*)*|set|export([[:space:]]+-[a-z]*p[a-z]*)?|(declare|typeset)[[:space:]]+-[a-z]*[xp][a-z]*|compgen[[:space:]]+-e)[[:space:]]*($|[|>;&)])'; then printf 'credential\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SIGNIN_RE"; then printf 'sign-in\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_SPEND_RE"; then printf 'spend\n'; return 0; fi
   if printf '%s' "$t" | LC_ALL=C grep -Eq "$FM_PP_DESTRUCTIVE_RE"; then printf 'destructive\n'; return 0; fi

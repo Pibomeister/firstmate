@@ -52,7 +52,7 @@
 # handoff_failed reason=unresolved: not final, settled by a later handoff_ack
 # reason=lock_transferred for the same nonce.
 # Each handoff_failed also rewrites state/.handoff-launch-failed, as does an
-# unfinished exit after the launch removed an earlier record, and a launch
+# unfinished exit once clearing an earlier record has begun, and a launch
 # removes it once it holds the launch lock; bin/fm-handoff-lib.sh owns the record and
 # how it releases a planned fresh start's Stop gate for the surviving session.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
@@ -297,8 +297,10 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
-rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
+# Mark the record cleared before removing it, so a signal during the removal
+# still leaves this launch's own failure record for the surviving session.
 FAILED_RECORD_CLEARED=1
+rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 

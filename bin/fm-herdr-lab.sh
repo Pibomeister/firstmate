@@ -33,6 +33,8 @@
 # destructive call.
 # Provision records the running fleet session as a fleet-state tripwire and
 # teardown requires that record to be identical afterward.
+# A failed provision cancels and waits for the server process it launched,
+# so a delayed launch cannot start the lab session after teardown.
 # The fleet session is "default" unless FM_HERDR_LAB_FLEET_SESSION names the
 # custom session the live fleet runs in; that name must start with an ASCII
 # letter or digit, contain only ASCII letters, digits, underscores, or dashes,
@@ -60,6 +62,8 @@
 # /usr/bin/python3 is tried first; a missing or CLT-stub interpreter falls
 # back to PATH python3 and the common Homebrew paths. There is no ps -Eww
 # fallback. If neither reader yields an environment, they refuse to signal.
+# Fixture start retains the recorded pid and refuses a second launch while
+# that pid still has its recorded start time but ownership cannot be proven.
 # Inherited HERDR_* identity is cleared on every fixture command. Lab session
 # names still cannot be default.
 set -u
@@ -485,7 +489,8 @@ fm_herdr_lab_provision() { # <session>
   else
     fm_herdr_lab_prepare "$name" || return 1
   fi
-  fm_herdr_lab_raw "$name" server >/dev/null 2>&1 &
+  env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID \
+    HERDR_SESSION="$name" herdr server --session "$name" >/dev/null 2>&1 &
   server_pid=$!
   attempt=0
   max_attempts=300
@@ -949,6 +954,13 @@ fm_herdr_lab_fixture_start() { # <root>
   fi
   pid=$(fm_herdr_lab_fixture_record_get "$root" pid)
   if [ -n "$pid" ]; then
+    # A recorded pid still running with its recorded start time is this
+    # fixture's server even when its identity cannot be proven now, so keep the
+    # record rather than orphan that server for a later cleanup.
+    if fm_herdr_lab_fixture_pid_matches_start "$pid" "$(fm_herdr_lab_fixture_record_get "$root" pid_start)"; then
+      fm_herdr_lab_error "recorded herdr pid $pid is still running but cannot be proven this fixture's; refusing to forget it"
+      return 1
+    fi
     fm_herdr_lab_fixture_clear_pid "$root" || return 1
   fi
   if fm_herdr_lab_fixture_ready; then
