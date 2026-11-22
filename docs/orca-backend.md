@@ -70,6 +70,8 @@ Tasks waiting without a PR and existing leaked branches are not reconciled by th
 `fm-peek.sh` reads with `orca terminal read`.
 `bin/fm-orca-cli-cache.sh` reuses read-only Orca CLI results for a few seconds, and its header owns that rule.
 An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Orca's submit machinery.
+A re-ring that finds the composer holding only that constant doorbell submits the held copy with Enter instead of typing another one; because Orca lifts the cursor row's text into `draft`, the ownership proof in `bin/fm-task-inbox-lib.sh` judges the tail extraction and the draft together, and any other text in either part still skips untouched.
+Both fields come from one uncached read, so a cached tail cannot be joined to a later draft.
 On the typed plane, `fm-send.sh` verifies composer clearance through the fleet-wide classifier in `bin/fm-composer-lib.sh`, retrying Enter without retyping when a slash popup first fills an argument placeholder.
 For a recorded Droid task, a matching post-Enter `UserPromptSubmit` receipt also confirms a typed send when the composer is temporarily unreadable during Droid's turn; the receipt binds the prompt digest and event sequence to the current task generation.
 The composer read is one bounded tail of the live terminal and never pages backward into scrollback, so a stale startup banner cannot compete with the bottom-anchored composer.

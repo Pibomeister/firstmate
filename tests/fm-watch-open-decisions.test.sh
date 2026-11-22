@@ -477,6 +477,313 @@ test_away_page_retries_after_channel_configured() {
   pass 'pending page retries when a channel becomes available'
 }
 
+# --- away gate council trigger ----------------------------------------------
+# A stub ak records its arguments and writes a council record shaped like
+# AgentKit's, so the trigger is exercised end to end without a model call.
+gate_council_setup() {  # [project-dir-name]
+  local project=${1:-allowed-proj}
+  reset_case
+  rm -rf -- "$FM_HOME/data" "$TMP_ROOT/bin-stub"
+  mkdir -p "$FM_HOME/data/worker" "$TMP_ROOT/bin-stub"
+  GATE_STUB="$TMP_ROOT/bin-stub/ak"
+  cat > "$GATE_STUB" <<'SH'
+#!/usr/bin/env bash
+out=
+prev=
+for arg in "$@"; do
+  [ "$prev" != --out ] || out=$arg
+  prev=$arg
+done
+printf '%s\n' "$@" > "${out%/*}/stub-args"
+outcome=${GATE_STUB_OUTCOME:-decline}
+printf '{\n  "schema": "council-record",\n  "seats": [\n    {\n      "choice": "fix"\n    }\n  ],\n  "outcome": "%s",\n  "choice": "%s",\n  "grants": []\n}\n' \
+  "$outcome" "${GATE_STUB_CHOICE:-decline}" > "$out"
+echo "council $outcome: $out"
+[ "$outcome" = approve ] || [ "$outcome" = decline ]
+SH
+  chmod +x "$GATE_STUB"
+  printf '{}\n' > "$TMP_ROOT/roster.json"
+  chmod 600 "$TMP_ROOT/roster.json"
+  printf 'roster=%s\nprojects=other, allowed-proj\nak=%s\n' "$TMP_ROOT/roster.json" "$GATE_STUB" \
+    > "$CONFIG/gate-council"
+  printf 'project=/somewhere/projects/%s\nkind=ship\n' "$project" > "$STATE/worker.meta"
+  printf 'F1 the finding text\n' > "$FM_HOME/data/worker/nm-r1-findings.txt"
+  printf '# Task\n## Captain'"'"'s intent\nship the widget\n## Firstmate spec\nbuild it\n' \
+    > "$FM_HOME/data/worker/brief.md"
+  printf 'needs-decision [at=1000] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' \
+    "$FM_HOME/data/worker/nm-r1-findings.txt" > "$STATE/worker.status"
+}
+
+gate_council_wait_exit() {  # <run-dir>
+  local i=0
+  while [ "$i" -lt 100 ] && [ ! -f "$1/exit" ]; do sleep 0.1; i=$((i + 1)); done
+  [ -f "$1/exit" ] || fail 'detached council run never finished'
+}
+
+test_gate_council_off_and_filters() {
+  gate_council_setup
+  rm -f -- "$CONFIG/gate-council"
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'absent config started a council'
+  gate_council_setup
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'present posture started a council'
+  FM_AFK_MODE=quiet bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'quiet test' >/dev/null
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'quiet posture started a council'
+  gate_council_setup not-listed
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'project outside the allowlist started a council'
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4599
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'gate younger than one hour started a council'
+  printf 'needs-decision [at=1000] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' \
+    "$TMP_ROOT/elsewhere.txt" > "$STATE/worker.status"
+  printf 'x\n' > "$TMP_ROOT/elsewhere.txt"
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'findings outside the task data started a council'
+  printf 'needs-decision [at=1000] [key=api]: ask-user findings=F1 file=%s\nblocked [at=1000] [key=nm-r2-test]: ask-user findings=F1 file=%s\n' \
+    "$FM_HOME/data/worker/nm-r1-findings.txt" "$FM_HOME/data/worker/nm-r1-findings.txt" > "$STATE/worker.status"
+  away_gate_council_tick 9000
+  [ ! -e "$STATE/.away-gate-council-claims" ] || fail 'a non-gate decision started a council'
+  [ "$(count_wakes)" = 0 ] || fail 'filtered gates queued a wake'
+  pass 'gate council stays off without config, away posture, allowlist, age, gate key, or task findings'
+}
+
+test_gate_council_runs_once_and_surfaces() {
+  local dir status_before
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  status_before=$(cat "$STATE/worker.status")
+  away_gate_council_tick 4600
+  grep -q $'\trunning\t' "$STATE/.away-gate-council-claims" || fail 'hour-old gate did not start a council'
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'council start queued a wake before a ruling'
+  dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  gate_council_wait_exit "$dir"
+  grep -qx -- '--council-config' "$dir/stub-args" || fail 'council run had no roster flag'
+  grep -qx -- "$TMP_ROOT/roster.json" "$dir/stub-args" || fail 'council did not receive the configured roster'
+  grep -qx -- "$FM_HOME/data/worker/nm-r1-findings.txt" "$dir/stub-args" || fail 'findings were not context'
+  grep -qx -- "$dir/task-intent.md" "$dir/stub-args" || fail 'task intent was not context'
+  grep -qx 'ship the widget' "$dir/task-intent.md" || fail 'task intent context lost the intent body'
+  grep -q '^{"id":"gate-worker-nm-r1-review-1000","question":"[^"]*","options":\["fix","decline"\],"approve":"fix"}$' \
+    "$dir/card.json" || fail "card does not match the council card shape: $(cat "$dir/card.json")"
+  away_gate_council_tick 4700
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling surfaced wrong: $GATE_COUNCIL_WAKE"
+  [ "$(count_wakes)" = 1 ] || fail 'ruling did not queue exactly one wake'
+  away_gate_council_tick 4800
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced twice'
+  [ "$(count_wakes)" = 1 ] || fail 'ruling queued a second wake'
+  [ "$(grep -c $'\trunning\t' "$STATE/.away-gate-council-claims")" = 1 ] || fail 'same gate episode got a second council'
+  [ "$(cat "$STATE/worker.status")" = "$status_before" ] || fail 'trigger wrote to the gate status log'
+  pass 'one council per gate episode, ruling surfaced once as evidence, gate left unanswered'
+}
+
+test_gate_council_closed_gate_and_failure() {
+  local dir
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  gate_council_wait_exit "$dir"
+  printf 'resolved [at=4650] [key=nm-r1-review]: answered\n' >> "$STATE/worker.status"
+  away_gate_council_tick 4700
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling for a closed gate surfaced'
+  [ "$(count_wakes)" = 0 ] || fail 'ruling for a closed gate queued a wake'
+  grep -q $'\tgate-closed\t' "$STATE/.away-gate-council-claims" || fail 'closed gate was not recorded'
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  eval "gate_council_saved_$(declare -f status_open_decisions_incremental)"
+  status_open_decisions_incremental() { return 1; }
+  away_gate_council_tick 4700 2>/dev/null || true
+  eval "$(declare -f gate_council_saved_status_open_decisions_incremental | sed '1s/^gate_council_saved_//')"
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log was unreadable'
+  ! grep -q $'\tgate-closed\t' "$STATE/.away-gate-council-claims" || fail 'status read failure recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after a status read failure: $GATE_COUNCIL_WAKE"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  GATE_STUB_OUTCOME=escalate GATE_STUB_CHOICE=fix away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  [ "$(cat "$dir/exit")" = 1 ] || fail 'escalation exit status was not recorded'
+  away_gate_council_tick 4700
+  case "$GATE_COUNCIL_WAKE" in *'outcome=escalate choice=fix record='*) ;; *) fail "escalation surfaced wrong: $GATE_COUNCIL_WAKE" ;; esac
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  printf '#!/usr/bin/env bash\nexit 2\n' > "$GATE_STUB"
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  away_gate_council_tick 4700
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=error exit=2 choice=- log=$dir/log" ] \
+    || fail "usage failure surfaced wrong: $GATE_COUNCIL_WAKE"
+  pass 'closed gates drop their ruling, read failures keep it, escalations and failed runs surface as evidence'
+}
+
+test_gate_council_unfinished_and_bad_config() {
+  local dir
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$GATE_STUB"
+  dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  printf 'worker\tnm-r1-review\t1000\trunning\t4600\t%s\n' "$dir" > "$STATE/.away-gate-council-claims"
+  mkdir -p "$dir"
+  away_gate_council_tick 11799
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'running council surfaced before its bound'
+  away_gate_council_tick 11800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=unfinished choice=- log=$dir/log" ] \
+    || fail "unfinished council surfaced wrong: $GATE_COUNCIL_WAKE"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  printf 'projects=allowed-proj\n' > "$CONFIG/gate-council"
+  ! away_gate_council_tick 4600 2>/dev/null || fail 'missing roster did not fail the tick'
+  printf 'roster=%s\nprojects=allowed-proj\nafter-secs=0\n' "$TMP_ROOT/roster.json" > "$CONFIG/gate-council"
+  ! away_gate_council_tick 4600 2>/dev/null || fail 'invalid after-secs did not fail the tick'
+  printf 'roster=%s\nprojects=allowed-proj\nafter-secs=60\nak=%s\n' "$TMP_ROOT/roster.json" "$GATE_STUB" > "$CONFIG/gate-council"
+  away_gate_council_tick 1060
+  grep -q $'\trunning\t' "$STATE/.away-gate-council-claims" || fail 'after-secs did not set the gate age'
+  grep -q 'has waited at least 60 seconds' "$FM_HOME/data/worker/gate-council-nm-r1-review-1000/card.json" \
+    || fail "card did not state the configured gate age: $(cat "$FM_HOME/data/worker/gate-council-nm-r1-review-1000/card.json")"
+  pass 'an unfinished council surfaces after its bound and invalid config fails the check'
+}
+
+# A fresh status log for one findings path. The timed fold reads an
+# append-only log incrementally, so a case that changes the note starts over.
+gate_council_fresh_status() {  # <findings-path>
+  rm -f -- "$STATE/worker.status" "$STATE"/.worker.open-decisions-cursor*
+  printf 'needs-decision [at=1000] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' "$1" > "$STATE/worker.status"
+}
+
+test_gate_council_refuses_findings_outside_task_data() {
+  local claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir -p "$TMP_ROOT/outside"
+  printf 'x\n' > "$TMP_ROOT/outside/nm-r1-findings.txt"
+  ln -s "$TMP_ROOT/outside" "$FM_HOME/data/worker/linked"
+  gate_council_fresh_status "$FM_HOME/data/worker/linked/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  [ ! -e "$claims" ] || fail 'findings behind a symlinked folder started a council'
+  rm -rf -- "$FM_HOME/data/worker"
+  mkdir -p "$TMP_ROOT/outside-task"
+  printf 'x\n' > "$TMP_ROOT/outside-task/nm-r1-findings.txt"
+  ln -s "$TMP_ROOT/outside-task" "$FM_HOME/data/worker"
+  gate_council_fresh_status "$FM_HOME/data/worker/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  [ ! -e "$claims" ] || fail 'findings in a symlinked task data folder started a council'
+  [ ! -e "$TMP_ROOT/outside-task/gate-council-nm-r1-review-1000" ] || fail 'council run wrote outside the task data'
+  rm -f -- "$FM_HOME/data/worker"
+  mkdir -p "$FM_HOME/data/worker/sub"
+  printf 'x\n' > "$FM_HOME/data/worker/sub/nm-r1-findings.txt"
+  gate_council_fresh_status "$FM_HOME/data/worker/sub/nm-r1-findings.txt"
+  away_gate_council_tick 9000
+  grep -q $'\trunning\t' "$claims" || fail 'findings in a real task data subfolder did not start a council'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'findings whose real path leaves the task data folder never start a council'
+}
+
+test_gate_council_hold_lookup_failure_counts_as_held() {
+  local claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir "$FM_HOME/data/backlog.md"
+  away_gate_council_tick 4600 2>/dev/null || true
+  [ ! -e "$claims" ] || fail 'council started while the captain-hold lookup failed'
+  rmdir "$FM_HOME/data/backlog.md"
+  away_gate_council_tick 4600
+  grep -q $'\trunning\t' "$claims" || fail 'council did not start once the hold lookup answered not held'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'a failed captain-hold lookup counts as held and skips the council'
+}
+
+test_gate_council_held_task_does_not_block_other_task() {
+  local claims="$STATE/.away-gate-council-claims"
+  if ! command -v tasks-axi >/dev/null 2>&1; then
+    pass 'held task with an older gate check skipped (tasks-axi is not installed)'
+    return 0
+  fi
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  mkdir -p "$FM_HOME/data/held"
+  printf 'x\n' > "$FM_HOME/data/held/nm-r1-findings.txt"
+  printf 'project=/somewhere/projects/allowed-proj\nkind=ship\n' > "$STATE/held.meta"
+  printf 'needs-decision [at=500] [key=nm-r1-review]: ask-user findings=F1 file=%s\n' \
+    "$FM_HOME/data/held/nm-r1-findings.txt" > "$STATE/held.status"
+  "$ROOT/bin/fm-captain-hold.sh" hold held --title 'Held work' --reason 'captain call' >/dev/null \
+    || fail 'could not place the test task on a captain hold'
+  away_gate_council_tick 4600
+  ! grep -q '^held'$'\t' "$claims" 2>/dev/null || fail 'a captain-held task started a council'
+  grep -q '^worker'$'\t''nm-r1-review'$'\t''1000'$'\t''running' "$claims" \
+    || fail 'an older gate on a held task blocked the council for an unheld task'
+  gate_council_wait_exit "$FM_HOME/data/worker/gate-council-nm-r1-review-1000"
+  pass 'a held task with an older gate does not block the council for another task'
+}
+
+test_gate_council_unreadable_status_keeps_ruling() {
+  local dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000" claims="$STATE/.away-gate-council-claims"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  chmod 000 "$STATE/worker.status"
+  away_gate_council_tick 4700 2>/dev/null || true
+  chmod 600 "$STATE/worker.status"
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status file was unreadable'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'unreadable status file recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after an unreadable status file: $GATE_COUNCIL_WAKE"
+  pass 'an unreadable status file counts as open and keeps the ruling'
+}
+
+test_gate_council_status_read_failure_keeps_ruling() {
+  local dir="$FM_HOME/data/worker/gate-council-nm-r1-review-1000" claims="$STATE/.away-gate-council-claims"
+  local fail_reader="$TMP_ROOT/gate-council-failing-reader"
+  printf '#!/bin/sh\nexit 1\n' > "$fail_reader"
+  chmod +x "$fail_reader"
+  gate_council_setup
+  FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  away_gate_council_tick 4600
+  gate_council_wait_exit "$dir"
+  rm -f "$STATE"/.worker.open-decisions-cursor*
+  FM_STATUS_IDENTITY_READER="$fail_reader" away_gate_council_tick 4700 2>/dev/null || true
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log identity could not be read'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'a failed status identity read with no cursor recorded a closed gate'
+  printf 'not a cursor\n' > "$STATE/.worker.open-decisions-cursor.timed"
+  FM_STATUS_SPAN_READER="$fail_reader" away_gate_council_tick 4750 2>/dev/null || true
+  [ -z "$GATE_COUNCIL_WAKE" ] || fail 'ruling surfaced while the status log bytes could not be read'
+  ! grep -q $'\tgate-closed\t' "$claims" || fail 'a failed status span read with an invalid cursor recorded a closed gate'
+  away_gate_council_tick 4800
+  [ "$GATE_COUNCIL_WAKE" = "check: gate council ruled: worker key=nm-r1-review outcome=decline choice=decline record=$dir/record.json" ] \
+    || fail "ruling was dropped after a failed status read: $GATE_COUNCIL_WAKE"
+  pass 'a status log read failure with no trusted cursor counts as open and keeps the ruling'
+}
+
+test_invalid_gate_council_config_keeps_watcher_running() {
+  local dir="$TMP_ROOT/invalid-gate-council"
+  mkdir -p "$dir/state" "$dir/config"
+  fm_test_track_watcher_state "$dir/state"
+  printf 'needs-decision [at=1000] [key=api]: choose\n' > "$dir/state/worker.status"
+  printf 'projects=allowed-proj\n' > "$dir/config/gate-council"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_AFK_MODE=away bash "$ROOT/bin/fm-afk-contract.sh" enter --words 'away test' >/dev/null
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_WATCH_NOW=2800 FM_WATCH_ONCE=1 FM_WEDGE_ALARM_CHANNEL=off \
+    bash "$ROOT/bin/fm-watch.sh" > "$dir/out" 2> "$dir/err" \
+    || fail "real watcher stopped on an invalid gate council config: $(cat "$dir/err")"
+  grep -F 'gate council roster is missing or unreadable' "$dir/err" >/dev/null \
+    || fail "invalid gate council config left no diagnostic: $(cat "$dir/err")"
+  [ ! -e "$dir/state/.away-gate-council-claims" ] || fail 'invalid gate council config started a council'
+  grep -F $'worker\tapi\t1000\t' "$dir/state/.away-decision-age-claims" | grep -F $'page-pending\t' >/dev/null \
+    || fail 'invalid gate council config stopped the captain page'
+  pass 'real watcher logs an invalid gate council config, skips the council, and keeps running'
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -493,4 +800,10 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_away_age_route test_away_age_page_and_staleness \
   test_away_confirmation_change_keeps_decision_open test_interrupted_claim_retries_page \
   test_missing_council_entrypoint_pages test_invalid_authority_config_still_pages \
-  test_away_page_retries_after_channel_configured
+  test_away_page_retries_after_channel_configured \
+  test_gate_council_off_and_filters test_gate_council_runs_once_and_surfaces \
+  test_gate_council_closed_gate_and_failure test_gate_council_unfinished_and_bad_config \
+  test_gate_council_refuses_findings_outside_task_data test_gate_council_hold_lookup_failure_counts_as_held \
+  test_gate_council_held_task_does_not_block_other_task \
+  test_gate_council_unreadable_status_keeps_ruling test_gate_council_status_read_failure_keeps_ruling \
+  test_invalid_gate_council_config_keeps_watcher_running

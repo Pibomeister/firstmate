@@ -200,6 +200,10 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-handoff-launch.sh` | Launch a handing-off primary's successor in a fresh terminal on the home's Orca or tmux backend, optionally on Codex, agy, or another signed-in Claude account, after checking the successor's quota; wait for its verified acknowledgement and lock transfer, and record the completed successor for the restart gate |
 | `fm-supervisor-failover.sh` | Replace a primary or secondmate supervisor whose pool ran out with another signed-in Claude account, or a declared comparable model on another verified runtime, that still has quota headroom, and report the replacement and reason |
 | `fm-supervisor-failover-lib.sh` | Successor quota preflight, supported failover runtimes, agy trust check, and the `SUPERVISOR v1` failover log shared by the handoff launcher and supervisor failover |
+| `fm-failover.sh` | Preflight configured provider runtimes and move a refused worker or primary to an eligible successor ([configuration](configuration.md#provider-failover-configfailover-order)) |
+| `fm-failover-lib.sh` | Shared provider failover order parsing and refusal records |
+| `fm-stall-watch.sh` | Opt-in built-in stall check: read and redact a worker's or the captain's screen, judge it by rule first and by Jev only when ambiguous, and fail over, nudge, or notify ([configuration](configuration.md#stall-watch-configstall-watch)) |
+| `fm-typesafe-lib.sh` | Shared TypeSafe base setting and validation and the bounded `/v1/systemone` POST used by `fm-dispatch-resolve.sh` and `fm-stall-watch.sh` |
 | `fm-handoff-ack.sh` | Successor-side acknowledgement of a handoff document that requests the nonce-bound lock transfer |
 | `fm-handoff-lib.sh` | Shared verified-handoff contract: pending claim, acknowledgement, completion record, and the `HANDOFF v1` watchdog event lines |
 | `fm-captain-locate.sh` | Read-only: print the verified session-lock holder's pid and terminal handle as one `CAPTAIN v1` line for supervisor discovery |
@@ -237,7 +241,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
 | `fm-order.sh`            | Durable captain orders and holds: send, status, verify, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
-| `fm-dispatch-log.sh`     | Append-only captain-goal intake ledger: record each goal as received, dispatched, queued, or blocked, mark late resolutions, and list open goals and goals past the 15-minute dispatch SLA |
+| `fm-dispatch-log.sh`     | Append-only captain-goal intake and provider-switch ledger; mark late resolutions and list open goals and goals past the 15-minute dispatch SLA |
 | `fm-ledger.sh`           | The mission ledger over the backlog: file each approved proposal or order as its own item, print the per-project plan and the next ready item, write handoffs from the ledger, and check ready depth at 17:00 and 23:00 |
 | [`fm-reset-audit.sh`](../bin/fm-reset-audit.sh) | Snapshot local durable open work and compare continuity across compaction or handoff, accounting for recorded completions and logging bounded PASS or FAIL results |
 | [`fm-claims.sh`](../bin/fm-claims.sh) | Check the claims in a task's status log against git, the forge, no-mistakes, AgentKit, and the terminal, record each verdict in its claim ledger, and reopen a task whose claim is refuted ([contract](claim-ledger.md)) |

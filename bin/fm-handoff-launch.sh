@@ -39,6 +39,8 @@
 # and output before reporting readiness.
 # A successor must read the document and call fm-handoff-ack.sh with its nonce
 # and digest. fm-lock.sh validates that ack before moving the live lock.
+# The launch prompt names the handoff by path and never includes its text.
+# bin/fm-handoff-lib.sh owns the warning when that document is longer than 60 lines.
 # The predecessor is never killed. On Orca, failed attempts retain their panes
 # for diagnosis. A failed attempt's nonce expires and cannot take ownership.
 # Every unfinished exit after handoff_started emits one handoff_failed event,
@@ -104,6 +106,7 @@ fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to r
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-handoff-lib.sh
 . "$SCRIPT_DIR/fm-handoff-lib.sh"
+fm_handoff_warn_line_cap "$HANDOFF"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-backend.sh
@@ -116,7 +119,7 @@ fm_root_is_secondmate_home "$FM_HOME" && die 'a second mate asks its parent to r
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-supervisor-failover-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-failover-lib.sh"
-fm_session_lock_owned_by_self "$STATE" || die 'only the current session lock owner can launch its successor'
+fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh" || die 'only the current session lock owner or its watcher can launch its successor'
 # Open-order coverage: a handoff that omits an open captain order would drop it
 # across the session boundary, so refuse before any preflight, claim, or record.
 cover_rc=0
@@ -345,7 +348,7 @@ for attempt in 1 2; do
   if ! take_claim; then
     fail_handoff claim_busy
   fi
-  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_owned_by_self "$STATE"; then
+  if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh"; then
     die 'predecessor no longer owns the lock'
   fi
   NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
@@ -367,7 +370,7 @@ for attempt in 1 2; do
   [ "$attempt" = 1 ] || event=handoff_retry
   printf -v ACK_CMD 'FM_HOME=%q bash %q %q %q' "$FM_HOME" "$SCRIPT_DIR/fm-handoff-ack.sh" "$NONCE" "$SHA256"
   printf -v START_CMD 'FM_HOME=%q bash %q' "$FM_HOME" "$SCRIPT_DIR/fm-session-start.sh"
-  PROMPT="Firstmate handoff successor. Read the entire document at $HANDOFF. Its sha256 must be $SHA256. Before doing any project work or starting a read-only session, run this exact acknowledgement command: $ACK_CMD . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run $START_CMD and continue the document. nonce=$NONCE"
+  PROMPT=$(fm_handoff_successor_prompt "$HANDOFF" "$SHA256" "$ACK_CMD" "$START_CMD" "$NONCE")
   remaining=$((ATTEMPT_END - SECONDS))
   if [ "$remaining" -gt 0 ]; then
     case "$BACKEND" in

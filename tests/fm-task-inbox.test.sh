@@ -472,6 +472,186 @@ test_ring_submits_owned_doorbells_on_a_busy_codex_only() {
   pass "inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry"
 }
 
+# Orca lifts the text on the cursor's prompt row out of `tail` into its
+# `draft` field, so a wrapped doorbell whose Enter never landed reads back
+# split: the tail holds the earlier wrapped rows and `draft` holds the last
+# one. The re-ring must still prove the composer holds only our own doorbell
+# and submit it, while any other split text stays protected.
+make_orca_composer_stub() {  # <dir>
+  mkdir -p "$1/fakebin"
+  cat > "$1/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+# FM_FAKE_STALE, when set, is the composer a cached read returns. A read that
+# turns the Orca CLI cache off returns FM_FAKE_COMPOSER, the current one.
+case "${1:-} ${2:-}" in
+  "terminal read")
+    FM_FAKE_COMPOSER="$FM_FAKE_COMPOSER" python3 -c '
+import json, os, subprocess
+path = os.environ.get("FM_FAKE_COMPOSER", "")
+stale = os.environ.get("FM_FAKE_STALE", "")
+cache = os.environ.get("FM_ORCA_CLI_CACHE", "")
+if stale and cache not in ("0", "off", "false"):
+    path = stale
+composer = ""
+try:
+    composer = open(path).read()
+except OSError:
+    pass
+chunks = subprocess.run(["fold", "-w", "56"], input=composer, capture_output=True, text=True).stdout.splitlines()
+if chunks:
+    draft = chunks[-1]
+    shown = chunks[:-1]
+else:
+    draft = ""
+    shown = []
+def row(text):
+    return "\u2502 " + text.ljust(58) + " \u2502"
+tail = ["\u25cf done", "\u256d" + "\u2500" * 60 + "\u256e"]
+if shown:
+    tail.append(row("\u276f " + shown[0]))
+    tail.extend(row("  " + c) for c in shown[1:])
+    tail.append(row(""))
+else:
+    tail.append(row("\u276f "))
+tail.append("\u2570" + "\u2500" * 60 + "\u256f")
+print(json.dumps({"ok": True, "result": {"terminal": {"tail": tail, "draft": draft}}}))
+' ;;
+  "terminal send")
+    enter=0
+    for a in "$@"; do [ "$a" = --enter ] && enter=1; done
+    if [ "$enter" = 1 ] && [ -s "$FM_FAKE_COMPOSER" ]; then
+      printf 'SUBMIT: %s\n' "$(cat "$FM_FAKE_COMPOSER")" >> "$FM_SEND_LOG"
+      : > "$FM_FAKE_COMPOSER"
+    fi
+    printf '{"ok":true,"result":{}}\n' ;;
+  "terminal list")
+    printf '{"ok":true,"result":{"terminals":[]}}\n' ;;
+  *) exit 1 ;;
+esac
+exit 0
+SH
+  chmod +x "$1/fakebin/orca"
+}
+
+test_ring_submits_own_doorbell_split_into_orca_draft() {
+  local dir state rec doorbell log composer rc other
+  dir="$TMP_ROOT/ring-orca-draft"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_orca_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  # Each stub read spawns python3 and node, and one ring makes several reads,
+  # so a loaded host can overrun the default 20s ring budget and return 2
+  # before the ownership proof finishes. The budget has its own test
+  # (tests/fm-supervision-bounds.test.sh); this case judges ownership only.
+  ring() {
+    PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+      FM_SEND_RING_BUDGET=300 \
+      inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1
+  }
+
+  : > "$log"; printf '%s' "$doorbell" > "$composer"
+  rc=0; ring || rc=$?
+  [ "$rc" = 0 ] || fail "an Orca composer holding our own doorbell split into draft should be submitted, got rc $rc"
+  [ "$(cat "$log")" = "SUBMIT: $doorbell" ] \
+    || fail "the split doorbell should be submitted exactly once, not retyped:"$'\n'"$(cat "$log")"
+  [ ! -s "$composer" ] || fail "the split doorbell was left in the composer"
+
+  for other in "$doorbell and a draft" 'a half-typed draft that is long enough to wrap onto the tail rows of the composer for sure'; do
+    : > "$log"; printf '%s' "$other" > "$composer"
+    rc=0; ring || rc=$?
+    [ "$rc" = 1 ] || fail "other pending text split into draft should skip the ring, got rc $rc for: $other"
+    [ ! -s "$log" ] || fail "other pending text split into draft was submitted:"$'\n'"$(cat "$log")"
+    [ "$(cat "$composer")" = "$other" ] || fail "other pending text split into draft was changed: $(cat "$composer")"
+  done
+  pass "inbox: the ring submits its own doorbell split into Orca draft and protects other split text"
+}
+
+# A cached read can still show an older wrapped doorbell prefix while a later
+# read shows the current draft. Joining those two accepts a composer whose
+# earlier rows were edited to foreign text. The ring must skip that composer.
+test_ring_does_not_submit_a_stale_orca_prefix_plus_current_draft() {
+  local dir state rec doorbell log composer stale rc before
+  dir="$TMP_ROOT/ring-orca-stale-prefix"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_orca_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/current"; stale="$dir/stale"
+  printf '%s' "$doorbell" > "$stale"
+  python3 - "$stale" "$composer" <<'PY' || fail "could not build a foreign composer that keeps only the doorbell's last wrapped row"
+import subprocess, sys
+stale, dest = sys.argv[1], sys.argv[2]
+doorbell = open(stale, encoding="utf-8").read()
+chunks = subprocess.run(["fold", "-w", "56"], input=doorbell, capture_output=True, text=True).stdout.splitlines()
+if len(chunks) < 2:
+    sys.stderr.write("doorbell did not wrap\n")
+    sys.exit(1)
+last = chunks[-1]
+foreign = "edited row of foreign text that is not the doorbell." * 3
+pad = (56 - (len(foreign) % 56)) % 56
+foreign += "x" * pad
+current = foreign + last
+again = subprocess.run(["fold", "-w", "56"], input=current, capture_output=True, text=True).stdout.splitlines()
+if not again or again[-1] != last:
+    sys.stderr.write("current draft row does not match the stale doorbell suffix\n")
+    sys.exit(1)
+if "".join(again[:-1]) == "".join(chunks[:-1]):
+    sys.stderr.write("current tail matches the stale doorbell prefix\n")
+    sys.exit(1)
+open(dest, "w", encoding="utf-8").write(current)
+PY
+  before=$(cat "$composer")
+  : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+    FM_FAKE_STALE="$stale" FM_SEND_RING_BUDGET=300 \
+    inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 1 ] || fail "a stale wrapped doorbell prefix plus the current foreign draft must not be submitted, got rc $rc:"$'\n'"$(cat "$log")"
+  [ ! -s "$log" ] || fail "a stale wrapped doorbell prefix plus the current foreign draft was submitted:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$before" ] || fail "the foreign composer was altered: $(cat "$composer")"
+  pass "inbox: a stale Orca prefix joined to the current draft is not submitted"
+}
+
+# A newline after a held doorbell puts the whole doorbell in the tail and the
+# new row in draft. A tail-only match must not submit that foreign draft.
+test_ring_does_not_submit_a_complete_orca_tail_plus_foreign_draft() {
+  local dir state rec doorbell log composer rc before
+  dir="$TMP_ROOT/ring-orca-tail-plus-foreign-draft"
+  state="$dir/state"
+  mkdir -p "$state"
+  make_orca_composer_stub "$dir"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue")
+  doorbell=$(inbox_lib "$state" fm_task_inbox_doorbell_line "$rec")
+  log="$dir/send.log"; composer="$dir/composer"
+  printf '%s\nfoo' "$doorbell" > "$composer"
+  python3 - "$composer" "$doorbell" <<'PY' || fail "could not build a complete doorbell tail plus a foreign draft row"
+import subprocess, sys
+path, doorbell = sys.argv[1], sys.argv[2]
+chunks = subprocess.run(["fold", "-w", "56"], input=open(path, encoding="utf-8").read(), capture_output=True, text=True).stdout.splitlines()
+if not chunks or chunks[-1] != "foo":
+    sys.stderr.write("draft row is not the foreign text\n")
+    sys.exit(1)
+if "".join(chunks[:-1]) != doorbell:
+    sys.stderr.write("tail rows are not the complete doorbell\n")
+    sys.exit(1)
+PY
+  before=$(cat "$composer")
+  : > "$log"
+  rc=0
+  PATH="$dir/fakebin:$PATH" FM_SEND_LOG="$log" FM_FAKE_COMPOSER="$composer" \
+    FM_SEND_RING_BUDGET=300 \
+    inbox_lib "$state" fm_task_inbox_ring orca term-t1 "$rec" fm-t1 || rc=$?
+  [ "$rc" = 1 ] || fail "a complete doorbell tail plus a foreign draft must not be submitted, got rc $rc:"$'\n'"$(cat "$log")"
+  [ ! -s "$log" ] || fail "a complete doorbell tail plus a foreign draft was submitted:"$'\n'"$(cat "$log")"
+  [ "$(cat "$composer")" = "$before" ] || fail "the foreign composer was altered: $(cat "$composer")"
+  pass "inbox: a complete Orca doorbell tail plus a foreign draft is not submitted"
+}
+
 # A doorbell ring starts a Codex turn, and the ladder's .ring-state is deleted
 # once the worker files the message (whose mv keeps its enqueue time), so the
 # ring itself records the turn start the Codex busy classifier reads. Without
@@ -1751,6 +1931,9 @@ test_doorbell_rejects_terminal_controls
 test_ring_skips_dead_agent
 test_ring_submits_its_own_stuck_doorbell
 test_ring_submits_repeated_own_doorbells_only
+test_ring_submits_own_doorbell_split_into_orca_draft
+test_ring_does_not_submit_a_stale_orca_prefix_plus_current_draft
+test_ring_does_not_submit_a_complete_orca_tail_plus_foreign_draft
 test_ring_submits_owned_doorbells_on_a_busy_codex_only
 test_ring_records_a_codex_turn_start
 test_idempotent_write_dedups_exact_body

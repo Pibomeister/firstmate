@@ -88,13 +88,13 @@ done
 event hook_loop
 pass 'DRILL constant normalized reply: loop broken by turn 3'
 
-for n in 1 2 3 4 5 6 7; do
+for n in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
   turn budget "different reply $n"
   guard
-  if [ "$n" -le 6 ]; then expect_rc 2 'six continuations allowed'; else expect_rc 0 'seventh continuation refused'; fi
+  if [ "$n" -le 12 ]; then expect_rc 2 'twelve continuations allowed'; else expect_rc 0 'thirteenth continuation refused'; fi
 done
 event hook_budget
-pass 'rolling-hour budget permits at most six continuations per session'
+pass 'rolling-hour budget permits at most twelve continuations per session'
 for hook in fm-handoff-trigger.sh fm-claude-stop-autoarm.sh; do
   RC=0
   bash "$ROOT/bin/$hook" < "$PAYLOAD" > "$TMP_ROOT/out" 2> "$TMP_ROOT/err" || RC=$?
@@ -114,9 +114,9 @@ pass 'budget expires after a rolling hour without affecting other sessions'
 # A harness may keep turn_id unchanged across continuations. Without a readable
 # transcript it cannot prove that two writers describe the same Stop event.
 jq -nc '{session_id:"no-transcript",turn_id:"fixed",stop_hook_active:false}' > "$PAYLOAD"
-for n in 1 2 3 4 5 6 7; do
+for n in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
   guard
-  if [ "$n" -le 6 ]; then expect_rc 2 'missing transcript still charges continuations'; else expect_rc 0 'missing transcript cannot evade hourly cap'; fi
+  if [ "$n" -le 12 ]; then expect_rc 2 'missing transcript still charges continuations'; else expect_rc 0 'missing transcript cannot evade hourly cap'; fi
 done
 pass 'a fixed turn_id without a transcript cannot bypass the cap'
 
@@ -172,6 +172,123 @@ turn progress same
 guard
 expect_rc 2 'commit breaks repeated-reply streak'
 pass 'tool calls and commits reset the repeat streak'
+
+seed_full() { # <session>
+  local now
+  now=$(date +%s)
+  jq -nc --argjson now "$now" --argjson n 12 '{times:[range($n)|$now],streak:0}' > "$LAB/state/.stop-hook.$1.json"
+}
+
+# A new captain inbox note bypasses an exhausted budget once. The same note
+# does not keep waking. Removing it is real work and clears the reservations.
+seed_full inbox-bypass
+turn inbox-bypass 'exhausted before note'
+guard
+expect_rc 0 'exhausted budget stops when no inbox note is pending'
+mkdir -p "$LAB/state/inbox"
+printf 'note\n' > "$LAB/state/inbox/100.note"
+turn inbox-bypass 'new inbox note'
+guard
+expect_rc 2 'a new unacknowledged inbox note bypasses an exhausted budget'
+turn inbox-bypass 'same note still pending'
+guard
+expect_rc 0 'the same pending note does not bypass again'
+printf 'note\n' > "$LAB/state/inbox/200.note"
+turn inbox-bypass 'second new note'
+guard
+expect_rc 2 'a second new inbox note bypasses an exhausted budget once'
+rm -f "$LAB/state/inbox/100.note" "$LAB/state/inbox/200.note"
+turn inbox-bypass 'notes consumed'
+guard
+expect_rc 2 'consuming the inbox notes clears the reservation budget'
+pass 'a new inbox note wakes once through an exhausted budget, and consuming it clears the budget'
+
+seed_full wake-only
+printf '1 1 check: lab-wake-only\n' > "$LAB/state/.wake-queue"
+turn wake-only 'wake changed'
+guard
+expect_rc 0 'a wake-queue change does not bypass an exhausted budget'
+rm -f "$LAB/state/.wake-queue"
+pass 'wake-queue changes do not bypass or clear an exhausted budget'
+
+seed_full tool-poll
+jq -nc '{type:"assistant",message:{content:[{type:"tool_use",name:"Bash",id:"tool-budget",input:{command:"true"}}]}}' >> "$TRANSCRIPT"
+turn tool-poll 'tool only'
+guard
+expect_rc 0 'a tool call does not reset an exhausted reservation budget'
+pass 'tool use does not clear an exhausted reservation budget'
+
+# A worker status line is not a captain wake. Seeing one, or a new line on
+# every poll, does not continue past an exhausted budget and does not clear it.
+seed_full worker-cap
+turn worker-cap 'baseline worker status'
+guard
+expect_rc 0 'first worker-status observation does not clear a full budget'
+for n in 1 2 3 4 5; do
+  printf 'working [at=%s]: worker poll\n' "$n" >> "$LAB/state/task.status"
+  turn worker-cap "worker status poll $n"
+  guard
+  expect_rc 0 "worker status poll $n still stops at the cap"
+done
+printf 'working [at=9]: worker poll\n' >> "$LAB/state/task.status"
+turn worker-cap 'worker status poll final'
+guard
+expect_rc 0 'a later worker status line still stops at the cap'
+times=$(jq '.times | length' "$LAB/state/.stop-hook.worker-cap.json")
+[ "$times" -ge 12 ] || fail "worker status changes cleared the budget: times=$times"
+pass 'a worker status line every poll does not refill the stop budget'
+
+seed_full lane-msg
+turn lane-msg 'store lanes'
+guard
+expect_rc 0 'lane message baseline stays stopped'
+mkdir -p "$LAB/state/crew.inbox"
+printf 'act\n' > "$LAB/state/crew.inbox/001.msg"
+turn lane-msg 'lane message'
+guard
+expect_rc 2 'a new pending lane inbox message clears an exhausted budget'
+pass 'a pending lane inbox message clears an exhausted budget'
+
+seed_full dispatch-reset
+turn dispatch-reset 'store dispatch'
+guard
+expect_rc 0 'dispatch baseline stays stopped'
+printf 'received\tdispatch-reset\n' >> "$LAB/state/dispatch-log.tsv"
+turn dispatch-reset 'dispatch changed'
+guard
+expect_rc 2 'a dispatch log change clears an exhausted budget'
+pass 'a dispatch log change clears an exhausted budget'
+
+# A lane message that clears the budget also resets a repeat streak, so the
+# same deferred reply does not become a hook loop on that turn.
+seed_full lane-streak
+jq '.streak = 2' "$LAB/state/.stop-hook.lane-streak.json" > "$TMP_ROOT/streak.json"
+mv "$TMP_ROOT/streak.json" "$LAB/state/.stop-hook.lane-streak.json"
+turn lane-streak 'stored reply'
+guard
+expect_rc 0 'streak baseline stays stopped before the lane message'
+printf 'act\n' > "$LAB/state/crew.inbox/002.msg"
+turn lane-streak 'stored reply'
+guard
+expect_rc 2 'clearing the budget on a lane message does not loop the same reply'
+streak=$(jq '.streak' "$LAB/state/.stop-hook.lane-streak.json")
+[ "$streak" -lt 3 ] || fail "lane progress left the repeat streak at $streak"
+pass 'lane progress that clears the budget resets the repeat streak'
+
+# A cached hook_loop must not hide a new inbox note or a lane acknowledgement.
+for n in 1 2 3; do
+  turn cache-note 'same cached reply'
+  guard
+done
+expect_rc 0 'three identical replies reach a hook loop'
+guard
+expect_rc 0 'the same transcript keeps the cached hook loop'
+mkdir -p "$LAB/state/inbox"
+printf 'note\n' > "$LAB/state/inbox/cache-note.note"
+guard
+expect_rc 2 'a new inbox note is not hidden by a cached hook loop'
+rm -f "$LAB/state/inbox/cache-note.note"
+pass 'a cached hook loop does not hide a new inbox note'
 
 # The other Claude Stop writers must not undo an allowed stop.
 turn siblings same true

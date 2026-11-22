@@ -15,6 +15,8 @@ Start with the directory layout, then use the setting reference for the behavior
 | Persistent secondmates | [Secondmate routes](#secondmate-routes-datasecondmatesmd) |
 | Hung workers whose agent is still alive | [Hung-worker ladder](#hung-worker-ladder-confighung-ladder) |
 | Unattended stall recovery for firstmates and second mates | [Assistant watchdog](#assistant-watchdog-configwatchdog) |
+| Moving a worker or the captain off a provider that refused it | [Provider failover](#provider-failover-configfailover-order) |
+| Built-in stall check of workers and the captain | [Stall watch](#stall-watch-configstall-watch) |
 | Host memory and swap alarms | [Host memory guard](#host-memory-guard-configmemory-guard) |
 | Restarting relays that go stale after a network daemon restart | [Relay guard](#relay-guard-configrelay-guard) |
 | Host identity, credential, and reachability probes for an outside watchdog | [Host-health probe](#host-health-probe) |
@@ -509,6 +511,9 @@ When an order is missing or the check cannot read the document or the order stor
 The session then rewrites the handoff with `bin/fm-ledger.sh handoff` or `bin/fm-order.sh handoff --doc` and launches again.
 Before any claim, the launcher reads the successor's own quota: an exhausted pool refuses before anything launches and the predecessor keeps the lock, while an unmeasured pool is disclosed and does not block.
 The successor reads the handoff and acknowledges it before running session start.
+The launch prompt names that document by path and does not include its text.
+A document longer than 60 lines warns, and the launch still passes only the path.
+`bin/fm-handoff-lib.sh` owns that line cap.
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
 The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
@@ -580,6 +585,149 @@ Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supe
 The comparable models come from `--candidate` or from `config/supervisor-failover-candidates`, which is local to each home and not inherited.
 Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
 List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
+A provider refusal (429, rate, usage, or billing limit) instead moves the agent automatically under [provider failover](#provider-failover-configfailover-order).
+
+## Provider failover (config/failover-order)
+
+When a provider refuses a worker or the captain with an HTTP 429, a rate or usage limit, or a billing, credit, past-due, subscription, or account-hold error, Firstmate moves that agent to the next runtime in this home's failover order instead of letting it sit at an idle prompt.
+`bin/fm-failover.sh` is the one entry point; its `--help` owns the subcommands, output, exit codes, and bounds, and [`tests/fm-failover.test.sh`](../tests/fm-failover.test.sh) covers them.
+
+A ship or scout is detected two ways.
+A Claude worker's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
+For any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
+On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime in cyclic order after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
+It wakes firstmate with a check naming the switch, or why no runtime took over.
+A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
+The whole failover call, every relaunch included, ends strictly inside the watcher's stale grace, so a slow failover never makes the watcher itself look stopped.
+
+A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
+When the session holds the lock and the home has open work, the hook writes a handoff with `bin/fm-ledger.sh handoff` and starts a successor on the next eligible primary runtime through `bin/fm-handoff-launch.sh`.
+The successor takes the lock after its verified acknowledgement, and the old session is never killed and never holds the lock against it.
+A second mate's home leaves its own captain failover to its parent, which uses [supervisor failover](#supervisor-failover).
+
+Every switch is recorded in the dispatch log as a `failover` event with its time, task, from, to, and reason (`bin/fm-dispatch-log.sh`).
+
+The optional local `config/failover-order` lists one runtime per line, in preference order; blank lines and lines that start with `#` are ignored.
+An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
+The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
+Accounts compare by their config directory, so `ordinary` and a declared `$HOME/.claude` are one account.
+An unpinned Claude worker counts as running on the account the supervisor inherits, which holds only when the worker was spawned under that same `CLAUDE_CONFIG_DIR`.
+A `host=` entry is recorded as `host worktree handoff not implemented` in the dispatch log, and local candidates are considered.
+The remote transport currently cannot relocate a local task worktree.
+Preflight excludes accounts below 30% five-hour remaining.
+Without the file the order is `codex host=hetzner`, then local `codex`, `droid`, and `claude@next`.
+After the final entry, selection resumes at the beginning of the order while skipping the refused runtime and runtimes already attempted during the current failover window.
+Example:
+
+```text
+# Preferred order when a provider refuses an agent
+codex host=hetzner
+codex
+droid
+claude@next
+```
+
+`bin/fm-failover.sh preflight` makes one real one-line call through each supported local runtime's CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
+Host entries stay unmeasured until worktree handoff is implemented, and a runtime with no supported probe is excluded.
+A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
+Only provider failover reads the night plan; ordinary dispatch does not consult it.
+An unreadable window is disclosed and does not exclude.
+The preflight sends one short prompt per runtime and per declared account, each a full non-interactive session of that CLI, so a Claude call costs its usual session context rather than one line, plus one `quota-axi` read each.
+It buys nothing.
+
+Failover never signs in, adds funds, buys extra usage, or edits an account pin.
+A worker failover relaunches through `bin/fm-control.sh relaunch --provider-failover`, which closes a usage-limit picker by ending the endpoint without typing into it, since the task is leaving that provider anyway.
+An ordinary relaunch still refuses a usage-limit picker it cannot verify.
+The Claude refusal signals are live-verified in [Runtime backend verification](verification/runtime-backends.md#provider-failover-refusal-signals).
+The [stall watch](#stall-watch-configstall-watch) also calls `bin/fm-failover.sh` with `--reason api_error` for another API error that ended a turn, and with `--reason stalled` for a worker still idle with open work after one nudge.
+
+## Stall watch (config/stall-watch)
+
+The stall watch is a built-in stall check for the captain session and every local ship or scout, run by this home's own watcher instead of an outside timer.
+It reads each agent's screen, judges it deterministically first, asks a cheap classifier only when the screen stays ambiguous, and acts through the existing [provider failover](#provider-failover-configfailover-order), one nudge, or one notification.
+`bin/fm-stall-watch.sh` is the one entry point; its `--help` owns the subcommands, output line, records, exit codes, and bounds, and [`tests/fm-stall-watch.test.sh`](../tests/fm-stall-watch.test.sh) covers them against recorded screens in `tests/fixtures/stall-watch/`.
+
+It is off until the optional local `config/stall-watch` exists.
+While it exists, the watcher starts one detached `bin/fm-stall-watch.sh tick` at most once a minute, never two at once, so a model call or a failover never holds a watcher poll.
+Each tick does nothing until `interval` seconds have passed since the last one, then checks the captain only while its recorded session owner is live and checks each local ship or scout.
+A remote task, a task that declared `done`, `failed`, `blocked`, `needs-decision`, or `paused`, and a screen that changed since the previous check are left alone.
+A screen counts as unchanged only when its redacted rows with timer and counter text normalized, its runtime identity, the task's worktree HEAD, and a checksum of its status content are all the same, so a relaunch, new captain session, new commit, status line, or HTTP error code is progress.
+
+The file holds `key=value` lines; blank lines and lines that start with `#` are ignored, and every key is optional.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `interval` | `1200` | Seconds between checks, at least 60. |
+| `lines` | `60` | Bottom screen rows read, clamped to 10 through 200. |
+| `confidence_floor` | `0.6` | A model answer below it is `unsure`. |
+| `timeout` | `90` | Seconds allowed for one model call, at least 5. |
+
+```text
+# Check every 20 minutes and ask Jev about ambiguous screens
+interval=1200
+```
+
+An invalid `confidence_floor`, `interval`, or `timeout`, including nonnumeric or overlong timing values, is a configuration error that stops the check before it reads any screen.
+A watcher-started tick reports that error with one `check:` notification per distinct file content.
+
+**Deterministic pass**
+
+On an unchanged screen these rules decide without a model, in order:
+
+- A busy semantic record (`fm_busy_classify_meta` in `bin/fm-busy-lib.sh`) for a worker, or the backend's native busy state for the captain, is `working`.
+- A refusal row the watchdog patterns recognize (`fm_wd_provider_error_screen` in `bin/fm-watchdog-lib.sh`) is `rate_limit`, `usage_limit`, or `billing`, and is left to the watcher's own provider failover.
+  After a turn the Claude hook recorded as an ordinary stop, the watcher does not act on such a row, so the classifier judges that screen instead.
+  Because the hook reports every refusal as a stop failure, a refusal answer for that screen counts as `idle_with_goals`.
+- A dialog the watchdog patterns recognize (`fm_wd_pane_dialog`) is `usage_limit` for a usage-limit picker and `waiting_on_human` for any other picker.
+- A captain with no open work is `idle_done` unless its screen shows a terminal provider or API error.
+  The captain has open work only when `bin/fm-dispatch-log.sh overdue` lists an overdue goal or a wake has waited in the queue for longer than one interval; otherwise a captain idle at its prompt is waiting on its watcher, which is healthy.
+  If the overdue probe fails or times out, the check treats open work as unknown and judges the captain instead of declaring it `idle_done`.
+
+Only the remaining screens reach the classifier.
+A rendered activity row such as a spinner, `esc to interrupt`, or a retry countdown is never decided by rule, because a busy footer left in scrollback would hide a stall; the classifier reads it instead.
+A timer or token counter that only counts up keeps the same fingerprint, while a changed HTTP status gets a new one.
+
+**Classifier**
+
+The "JEV" classifier the stall check was specified with is interpreted as TypeSafe Jev (`jev-latest`).
+`jev` asks TypeSafe Jev (`jev-latest`), the decision model this repository already uses for [typed dispatch resolution](#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model), one Choice question whose options are the ten reasons below.
+It finds the key the way that resolver does: `TYPESAFE_API_KEY` from the environment, else `.env`, else the `typesafe` source declared in `config/dispatch-credential-sources.json`.
+`TYPESAFE_BASE` comes from the environment, else `.env`, else defaults to `https://api.typesafe.ai`; HTTP is accepted only for `localhost`, `127.x.x.x`, or `[::1]`, and the key reaches `curl` only through a file descriptor, never its arguments.
+With no key, or when the call fails, the check logs one line saying Jev is unavailable and reports an ambiguous screen as `unsure` with the reason in its note.
+The note distinguishes a missing key, an unusable declaration, an unsupported or timed-out source, an empty source, and a failed Jev call.
+This unknown result takes no action, leaving stale and wedge escalation to the existing watcher.
+An answer below `confidence_floor` is `unsure`: nothing happens the first time, and the same screen still `unsure` on the next check notifies.
+
+The reasons are `working` and `idle_done`, which are not stalled, and `rate_limit`, `usage_limit`, `billing`, `api_error`, `auth`, `crashed`, `idle_with_goals`, and `waiting_on_human`, which are stalled.
+
+**What leaves the machine**
+
+A classifier receives only the redacted bottom rows of the screen, the agent kind (worker or captain), and whether it has open work.
+The screen and key are never posted to a non-loopback HTTP base; HTTPS bases retain the shared TypeSafe URL validation.
+Redaction replaces GitHub, GitLab, OpenAI-style, xAI, Stripe-style, npm, Hugging Face, Google API, AWS, and Slack tokens, JSON Web Tokens, bearer and `Authorization` values, `key=value` secrets, the values of `--api-key`, `--token`, `--password`, and `--secret` options and of compound names that end in them such as `--client-secret`, and URL credentials with `<redacted>`.
+It collapses a private key block, including the tail of one whose `BEGIN` row scrolled away, and any long base64 row, including one inside a box border or behind a tool-output marker, into one marker, and replaces this home, the user's home directory, and other absolute user paths, quoted paths with spaces whole, with `<path>`.
+Any row that still looks credential-like to `fm_secret_like` (`bin/fm-secret-lib.sh`) is withheld and counted rather than sent.
+`bin/fm-stall-watch.sh screen <task-id|captain>` prints exactly the text a classifier would receive.
+
+**Actions**
+
+Each unchanged screen is acted on once; actionful checks for the same target use a bounded lock shared by direct checks and ticks.
+A verdict from a worker or captain runtime that changed after screen capture is recorded with `runtime-changed` and takes no action.
+
+- A model-judged `rate_limit`, `usage_limit`, `billing`, or `api_error` runs `bin/fm-failover.sh` with that `--reason`; a captain failover is authorized only as a descendant of this home's watcher.
+- `idle_with_goals` gets one nudge, through `bin/fm-send.sh` for a worker or as one typed line into a captain composer proven empty.
+  When the next unchanged check within three intervals still finds a worker idle, it runs `bin/fm-failover.sh` with `--reason stalled`; a captain gets one notification instead and is never failed over as stalled.
+  A new runtime, commit, or status line after the nudge ends it, so the next idle spell starts with a nudge again.
+- `waiting_on_human`, `auth`, `crashed`, a nudge that could not be delivered, and a screen judged `unsure` on two checks in a row each wake firstmate with one `check: <target> ...` notification; a captain waiting on its owner and an unknown result from unavailable Jev are recorded only.
+- `working`, `idle_done`, and a rule-recognized refusal do nothing.
+
+A failover that switched, found no eligible runtime, reached its attempt bound, or failed also wakes firstmate with one notification, and a failover lock held by another call is retried on the next check.
+
+Each check appends one row to `state/stall-watch.tsv` with its verdict, source, confidence, action, latency, and reported cost; per-target memory lives in `state/stall-watch/`.
+`bin/fm-stall-watch.sh check <task-id|captain> --dry-run` judges one target now without acting or recording, and `classify` judges a screen on stdin for evaluating recorded screens.
+
+A model is asked at most once per ambiguous unchanged screen per interval.
+The [verification record](verification/stall-watch.md) gives the measured dry-run latency and the current limits of live classifier evidence.
 
 ## Context reading (config/context-reading)
 
@@ -1452,8 +1600,42 @@ unclaimed for a later scan.
 
 This route does not call the watchdog's decision council ([`docs/watchdog.md`](watchdog.md)): every overdue decision stays open and
 enters the configured captain page path; this route decides nothing unattended.
+A no-mistakes ask-user gate open past a configured age (default one hour) can also reach an AgentKit council through the separate opt-in trigger below; that trigger never replaces or delays this page.
 The claim records `page-sent`, `page-failed`, or `page-pending` from the notifier's actual result.
 Pending or failed pages, and claims interrupted before their page result, retry after 60 seconds while that decision remains open.
+
+## Away gate council (config/gate-council)
+
+This home-local, private file turns on the watcher's away gate council trigger.
+Absent, the trigger is off.
+While `state/.afk-contract` validates as away, the watcher hands one no-mistakes ask-user gate at a time to AgentKit's `ak council run`.
+Present and quiet postures never start a council.
+The file holds `key=value` lines; blank lines and `#` comments are ignored:
+
+| Key | Meaning |
+| --- | --- |
+| `roster` | Required. The private council roster passed as `--council-config`; AgentKit owns its format and its owner-only permission check. |
+| `projects` | Comma-separated project directory names, matched against the final component of the task's recorded `project=`. Empty means nothing routes. |
+| `after-secs` | Optional gate age in seconds before the council starts; a canonical positive integer of at most nine digits, default `3600`. |
+| `ak` | Optional path to the `ak` executable; default `ak` on `PATH`. |
+
+A non-regular config file, a missing roster, an invalid `after-secs`, or no executable `ak` logs a watcher diagnostic and skips the council for that poll; the rest of the watcher cycle still runs.
+
+A gate qualifies when its open status record has verb `needs-decision`, key `nm-<run>-<step>`, a valid `[at=<epoch>]` at least `after-secs` old, and the note `ask-user findings=<ids> file=<path>` with `<path>` a regular file whose real path, after symlinks resolve, is under `data/<task>/`.
+Deferred waits, captain-held tasks, open captain calls, and the parent channel are excluded; a captain-call lookup that cannot answer counts as held.
+`state/.away-gate-council-claims` binds one council to each task, key and opening epoch; the away confirmation and the open gate are checked again under its lock before the council starts.
+
+Each council runs detached in `data/<task>/gate-council-<key>-<opened>/`, which holds `card.json`, `task-intent.md` (the brief's `## Captain's intent` body, when present), `record.json`, `log`, and `exit`.
+The card asks whether the worker should `fix` or `decline` the findings, with `fix` as the approving option, so the blind veto seat reviews any fix ruling.
+The context is the findings file and the task intent; AgentKit's outbound gate decides whether they may leave the host.
+When `exit` appears, the next poll queues one `check: gate council ruled:` wake naming the outcome, the choice, and the record or log path.
+A run with no `exit` after `FM_GATE_COUNCIL_UNFINISHED_SECS` (default `7200`) surfaces as `outcome=unfinished`.
+A ruling for a gate that has since closed, or whose status log is gone, is recorded as `gate-closed` and not surfaced.
+A status log that exists but cannot be read in full counts as open, so the ruling waits for a later poll.
+This holds even when no saved read position exists to fall back on.
+
+The record is evidence, never captain approval: the trigger never answers the gate, waives a check, merges, or lifts a hold.
+Firstmate applies a ruling only through the normal gate response that `ask-user-authority` owns.
 
 ## Validating-run deferral (config/wedge-defer-validating)
 

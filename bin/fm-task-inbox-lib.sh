@@ -434,24 +434,30 @@ fm_task_inbox_doorbell_line() {  # <record-path>
 # Ring the doorbell, best-effort: one endpoint-liveness pre-check, one advisory
 # composer pre-check, then the backend's submit machinery with a minimal retry
 # budget, verdict discarded.
-# Returns 0 rang, 1 skipped because the composer PROVENLY holds pending text
-# other than our own doorbell (the watcher re-rings later), 2 the backend send
+# Returns 0 rang, 1 skipped (the watcher re-rings later), 2 the backend send
 # failed, 3 skipped because the endpoint is positively dead or missing (nothing
-# typed; recovery owns the record). No return value is delivery proof; the
-# acknowledgement move is the only delivery signal.
-# The skip is deliberately narrow: only an exact `pending` verdict can defer,
-# because there our Enter could submit someone's real half-typed content.
-# `pending-unproven` and `unknown` still ring - the worst outcome is a garbled
-# CONSTANT line the worker recovers semantically, while skipping on ambiguous
-# verdicts would starve a harness whose idle screen the classifier cannot
-# positively identify (that classifier is advisory here by design).
+# typed; recovery owns the record). Return 1 covers three skips: a `pending`
+# composer on a busy non-Codex pane, a `pending` composer that does not hold
+# only our doorbell, and, on every backend except T3 Code, a composer that
+# holds only our doorbell while the pane is busy and not Codex. No return value
+# is delivery proof; the acknowledgement move is the only delivery signal.
+# The skip is deliberately narrow: a composer not proved to hold only our
+# doorbell defers only on an exact `pending` verdict, because there our Enter
+# could submit someone's real half-typed content.
+# `pending-unproven` and `unknown` still ring in that case - the worst outcome
+# is a garbled CONSTANT line the worker recovers semantically, while skipping
+# on ambiguous verdicts would starve a harness whose idle screen the classifier
+# cannot positively identify (that classifier is advisory here by design).
 # A pending composer holding only whole copies of our own doorbell line is
 # earlier rings whose Enter never landed (later rings concatenate onto it), so
 # on an agent not reported busy it is submitted rather than skipped; skipping
 # it would block every later ring. A busy Codex takes that Enter as a mid-turn
 # steer (docs/verification/runtime-backends.md, "Steering-inbox doorbell on a
 # busy Codex"), so a task whose record harness is codex submits it while busy
-# too. A paste placeholder
+# too. The same ownership proof runs before a fresh copy is typed, so a
+# composer whose shape the classifier cannot prove pending (a typed Claude
+# composer on a plain-capture backend reads `unknown`) is submitted rather
+# than concatenated onto, and a busy non-Codex pane keeps the skip. A paste placeholder
 # such as Codex's `[Pasted Content N chars]` is opaque and never proves
 # ownership, whatever its size. On both paths a lost first Enter gets one
 # retry, and only while the composer still holds exactly the owned copies.
@@ -471,6 +477,19 @@ fm_task_inbox_ring() {  # <backend> <target> <record-path> [expected-label]
   return "$rc"
 }
 
+# Submit a composer already proven to hold only our own doorbell: one Enter,
+# plus one retry when the first Enter is lost and the composer still holds
+# exactly the owned copies (a human typing meanwhile breaks the proof and
+# gets no second Enter).
+_fm_task_inbox_submit_held_doorbell() {  # <backend> <target> <line> <label> <record-path>
+  _fm_task_inbox_note_codex_turn_start "$5"
+  fm_backend_send_key "$1" "$2" Enter "$4" >/dev/null 2>&1 || return 2
+  sleep 0.3
+  fm_task_inbox_composer_holds "$1" "$2" "$3" "$4" || return 0
+  fm_backend_send_key "$1" "$2" Enter "$4" >/dev/null 2>&1 || return 2
+  return 0
+}
+
 _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label]
   local backend=$1 target=$2 rec=$3 label=${4:-} line cstate verdict
   case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null || true)" in
@@ -486,14 +505,25 @@ _fm_task_inbox_ring_once() {  # <backend> <target> <record-path> [expected-label
         [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
       fi
       fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 1
-      _fm_task_inbox_note_codex_turn_start "$rec"
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      sleep 0.3
-      fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label" || return 0
-      fm_backend_send_key "$backend" "$target" Enter "$label" >/dev/null 2>&1 || return 2
-      return 0
+      _fm_task_inbox_submit_held_doorbell "$backend" "$target" "$line" "$label" "$rec"
+      return $?
       ;;
   esac
+  # A composer the classifier cannot prove pending can still provably hold
+  # only our own doorbell (a plain-capture backend reads a typed Claude
+  # composer `unknown`): submit that held copy instead of typing another
+  # one onto it. The proof is the same exact-match as the pending path, so
+  # foreign text is never submitted; a busy non-Codex pane keeps its skip.
+  # T3 Code has no composer to hold text (its send is native), so it keeps
+  # the direct send below.
+  if [ "$backend" != t3code ] \
+    && fm_task_inbox_composer_holds "$backend" "$target" "$line" "$label"; then
+    if [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null)" = busy ]; then
+      [ "$(fm_task_inbox_record_harness "$rec")" = codex ] || return 1
+    fi
+    _fm_task_inbox_submit_held_doorbell "$backend" "$target" "$line" "$label" "$rec"
+    return $?
+  fi
   # Accepted residual race: terminal input and Enter are separate delivery
   # steps, so an agent exiting after the liveness check could leave a bare
   # shell only a suffix; the `: ` prefix protects complete lines only. Do not
@@ -523,20 +553,71 @@ _fm_task_inbox_note_codex_turn_start() {  # <record-path>
     || echo "fm-task-inbox: warning: could not record the codex turn start at ${dir%/*}/$task.turn-start; its busy state may read idle during this turn" >&2
 }
 
-# Whether the composer's content, ignoring line wrapping, is one or more whole
+# Whether <held>, whitespace-stripped like <line>, is one or more whole
 # copies of <line> and nothing else.
-fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
-  local cap held line
-  fm_backend_source "$1" || return 1
-  cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
-  held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
-  held=$(printf '%s' "$held" | tr -d '[:space:]')
-  line=$(printf '%s' "$3" | tr -d '[:space:]')
+_fm_task_inbox_is_doorbell_copies() {  # <held> <line>
+  local held=$1 line=$2
   [ -n "$held" ] && [ -n "$line" ] || return 1
   while [ "${held#"$line"}" != "$held" ]; do
     held=${held#"$line"}
   done
   [ -z "$held" ]
+}
+
+# Decode one base64 line. GNU base64 takes --decode; macOS takes -D.
+_fm_task_inbox_b64d() {  # <base64>
+  if printf '%s' "$1" | base64 --decode 2>/dev/null; then
+    return 0
+  fi
+  printf '%s' "$1" | base64 -D 2>/dev/null
+}
+
+# Whether the composer's content, ignoring line wrapping, is one or more whole
+# copies of <line> and nothing else.
+# Orca lifts the text on the cursor's prompt row out of its capture tail into
+# a separate draft field, so a wrapped doorbell reads back split across the
+# two: the tail extraction alone is then a doorbell prefix, never whole copies,
+# and every re-ring skipped it as foreign pending text. The cursor sits at the
+# end of typed input, so the draft chunk follows the tail rows. A nonempty
+# draft is judged only together with the tail, so a complete doorbell in the
+# tail does not match while the draft holds other text. An empty draft is
+# the tail alone. Anything else in either part still fails the proof.
+# Both parts come from one uncached read
+# (fm_backend_orca_composer_snapshot): a cached tail joined to a later draft
+# can match while the current composer holds foreign text.
+fm_task_inbox_composer_holds() {  # <backend> <target> <line> [expected-label]
+  local cap held line draft snap body tail_b64 draft_b64
+  fm_backend_source "$1" || return 1
+  line=$(printf '%s' "$3" | tr -d '[:space:]')
+  if [ "$1" = orca ]; then
+    snap=$(fm_backend_orca_composer_snapshot "$2") || return 1
+    case "$snap" in
+      *$'\n'.) ;;
+      *) return 1 ;;
+    esac
+    body=${snap%$'\n'.}
+    case "$body" in
+      *$'\n'*) ;;
+      *) return 1 ;;
+    esac
+    tail_b64=${body%%$'\n'*}
+    draft_b64=${body#*$'\n'}
+    held=$(_fm_task_inbox_b64d "$tail_b64") || return 1
+    held=$(fm_composer_extract_selected_content styled=0 "$held") || return 1
+    held=$(printf '%s' "$held" | tr -d '[:space:]')
+    draft=$(_fm_task_inbox_b64d "$draft_b64") || return 1
+    draft=$(printf '%s' "$draft" | tr -d '[:space:]')
+    if [ -n "$draft" ]; then
+      _fm_task_inbox_is_doorbell_copies "${held}${draft}" "$line"
+      return $?
+    fi
+    _fm_task_inbox_is_doorbell_copies "$held" "$line"
+    return $?
+  fi
+  cap=$(fm_backend_capture "$1" "$2" "$FM_COMPOSER_CAPTURE_LINES" "${4:-}" 2>/dev/null) || return 1
+  held=$(fm_composer_extract_selected_content styled=0 "$cap") || return 1
+  held=$(printf '%s' "$held" | tr -d '[:space:]')
+  _fm_task_inbox_is_doorbell_copies "$held" "$line"
 }
 
 # The harness recorded for the task that owns <record-path>, from the task's

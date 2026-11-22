@@ -80,6 +80,24 @@ out=$(audit compare --before "$TEST_HOME/before.json")
 expect_code 0 $? 'blocked dispatch goal is accounted for'
 pass 'a durably blocked goal is an accounted dispatch-ledger terminal transition'
 
+new_home provider-switch
+goal received switched --summary switched >/dev/null
+goal dispatched switched --task ship-switch >/dev/null
+goal received waiting --summary waiting >/dev/null
+snapshot before
+goal failover --task ship-switch --from claude --to codex --reason rate_limit >/dev/null || fail 'record the switch'
+goal failover --task captain --from claude --to codex --reason billing >/dev/null || fail 'record the captain switch'
+goal failover-skip --task ship-switch --from claude --to codex@hetzner --reason 'host worktree handoff not implemented' >/dev/null || fail 'record the host skip'
+out=$(audit compare --before "$TEST_HOME/before.json" 2>&1)
+expect_code 0 $? "provider switches keep the ledger readable: $out"
+snapshot after
+assert_not_contains "$(cat "$TEST_HOME/after.json")" '"captain"' 'a switch adds no goal'
+mv "$TEST_HOME/state/dispatch-log.tsv" "$TEST_HOME/lost-goals"
+grep -v $'\treceived\twaiting\t' "$TEST_HOME/lost-goals" > "$TEST_HOME/state/dispatch-log.tsv"
+MISSING=goal:waiting
+expect_drift
+pass 'a provider switch neither breaks the dispatch ledger nor hides a lost goal'
+
 new_home rollback
 goal received goal-open --summary 'first attempt' >/dev/null
 goal dispatched goal-open --task first-attempt >/dev/null

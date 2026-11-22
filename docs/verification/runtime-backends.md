@@ -177,7 +177,7 @@ The shared session-lock ancestry suite passed on the same host; it covers other 
 
 Verified on 2026-11-15 UTC on macOS arm64 with Bash 3.2.57.
 The successor regression runs the production launcher, acknowledgement, and session lock against Codex-, agy-, and Claude-named processes, with fake Orca and tmux transports, a fake `claude auth status`, and quota-axi fixtures.
-The failover regression runs the production choice against fake delegates, so the handoff and relaunch it requests are proven by their own suites.
+The failover regression runs the production choice against fake delegates, and `tests/fm-failover-relaunch.test.sh` runs the real relaunch through an isolated tmux session with only the harness binaries stubbed.
 The installed Orca 1.4.258 `agent launch --help` exposes the `--agent codex` and `--model` arguments the launcher passes; live Codex and agy model startup is outside this fixture's evidence.
 
 Refresh both with:
@@ -198,6 +198,34 @@ ok - account switch: another signed-in Claude account with headroom takes over f
 ok - claude to codex: no Claude account has headroom, so a comparable Codex model takes over
 ok - exhausted veto: with every pool exhausted nothing launches
 ok - secondmate: relaunched onto codex through fm-control in its own home
+```
+
+### Provider failover refusal signals
+
+Verified on 2026-11-20 UTC on macOS arm64 with Claude Code 2.1.329, Bash 3.2.57, and tmux 3.6a.
+The live guard starts the real installed Claude in an isolated config directory and tmux server, pointed at a local stand-in endpoint, so it spends no model tokens and touches no account.
+It registers the ship StopFailure hooks `bin/fm-spawn.sh` installs, the busy writer and then `bin/fm-failover.sh hook`, and reads both signals provider failover uses.
+A 429 `rate_limit_error` response ended the turn with a StopFailure payload whose `error` is `rate_limit`, and the idle pane showed `API Error: Request rejected (429)`.
+A credit-balance response ended the turn with `error` `billing_error`, and the idle pane showed `Credit balance too low · Add funds`, a row without the word "is" that the portable detector had not matched until this guard ran.
+A real `bin/fm-failover.sh preflight` on the same host reached a Claude login whose subscription payment was past due; its one-line `claude -p` call printed `Claude Code can't use your Claude subscription, usually because a payment is past due`, and the preflight excluded that account with `call=fail:billing`.
+Usage-limit screens were not reproduced live; their rows stay covered only by the portable detector regression.
+The usage-limit picker that `bin/fm-control.sh relaunch --provider-failover` closes is proven only against the tmux stand-in in `tests/fm-control-relaunch.test.sh`.
+Codex and Droid refusal screens and their preflight calls were not reproduced live.
+The watcher also reads the recorded captain endpoint when the dispatch log has open goals and can start the same handoff after an idle provider refusal screen.
+The captain hook uses the same payload with `"async": true`; a separate probe on the same version showed the async hook running as a child of the `claude` process, which is what the captain lock-owner check walks.
+
+Refresh the live guard and the portable regression with:
+
+```sh
+FM_FAILOVER_LIVE_E2E=1 bash tests/fm-failover-live-e2e.test.sh
+bash tests/fm-failover.test.sh
+```
+
+Selected output:
+
+```text
+ok - Claude 2.1.329 (Claude Code): a 429 refusal fires StopFailure into a rate_limit record in 1s, and the idle pane classes rate_limit
+ok - Claude 2.1.329 (Claude Code): a credit-balance refusal fires StopFailure into a billing record in 2s, and the idle pane classes billing
 ```
 
 ## Codex model catalog max validation
@@ -1298,7 +1326,7 @@ Every message the fleet tried to send and every worker restart or shutdown was r
 Opencode's left-bar composer draws its mode/model/branch line INSIDE the box as its last row, and that row's identifying cells are DE-EMPHASISED: the mode word is `ESC[38;2;67;133;190m` (luminance 119.8) and the middle-dot separators are `ESC[38;2;111;110;105m` (luminance 109.7), both under `FM_COMPOSER_GHOST_LUMA_MAX`'s 128, while the model, effort, and branch cells beside them are bright.
 `fm_composer_strip_ghost` exists to answer "what did the human type?", so it deleted precisely the cells that identify the footer, and the row reached `_fm_composer_classify_leftbar` opening at the bright model cell (`Space Bunny max fm-composer-footer` on the pane above, `Grok 4.7 ... tt-record-refresh` on the pane the incident was recorded from) instead of at `Build`.
 `FM_COMPOSER_LEFTBAR_FOOTER_RE_DEFAULT`'s `^(Build|Plan)` anchor therefore could not match on ANY styled backend - tmux, Herdr, and Zellij all pass `styled=1`, which is every backend except cmux, orca, and Paseo - so the exemption was unreachable and a real idle composer read `pending`.
-`pending` is the one verdict that blocks a steer: `fm_task_inbox_ring` defers on it and `bin/fm-watch.sh`'s re-ring calls the same function, and `bin/fm-send.sh` and `bin/fm-control.sh` refuse it, so the measured cost was three manual interventions into worker panes in one day.
+`pending` is a verdict that blocks a steer: `fm_task_inbox_ring` defers on it and `bin/fm-watch.sh`'s re-ring calls the same function, and `bin/fm-send.sh` and `bin/fm-control.sh` refuse it, so the measured cost was three manual interventions into worker panes in one day.
 The geometry was never at fault: the pane's floor row is still `╹` + `▀` and `_fm_composer_leftbar_floor_row` still recognizes it, and the run's LAST row was correctly the footer row.
 
 `_fm_composer_row_is_leftbar_footer` now proves the footer from BOTH forms of that row, the ghost-stripped content and the ANSI-stripped plain row, because the second is the only form that still carries opencode's own de-emphasised mode cell.
@@ -1595,7 +1623,7 @@ All six installed harnesses honored the doorbell contract with real model turns:
 An OpenCode vendor update modal swallowed the first doorbell and the single re-ring recovered it, which is exactly the watcher ladder's job.
 The [Composer classification matrix](#composer-classification-matrix) owns Grok's classifier results and refresh evidence.
 The ring's advisory pre-check tolerates ambiguity because a doorbell into an ambiguous composer is a recoverable constant line, while skipping on ambiguity would starve steering for any harness the classifier cannot positively identify.
-The current pending-composer ring contract is owned by `bin/fm-task-inbox-lib.sh`.
+The current doorbell ring contract is owned by `bin/fm-task-inbox-lib.sh`.
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 

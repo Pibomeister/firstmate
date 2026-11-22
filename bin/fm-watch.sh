@@ -193,6 +193,11 @@
 #                          re-dispatch, a task to dispatch by hand, or a held
 #                          or blocked item it skipped; bin/fm-disk-retry.sh's
 #                          header owns the result parts
+#   check: gate council ruled: <task> key=<key> outcome=<outcome> choice=<choice> record=<path>|log=<path>
+#                          opt-in config/gate-council away trigger: an
+#                          `ak council run` started for an ask-user gate open
+#                          past after-secs finished (or stayed unfinished); the record is
+#                          evidence only, and away_gate_council_tick owns it
 #   check: process-event result captured: <keys>
 #                          a durably captured process-to-event result is queued
 #                          and has not been surfaced yet; reported once per
@@ -397,6 +402,8 @@ esac
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
+# shellcheck source=bin/fm-failover-lib.sh
+. "$SCRIPT_DIR/fm-failover-lib.sh"
 # shellcheck source=bin/fm-health-lib.sh
 . "$SCRIPT_DIR/fm-health-lib.sh"
 # Steering-inbox loss detection: bin/fm-task-inbox-lib.sh owns the record,
@@ -633,6 +640,15 @@ CREW_RELAUNCH_WINDOW_SECS=${FM_CREW_RELAUNCH_WINDOW_SECS:-}
 case "$CREW_RELAUNCH_WINDOW_SECS" in ''|*[!0-9]*|0) CREW_RELAUNCH_WINDOW_SECS=3600 ;; esac
 CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
 case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
+# Provider failover of an idle ship or scout (provider_failover_check): the
+# wall-clock bound on one whole bin/fm-failover.sh worker call, every runtime
+# it tries included (FM_FAILOVER_WATCH_TIMEOUT), on each relaunch inside it
+# (FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT), and the earlier deadline fm-failover.sh
+# gets so it starts no relaunch it cannot finish and records any switch before
+# the kill. The call blocks this window's iteration, so
+# fm_failover_watch_bounds keeps it strictly inside the watcher stale grace.
+read -r FAILOVER_WATCH_TIMEOUT FAILOVER_WATCH_RELAUNCH_TIMEOUT FAILOVER_WATCH_DEADLINE_MARGIN <<< \
+  "$(fm_failover_watch_bounds "$WATCHER_STALE_GRACE" "${FM_FAILOVER_WATCH_TIMEOUT:-}" "${FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT:-}")"
 # A crew with a declared pause is idling on a known external wait, so its stale
 # pane is absorbed rather than wedge-escalated.
 # A captain-held crew whose agent has confidently exited uses the same
@@ -776,13 +792,14 @@ EOF
 # `idle`, or `unknown codex-unverified`), so a caller can say what it saw.
 WINDOW_BUSY_VERDICT=
 window_is_busy() {  # <window> <tail40>
-  local w=$1 tail40=$2 task meta verdict
-  task=$(window_to_task "$w" "$STATE")
+  local w=$1 tail40=$2 task meta verdict harness=${4:-}
+  if [ "$#" -ge 3 ]; then task=$3; else task=$(window_to_task "$w" "$STATE"); fi
   meta="$STATE/$task.meta"
   if [ -n "$task" ] && [ -f "$meta" ]; then
     verdict=$(fm_busy_classify_meta "$meta" "$task" "$STATE" "$tail40")
   else
-    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$(window_harness "$w")" \
+    [ -n "$harness" ] || harness=$(window_harness "$w")
+    verdict=$(fm_busy_classify "$(window_backend "$w")" "$w" "$harness" \
       "${task:-unknown}" "$STATE" "$tail40")
   fi
   WINDOW_BUSY_VERDICT=$verdict
@@ -2432,6 +2449,115 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   fm_lock_release "$lock" 2>/dev/null || true
   return 0
 }
+# Provider failover of an idle ship or scout whose last turn ended on a provider
+# refusal (HTTP 429, rate, usage, or billing limit). The verdict comes from the
+# task's provider-error record, which its Claude StopFailure hook writes and
+# which counts only for the agent's current turn end, or else from the refusal
+# row the idle screen shows (fm_wd_provider_error_screen). A screen is judged
+# once (state/<task>.failover-judged), and a Claude task whose hook recorded an
+# ordinary turn end is not judged by its screen at all. It runs
+# bin/fm-failover.sh worker once per distinct idle screen, remembered in
+# state/<task>.failover-seen, on the first idle poll that shows it, so a
+# refused worker moves within one cycle; that script owns the order, the
+# attempt bound, the per-task lock, and the dispatch-log record. A captain-held
+# or remote task is left to the ordinary stale path. Returns 0 when it ran and
+# queued a check wake, 1 when the window is out of scope or nothing ran.
+provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason
+  case "$kind" in ship|scout) ;; *) return 1 ;; esac
+  case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  seen="$STATE/$task.failover-seen"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
+  if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
+    src=record
+  else
+    judged="$STATE/$task.failover-judged"
+    [ "$(cat "$judged" 2>/dev/null || true)" != "$h" ] || return 1
+    src=screen
+  fi
+  [ -z "$(fm_meta_get "$STATE/$task.meta" remote_host 2>/dev/null || true)" ] || return 1
+  if status_is_captain_held "$(status_declared_wait_line "$STATE/$task.status")" || task_captain_call_open "$task"; then
+    return 1
+  fi
+  if [ "$src" = screen ]; then
+    printf '%s' "$h" > "$judged" 2>/dev/null || true
+    ! fm_failover_turn_end_known "$STATE" "$task" || return 1
+    class=$(fm_wd_provider_error_screen "$screen") || return 1
+  fi
+  printf '%s' "$h" > "$seen" 2>/dev/null || return 1
+  # shellcheck source=bin/fm-timeout-lib.sh
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
+  out=$(FM_HOME=$FM_HOME FM_FAILOVER_RELAUNCH_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" worker "$task" \
+    --reason "$class" --state "$STATE" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|off|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  triage_log "provider failover ($class from $src) rc=$rc: $task ${line:-no result line}"
+  fm_watch_now now
+  key="failover-$task-$now"
+  case "$rc" in
+    0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - its local copy, branch, and gates were kept; reconcile its current state rather than relaunching it again" ;;
+    1) reason="check: $task stopped on a $class refusal from its provider and no runtime in the failover order took over (${line:-no result line}) - relaunch it by hand on an available runtime, or queue it until the limit resets" ;;
+    3) reason="check: $task stopped on a $class refusal from its provider again, and automatic failover paused at its attempt bound (${line:-no result line}) - recover it by hand" ;;
+    5) rm -f "$seen"; return 1 ;;
+    6) return 1 ;;
+    *) reason="check: $task stopped on a $class refusal from its provider and its automatic failover failed (exit $rc): $(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk 'NF { l = $0 } END { print substr(l, 1, 240) }') - recover it by hand, and check for unlanded work before any cleanup" ;;
+  esac
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
+  return 0
+}
+
+captain_provider_failover_check() {
+  local endpoint="$STATE/.lock-session" backend terminal screen class hash seen out rc=0 line now key reason owner_pid captain_h rows prompt before after
+  fm_supervision_needed "$STATE" || return 1
+  [ -f "$endpoint" ] && [ ! -L "$endpoint" ] || return 1
+  backend=$(sed -n 's/^backend=//p' "$endpoint")
+  terminal=$(sed -n 's/^terminal=//p' "$endpoint")
+  [ -n "$terminal" ] && [ "$terminal" != unknown ] || return 1
+  watcher_capture "$backend" "$terminal" 40 || return 1
+  screen=$WATCHER_CAPTURE
+  owner_pid=$(cat "$STATE/.lock" 2>/dev/null || true)
+  captain_h=$("$SCRIPT_DIR/fm-harness.sh" process "$owner_pid" 2>/dev/null) || captain_h=
+  captain_h=${captain_h##* }
+  if [ -z "$captain_h" ]; then
+    command -v fm_session_lock_recorded_owner_live >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-session-lock-lib.sh"
+    fm_session_lock_recorded_owner_live "$STATE" || return 1
+    captain_h=${FM_SESSION_LOCK_OWNER_HARNESS:-}
+  fi
+  [ -n "$captain_h" ] || return 1
+  window_is_busy "$terminal" "$screen" captain "$captain_h" && return 1
+  ! fm_failover_turn_end_known "$STATE" captain || return 1
+  rows=$(_fm_wd_tail_rows "$screen" 12)
+  prompt=$(printf '%s\n' "$rows" | awk -v glyph="$FM_WD_PROMPT_RE" '$0 ~ glyph { n = NR } END { print n + 0 }')
+  [ "$prompt" -gt 1 ] || return 1
+  before=$(printf '%s\n' "$rows" | head -n "$((prompt - 1))")
+  after=$(printf '%s\n' "$rows" | tail -n "+$((prompt + 1))")
+  printf '%s\n%s\n' "$before" "$after" | LC_ALL=C grep -Eiq '^[^a-z]*(working|thinking|processing|connecting|retrying|esc to interrupt)' && return 1
+  class=$(fm_wd_provider_error_class "$before") || return 1
+  hash=$(printf '%s' "$screen" | hash_pane)
+  seen="$STATE/.captain-failover-seen"
+  [ "$(cat "$seen" 2>/dev/null || true)" != "$hash" ] || return 1
+  printf '%s' "$hash" > "$seen" || return 1
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  fm_watch_now now
+  out=$(FM_HOME=$FM_HOME FM_CAPTAIN_WATCHER_FAILOVER=1 FM_FAILOVER_HANDOFF_TIMEOUT=$FAILOVER_WATCH_RELAUNCH_TIMEOUT \
+    FM_FAILOVER_DEADLINE=$((now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
+    fm_run_timed_fn "$FAILOVER_WATCH_TIMEOUT" bash "$SCRIPT_DIR/fm-failover.sh" captain \
+    --reason "$class" </dev/null 2>&1) || rc=$?
+  line=$(printf '%s\n' "$out" | LC_ALL=C tr -d '\r' | awk '/^(switched|none|bound|busy|skip) / { l = $0 } END { print substr(l, 1, 240) }')
+  if [ "$rc" -eq 6 ]; then rm -f "$seen"; return 1; fi
+  key="failover-captain-$now"
+  if [ "$rc" -eq 0 ]; then
+    reason="check: captain moved to the next runtime after a $class refusal ($line)"
+  else
+    reason="check: captain stopped on a $class refusal and automatic failover did not confirm a successor (exit $rc): ${line:-no result line}"
+  fi
+  fm_wake_append check "$key" "$reason" || exit 1
+  wake "$reason"
+}
+
 # The question the wedge timer never asked before it alarmed: is there still an
 # agent here to BE wedged? A wedge is something stuck that might recover, so
 # re-alarming it earns its cost; an agent that is gone never moves again, its pane
@@ -3643,6 +3769,44 @@ disk_retry_tick() {
   done
 }
 
+# Opt-in stall check (bin/fm-stall-watch.sh; docs/configuration.md "Stall
+# watch"): while config/stall-watch exists, start one tick at most once a
+# minute and single-flight, in its own process group like the disk retry scan,
+# so a model call or a failover never holds a poll and a watcher restart does
+# not cut one short; the tick keeps its own interval. This tick wakes with each
+# report file a tick left, even after the opt-in is removed. Off costs one glob
+# and one file test.
+STALL_WATCH_PID=
+STALL_WATCH_START=
+stall_watch_tick() {
+  local f stamp="$STATE/stall-watch/.last-launch" monitor=0 current
+  STALL_WATCH_REASON=
+  for f in "$STATE/stall-watch"/.report.*; do
+    [ -f "$f" ] || continue
+    STALL_WATCH_REASON=$(cat "$f" 2>/dev/null) || STALL_WATCH_REASON=
+    rm -f -- "$f" 2>/dev/null || true
+    [ -z "$STALL_WATCH_REASON" ] || break
+  done
+  [ -e "$CONFIG/stall-watch" ] || return 0
+  command -v fm_pid_start_time >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-wake-lib.sh"
+  command -v fm_run_timed_fn >/dev/null 2>&1 || . "$SCRIPT_DIR/fm-timeout-lib.sh"
+  if [ -n "$STALL_WATCH_PID" ] && [ -n "$STALL_WATCH_START" ]; then
+    current=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || current=''
+    [ "$current" != "$STALL_WATCH_START" ] || return 0
+  fi
+  STALL_WATCH_PID='' STALL_WATCH_START=''
+  [ "$(age_of "$stamp")" -ge 60 ] || return 0
+  mkdir -p "$STATE/stall-watch" 2>/dev/null && touch "$stamp" 2>/dev/null || return 0
+  case $- in *m*) monitor=1 ;; esac
+  set -m 2>/dev/null || true
+  FM_HOME=$FM_HOME FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
+    nohup "$SCRIPT_DIR/fm-stall-watch.sh" tick </dev/null >/dev/null 2>&1 &
+  STALL_WATCH_PID=$!
+  STALL_WATCH_START=$(fm_run_timed_fn 2 fm_pid_start_time "$STALL_WATCH_PID" 2>/dev/null) || STALL_WATCH_START=
+  disown "$STALL_WATCH_PID" 2>/dev/null || true
+  [ "$monitor" -eq 1 ] || set +m 2>/dev/null || true
+}
+
 # Away decisions use the timed status fold. Without a council entrypoint every
 # overdue decision is a captain page; nothing authorizes an unattended decision.
 # The claim covers task, key and opening epoch, so a repeat scan or a new away
@@ -3779,6 +3943,256 @@ EOF
   case "$page_state" in sent|failed|pending) ;; *) page_state=pending ;; esac
   printf '%s\t%s\t%s\t%s\tpage-%s\t%s\n' \
     "$due_task" "$due_key" "$due_opened" "$confirmed" "$page_state" "$now" >> "$claim_file"
+}
+
+# Away gate council trigger. While an away record exists and the home-local
+# config/gate-council file is present, a no-mistakes ask-user gate (status key
+# nm-<run>-<step>, verb needs-decision, note `ask-user findings=<ids>
+# file=<path>`) that stays open at least after-secs (default 3600) for a task
+# whose recorded project directory name is on the config's projects= list is
+# handed to AgentKit's `ak council run` with the configured roster. This is a
+# trigger only: the card, roster, seats, outbound gate and record belong to
+# AgentKit. The council runs detached; a later poll surfaces its record as one
+# `check: gate council ruled:` wake. The ruling is evidence for firstmate, which
+# applies it through the normal gate response; this code never answers the
+# gate, waives a check, or merges. docs/configuration.md "Away gate council"
+# owns the config keys and the run-directory layout.
+# STATE/.away-gate-council-claims rows are <task> TAB <key> TAB <opened> TAB
+# <state> TAB <epoch> TAB <run-dir>; the newest row for one task, key and
+# opening epoch wins, so one gate episode gets at most one council.
+GATE_COUNCIL_WAKE=
+
+gate_council_config_value() {  # <file> <key>
+  awk -v key="$2" '
+    /^[[:space:]]*(#|$)/ { next }
+    { line=$0; sub(/\r$/, "", line); eq=index(line, "="); if (!eq) next
+      name=substr(line, 1, eq - 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name != key) next
+      value=substr(line, eq + 1); gsub(/^[[:space:]]+|[[:space:]]+$/, "", value); found=value }
+    END { if (found != "") print found }
+  ' "$1"
+}
+
+# 0 when <project-dir>'s final component is on the comma-separated <list>.
+gate_council_project_allowed() {  # <list> <project-dir>
+  local list=",$1," name=${2%/}
+  name=${name##*/}
+  [ -n "$name" ] || return 1
+  list=$(printf '%s' "$list" | tr -d ' \t')
+  case "$list" in *",$name,"*) return 0 ;; esac
+  return 1
+}
+
+# The newest claim state for one gate episode, or nothing.
+gate_council_claim_state() {  # <claims-file> <task> <key> <opened>
+  [ -f "$1" ] || return 0
+  awk -F '\t' -v t="$2" -v k="$3" -v o="$4" \
+    '($1 "") == (t "") && ($2 "") == (k "") && ($3 "") == (o "") { s=$4 } END { if (s != "") print s }' "$1"
+}
+
+# 0 while <task>'s <key> is still the same open needs-decision episode, 1 when
+# it has closed or its status log is gone, and 2 when the log exists but any
+# part of it could not be read, so a failed read is never mistaken for a closed
+# gate, even with no trusted cursor to fall back on.
+gate_council_still_open() {  # <task> <key> <opened>
+  local f="$STATE/$1.status" open key verb opened
+  [ -e "$f" ] || [ -L "$f" ] || return 1
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 2
+  open=$(status_open_decisions_incremental "$f" '' timed strict) || return 2
+  while IFS=$'\t' read -r key verb opened _; do
+    [ "$key" = "$2" ] && [ "$opened" = "$3" ] && [ "$verb" = needs-decision ] && return 0
+  done <<EOT
+$open
+EOT
+  return 1
+}
+
+# The resolved findings path an ask-user gate note names, when it is a regular
+# file whose real location is under this home's real data directory for <task>,
+# so a symlinked folder anywhere on the path cannot point the council elsewhere.
+gate_council_findings_path() {  # <task> <note>
+  local task=$1 note=$2 path real_dir real_data
+  case "$note" in 'ask-user findings='*' file='*) ;; *) return 1 ;; esac
+  path=${note##* file=}
+  path=${path%% *}
+  case "$path" in "$FM_HOME/data/$task/"*) ;; *) return 1 ;; esac
+  case "/$path/" in */../*|*/./*) return 1 ;; esac
+  real_dir=$(cd -P -- "${path%/*}" 2>/dev/null && pwd -P) || return 1
+  real_data=$(cd -P -- "$FM_HOME/data" 2>/dev/null && pwd -P) || return 1
+  case "$real_dir/" in "$real_data/$task/"*) ;; *) return 1 ;; esac
+  path="$real_dir/${path##*/}"
+  [ -f "$path" ] && [ -r "$path" ] && [ ! -L "$path" ] || return 1
+  printf '%s\n' "$path"
+}
+
+# 0 unless the backlog answers that <task> is not an open captain call, so a
+# hold lookup that cannot answer counts as held and the council skips the task.
+gate_council_task_held() {  # <task>
+  local rc=0
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" open "$1" --distinguish-absent >/dev/null 2>&1 || rc=$?
+  case "$rc" in 1|3) return 1 ;; esac
+  return 0
+}
+
+gate_council_record_field() {  # <record> <top-level-field>
+  sed -n "s/^  \"$2\": \"\\([a-z0-9-]*\\)\",*\$/\\1/p" "$1" 2>/dev/null | head -n 1
+}
+
+# Surface the oldest finished council run as one wake. A run whose gate has
+# since closed is recorded and dropped; a run still unfinished after
+# FM_GATE_COUNCIL_UNFINISHED_SECS (default 7200) surfaces as unfinished.
+gate_council_surface() {  # <claims-file> <now>
+  local file=$1 now=$2 rows task key opened state stamp dir outcome choice reason
+  local limit=${FM_GATE_COUNCIL_UNFINISHED_SECS:-7200} code
+  [ -f "$file" ] || return 0
+  rows=$(awk -F '\t' '{ k=$1 FS $2 FS $3; row[k]=$0; if (!(k in seen)) { seen[k]=1; order[++n]=k } }
+    END { for (i = 1; i <= n; i++) { split(row[order[i]], f, FS); if (f[4] == "running") print row[order[i]] } }' "$file") || return 1
+  while IFS=$'\t' read -r task key opened state stamp dir; do
+    [ -n "$task" ] && [ -n "$dir" ] || continue
+    case "$stamp" in ''|*[!0-9]*) stamp=0 ;; esac
+    if [ -f "$dir/exit" ]; then
+      code=$(head -n 1 "$dir/exit" 2>/dev/null | tr -cd '0-9')
+      outcome=$(gate_council_record_field "$dir/record.json" outcome)
+      choice=$(gate_council_record_field "$dir/record.json" choice)
+      [ -n "$outcome" ] || outcome="error exit=${code:-?}"
+      reason="check: gate council ruled: $task key=$key outcome=$outcome choice=${choice:--}"
+      if [ -f "$dir/record.json" ]; then reason="$reason record=$dir/record.json"; else reason="$reason log=$dir/log"; fi
+    elif [ "$now" -ge "$stamp" ] && [ "$((now - stamp))" -ge "$limit" ]; then
+      reason="check: gate council ruled: $task key=$key outcome=unfinished choice=- log=$dir/log"
+    else
+      continue
+    fi
+    gate_council_still_open "$task" "$key" "$opened" || {
+      [ "$?" = 1 ] || continue
+      printf '%s\t%s\t%s\tgate-closed\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
+      continue
+    }
+    fm_wake_append check "gate-council:$task:$key" "$reason" || return 1
+    printf '%s\t%s\t%s\tsurfaced\t%s\t%s\n' "$task" "$key" "$opened" "$now" "$dir" >> "$file" || return 1
+    GATE_COUNCIL_WAKE=$reason
+    return 0
+  done <<EOT
+$rows
+EOT
+}
+
+# Start `ak council run` in its own session so it outlives this watcher cycle.
+# The exit file is written last, so its presence means the run finished.
+gate_council_launch() {  # <ak> <run-dir> <roster> <findings> <intent-or-empty>
+  local ak=$1 dir=$2 roster=$3 findings=$4 intent=$5
+  # shellcheck disable=SC2016 # Expanded by the detached bash, not here.
+  local runner='"$@" >>"$0/log" 2>&1; s=$?; printf "%s\n" "$s" > "$0/exit.tmp" && mv -f "$0/exit.tmp" "$0/exit"'
+  set -- council run --card "$dir/card.json" --council-config "$roster" --context "$findings"
+  [ -z "$intent" ] || set -- "$@" --context "$intent"
+  set -- "$@" --out "$dir/record.json"
+  if command -v setsid >/dev/null 2>&1; then
+    ( setsid nohup bash -c "$runner" "$dir" "$ak" "$@" </dev/null >/dev/null 2>&1 & )
+  else
+    ( nohup bash -c "$runner" "$dir" "$ak" "$@" </dev/null >/dev/null 2>&1 & )
+  fi
+}
+
+away_gate_council_tick() {  # [now-epoch]
+  local now=${1:-} config="$CONFIG/gate-council" roster projects after ak
+  local record="$STATE/.afk-contract" confirmed exclude f task open key verb opened note
+  local claim_file="$STATE/.away-gate-council-claims" claim_lock meta project findings
+  local due_task='' due_key='' due_opened='' due_findings='' dir id intent='' record_error held
+  GATE_COUNCIL_WAKE=
+  [ -e "$config" ] || [ -L "$config" ] || return 0
+  [ -f "$config" ] && [ -r "$config" ] && [ ! -L "$config" ] \
+    || { echo 'watcher: gate council config is not a readable regular file' >&2; return 1; }
+  if [ -e "$claim_file" ] || [ -L "$claim_file" ]; then
+    [ -f "$claim_file" ] && [ -r "$claim_file" ] && [ ! -L "$claim_file" ] || return 1
+  fi
+  [ -n "$now" ] || fm_watch_now now
+  gate_council_surface "$claim_file" "$now" || return 1
+  [ -z "$GATE_COUNCIL_WAKE" ] || return 0
+  away_record_present || return 0
+  if ! record_error=$(fm_afk_contract_validate "$record" 2>&1); then
+    away_record_present || return 0
+    printf '%s\n' "$record_error" >&2
+    return 1
+  fi
+  roster=$(gate_council_config_value "$config" roster)
+  projects=$(gate_council_config_value "$config" projects)
+  after=$(gate_council_config_value "$config" after-secs)
+  ak=$(gate_council_config_value "$config" ak)
+  [ -n "$after" ] || after=3600
+  case "$after" in 0*|*[!0-9]*) echo 'watcher: invalid gate council after-secs' >&2; return 1 ;; esac
+  [ "${#after}" -le 9 ] || { echo 'watcher: invalid gate council after-secs' >&2; return 1; }
+  [ -n "$roster" ] && [ -f "$roster" ] && [ -r "$roster" ] \
+    || { echo 'watcher: gate council roster is missing or unreadable' >&2; return 1; }
+  [ -n "$ak" ] || ak=$(command -v ak 2>/dev/null) || ak=
+  [ -n "$ak" ] && [ -x "$ak" ] || { echo 'watcher: gate council needs an executable ak' >&2; return 1; }
+  [ -n "$projects" ] || return 0
+  confirmed=$(fm_afk_contract_read_field "$record" confirmed_epoch)
+  exclude=$(status_scan_parent_channel_exclude "$STATE")
+  for f in "$STATE"/*.status; do
+    [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
+    [ "$f" != "$exclude" ] || continue
+    task=${f##*/}; task=${task%.status}
+    case "$task" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+    meta="$STATE/$task.meta"
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    project=$(sed -n 's/^project=//p' "$meta" | head -n 1)
+    gate_council_project_allowed "$projects" "$project" || continue
+    status_is_paused_or_captain_held "$(status_declared_wait_line "$f")" && continue
+    held=
+    open=$(status_open_decisions_incremental "$f" '' timed) || return 1
+    while IFS=$'\t' read -r key verb opened _ note; do
+      [ "$verb" = needs-decision ] || continue
+      case "$key" in nm-?*-?*) ;; *) continue ;; esac
+      case "$key" in *[!A-Za-z0-9._-]*) continue ;; esac
+      case "$opened" in ''|unknown|*[!0-9]*) continue ;; esac
+      [ "$now" -ge "$opened" ] && [ "$((now - opened))" -ge "$after" ] || continue
+      [ -z "$(gate_council_claim_state "$claim_file" "$task" "$key" "$opened")" ] || continue
+      findings=$(gate_council_findings_path "$task" "$note") || continue
+      if [ -z "$due_opened" ] || [ "$opened" -lt "$due_opened" ]; then
+        if [ -z "$held" ]; then
+          held=no
+          gate_council_task_held "$task" && held=yes
+        fi
+        [ "$held" = no ] || continue
+        due_task=$task; due_key=$key; due_opened=$opened; due_findings=$findings
+      fi
+    done <<EOT
+$open
+EOT
+  done
+  [ -n "$due_task" ] || return 0
+  claim_lock="$STATE/.away-gate-council-claims.lock"
+  fm_lock_try_acquire "$claim_lock" || return 0
+  if [ -n "$(gate_council_claim_state "$claim_file" "$due_task" "$due_key" "$due_opened")" ] \
+    || ! away_record_present || ! fm_afk_contract_validate "$record" >/dev/null 2>&1 \
+    || [ "$(fm_afk_contract_read_field "$record" confirmed_epoch)" != "$confirmed" ] \
+    || ! gate_council_still_open "$due_task" "$due_key" "$due_opened"; then
+    fm_lock_release "$claim_lock"
+    return 0
+  fi
+  dir="$FM_HOME/data/$due_task/gate-council-$due_key-$due_opened"
+  id=$(printf 'gate-%s-%s-%s' "$due_task" "$due_key" "$due_opened" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -c 'a-z0-9' '-')
+  if [ -L "$FM_HOME/data/$due_task" ] || ! mkdir -p -- "$dir" || [ -L "$dir" ] || ! chmod 700 "$dir" \
+    || ! printf '{"id":"%s","question":"%s","options":["fix","decline"],"approve":"fix"}\n' "$id" \
+      "A Firstmate worker's no-mistakes validation gate ($due_task, $due_key) has waited at least $after seconds on ask-user findings. Using the findings file and the task's intent in the context, should the worker fix the findings or decline them?" \
+      > "$dir/card.json"; then
+    printf '%s\t%s\t%s\tlaunch-failed\t%s\t%s\n' "$due_task" "$due_key" "$due_opened" "$now" "$dir" >> "$claim_file"
+    fm_lock_release "$claim_lock"
+    echo "watcher: gate council could not prepare $dir" >&2
+    return 0
+  fi
+  if [ -f "$FM_HOME/data/$due_task/brief.md" ]; then
+    # shellcheck source=bin/fm-brief-heading-lib.sh
+    declare -F fm_brief_task_heading_body >/dev/null || . "$SCRIPT_DIR/fm-brief-heading-lib.sh"
+    if fm_brief_task_heading_body "$FM_HOME/data/$due_task/brief.md" "## Captain's intent" > "$dir/task-intent.md" \
+      && [ -s "$dir/task-intent.md" ]; then
+      intent="$dir/task-intent.md"
+    fi
+  fi
+  printf '%s\t%s\t%s\trunning\t%s\t%s\n' "$due_task" "$due_key" "$due_opened" "$now" "$dir" >> "$claim_file" || {
+    fm_lock_release "$claim_lock"; return 1;
+  }
+  fm_lock_release "$claim_lock"
+  gate_council_launch "$ak" "$dir" "$roster" "$due_findings" "$intent"
 }
 
 # The identity a re-surface throttle is bound to: the task's whole status-log
@@ -5328,6 +5742,8 @@ while :; do
   done < <(recorded_windows)
   [ -z "$P0_BLOCKER_ALARMS" ] || wake "$P0_BLOCKER_ALARMS"
 
+  captain_provider_failover_check || true
+
   fleet_heartbeat_publish_detached
 
   for budget_meta in "$STATE"/*.meta; do
@@ -5396,10 +5812,17 @@ while :; do
   disk_retry_tick
   [ -z "$DISK_RETRY_REASON" ] || wake "$DISK_RETRY_REASON"
 
+  watch_stage stall-watch
+  stall_watch_tick
+  [ -z "$STALL_WATCH_REASON" ] || wake "$STALL_WATCH_REASON"
+
   away_decision_age_tick || {
     echo 'watcher: away decision age check failed' >&2
     exit 1
   }
+  away_gate_council_tick \
+    || echo 'watcher: away gate council check failed; the council is skipped this cycle' >&2
+  [ -z "$GATE_COUNCIL_WAKE" ] || wake "$GATE_COUNCIL_WAKE"
   # Endpoint liveness runs before queue observation: a positively dead or
   # missing secondmate endpoint is relaunched here on a bounded cadence, which
   # is also what unsticks that mate's foreign wake queue. The tick's single
@@ -5805,6 +6228,12 @@ EOF
     if [ "$busy_now" -ne 0 ] && dismiss_pane_feedback_dialog "$w" "$tail40"; then
       echo "$h" > "$hf"
       echo 1 > "$cf"
+      continue
+    fi
+    if [ "$busy_now" -ne 0 ] && provider_failover_check "$w" "$task" "$kind" "$tail40" "$h"; then
+      echo "$h" > "$hf"
+      echo 1 > "$cf"
+      printf '%s' "$h" > "$sf"
       continue
     fi
     if [ "$h" = "$prev" ]; then

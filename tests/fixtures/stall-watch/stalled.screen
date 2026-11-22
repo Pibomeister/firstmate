@@ -1,0 +1,10 @@
+• Updated the parser so empty rows are skipped, and the first two cases in
+  tests/fm-parser.test.sh pass now.
+
+• Next I will wire the watcher hook and add the third case.
+
+─ Worked for 4m 02s ─────────────────────────────────────────────────────────────
+
+› Write tests for @filename
+
+  gpt-5.5 high · 61% context left
