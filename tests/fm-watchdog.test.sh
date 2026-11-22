@@ -87,8 +87,11 @@ SH
 
 # echoing_composer_pane: replace the captain pane with a Claude-shaped composer
 # whose terminal echoes typed text into the composer row, so the real composer
-# classifier reads typed-but-unsubmitted text as pending.
+# classifier reads typed-but-unsubmitted text as pending. The window is widened
+# first so a doorbell naming a long temporary path stays on the composer row
+# instead of wrapping over the rule below it.
 echoing_composer_pane() {
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" resize-window -t "$T" -x 600 -y 40
   cat > "$H/echo-agent.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'Captain session\n────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  ? for shortcuts\033[2A\033[3G'
@@ -104,9 +107,10 @@ SH
   done
 }
 
-# composer_line: the captain pane's composer row, trailing blanks trimmed.
+# composer_line [row]: one captain pane row (default the composer row 3),
+# trailing blanks trimmed.
 composer_line() {
-  "$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null | sed -n '3p' | sed 's/[[:space:]]*$//'
+  "$REAL_TMUX" -f /dev/null -L "$SOCKET" capture-pane -p -t "$T" 2>/dev/null | sed -n "${1:-3}p" | sed 's/[[:space:]]*$//'
 }
 
 # wrap_tmux_enter_swallowed: a bare Enter is accepted but never reaches the
@@ -6381,6 +6385,8 @@ restart-command=$TMP_ROOT/fake-captain.sh"
     '❯ '?*) ;;
     *) fail "the swallowed nudge never stayed in the composer: $(composer_line)" ;;
   esac
+  [ "$(composer_line 4)" = '────────────────────────────────────────' ] \
+    || fail "the nudge wrapped over the composer's lower rule: $(composer_line 4)"
   restore_fake_tmux
   assert_equals 1 "$(ledger_rows heartbeat-frozen nudge pending)" "the stale heartbeat was not nudged"
   assert_equals 0 "$(ledger_rows heartbeat-frozen nudge "done")" "a nudge whose Enter was swallowed was recorded as a delivery"
