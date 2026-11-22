@@ -541,6 +541,40 @@ test_herdr_dead_pin_follows_the_homes_live_captain_handle() {
   pass "fm-captain-nudge: a dead pinned herdr pane follows the home's live captain handle, a real Claude pane's empty composer reads empty, a title selector never follows it, and a handle whose session ended is ignored"
 }
 
+# An operator-forced pane in the one-shot test path must fail as itself: a
+# read failure on the named pane logs skip_read_failed and never follows the
+# home's live captain handle, which would observe a different terminal than
+# the one named. The scheduled passes keep the stale-pin fallback.
+test_a_forced_pane_read_failure_never_follows_the_live_handle() {
+  local home bin cap fmhome log lock_pid
+  bin="$TMP_ROOT/forced-herdr-bin"
+  make_handle_herdr "$bin"
+  fmhome="$TMP_ROOT/forced-fm-home"
+  mkdir -p "$fmhome/state" "$TMP_ROOT/forced-queue"
+  sleep 300 >/dev/null 2>&1 &
+  lock_pid=$!
+  printf '%s\n' "$lock_pid" > "$fmhome/state/.lock"
+  printf 'backend=herdr\ntarget=default:w4:p5G\nat=1\n' > "$fmhome/state/captain-handle"
+  printf -- '- [ ] open item\n' > "$TMP_ROOT/forced-queue/backlog.md"
+  cap=$(jq -nc --arg fm "$fmhome" --arg q "$TMP_ROOT/forced-queue/backlog.md" \
+    '[{id:"factory", owner:"goodword", backend:"herdr", pane:"w4:p18", title:"", session:"", fm_home:$fm, open_work:{repos:[], queue_file:$q}}]')
+  home=$(write_home forced-pane "$cap")
+  log="$TMP_ROOT/forced-herdr.log"
+  : > "$log"
+  PATH="$bin:$PATH" FAKE_HERDR_LOG="$log" FAKE_HERDR_LIVE_PANE=w4:p5G \
+    FAKE_HERDR_SCREEN_FILE="$ROOT/tests/fixtures/claude-herdr-primary-empty-composer.screen.txt" \
+    FM_NUDGE_NOW=2000000000 FM_TEST_SEAM=1 FM_NUDGE_SEND_LOG="$home/send.log" \
+    "$NUDGE" test-nudge --captain factory --pane w4:p18 --config "$home/config/captain-nudge.json" >/dev/null 2>&1
+  kill "$lock_pid" 2>/dev/null || true
+  grep -q '^pane read w4:p18' "$log" || fail "the forced pane was never read: $(cat "$log")"
+  ! grep -q '^pane read w4:p5G' "$log" \
+    || fail "a forced pane whose read failed must not follow the home's live handle: $(cat "$log")"
+  assert_equals skip_read_failed "$(last_event "$home")" \
+    "a forced pane read failure must log skip_read_failed: $(tail -n 1 "$home/state/nudge.jsonl")"
+  [ ! -s "$home/send.log" ] || fail "a forced pane read failure must not type: $(cat "$home/send.log")"
+  pass "fm-captain-nudge: an explicitly forced pane fails its own read and never follows the live captain handle"
+}
+
 fm_test_run \
   test_help_and_usage \
   test_decide_nudge_happy_path \
@@ -568,4 +602,5 @@ fm_test_run \
   test_expand_path_literal_tilde \
   test_herdr_idle_tracks_screen_change_not_heartbeat \
   test_once_submits_own_unsent_prompt_only \
-  test_herdr_dead_pin_follows_the_homes_live_captain_handle
+  test_herdr_dead_pin_follows_the_homes_live_captain_handle \
+  test_a_forced_pane_read_failure_never_follows_the_live_handle

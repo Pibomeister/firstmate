@@ -412,8 +412,8 @@ observe_fixture() {  # <captain-json> -> observation fields via globals
   OBS_COMMIT=$(fm_nudge_json_get "$cap" '.fixture.commit // ""' '') || true
 }
 
-observe_live() {  # <captain-json>
-  local cap=$1 backend handle last pane session fmhome row read_ok
+observe_live() {  # <captain-json> [force]
+  local cap=$1 force=${2:-0} backend handle last pane session fmhome row read_ok pinned
   backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
   fmhome=$(fm_nudge_json_get "$cap" '.fm_home // ""' '') || true
   OBS_SCREEN=''
@@ -449,8 +449,12 @@ observe_live() {  # <captain-json>
       # an explicit pin cannot be read, follow the live captain terminal the
       # named home recorded at its last session start instead of failing every
       # pass. A title selector never falls back, whether it matched nothing or
-      # matched a pane whose read failed.
-      if [ "$read_ok" = 0 ] && [ -n "$pinned" ] && row=$(herdr_live_handle "$fmhome") \
+      # matched a pane whose read failed, and neither does a pane the operator
+      # forced for a one-shot test-nudge pass: it must fail as itself, or the
+      # pass would observe a different terminal than the one named and report
+      # skip_read_failed rather than a quiet success elsewhere.
+      if [ "$read_ok" = 0 ] && { [ "$force" != 1 ] || [ -z "$FORCE_PANE" ]; } \
+        && [ -n "$pinned" ] && row=$(herdr_live_handle "$fmhome") \
         && [ "$row" != "$session"$'\t'"$pane" ]; then
         session=${row%%$'\t'*}
         pane=${row#*$'\t'}
@@ -525,7 +529,7 @@ process_captain() {  # <captain-json> [force]
   if [ "$backend" = fixture ]; then
     observe_fixture "$cap"
   else
-    if ! observe_live "$cap"; then
+    if ! observe_live "$cap" "$force"; then
       decision=$(jq -nc '{event:"skip_pane_missing",severity:"medium",reason:"captain pane not found",should_send:false}')
       emit_event "$id" "$owner" "$decision" 0 'none'
       return 0

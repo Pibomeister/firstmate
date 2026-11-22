@@ -16,8 +16,10 @@
 # assistant message), never tool traffic, as said, with only the whitespace at
 # the very end of the message trimmed. A prompt the shared operational-input
 # protocol classifies
-# (bin/fm-operational-input.sh: watcher wakes, guard follow-ups, launch briefs)
-# is fleet machinery, not dialog, and is dropped, and so is a prompt that opens
+# (bin/fm-operational-input.sh: watcher wakes, guard follow-ups, launch
+# briefs, and a record-backed doorbell naming a live record, such as the
+# resume doorbell's carrier) is fleet machinery, not dialog, and is dropped,
+# and so is a prompt that opens
 # with the wrapper a harness puts around a turn it started itself: Claude
 # submits its Stop-hook rewake inside <task-notification>, with no other field
 # to tell it from a typed prompt (tests/fm-host-mirror-live-e2e.test.sh proves
@@ -156,8 +158,13 @@ writer_in_scope() {
   fm_primary_scope_matches "$FM_ROOT" "$STATE" && fm_session_lock_owned_by_self "$STATE"
 }
 
-operational() {  # <text>
-  printf '%s' "$1" | "$SCRIPT_DIR/fm-operational-input.sh" classify >/dev/null 2>&1
+operational() {  # <text>: 0 when the text is Firstmate operational input
+  printf '%s' "$1" | "$SCRIPT_DIR/fm-operational-input.sh" classify >/dev/null 2>&1 && return 0
+  # A record-backed doorbell (the resume doorbell's carrier) counts as
+  # operational input only while the record it names holds a current
+  # envelope; the text alone proves nothing, so an expired carrier is
+  # recorded as plain captain text.
+  printf '%s' "$1" | "$SCRIPT_DIR/fm-operational-input.sh" doorbell-kind >/dev/null 2>&1
 }
 
 # Append one entry. The caller holds nothing; this takes the mirror lock.

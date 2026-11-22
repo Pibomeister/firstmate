@@ -182,6 +182,32 @@ test_operational_foreign_and_unowned_input_is_dropped() {
   pass "mirror: operational input, a harness-started turn, a foreign host's payload, other events, and a session without the lock are never mirrored"
 }
 
+# A record-backed operational doorbell typed as a prompt (the resume
+# doorbell's carrier; bin/fm-operational-input.sh "Record-backed carrier") is
+# Firstmate input, not captain dialog: the mirror drops it while the record it
+# names is live, and a carrier whose record is gone is recorded as plain text.
+test_a_record_backed_doorbell_prompt_is_dropped() {
+  local home line dead
+  home=$(make_home doorbell-carrier)
+  line=$(printf '%s' 'Firstmate resume after context compaction: continue the open work.' \
+    | FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$ROOT/bin/fm-operational-input.sh" record session-start)
+  [ -n "$line" ] || fail "fixture: the record carrier could not be built"
+  dead=$(printf '%s' "$line" | sed 's|/[0-9]*-[0-9a-f]*\.msg|/0-dead.msg|')
+  jq -cn --arg t "$line" --arg id p1 \
+    '{hook_event_name:"UserPromptSubmit", prompt_id:$id, prompt:$t}' > "$home/payload.live.json"
+  jq -cn --arg t "$dead" --arg id p2 \
+    '{hook_event_name:"UserPromptSubmit", prompt_id:$id, prompt:$t}' > "$home/payload.dead.json"
+  as_session "$home" '
+    FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude < "$FM_HOME/payload.live.json"
+    FM_ROOT_OVERRIDE="$PRIMARY_ROOT" "$MIRROR" hook claude < "$FM_HOME/payload.dead.json"
+  ' || fail "a writer refused the doorbell payloads"
+  [ "$(jq -s '[.[] | select(.id == "p1")] | length' "$home/state/.host-mirror.jsonl" 2>/dev/null)" = 0 ] \
+    || fail "a live record-backed doorbell prompt must not be mirrored as captain dialog: $(cat "$home/state/.host-mirror.jsonl")"
+  assert_grep '0-dead' "$home/state/.host-mirror.jsonl" \
+    "a carrier whose record is gone is recorded as plain captain text"
+  pass "mirror: a record-backed doorbell prompt is dropped while its record is live, and a dead carrier is recorded"
+}
+
 # Dialog is recorded as said: a line ending in spaces, blank lines, and
 # indentation inside a message survive, and only the whitespace at the very
 # end of the message is trimmed.
@@ -521,6 +547,7 @@ test_only_proven_writers_are_verified
 test_home_that_opted_out_is_untouched
 test_home_without_the_file_mirrors_only_claude
 test_operational_foreign_and_unowned_input_is_dropped
+test_a_record_backed_doorbell_prompt_is_dropped
 test_internal_whitespace_is_recorded_verbatim
 test_entries_are_deduplicated_and_capped
 test_a_different_reply_under_the_same_id_is_recorded

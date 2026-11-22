@@ -13,7 +13,8 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-resume-doorbell)
 DOORBELL="$ROOT/bin/fm-resume-doorbell.sh"
-LINE=': Firstmate resume after context compaction: re-read state and open goals (run bin/fm-wake-drain.sh and bin/fm-order.sh pickup), then continue the open work.'
+# shellcheck source=bin/fm-operational-input.sh
+. "$ROOT/bin/fm-operational-input.sh"
 
 FAKE_LIB="$TMP_ROOT/fake-backend.sh"
 cat > "$FAKE_LIB" <<'SH'
@@ -104,10 +105,29 @@ fm_backend_herdr_send_key() {  # <target> <key>
 fm_backend_send_key() { fm_backend_herdr_send_key "$2" "$3"; }
 # Like the shared helper: its own reads, then typing, then more reads, then
 # Enter, each keystroke through the adapter.
+fm_backend_herdr_composer_clear() {  # <target> <text>: Ctrl+U until empty, like the real herdr adapter
+  fm_backend_herdr_send_key "$1" C-u || return 1
+  : > "$FAKE_DIR/composer"
+  return 0
+}
 fm_backend_send_text_submit() {
   [ "$(fake_get send-fails 0)" = 1 ] && { printf 'text\t%s\t%s\n' "$2" "$3" >> "$FAKE_DIR/keys"; printf 'send-failed'; return 0; }
   fake_posture_once posture-during-send
   fm_backend_herdr_send_literal "$2" "$3" || { printf 'send-failed'; return 0; }
+  # Like the real herdr claude proof path: operator text joining during the
+  # settle fails the payload check before any Enter, and only a successful
+  # clear turns the abort into send-failed (a refused clear leaves unknown).
+  if [ -e "$FAKE_DIR/operator-joins" ]; then
+    printf 'operator draft' > "$FAKE_DIR/composer"
+    if fm_backend_herdr_composer_clear "$2" "$3"; then printf 'send-failed'; else printf 'unknown'; fi
+    return 0
+  fi
+  # A forced verdict models an unproven submit (a blocking dialog noted, an
+  # unreadable state) while the composer still holds exactly our line.
+  if [ -n "$(fake_get submit-verdict '')" ]; then
+    printf '%s' "$(fake_get submit-verdict '')"
+    return 0
+  fi
   fake_posture_once posture-before-enter
   FAKE_HELPER_ENTER=1 fm_backend_herdr_send_key "$2" Enter || { printf 'send-failed'; return 0; }
   if [ -s "$FAKE_DIR/composer" ]; then printf 'pending'; else printf 'empty'; fi
@@ -146,6 +166,29 @@ last_outcome() { tail -n 1 "$1/state/.resume-doorbell.log" | cut -f5; }
 last_detail() { tail -n 1 "$1/state/.resume-doorbell.log" | cut -f6; }
 typed_count() { { cat "$1/fake/keys" 2>/dev/null || true; } | grep -c '^text'; }
 enter_count() { { cat "$1/fake/keys" 2>/dev/null || true; } | grep -c '^key'; }
+typed_line() {  # <dir> -> the one line the doorbell typed
+  grep -m1 '^text' "$1/fake/keys" 2>/dev/null | cut -f3-
+}
+# The one typed line must be the shared operational-input record carrier
+# naming a live record in this home's operational inbox.
+assert_carrier() {  # <dir>
+  local line record kind
+  line=$(typed_line "$1")
+  case "$line" in
+    "$FM_OPERATIONAL_DOORBELL_PREFIX"*"$FM_OPERATIONAL_DOORBELL_SUFFIX") ;;
+    *) fail "the doorbell must type the operational-input record carrier, got: $line" ;;
+  esac
+  record=${line#"$FM_OPERATIONAL_DOORBELL_PREFIX"}
+  record=${record%"$FM_OPERATIONAL_DOORBELL_SUFFIX"}
+  [ "${record%/*}" = "$(cd -P "$1/state/operational-inbox" && pwd)" ] \
+    || fail "the carrier must name a record in this home's operational inbox: $record"
+  [ -f "$record" ] || fail "the carrier's record must exist: $record"
+  kind=$(printf '%s' "$line" | "$ROOT/bin/fm-operational-input.sh" doorbell-kind) \
+    || fail "the typed line must resolve to a live operational record"
+  [ "$kind" = session-start ] || fail "the record's kind must be session-start, got: $kind"
+  grep -qF 'resume after context compaction' "$record" \
+    || fail "the record must carry the resume instruction: $(cat "$record")"
+}
 
 cleanup_sleepers() {
   local pid
@@ -159,7 +202,7 @@ test_idle_session_gets_one_line_and_submits() {
   dir=$(make_home idle)
   run_doorbell "$dir" --source compact
   [ "$(typed_count "$dir")" = 1 ] || fail "the idle session must receive the line exactly once: $(cat "$dir/fake/keys" 2>/dev/null)"
-  grep -qF "$LINE" "$dir/fake/keys" || fail "the doorbell typed something other than its constant line"
+  assert_carrier "$dir"
   grep -qF 'fixture:w1:p1' "$dir/fake/keys" || fail "the doorbell did not type into the recorded captain handle"
   [ "$(last_outcome "$dir")" = submitted ] || fail "outcome must be submitted, got: $(cat "$dir/state/.resume-doorbell.log")"
   [ ! -e "$dir/state/.resume-doorbell.lock" ] || fail "the single-flight lock was left behind"
@@ -687,6 +730,37 @@ test_second_doorbell_types_nothing_while_one_runs() {
   pass "resume doorbell: a second doorbell while one is live types nothing"
 }
 
+test_an_operator_draft_survives_an_unproven_payload_check() {
+  local dir
+  dir=$(make_home operator-draft)
+  : > "$dir/fake/operator-joins"
+  run_doorbell "$dir" --source compact
+  [ "$(typed_count "$dir")" = 1 ] || fail "the doorbell must type its line once: $(cat "$dir/fake/keys")"
+  ! grep -q 'C-u' "$dir/fake/keys" \
+    || fail "a failed payload check must not press Ctrl+U on the composer: $(cat "$dir/fake/keys")"
+  grep -qF 'operator draft' "$dir/fake/composer" \
+    || fail "the operator's draft must survive the aborted submit: $(cat "$dir/fake/composer")"
+  [ "$(last_outcome "$dir")" = unverified ] \
+    || fail "an aborted submit that erased nothing must log unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
+  assert_contains "$(last_detail "$dir")" "refused" "the log must say the composer clear was refused"
+  pass "resume doorbell: an operator draft typed during the settle survives a failed payload check; the composer is never erased"
+}
+
+test_unproven_verdicts_send_no_extra_enter() {
+  local dir verdict
+  for verdict in unknown unconfirmed; do
+    dir=$(make_home "unproven-$verdict")
+    printf '%s\n' "$verdict" > "$dir/fake/submit-verdict"
+    run_doorbell "$dir" --source compact
+    [ "$(typed_count "$dir")" = 1 ] || fail "$verdict: the first send must type the line once: $(cat "$dir/fake/keys")"
+    [ "$(enter_count "$dir")" = 0 ] \
+      || fail "$verdict: an unproven verdict must send zero extra Enters: $(cat "$dir/fake/keys")"
+    [ "$(last_outcome "$dir")" = unverified ] \
+      || fail "$verdict: an unproven verdict must log unverified, got: $(cat "$dir/state/.resume-doorbell.log")"
+  done
+  pass "resume doorbell: an unknown or unconfirmed first verdict sends zero resubmit Enters and finishes unverified"
+}
+
 test_idle_session_gets_one_line_and_submits
 test_unsafe_targets_stand_down_and_type_nothing
 test_idle_needs_native_idle_and_a_quiet_transcript
@@ -702,3 +776,5 @@ test_posture_change_inside_the_send_withholds_the_keystroke
 test_replacement_session_is_not_the_target
 test_protocol_mismatch_retry_rechecks_posture
 test_second_doorbell_types_nothing_while_one_runs
+test_an_operator_draft_survives_an_unproven_payload_check
+test_unproven_verdicts_send_no_extra_enter

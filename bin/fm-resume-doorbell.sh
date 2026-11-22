@@ -14,12 +14,23 @@
 # empty, its backend reports native idle, and the session transcript
 # (--transcript), when given, has not grown for one poll. A backend with no
 # native busy state never qualifies, so the doorbell stands down there.
-# It then types the one constant FM_RESUME_DOORBELL_LINE and confirms the
-# submit: when the first Enter does not land it presses Enter again only while
-# the composer holds exactly that line, at most FM_RESUME_DOORBELL_RESUBMIT_TRIES
-# times (default 2) FM_RESUME_DOORBELL_RESUBMIT_DELAY seconds apart (default
-# 1.5, clear of the paste window), and reports submitted only once the composer
-# reads empty or the agent reads busy.
+# It then writes the resume instruction to a shared operational-input record
+# (bin/fm-operational-input.sh "Record-backed carrier", kind session-start)
+# and types the constant ASCII doorbell naming that record - Claude strips the
+# invisible protocol mark from typed prompts, and the doorbell text alone
+# proves nothing, so the prompt the primary submits classifies as Firstmate
+# operational input and the host mirror never records it as captain dialog -
+# and confirms the submit: a pending or pending-unproven first verdict is the
+# only one that earns resubmit Enters, at most
+# FM_RESUME_DOORBELL_RESUBMIT_TRIES times (default 2)
+# FM_RESUME_DOORBELL_RESUBMIT_DELAY seconds apart (default 1.5, clear of the
+# paste window) and only while the composer holds exactly that doorbell line;
+# every other unproven verdict (unknown, unconfirmed, a named dialog) finishes
+# unverified with zero extra Enters. A submit whose payload check fails never
+# erases the composer: this process refuses every composer-clear the sourced
+# backend defines, so operator text typed while the doorbell settled survives
+# and the run fails closed as unverified. It reports submitted only once the
+# composer reads empty or the agent reads busy.
 #
 # It stands down, typing nothing, when the session lock changes owner, an away
 # or quiet record exists, state/.context-epoch no longer matches the one seen at
@@ -62,7 +73,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
-FM_RESUME_DOORBELL_LINE=': Firstmate resume after context compaction: re-read state and open goals (run bin/fm-wake-drain.sh and bin/fm-order.sh pickup), then continue the open work.'
+FM_RESUME_DOORBELL_BODY='Firstmate resume after context compaction: re-read state and open goals (run bin/fm-wake-drain.sh and bin/fm-order.sh pickup), then continue the open work.'
 
 SOURCE=compact
 TRANSCRIPT=
@@ -410,7 +421,32 @@ for keystroke_fn in $keystroke_fns; do
 done
 [ "$guarded" -gt 0 ] || finish failed "the $BACKEND keystrokes could not be guarded"
 
-verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) || verdict=
+# A submit whose payload check fails would clear the composer with Ctrl+U,
+# and by then the composer may hold operator text typed while the doorbell
+# settled, so this process wraps every composer-clear the sourced backend (or
+# the test seam) defines to refuse, erasing nothing: the submit then returns
+# its unproven verdict and the run fails closed below.
+CLEAR_REFUSED="$LOCK/clear-refused.$$"
+for clear_fn in $(declare -F | sed -n 's/^declare -f \(fm_backend_[a-z0-9][a-z0-9_]*_composer_clear\)$/\1/p'); do
+  eval "$clear_fn() {
+    printf '%s\n' 'the composer clear was refused so the composer text survived' > \"\$CLEAR_REFUSED\" 2>/dev/null || true
+    return 1
+  }" || finish failed "the $BACKEND composer clear could not be refused"
+done
+
+# The line travels as the shared operational-input record carrier: Claude
+# strips the invisible U+2063 mark from typed prompts, so the resume
+# instruction is written to a durable record and the typed ASCII doorbell
+# names it, keeping the submitted prompt Firstmate operational input rather
+# than captain dialog (bin/fm-operational-input.sh "Record-backed carrier";
+# bin/fm-host-mirror.sh drops it while the record is live).
+# shellcheck source=bin/fm-operational-input.sh
+. "$SCRIPT_DIR/fm-operational-input.sh"
+DOORBELL_LINE=
+fm_operational_record_write "$STATE" session-start "$FM_RESUME_DOORBELL_BODY" DOORBELL_LINE \
+  || finish failed "the resume operational-input record could not be written"
+
+verdict=$(fm_backend_send_text_submit "$BACKEND" "$TARGET" "$DOORBELL_LINE" 1 0.4 0.3 2>/dev/null) || verdict=
 if detail=$(withheld_detail); then
   case "$detail" in
     'the send was withheld'*) finish stood-down "$detail" ;;
@@ -421,17 +457,29 @@ case "$verdict" in
   '') finish failed "the send did not complete" ;;
   send-failed) finish failed "send-failed" ;;
   empty) finish submitted "first Enter landed" ;;
+  # Only a still-pending composer earns resubmit Enters: every other
+  # unproven verdict (unknown, unconfirmed, a named dialog) finishes
+  # unverified, and a later Enter could confirm a picker or land on
+  # operator text.
+  pending|pending-unproven) ;;
+  *)
+    if [ -s "$CLEAR_REFUSED" ]; then
+      finish unverified "the submit aborted without clearing the composer: $(cat "$CLEAR_REFUSED") (first verdict $verdict)"
+    fi
+    finish unverified "the submit could not be confirmed (first verdict $verdict)"
+    ;;
 esac
 
-# The first Enter did not land (the verdict was pending or unproven). Press
-# Enter again only while the composer holds exactly copies of our line and
-# the ownership, posture and context checks still pass.
+# The first Enter did not land (the verdict was pending or pending-unproven,
+# the only verdicts that reach here). Press Enter again only while the
+# composer holds exactly copies of our line and the ownership, posture and
+# context checks still pass.
 i=0
 while [ "$i" -lt "$TRIES" ]; do
   sleep "$RESUBMIT_DELAY"
   # The composer read comes first, so the posture check is the last read
   # before the Enter (and the guarded Enter re-checks it once more).
-  if fm_task_inbox_composer_holds "$BACKEND" "$TARGET" "$FM_RESUME_DOORBELL_LINE"; then
+  if fm_task_inbox_composer_holds "$BACKEND" "$TARGET" "$DOORBELL_LINE"; then
     reason=$(posture_reason)
     [ -z "$reason" ] || finish unverified "resubmit withheld after $i resubmit Enter(s): $reason (first verdict $verdict)"
     if ! fm_backend_send_key "$BACKEND" "$TARGET" Enter >/dev/null 2>&1; then
