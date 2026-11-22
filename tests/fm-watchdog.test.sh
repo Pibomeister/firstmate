@@ -1776,6 +1776,137 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held"
 }
 
+make_native_gate_pointer() {
+  local head
+  mkdir -p "$H/wt" "$H/data/t1" "$H/no-mistakes"
+  git -C "$H/wt" init -q
+  git -C "$H/wt" -c user.name=Test -c user.email=test@example.invalid commit -q --allow-empty -m initial
+  git -C "$H/wt" checkout -q -b fm/native
+  head=$(git -C "$H/wt" rev-parse HEAD)
+  fm_write_meta "$H/state/t1.meta" "window=$T" "worktree=$H/wt" 'kind=ship'
+  cat > "$H/run.toon" <<EOF
+run:
+  id: 01NATIVE
+  branch: fm/native
+  head: $head
+  status: running
+  pr: https://github.com/org/repo/pull/562
+  awaiting_agent: parked 300s
+  steps[1]{step,status,findings,duration_ms}:
+    test,awaiting_approval,1,100
+gate:
+  step: test
+  status: awaiting_approval
+  findings[1]{id,severity,file,action,description}:
+    test-1,warning,"",ask-user,"See the full finding in the task snapshot."
+EOF
+  cat > "$H/overview.toon" <<EOF
+repo: $H/wt
+count: 1 of 1 total
+runs[1]{id,branch,status,head,pr}:
+  01NATIVE,fm/native,running,$head,https://github.com/org/repo/pull/562
+EOF
+  cat > "$H/data/t1/nm-01NATIVE-findings.txt" <<'EOF'
+id: test-1
+severity: warning
+authority: ask-user
+description: T33 survived the once-rerun only as a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun?
+EOF
+  cat > "$FAKEBIN/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}:${2:-}" in
+  axi:status) cat "$FM_TEST_GATE_HOME/run.toon" ;;
+  axi:) cat "$FM_TEST_GATE_HOME/overview.toon" ;;
+  runs:*) printf 'running fm/native %s 2026-11-20 10:00 https://github.com/org/repo/pull/562\n' "$(git -C "$FM_TEST_GATE_HOME/wt" rev-parse --short=8 HEAD)" ;;
+  daemon:status) printf 'status: running\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/no-mistakes"
+  NM_HOME="$H/no-mistakes" FM_TEST_GATE_HOME=$H
+  export NM_HOME FM_TEST_GATE_HOME
+  printf 'needs-decision [at=%s] [key=nm-01NATIVE-test]: ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$((BASE - 9000))" "$H" > "$H/state/t1.status"
+}
+
+test_native_gate_pointer_reaches_council_with_evidence() {
+  local mode out before record
+  for mode in demand file automatic; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    make_native_gate_pointer
+    fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+    before=$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")
+    if [ "$mode" = automatic ]; then
+      transcript 100 'Working.'
+      run_wd 0 once >/dev/null 2>&1 || fail 'native decision nudge failed'
+      assert_contains "$(ledger | awk -F'\t' '$5 == "decisions" && $6 == "nudge"')" 'PR #562' 'the native decision nudge names its authenticated PR'
+      run_wd 2000 once >/dev/null 2>&1 || fail 'native automatic council failed'
+      assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-01NATIVE-test" && $6 == "nudge"')" 'PROCEED A (approved, not clean)' 'the native ruling nudge carries the flake qualification'
+      run_wd 2100 once >/dev/null 2>&1 || fail 'native ruling status failed'
+      assert_grep 'PR #562' "$H/data/watchdog/status.md" 'the native ruling status names its PR'
+    else
+      if [ "$mode" = file ]; then
+        printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
+        out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "native file council failed: $out"
+      else
+        out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test 2>&1) || fail "native on-demand council failed: $out"
+      fi
+      assert_contains "$out" 'council=ruled answer=PROCEED A' 'the native pointer reaches a council with real options'
+      assert_contains "$out" '(approved, not clean)' 'the native pointer receives the timing-flake default'
+    fi
+    record=$(council_record_path rulings t1 nm-01NATIVE-test)
+    assert_grep 'PR #562' "$record" 'the persisted native ruling identifies the PR'
+    assert_grep 'B schedule a low-load rerun?' "$record" 'the persisted ruling retains the snapshot options'
+    assert_grep 'known unreachable timing flake: default to the option that approves the park' "$H/prompt.log" 'the final seat prompt applies the flake default to native evidence'
+    assert_equals 2 "$(seat_calls)" 'the native decision convenes both seats only once'
+    assert_equals "$before" "$(git hash-object "$H/data/t1/nm-01NATIVE-findings.txt")" 'resolution leaves the worker snapshot unchanged'
+  done
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'native pointers resolve authenticated gate evidence for demand, file and automatic council paths'
+}
+
+test_native_gate_pointer_holds_unverifiable_or_human_only_evidence() {
+  local variant out key pointer
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  make_native_gate_pointer
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  cp "$H/run.toon" "$H/run-original.toon"
+  cp "$H/overview.toon" "$H/overview-original.toon"
+  cp "$H/data/t1/nm-01NATIVE-findings.txt" "$H/finding-original.txt"
+  for variant in run current-run step finding empty-findings path symlink human-only missing; do
+    cp "$H/run-original.toon" "$H/run.toon"
+    cp "$H/overview-original.toon" "$H/overview.toon"
+    rm -f "$H/data/t1/nm-01NATIVE-findings.txt"
+    cp "$H/finding-original.txt" "$H/data/t1/nm-01NATIVE-findings.txt"
+    key=nm-01NATIVE-test
+    pointer="ask-user findings=test-1 file=$H/data/t1/nm-01NATIVE-findings.txt"
+    case "$variant" in
+      run) key=nm-OTHER-test ;;
+      current-run)
+        sed 's/01NATIVE/01OTHER/g' "$H/run-original.toon" > "$H/run.toon"
+        sed 's/01NATIVE/01OTHER/g' "$H/overview-original.toon" > "$H/overview.toon" ;;
+      step) key=nm-01NATIVE-review ;;
+      finding) pointer="ask-user findings=unknown file=$H/data/t1/nm-01NATIVE-findings.txt" ;;
+      empty-findings) pointer="ask-user findings=,, file=$H/data/t1/nm-01NATIVE-findings.txt" ;;
+      path) pointer="ask-user findings=test-1 file=$H/unrelated.txt" ;;
+      symlink)
+        rm "$H/data/t1/nm-01NATIVE-findings.txt"
+        ln -s "$H/finding-original.txt" "$H/data/t1/nm-01NATIVE-findings.txt" ;;
+      human-only) printf '\nThe remaining failure was introduced by this PR.\n' >> "$H/data/t1/nm-01NATIVE-findings.txt" ;;
+      missing) rm "$H/data/t1/nm-01NATIVE-findings.txt" ;;
+    esac
+    printf '%s\n' "$pointer" > "$H/pointer.txt"
+    out=$(run_wd 0 council --task t1 --key "$key" --record-file "$H/pointer.txt" 2>&1) || fail "native $variant council failed: $out"
+    assert_contains "$out" 'council=held answer=none' "$variant native evidence must remain held"
+  done
+  assert_equals 0 "$(seat_calls)" 'no seat receives unverifiable or human-only native evidence'
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'native pointer authentication failures and PR-caused failures stay held'
+}
+
 test_known_unreachable_timing_flake_defaults_approve_not_clean() {
   local out record
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -7610,6 +7741,8 @@ fm_test_run \
   test_council_runs_one_at_a_time_per_decision \
   test_awaiting_approval_reaches_council_despite_merge_word \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
+  test_native_gate_pointer_reaches_council_with_evidence \
+  test_native_gate_pointer_holds_unverifiable_or_human_only_evidence \
   test_flake_qualification_survives_automatic_nudges \
   test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \

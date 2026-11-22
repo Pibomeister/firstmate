@@ -252,6 +252,7 @@ Any other `decisions` value is a dry run, which records `would convene council`,
 A council is a set of blind seats that each answer `PROCEED <label>` or `HOLD` to one decision record.
 For a known unreachable timing flake, a `PROCEED` answer must also identify approval now or deferral, and the seats must agree on both the option and that meaning.
 The complete record is checked for reserved conditions; a record beyond the council context limit is refused rather than shortened.
+For a native gate escalation, the watchdog verifies the current parked run and finding IDs, then reads the task's findings snapshot before applying these checks; an unverifiable pointer stays held.
 The seats must span at least two model families, read from each seat's model name and then its harness.
 A seat whose family is unknown does not count, and seats of one family are refused with no model call and a gap.
 A council seat uses `council-call-max-usd` and `council-timeout-secs`, which default to the judge's own limits, and it counts against `daily-max-usd` like every other call.

@@ -354,7 +354,8 @@ wd_open_decisions() {  # <state> <now>
       [ -n "$key" ] || continue
       at=$(grep -F "[key=$key]" "$f" 2>/dev/null | tail -n 1 | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
       [ -n "$at" ] || at=$(wd_mtime "$f")
-      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ')"
+      summary=$(wd_decision_summary "${st%/state}" "$task" "$key" "$summary")
+      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t\r\n' '   ')"
     done
   done
 }
@@ -940,11 +941,42 @@ wd_judge() {
 
 # --- council -------------------------------------------------------------------
 
+wd_decision_summary() {
+  local home=$1 task=$2 key=$3 summary=$4 resolved
+  case "$summary" in 'ask-user findings='*' file='*) ;; *) printf '%s' "$summary"; return ;; esac
+  resolved=$(
+    case "$task" in (''|*[!A-Za-z0-9._-]*) exit 1 ;; esac
+    case "$key" in (nm-*-test|nm-*-review|nm-*-document|nm-*-lint|nm-*-push|nm-*-pr|nm-*-ci|nm-*-intent|nm-*-rebase) ;; (*) exit 1 ;; esac
+    run=${key#nm-}; step=${run##*-}; run=${run%-*}
+    case "$run" in (''|*[!A-Za-z0-9_-]*) exit 1 ;; esac
+    file=${summary#* file=}
+    [ "$file" = "$home/data/$task/nm-$run-findings.txt" ] || exit 1
+    [ ! -L "$file" ] && [ -f "$file" ] || exit 1
+    [ "$(cd -P "$home/data/$task" && pwd -P)" = "$home/data/$task" ] || exit 1
+    line=$(fm_run_timed 30 env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$SCRIPT_DIR/fm-crew-state.sh" "$task") || exit 1
+    [ "$(crew_line_parked_gate "$line")" = "$(printf 'human\t%s' "$run")" ] || exit 1
+    case "$line" in (*" · parked at $step:"*|*" · parked at $step · "*) ;; (*) exit 1 ;; esac
+    current=${line#*' · findings: '}; [ "$current" != "$line" ] || exit 1
+    current=${current%%' · '*}
+    ids=${summary#ask-user findings=}; ids=${ids%% file=*}
+    case "$ids" in (''|,*|*,|*,,*|*[!A-Za-z0-9.,_-]*) exit 1 ;; esac
+    for id in $(printf '%s' "$ids" | tr ',' ' '); do
+      case ",$current," in (*",$id,"*) ;; (*) exit 1 ;; esac
+    done
+    contents=$(cat "$file") || exit 1
+    [ -n "$contents" ] || exit 1
+    pr=$(fm_wd_pr_label "$line")
+    printf '%sno-mistakes %s awaiting approval; %s; %s' "${pr:+$pr }" "$step" "$line" "$contents" | tr '\t\r\n' '   '
+  ) 2>/dev/null || resolved=
+  printf '%s' "${resolved:-$summary}"
+}
+
 # 0 when a decision is the owner's: never nudged, put to council, or answered.
 wd_decision_reserved() {  # <task> <key> <summary>
   # A permission-prompt hard stop is a credential, sign-in, spend, or
   # destructive prompt, so it is the owner's whatever its summary says.
   case "$2" in captain-hold-*|human-step-*|permission-prompt-hardstop) return 0 ;; esac
+  case "$3" in 'ask-user findings='*) return 0 ;; esac
   fm_secret_like "$1 $2 $3" && return 0
   printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2," && return 0
   # A no-mistakes awaiting_approval step is a council or captain decision by
@@ -1213,6 +1245,7 @@ cmd_council() {
   if [ -n "$file" ]; then
     [ -f "$file" ] || die "no such record file: $file" 2
     summary=$(cat "$file") || die "cannot read record file: $file"
+    summary=$(wd_decision_summary "$home" "$task" "$key" "$summary")
   else
     summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
   fi
