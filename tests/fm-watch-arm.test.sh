@@ -372,11 +372,15 @@ test_attached_arm_hands_a_stalled_holder_to_its_replacement() {
   # The owner's retry: a fresh arm reaches the watcher's eviction path, and the
   # replacement surfaces an ordinary wake instead of the refusal that used to
   # end in the auto-arm FAILED notice.
+  # Only the first arm asserts the short stall boundary. Eviction checks both
+  # the beacon age and the lock age, so age both past the recovery bound. Give
+  # the replacement's cold start and first poll headroom on a loaded host.
+  fm_touch_epoch "$(( $(date +%s) - 121 ))" "$state/.last-watcher-beat" "$state/.watch.lock/pid"
   append_wake "$state" check stalled-work 'check: work queued behind the stalled holder' \
     || fail "could not queue work for the replacement"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_ARM_CONFIRM_TIMEOUT=10 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 "$WATCH_ARM" > "$rearmout" 2>&1 &
+    FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" FM_GUARD_GRACE=30 FM_WATCHER_STALL_BOUND=120 "$WATCH_ARM" > "$rearmout" 2>&1 &
   ARM_PID=$!
   wait_for_exit "$ARM_PID" 300
   status=$?
