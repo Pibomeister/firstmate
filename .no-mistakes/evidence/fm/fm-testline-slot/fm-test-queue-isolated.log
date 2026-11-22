@@ -1,0 +1,24 @@
+ok - fm-test-queue.sh: warm delta prepared in 14s; mismatch falls back and uncertain execution does not
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+ok - fm-test-queue.sh: help prints the header and malformed calls are usage errors
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+ok - fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable
+ok - fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+ok - fm-test-queue.sh: runs are served one at a time in ticket order
+ok - fm-test-queue.sh: no more runs are served at once than there are slots
+ok - fm-test-queue.sh: the reserved slot serves the oldest at any load and the second slot obeys the ceiling
+ok - fm-test-queue.sh: a signal releases the ticket and the slot
+ok - fm-test-queue.sh: surviving workload children keep slots and abandoned tickets are reclaimed
+ok - fm-test-queue.sh: nonleader grandchildren follow the documented lifetime limit
+ok - fm-test-queue.sh: a leaked background child in the wrapper's own group is reaped and frees the slot
+ok - fm-test-queue.sh: the next run wakes a dead wrapper's stopped holder, which reaps its straggler, and takes the slot
+ok - fm-test-queue.sh: a killed wrapper's holder reaps its straggler with no later run
+ok - fm-test-queue.sh: a holder outlasting its wrapper waits for a child still recording itself
+ok - fm-test-queue.sh: a wrapper killed mid-reap leaves its holder to finish the reap
+ok - fm-test-queue.sh: a zombie wrapper whose caller still reads its output does not stall its holder
+ok - fm-test-queue.sh: a process substitution started before an exec into the queue keeps its output
+ok - fm-test-queue.sh: a snapshot failure during the exit reap leaves the holder to retry
+not ok - the nap ended before the run did, so nothing was tested
+tests/fm-test-queue.test.sh: line 1: 76877 Killed: 9               ( set -m; PATH="$CASE/fakebin:$PATH" qbg run --label napping -- sh -c 'echo $$ > "$1/child"
+      while [ ! -e "$1/release-napping" ]; do sleep 0.05; done' _ "$CASE" > /dev/null 2>&1 & echo $! > "$CASE/wrapper"; wait ) 2> /dev/null

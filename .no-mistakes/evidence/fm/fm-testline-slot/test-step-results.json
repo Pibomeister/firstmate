@@ -1,0 +1,50 @@
+{
+  "revision": "a9ce88398755e76b3de1e87b1f95b714323d0f5c",
+  "checks": {
+    "test-queue-suite.result": "command: bash tests/fm-test-queue.test.sh\nexit: -9\nelapsed_seconds: 316.39\n",
+    "fm-home-summary-refresh-isolated.result": "command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<private workspace temp> bash tests/fm-home-summary-refresh.test.sh\nexit: 1\nelapsed_seconds: 248.82\n",
+    "home-summary--backoff.result": "command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<private workspace temp> bash tests/fm-home-summary-refresh.test.sh --backoff\nexit: 0\nelapsed_seconds: 147.51\n",
+    "fm-test-queue-isolated.result": "command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<private workspace temp> bash tests/fm-test-queue.test.sh\nexit: 1\nelapsed_seconds: 1055.39\n",
+    "home-summary-repeat.result": "command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<private workspace temp> bash tests/fm-home-summary-refresh.test.sh\nexit: 1\nelapsed_seconds: 437.53\n",
+    "home-summary--interruption.result": "command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<private workspace temp> bash tests/fm-home-summary-refresh.test.sh --interruption\nexit: 0\nelapsed_seconds: 198.79\n",
+    "home-summary-suite.result": "command: bash tests/fm-home-summary-refresh.test.sh\nexit: -9\nelapsed_seconds: 389.62\n"
+  },
+  "scenarios": [
+    {
+      "name": "Local queue at synthetic load 400 preserves FIFO progress, load gating, slot cap, and receipt status",
+      "result": "pass",
+      "live": true,
+      "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/live-validation.log",
+      "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+    },
+    {
+      "name": "Local real-producer configuration failures back off 30\u20131800 seconds, preserve the ledger, and reset after direct publication",
+      "result": "pass",
+      "live": true,
+      "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/live-validation.log",
+      "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+    },
+    {
+      "name": "Local overlapping refresh triggers preserve idle-skip state and recheck backoff after lock acquisition",
+      "result": "pass",
+      "live": true,
+      "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/live-validation.log",
+      "reason": "Real repository CLI with disposable local inputs; no product or dependency replacements."
+    },
+    {
+      "name": "Local slow real producer times out without losing the ledger or letting a queued trigger bypass backoff",
+      "result": "pass",
+      "live": true,
+      "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/live-publication-safety.log",
+      "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+    },
+    {
+      "name": "Local killed lock owner cannot overwrite a newer real publication after its older producer deadline",
+      "result": "pass",
+      "live": true,
+      "evidence": "~/.no-mistakes/evidence/01M818HHAPS034DN81WTZ21CV8/live-publication-safety.log",
+      "reason": "Real refresh, real snapshot producer, synthetic backlog, and OS process signals; no replaced dependencies."
+    }
+  ],
+  "cleanup": "Remaining commands naming this worktree runtime or disposable fixtures:\nnone\n"
+}

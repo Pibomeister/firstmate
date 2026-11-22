@@ -1,0 +1,3 @@
+ok - watcher-carried status append publishes the real home summary
+fm-home-summary-refresh: refresh exceeded its 60-second deadline in stage backlog (stages: lock-wait@0 producer@2 backlog@3)
+not ok - home-summary writer failed for a large backlog
