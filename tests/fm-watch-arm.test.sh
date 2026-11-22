@@ -1757,12 +1757,13 @@ SH
 # in <arm-out> so the watcher's own exit reason is readable there.
 start_owned_watcher() {  # <home> <state> <fakebin> <arm-out>
   local home=$1 state=$2 fakebin=$3 armout=$4 i
+  # This prepares the root-removal case; cold-start latency is not its assertion.
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_ARM_CONFIRM_TIMEOUT=2 "$WATCH_ARM" > "$armout" 2>&1 &
+    FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" "$WATCH_ARM" > "$armout" 2>&1 &
   ARM_PID=$!
   i=0
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$REARM_EXIT_POLLS" ]; do
     grep -q '^watcher: started pid=' "$armout" 2>/dev/null && break
     is_live_non_zombie "$ARM_PID" || break
     sleep 0.1
@@ -1858,15 +1859,16 @@ test_attached_arm_exits_when_its_root_is_removed() {
   owner=$ARM_PID
   [ -d "$state" ] || fail "the owning arm did not create the not-yet-existing state directory"
   PATH="$fakebin:$PATH" FM_HOME="$repo" FM_STATE_OVERRIDE="$state" FM_POLL=1 \
-    FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=60 "$repo/bin/fm-watch-arm.sh" > "$armout" 2>&1 &
+    FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=60 FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT=60 \
+    "$repo/bin/fm-watch-arm.sh" > "$armout" 2>&1 &
   attached=$!
   wait_for_file_text "$armout" "watcher: attached pid=$WATCH_PID" \
     || fail "second arm did not attach to the live watcher: $(cat "$armout")"
 
   rm -rf "$repo"
-  # One 0.1s attach poll plus the 0.2s recheck, with headroom for a busy host;
-  # far short of the 60s successor window the arm used to poll through.
-  wait_for_exit "$attached" 50
+  # Removal also closes the cycle ledger against a missing state directory.
+  # Give that bounded cleanup the recovery budget, below the 60s successor wait.
+  wait_for_exit "$attached" "$REARM_EXIT_POLLS"
   status=$?
   wait_for_exit "$owner" 400 >/dev/null 2>&1 || true
   expect_code 1 "$status" "an arm whose root was removed must exit 1: $(cat "$armout")"
