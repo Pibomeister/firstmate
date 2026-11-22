@@ -1,0 +1,13 @@
+{
+  "target": "110c2457ee1bfa125b474287613b39a059dba88c",
+  "watchdog_selected_exit": 0,
+  "crew_state_selected_exit": 0,
+  "authority_render_exit": 0,
+  "inbox_full_exit": 1,
+  "inbox_focused_rerun_exit": 0,
+  "initial_pre_tap_attempts": "stopped; replaced by isolated-temp reruns",
+  "live_scenarios": "routing and safety guards; native park rendering; revisit, stale evidence and parked-age replay; PR-number nudge preview",
+  "live_two_family_qualification": "untested: second model-family routes quota exhausted",
+  "owned_process_cleanup": "No remaining processes matched owned fixture identities, private test socket, or disposable lab paths.",
+  "transient_worktree_cleanup": "Removed disposable lab and temporary test driver; preserved evidence."
+}

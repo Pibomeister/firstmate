@@ -1,0 +1,79 @@
+Local real Firstmate CLI; disposable synthetic SQLite inputs; real installed model CLIs.
+
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test306/lab-ork9nk_x
+{run-worktree}/.test306/lab-ork9nk_x
+
+EXIT_STATUS=0
+
+$ git -C {run-worktree}/.test306/lab-ork9nk_x/projects/synthetic init -q -b fm/synthetic
+
+EXIT_STATUS=0
+
+$ git -C {run-worktree}/.test306/lab-ork9nk_x/projects/synthetic -c user.name=Lab -c user.email=lab@example.invalid commit --allow-empty -qm Synthetic input
+
+EXIT_STATUS=0
+
+$ git -C {run-worktree}/.test306/lab-ork9nk_x/projects/synthetic rev-parse HEAD
+9dfbe716b82c06afdafecc0a693fb07938a9ca01
+
+EXIT_STATUS=0
+
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 305s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 316s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+OBSERVED: cold and cached parked status retain exact options, PR #562, run ID, elapsed wait; database unchanged.
+
+$ bash bin/fm-watchdog.sh council --task t1 --key changed --record-file {run-worktree}/.test306/lab-ork9nk_x/changed.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key shared --record-file {run-worktree}/.test306/lab-ork9nk_x/shared.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key signin --record-file {run-worktree}/.test306/lab-ork9nk_x/signin.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key force --record-file {run-worktree}/.test306/lab-ork9nk_x/force.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+OBSERVED: changed-code failure, shared-database migration, sign-in, and force-push held without model calls.
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-ork9nk_x/pointer.txt
+council=no-ruling answer=none record={run-worktree}/.test306/lab-ork9nk_x/data/watchdog/no-rulings/council-a774a24b2ffb6b860730d4da0eea6950f0b85b11.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+REAL MODEL CALL LEDGER:
+1795342797	council	agy:gpt-oss-120b-medium	failed rc=3	0	0		unmetered
+1795342799	council	agy:gemini-3.8-flash-low	ok	18874	8	PROCEED A APPROVE_PARK	unmetered
+
+PERSISTED PRODUCT RECORD:
+# Watchdog council record - no ruling
+
+- home: {run-worktree}/.test306/lab-ork9nk_x
+- task: t1
+- key: nm-01SYNTHETIC-test
+- ruling: none (not unanimous, 2 blind seats; held for the owner)
+- seats: seat1=FAILED seat2=PROCEED A APPROVE_PARK
+- seat models: agy:gpt-oss-120b-medium,agy:gemini-3.8-flash-low
+- at: 2026-11-22T10:19:59Z
+
+Record:
+
+PR #562 no-mistakes test awaiting approval; state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · parked: 369s · run: 01SYNTHETIC; id: test-1 severity: warning authority: ask-user description: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun?
+
+COUNCIL_RESULT=council=no-ruling answer=none record={run-worktree}/.test306/lab-ork9nk_x/data/watchdog/no-rulings/council-a774a24b2ffb6b860730d4da0eea6950f0b85b11.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+TEARDOWN: disposable lab removed.

@@ -1,0 +1,10 @@
+{
+  "watchdog-retry.log": "EXIT_STATUS=0",
+  "crew-state-retry.log": "EXIT_STATUS=0",
+  "inbox-parked-cases.log": "EXIT_STATUS=0",
+  "task-inbox-retry.log": "EXIT_STATUS=1",
+  "watchdog-targeted.log": "EXIT_STATUS=-9",
+  "crew-state-targeted.log": "EXIT_STATUS=-9",
+  "task-inbox.log": "EXIT_STATUS=-9",
+  "inbox-parked-targeted.log": "EXIT_STATUS=1"
+}

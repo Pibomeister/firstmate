@@ -1,0 +1,5 @@
+{
+  "council": "council=no-ruling answer=none record={run-worktree}/.test306/lab-5y4vtrwm/data/watchdog/no-rulings/council-c62f440f18f83ae68a25f1e7124c31f2e1005e2a.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK\n",
+  "status": "state: parked \u00b7 source: run-step \u00b7 parked at test: 1 finding(s) \u00b7 ask-user: authority decision \u00b7 pr: #562 \u00b7 findings: test-1 \u00b7 summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? \u00b7 question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? \u00b7 parked: 307s \u00b7 run: 01SYNTHETIC\n",
+  "status_cached": "state: parked \u00b7 source: run-step \u00b7 parked at test: 1 finding(s) \u00b7 ask-user: authority decision \u00b7 pr: #562 \u00b7 findings: test-1 \u00b7 summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? \u00b7 question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? \u00b7 parked: 325s \u00b7 run: 01SYNTHETIC\n"
+}

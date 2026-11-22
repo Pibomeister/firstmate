@@ -1,0 +1,20 @@
+{
+  "source": "Disposable synthetic NM_HOME/state.sqlite after real watchdog council attempts",
+  "steps": [
+    [
+      "01M7SNAPSHOTA0000000000001",
+      "intent",
+      "completed"
+    ],
+    [
+      "01M7SNAPSHOTA0000000000001",
+      "review",
+      "awaiting_approval"
+    ],
+    [
+      "01M7SNAPSHOTA0000000000001",
+      "test",
+      "pending"
+    ]
+  ]
+}

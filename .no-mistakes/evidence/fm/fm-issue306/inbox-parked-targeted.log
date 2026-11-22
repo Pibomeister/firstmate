@@ -1,0 +1,16 @@
+Existing parked-gate cases from tests/fm-task-inbox.test.sh, copied unchanged into disposable selective runner.
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/.fm306-inbox-targeted.sh
+ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+ok - inbox: a hostile-name doorbell executes as a no-op in bare shells
+ok - inbox: terminal-control inbox names are rejected without typing
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (88849 to 88849): Operation not permitted
+ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (19633 to 19633): Operation not permitted
+ok - inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths
+ok - inbox: the ring submits whole repeated copies of its own doorbell and protects a same-length paste placeholder and other text
+ok - inbox: the ring submits its own doorbell split into Orca draft and protects other split text
+ok - inbox: a stale Orca prefix joined to the current draft is not submitted
+ok - inbox: a complete Orca doorbell tail plus a foreign draft is not submitted
+not ok - a busy Codex composer holding ': Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/.: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 't1.inbox' steering inbox, read and act on each in numeric order, then mv each into its handled/. x' should be skipped, got rc 2
+
+EXIT_STATUS=1

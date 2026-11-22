@@ -1,0 +1,3 @@
+COMMAND: bash tests/fm-task-inbox.test.sh
+
+EXIT_STATUS=-9

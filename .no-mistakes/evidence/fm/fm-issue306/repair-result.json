@@ -1,0 +1,27 @@
+{
+  "scope": "Repair selected test-2 live council no-go only",
+  "source_changes": false,
+  "focused_tests": {
+    "command": "FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-watchdog.test.sh test_known_unreachable_timing_flake_defaults_approve_not_clean test_flake_deferrals_are_not_approval_qualified",
+    "exit": 0,
+    "log": "repair-focused-tests.log"
+  },
+  "live_reproduction": {
+    "result": "failed: both seats timed out at 45 seconds",
+    "log": "repair-live-result.json",
+    "calls": "repair-live-model-calls.tsv"
+  },
+  "root_cause_evidence": {
+    "command": "ordinary-login Claude Haiku direct probe",
+    "exit": 1,
+    "status": 429,
+    "error": "usage_limit_reached; weekly limit; out of usage credits",
+    "log": "repair-quota-probe.log"
+  },
+  "unresolved": "Successful real two-family approval and deferral validation remain blocked by account quota. No code change can restore quota within the authorized workspace. Changing quorum or substituting simulated responses would change policy or misrepresent live evidence.",
+  "prior_inbox_timeout": "Not modified; no-op finding was not selected for repair.",
+  "cleanup": {
+    "temporary_lab_directories_remaining": [],
+    "git_status": ""
+  }
+}

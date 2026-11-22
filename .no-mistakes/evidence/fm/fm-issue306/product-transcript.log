@@ -1,0 +1,164 @@
+Real local Firstmate CLI transcript. Inputs were synthetic records in disposable marked lab homes. Model responses came from installed authenticated CLIs.
+
+
+SOURCE: live-product.log
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 309s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 331s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key changed --record-file {run-worktree}/.test306/lab-t4w7jtvw/changed.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key shared --record-file {run-worktree}/.test306/lab-t4w7jtvw/shared.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key signin --record-file {run-worktree}/.test306/lab-t4w7jtvw/signin.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key force --record-file {run-worktree}/.test306/lab-t4w7jtvw/force.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-t4w7jtvw/pointer.txt
+council=no-ruling answer=none record={run-worktree}/.test306/lab-t4w7jtvw/data/watchdog/no-rulings/council-76076fa147f80ee308213abd80ac2c8b6a9ab3db.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+
+SOURCE: live-revisit.log
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 304s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 309s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key changed --record-file {run-worktree}/.test306/lab-8kn0uiqp/changed.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key shared --record-file {run-worktree}/.test306/lab-8kn0uiqp/shared.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key signin --record-file {run-worktree}/.test306/lab-8kn0uiqp/signin.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key force --record-file {run-worktree}/.test306/lab-8kn0uiqp/force.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-8kn0uiqp/pointer.txt
+council=no-ruling answer=none record={run-worktree}/.test306/lab-8kn0uiqp/data/watchdog/no-rulings/council-f1f96944cc614e4d7524d51c7ed604117374c2c1.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-8kn0uiqp/pointer.txt --revisit
+council=no-ruling answer=none record={run-worktree}/.test306/lab-8kn0uiqp/data/watchdog/no-rulings/council-f1f96944cc614e4d7524d51c7ed604117374c2c1.md prior=1 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-8kn0uiqp/pointer.txt --revisit
+council=no-ruling answer=none record={run-worktree}/.test306/lab-8kn0uiqp/data/watchdog/no-rulings/council-f1f96944cc614e4d7524d51c7ed604117374c2c1.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+
+SOURCE: live-two-family.log
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 305s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at test: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake after once-rerun. A approve the park; B schedule a low-load rerun? · question: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun? · parked: 316s · run: 01SYNTHETIC
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key changed --record-file {run-worktree}/.test306/lab-ork9nk_x/changed.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key shared --record-file {run-worktree}/.test306/lab-ork9nk_x/shared.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key signin --record-file {run-worktree}/.test306/lab-ork9nk_x/signin.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key force --record-file {run-worktree}/.test306/lab-ork9nk_x/force.txt
+council=held answer=none record=none prior=0 seats=none
+
+EXIT_STATUS=0
+
+$ bash bin/fm-watchdog.sh council --task t1 --key nm-01SYNTHETIC-test --record-file {run-worktree}/.test306/lab-ork9nk_x/pointer.txt
+council=no-ruling answer=none record={run-worktree}/.test306/lab-ork9nk_x/data/watchdog/no-rulings/council-a774a24b2ffb6b860730d4da0eea6950f0b85b11.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+EXIT_STATUS=0
+
+
+SOURCE: nudge-product-excerpt.log
+Excerpt from live-nudge.log: actual watchdog status and action ledger on private real primary.
+
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T10:16:00Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T10:27:00Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- nudge-7am40ird: NO-ACTIVITY-SOURCE, owed 0, ctx unknown; captain pid 16080 live on tmux:%0, moved 2026-11-22T10:15:14Z
+
+## Actions since last read (2026-11-22T09:16:00Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- nudge-7am40ird: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+
+1795342552	wd1795342552ba3e64	{run-worktree}/.test306/nudge-7am40ird	nudge-7am40ird	decisions	nudge	pending	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 30 minutes, oldest first: t1/nm-flake (PR #562). Answer each, or settle it by council per the captain rules, and record the answer with fm-send --resolve-key.
+TEARDOWN: private primary stopped; disposable lab removed.
+
+
+SOURCE: model-diagnostics.log
+Real Claude default-login diagnostic (no credential changes):
+
+CLAUDE_EXIT_STATUS=124
+
+Real Agy Claude-family diagnostic (no credential changes):
+error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.
+AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true,"error_id":"ad7d16dc-5586-4eb0-b906-4dfea15b9fc9-1"}
+{"conversation_id":"ef1b45bb-d9f7-48c8-9642-71b6e1cc132a","status":"ERROR","response":"","error":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.","duration_seconds":0,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}
+
+AGY_EXIT_STATUS=3
+
+
+SOURCE: gpt-seat-diagnostic.log
+error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 76h58m36s.
+AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 76h58m36s.","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true,"error_id":"26a90af7-e9d6-4306-9a51-7cc1352911b8-1"}
+{"conversation_id":"66ed1385-c293-4b5f-a20b-b71ec7a3ef30","status":"ERROR","response":"","error":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 76h58m36s.","duration_seconds":0,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}
+
+EXIT_STATUS=3

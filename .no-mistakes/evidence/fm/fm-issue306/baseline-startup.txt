@@ -1,0 +1,1 @@
+Initial targeted watchdog, crew-state and inbox launches were stopped before TAP startup while their shared helper scanned old temporary fixtures. They were rerun with FM_TEST_SKIP_ORPHAN_REAP=1 and TMPDIR=<worktree>/.test-fm306/tmp. This isolates all new fixtures and prevents cleanup of unrelated stale test roots. The retained *-tests.log files contain the reruns.

@@ -1,0 +1,33 @@
+$ FM_HOME=<lab> bin/fm-watchdog.sh once --dry-run
+
+exit=0
+
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:21:48Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:32:48Z (watchdog may be down)
+models: none; spent 24h $0.0000 of $1.00
+
+## Homes
+- home: NO-ACTIVITY-SOURCE, owed 0, ctx unknown; captain pid 78216 live on tmux:%0, moved 2026-11-22T09:20:08Z
+
+## Actions since last read (2026-11-22T08:21:48Z)
+- 09:19 home council decision:guard-deploy held
+- 09:19 home council decision:guard-spend held
+- 09:19 home council decision:guard-secret held
+- 09:19 home council decision:guard-messages held
+- 09:19 home council decision:guard-sign-in held
+- 09:19 home council decision:guard-plain-merge held
+- 09:19 home council decision:nm-01M7SNAPSHOTA0000000000001-review held
+- 09:20 home council decision:nm-01M7SNAPSHOTA0000000000001-review refused
+- 09:20 home nudge decisions refused
+- 09:21 home nudge decisions dry-run
+
+## Open gaps
+- home: 1 decisions held for the owner (never touched), e.g. t1/nm-01M7SNAPSHOTA0000000000001-review (PR #562)
+- home: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- home: worker t1 endpoint is gone; its pane is not read
+- no model configured; judged symptoms are reported only
+
+Generated nudge ledger:
+1795339218	wd179533921864b870	{run-worktree}/.test-fm306/home	home	decisions	nudge	refused	no recorded endpoint
+1795339305	wd17953393051c56d2	{run-worktree}/.test-fm306/home	home	decisions	nudge	dry-run	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 30 minutes, oldest first: G3/layout (PR #578). Answer each, or settle it by council per the captain rules, and record the answer with fm-send --resolve-key.

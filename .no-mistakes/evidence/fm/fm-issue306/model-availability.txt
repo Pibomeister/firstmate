@@ -1,0 +1,12 @@
+Direct Claude: claude -p <HOLD probe> --model haiku --output-format json --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence --max-budget-usd 0.10
+exit=1
+You've hit your weekly limit · resets 4pm (America/Mexico_City) · out of usage credits
+
+Antigravity Anthropic: agy -p <HOLD probe> --model claude-sonnet-5-5-low --output-format json --disable-slash-commands --print-timeout 40s
+exit=3
+Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 78h3m2s.
+
+Public watchdog council also attempted agy:claude-opus-5-5-low with agy:gemini-3.8-flash-low. The Anthropic seat failed rc=3; the Google seat answered PROCEED A APPROVE_PARK. See live-model-calls.tsv.
+
+Antigravity OpenAI: agy -p <HOLD probe> --model gpt-oss-120b-medium --output-format json --disable-slash-commands --print-timeout 40s
+Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h55m13s.

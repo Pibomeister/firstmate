@@ -1,0 +1,106 @@
+
+$ FM_HOME=<lab> NM_HOME=<synthetic SQLite> bin/fm-crew-state.sh t1
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake. A approve the park; B schedule a low-load rerun? · question: After the once-rerun, the only failure left was a known load-sensitive timing flake in a test the PR cannot reach. Equivalent park: https://github.com/org/repo/pull/577. A approve the park now; B schedule a low-load rerun? · parked: 301s · run: 01M7SNAPSHOTA0000000000001
+
+exit=0
+PASS native SQLite status exposes PR, run, failure, options and elapsed wait
+
+$ native flake: real Claude + Gemini council
+council=no-ruling answer=none record={run-worktree}/.test-fm306/home/data/watchdog/no-rulings/council-ffd5a766e2912a1950f7bf3ae625753c903e02db.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+exit=0
+
+$ native flake revisit with real Anthropic + Google model families through agy
+council=no-ruling answer=none record={run-worktree}/.test-fm306/home/data/watchdog/no-rulings/council-ffd5a766e2912a1950f7bf3ae625753c903e02db.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+exit=0
+
+$ retry documented revisit with catalogued Opus + Gemini seats
+council=no-ruling answer=none record={run-worktree}/.test-fm306/home/data/watchdog/no-rulings/council-ffd5a766e2912a1950f7bf3ae625753c903e02db.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+exit=0
+
+$ guard changed-behavior
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS changed-behavior remains human-only before any seat call
+
+$ guard database-migration
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS database-migration remains human-only before any seat call
+
+$ guard forced-push
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS forced-push remains human-only before any seat call
+
+$ guard deploy
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS deploy remains human-only before any seat call
+
+$ guard spend
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS spend remains human-only before any seat call
+
+$ guard secret
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS secret remains human-only before any seat call
+
+$ guard messages
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS messages remains human-only before any seat call
+
+$ guard sign-in
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS sign-in remains human-only before any seat call
+
+$ guard plain-merge
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS plain-merge remains human-only before any seat call
+PASS all human-only guards invoke no model
+
+$ identical native revisit: advancing parked age only
+council=no-ruling answer=none record={run-worktree}/.test-fm306/home/data/watchdog/no-rulings/council-ffd5a766e2912a1950f7bf3ae625753c903e02db.md prior=1 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+exit=0
+PASS park age changes visible output but do not reconvene or change ruling
+
+$ native same-ID failure against older flake snapshot
+council=held answer=none record=none prior=0 seats=none
+
+exit=0
+PASS current changed-behavior failure prevents stale approval replay and further model calls
+PASS held current failure preserves prior historical council bytes
+
+$ one-family revisit refusal
+council=refused answer=none record=none prior=0 seats=none
+
+exit=0
+PASS refused revisit leaves existing final record intact
+
+$ native status with escaped finding and forged field text
+state: parked · source: run-step · parked at review: 1 finding(s) · ask-user: authority decision · pr: #562 · findings: test-1 · summary: T33 timing flake. A approve the park; B schedule a low-load rerun? · question: T33 expected "a,b" at C:\tests\x; α 🚀. A approve; B rerun? Literal ; run: FORGED ; pr: #999 · parked: 302s · run: 01M7SNAPSHOTA0000000000001
+
+exit=0
+PASS untrusted finding remains visible without forging structured identity
+
+$ native flake: catalogued OpenAI GPT-OSS + Google Gemini council
+council=no-ruling answer=none record={run-worktree}/.test-fm306/home/data/watchdog/no-rulings/council-ffd5a766e2912a1950f7bf3ae625753c903e02db.md prior=0 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+
+exit=0

@@ -1,0 +1,53 @@
+1..50
+ok - boundary: owner-reserved holds stay held; an ordinary decision is settled by a unanimous blind council
+ok - decisions: secret-looking text reaches no council seat, ruling, gap, or nudge; a clean decision still settles
+ok - council needs unanimity; a split vote holds
+ok - boundary: two seats of one model family give no ruling, call no model, and show as a gap
+ok - council: one convening per decision; a split is recorded with its dissent and held, a ruling is never re-rolled
+ok - council: no answer at all is retried later; a partial answer is final and holds
+ok - council: council-call-max-usd and council-timeout-secs apply to council seats only
+ok - council command: rules at once through the same seats and holds, replays a recorded outcome, and types nothing
+ok - council: dashed task and key fields identify distinct decisions
+ok - council: stored identity is checked for new and legacy filenames
+ok - council: write, rename, and directory-target failures cannot return a successful ruling
+ok - council: complete file and status records are checked; oversized context is refused
+ok - council: a configured judge limit never removes part of a decision prompt
+ok - council: dry-run withholds actionable prior rulings without deleting them
+ok - council: a live owner is never replaced solely because its lock is old
+ok - council: simultaneous stale readers cannot replace the winning live owner
+ok - council: concurrent decisions never share or retain a seat input file
+cat: {run-worktree}/.test-fm306/tmp/fm-watchdog-tests.IKNtCp/home21/prompt.log: No such file or directory
+ok - council: failed prompt publication cannot run a seat against stale input
+ok - council: file normalization cannot hide split owner-reserved words
+ok - council: one complete metadata header owns replay identity and answers
+ok - council: replay requires a supported outcome consistent with its seat votes
+ok - council: validation covers every metadata block before the record body
+ok - council: portable paths preserve distinct identities on case-folding filesystems
+ok - council: only supported well-formed metadata fields authenticate a record
+ok - council: size validation precedes replay and preserves valid recorded outcomes
+ok - council: seats use the same required field separator as other metadata
+ok - council command: a home whose decision path is a dry run gets no council
+ok - council: one convening of a decision at a time; a dead owner's lock is cleared
+ok - council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held
+ok - native pointers resolve authenticated gate evidence for demand, file and automatic council paths
+ok - native pointer authentication failures and PR-caused failures stay held
+ok - native deduplication preserves non-ask-user failures on every ingestion path
+ok - flake default requires known status, a completed once-rerun, exclusivity and unreachability
+ok - unknown, pre-rerun and mixed failures receive no flake default
+ok - native PR identity is authoritative and unstructured PR precedence is preserved
+ok - council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean
+ok - automatic flake rulings qualify approvals but not reruns in nudges and status
+ok - flake rerun and owner deferrals remain unqualified across replay and revisits
+ok - human-only: a real changed behavior or shared-database write stays held, and a negation of either does not
+ok - shared classifiers route literal issue wording, negative attribution and database operations correctly
+ok - council routes passing-code flakes while prod mutations stay held
+ok - awaiting_approval: a plain merge or release never opens the council carve-out
+ok - awaiting_approval: genuine pipeline steps open the council carve-out, including parked-at wording
+ok - council: a PR-caused failure stays held, and a negated or read-only flake still defaults to approve, not clean
+ok - same-ID live failures remain visible despite obsolete snapshots and approvals
+ok - unproven duplicates remain complete and oversized records remain refused
+ok - native revisit retries ignore elapsed parked age and retain genuine changed evidence
+ok - council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling
+ok - council: a failed or refused revisit leaves the prior ruling final, so no later pass re-rolls it
+ok - decisions: the nudge names work by PR number from the record, not by a goal alias alone
+FM_TEST_COMPLETE

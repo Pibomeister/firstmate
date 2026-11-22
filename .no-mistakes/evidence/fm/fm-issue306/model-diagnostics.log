@@ -1,0 +1,10 @@
+Real Claude default-login diagnostic (no credential changes):
+
+CLAUDE_EXIT_STATUS=124
+
+Real Agy Claude-family diagnostic (no credential changes):
+error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.
+AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.","status":"RESOURCE_EXHAUSTED","error_code":429,"code_kind":"http","retryable":true,"error_id":"ad7d16dc-5586-4eb0-b906-4dfea15b9fc9-1"}
+{"conversation_id":"ef1b45bb-d9f7-48c8-9642-71b6e1cc132a","status":"ERROR","response":"","error":"Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 77h2m10s.","duration_seconds":0,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"finished_reason":"error"}
+
+AGY_EXIT_STATUS=3

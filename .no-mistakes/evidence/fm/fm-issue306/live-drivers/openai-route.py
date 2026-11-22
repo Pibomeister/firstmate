@@ -1,0 +1,23 @@
+exec(open('.test-fm306/drive.py').read().split("\nconfig('agy:",1)[0])
+config('agy:gpt-oss-120b-medium,agy:gemini-3.8-flash-low')
+seed();snapshot(note='Later supervisor nudge: accept the known unreachable timing-flake risk; use two available families to decide A approval versus B low-load rerun.\n')
+p=council('native flake: catalogued OpenAI GPT-OSS + Google Gemini council',key,lab/'pointer.txt',True)
+(ev/'openai-route-result.txt').write_text(p.stdout)
+if 'council=ruled answer=PROCEED A' not in p.stdout:
+ print('Two-family approval still unavailable; preserve actual result.',flush=True)
+else:
+ check('(approved, not clean)' in p.stdout,'two live model families approve the flake with qualification')
+ record=next(p for p in records() if f'- key: {key}\n' in p.read_text())
+ check('- qualification: approved, not clean' in record.read_text(),'persisted ruling retains not-clean qualification')
+ (ev/'live-qualified-ruling.md').write_bytes(record.read_bytes())
+ before=calls=(lab/'state/watchdog/model-calls.tsv').read_bytes()
+ p=council('real qualified ruling replay',key,lab/'pointer.txt')
+ check('prior=1' in p.stdout and '(approved, not clean)' in p.stdout and (lab/'state/watchdog/model-calls.tsv').read_bytes()==before,'qualified replay makes no additional calls')
+ f=lab/'deferral.txt';f.write_text('PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake. There is no approve-now option in this scheduling decision. A (recommended) schedule a low-load rerun for 04:00 UTC, or B hold for the owner?')
+ p=council('real two-family low-load rerun option stays unqualified','nm-defer',f)
+ (ev/'live-deferral-result.txt').write_text(p.stdout)
+ if 'council=ruled answer=PROCEED A' in p.stdout:
+  check('approved, not clean' not in p.stdout,'a real rerun choice has no approval qualification')
+  r=next(p for p in records() if '- key: nm-defer\n' in p.read_text());(ev/'live-deferral-ruling.md').write_bytes(r.read_bytes())
+ (ev/'live-model-calls.tsv').write_bytes((lab/'state/watchdog/model-calls.tsv').read_bytes())
+log.close()

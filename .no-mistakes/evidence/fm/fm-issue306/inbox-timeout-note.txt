@@ -1,0 +1,5 @@
+Full command: FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=<worktree>/.test-fm306/tmp bash tests/fm-task-inbox.test.sh
+Exit: 1
+Failure: tests/fm-task-inbox.test.sh:1491 — the watcher never escalated a spent ring budget.
+The unchanged test_watcher_escalates_once_after_budget passed in the focused rerun with its original wait_watcher_gone limit and assertions. No product or permanent test change was made. The original fixture was cleaned by the suite, so its internal trace was unavailable for root-cause attribution. The failure remains intermittent and unexplained; the full suite is not reported green.
+Focused invocation driver is retained under live-drivers/inbox-focused.test.sh.

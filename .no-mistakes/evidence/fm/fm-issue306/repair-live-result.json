@@ -1,0 +1,6 @@
+{
+  "command_exit": 0,
+  "stdout": "council=failed answer=none record=none prior=0 seats=seat1=FAILED seat2=FAILED\n",
+  "expected": "council=ruled answer=PROCEED A with approved, not clean",
+  "passed": false
+}

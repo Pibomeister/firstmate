@@ -1,0 +1,12 @@
+COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-crew-state.test.sh test_captured_axi_status_shapes test_parked_question_preserves_options_without_minting_components test_toon_quoted_text_keeps_escapes_and_columns test_status_snapshot_readonly_and_shared_across_sweep test_status_snapshot_preserves_parked_question_and_wait
+1..5
+ok - captured AXI replacement status replays through crew-state
+ok - captured AXI parked status replays through crew-state
+ok - captured AXI failed status replays through crew-state
+ok - scalar and table parks show the actual question and preserve status fields
+ok - TOON text decoding preserves escaped text and field boundaries without Python
+ok - read-only SQLite status snapshot serves a multi-crew sweep with zero CLI calls and zero DB writes
+ok - cold and cached SQLite gates preserve the parked question, options and wait time
+FM_TEST_COMPLETE
+
+EXIT_STATUS=0
