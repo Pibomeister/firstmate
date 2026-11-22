@@ -156,7 +156,7 @@ fm_nm_strip_quotes() {
   local s
   s=$(fm_nm_trim "${1:-}")
   case "$s" in
-    \"*\") s=${s#\"}; s=${s%\"} ;;
+    \"*\") s=$(fm_nm_toon_read "$s") ;;
   esac
   fm_nm_trim "$s"
 }
@@ -658,12 +658,58 @@ fm_nm_runs_status_for_worktree() {  # <worktree> <branch> <runs-list-output> [ex
 # assumed; a quoted cell may hold commas. Prints nothing when the table or
 # column is absent.
 fm_nm_table_column() {  # <toon-output> <table> <column>
-  printf '%s\n' "$1" | awk -v table="$2" -v column="$3" '
+  fm_nm_toon_read "$1" "$2" "$3"
+}
+
+fm_nm_toon_read() {
+  printf '%s\n' "$1" | LC_ALL=C awk -v table="${2:-}" -v column="${3:-}" '
+    function hex(s,    n, i, v) {
+      n = 0
+      for (i = 1; i <= length(s); i++) {
+        v = index("0123456789abcdef", tolower(substr(s, i, 1))) - 1
+        if (v < 0) return -1
+        n = n * 16 + v
+      }
+      return n
+    }
+    function utf8(n) {
+      if (n < 128) return sprintf("%c", n)
+      if (n < 2048) return sprintf("%c%c", 192 + int(n / 64), 128 + n % 64)
+      if (n < 65536) return sprintf("%c%c%c", 224 + int(n / 4096), 128 + int(n / 64) % 64, 128 + n % 64)
+      return sprintf("%c%c%c%c", 240 + int(n / 262144), 128 + int(n / 4096) % 64, 128 + int(n / 64) % 64, 128 + n % 64)
+    }
+    function value(s,    out, i, c, e, n, low) {
+      if (substr(s, 1, 1) != "\"" || substr(s, length(s), 1) != "\"") return s
+      s = substr(s, 2, length(s) - 2); out = ""
+      for (i = 1; i <= length(s); i++) {
+        c = substr(s, i, 1)
+        if (c == "\\" && i < length(s)) {
+          e = substr(s, ++i, 1)
+          if (e == "n") c = "\n"
+          else if (e == "r") c = "\r"
+          else if (e == "t") c = "\t"
+          else if (e == "b") c = "\b"
+          else if (e == "f") c = "\f"
+          else if (e == "\"" || e == "\\" || e == "/") c = e
+          else if (e == "u" && length(s) - i >= 4 && (n = hex(substr(s, i + 1, 4))) >= 0) {
+            i += 4
+            if (n >= 55296 && n <= 56319 && substr(s, i + 1, 2) == "\\u") {
+              low = hex(substr(s, i + 3, 4))
+              if (low >= 56320 && low <= 57343) { n = 65536 + (n - 55296) * 1024 + low - 56320; i += 6 }
+            }
+            c = utf8(n)
+          } else c = "\\" e
+        }
+        out = out c
+      }
+      return out
+    }
     function cells(line, out,    n, i, c, q, cur) {
       n = 0; cur = ""; q = 0
       for (i = 1; i <= length(line); i++) {
         c = substr(line, i, 1)
-        if (c == "\"") { q = !q; continue }
+        if (q && c == "\\" && i < length(line)) { cur = cur c substr(line, ++i, 1); continue }
+        if (c == "\"") q = !q
         if (c == "," && !q) { out[++n] = cur; cur = ""; continue }
         cur = cur c
       }
@@ -671,6 +717,7 @@ fm_nm_table_column() {  # <toon-output> <table> <column>
       return n
     }
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
+    !table { print value($0); next }
     !inblock {
       if (match($0, "^[ \t]*" table "\\[[0-9]+\\]\\{[^}]*\\}:")) {
         hdr = index($0, table)
@@ -689,7 +736,7 @@ fm_nm_table_column() {  # <toon-output> <table> <column>
       match($0, /[^ \t]/)
       if (RSTART <= hdr) exit
       n = cells(trim($0), row)
-      print (want <= n ? trim(row[want]) : "")
+      print (want <= n ? value(trim(row[want])) : "")
     }
   '
 }
@@ -762,7 +809,7 @@ fm_nm_runs_newest_for_branch() {  # <branch> <runs-list-output>
 # Active steps are marked quiet after <NM_HOME>/config.yaml's
 # step_quiet_warning (the CLI default 10m when absent); an unparseable or
 # non-positive value falls back to the CLI.
-FM_NM_SNAPSHOT_SCHEMA_VERSION=2
+FM_NM_SNAPSHOT_SCHEMA_VERSION=3
 FM_NM_SQLITE_USER_VERSION=0
 FM_NM_SNAPSHOT_TTL=${FM_NM_SNAPSHOT_TTL:-5}
 
@@ -910,10 +957,21 @@ def load_cached_snapshot(snap_path: str, db_real: str):
 
 def summarize_findings(findings_json: str, gate: bool):
     try:
-        items = parse_findings_list(findings_json)
+        data = json.loads(findings_json) if findings_json else []
+        summary = ""
+        if isinstance(data, dict):
+            items = data.get("findings")
+            if items is None:
+                items = []
+            if gate and isinstance(data.get("summary"), str):
+                summary = data["summary"]
+        else:
+            items = data
+        if not isinstance(items, list):
+            raise ValueError("invalid findings list")
     except (ValueError, TypeError):
-        return None, None
-    return len(items), (items if gate else [])
+        return None, None, ""
+    return len(items), (items if gate else []), summary
 
 
 def capture_repo_from_sqlite(db_real: str):
@@ -989,7 +1047,7 @@ def capture_repo_from_sqlite(db_real: str):
                 part,
             ).fetchall():
                 sstatus = srow[3] if isinstance(srow[3], str) else ""
-                fcount, gate_findings = summarize_findings(
+                fcount, gate_findings, gate_summary = summarize_findings(
                     srow[5] if isinstance(srow[5], str) else "", sstatus in GATE_STEP_STATUSES
                 )
                 steps_by_run[srow[0]].append({
@@ -999,6 +1057,7 @@ def capture_repo_from_sqlite(db_real: str):
                     "duration_ms": int(srow[4]) if isinstance(srow[4], int) and srow[4] >= 0 else 0,
                     "findings_count": fcount,
                     "gate_findings": gate_findings,
+                    "gate_summary": gate_summary,
                     "log_path": srow[6] if isinstance(srow[6], str) else "",
                     "last_activity_at": int(srow[7]) if isinstance(srow[7], int) else 0,
                     "last_activity": srow[8] if isinstance(srow[8], str) else "",
@@ -1190,22 +1249,6 @@ def resolve_repo_id(repos_map: dict, db=None):
     return ids[0]
 
 
-def parse_findings_list(findings_json: str):
-    if not findings_json:
-        return []
-    data = json.loads(findings_json)
-    if isinstance(data, dict):
-        items = data.get("findings")
-        if items is None:
-            return []
-        if not isinstance(items, list):
-            raise ValueError("invalid findings list")
-        return items
-    if isinstance(data, list):
-        return data
-    raise ValueError("invalid findings_json")
-
-
 def clean_scalar(val: str) -> str:
     return val.replace("\r", " ").replace("\n", " ").replace(",", "_").strip()
 
@@ -1234,6 +1277,7 @@ def format_run_detail(run: dict) -> str:
     gate_step = ""
     gate_status = ""
     gate_findings = []
+    gate_summary = ""
     for s in steps:
         sname = s.get("step_name") or ""
         sst = s.get("status") or ""
@@ -1245,6 +1289,7 @@ def format_run_detail(run: dict) -> str:
             gate_step = sname
             gate_status = sst
             gate_findings = s.get("gate_findings")
+            gate_summary = s.get("gate_summary") or ""
             if not isinstance(gate_findings, list):
                 raise ValueError("invalid findings_json")
 
@@ -1253,13 +1298,15 @@ def format_run_detail(run: dict) -> str:
         if isinstance(gdata, dict):
             gate_step = str(gdata.get("step") or "")
             gate_status = str(gdata.get("status") or "")
+            gate_summary = str(gdata.get("summary") or "")
             if isinstance(gdata.get("findings"), list):
                 gate_findings = gdata["findings"]
 
     is_terminal = raw_st in ("completed", "failed", "cancelled", "checks_passed_released")
     if not is_terminal and (awaiting > 0 or gate_step or gate_status in ("awaiting_approval", "fix_review")):
         if awaiting > 0:
-            lines.append("awaiting_agent: parked")
+            elapsed = max(0, int(now) - awaiting)
+            lines.append(f"awaiting_agent: parked {elapsed}s")
 
     lines.append(f'head: {json.dumps(head_sha[:8], ensure_ascii=False)}')
     lines.append(f'head_sha: {json.dumps(head_sha, ensure_ascii=False)}')
@@ -1315,6 +1362,8 @@ def format_run_detail(run: dict) -> str:
             lines.append(f'  step: {json.dumps(gate_step, ensure_ascii=False)}')
         if gate_status:
             lines.append(f'  status: {json.dumps(gate_status, ensure_ascii=False)}')
+        if gate_summary:
+            lines.append(f'  summary: {json.dumps(gate_summary, ensure_ascii=False)}')
         if gate_findings:
             lines.append(f"  findings[{len(gate_findings)}]{{id,severity,file,action,description}}:")
             for idx, f in enumerate(gate_findings, 1):

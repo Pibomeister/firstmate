@@ -6775,6 +6775,32 @@ gate:
   pass 'scalar and table parks show the actual question and preserve status fields'
 }
 
+test_toon_quoted_text_keeps_escapes_and_columns() {
+  local encoded expected toon out toolbin
+  encoded='"T33 expected \"a,b\" at C:\\tests\\x; \u03b1 \ud83d\ude80; A approve or B rerun?"'
+  expected='T33 expected "a,b" at C:\tests\x; α 🚀; A approve or B rerun?'
+  toon="findings[1]{description,id,action}:
+  $encoded,test-1,ask-user"
+  mkdir -p "$TMP_ROOT/quoted-toon"
+  toolbin=$(make_no_python_toolbin "$TMP_ROOT/quoted-toon")
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_table_column "$2" findings description' _ "$ROOT" "$toon")
+  assert_equals "$expected" "$out" 'quoted commas, inner quotes, backslashes and Unicode survive table decoding without Python'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_table_column "$2" findings action' _ "$ROOT" "$toon")
+  assert_equals ask-user "$out" 'escaped quotes cannot shift a later column'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_strip_quotes "$2"' _ "$ROOT" "$encoded")
+  assert_equals "$expected" "$out" 'a scalar uses the same decoding as a table cell'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_strip_quotes "$2"' _ "$ROOT" '"one\ntwo\tthree\rfour\b\f\/five"')
+  assert_equals $'one\ntwo\tthree\rfour\b\f/five' "$out" 'JSON control escapes are decoded before status sanitation'
+  toon='steps[2]{step,status}:
+  intent,completed
+  review,running
+active_steps[1]{step,round}:
+  review,"auto-fix 1/3"'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_run_progress "$2"' _ "$ROOT" "$toon")
+  assert_equals $'50\t2\t2\treview\tauto-fix 1/3' "$out" 'the shared parser still reports step progress and the active round'
+  pass 'TOON text decoding preserves escaped text and field boundaries without Python'
+}
+
 test_captured_inventory_replay() {
   make_capped_runs_case captured-inventory running cancelled
   local d=$TMP_ROOT/captured-inventory out before after branch newer older toolbin
@@ -7054,7 +7080,8 @@ EOF
   [ ! -e "$d/nm-cli.log" ] || fail "status snapshot invoked no-mistakes CLI on repeat read in sweep"
   snap_cap_3=$(python3 -c "$repo_cap" "$d/state/.nm-status-snapshot.json" repo-1)
   [ "$snap_cap_1" = "$snap_cap_3" ] || fail "repeat crew read in sweep did not reuse the cached status snapshot"
-  [ "$out_a" = "$out_a2" ] || fail "cached status snapshot changed the crew report"
+  assert_contains "$out_a2" 'parked at review: 1 finding(s)' 'cached status preserves the parked step'
+  assert_contains "$out_a2" 'run: 01M7SNAPSHOTA0000000000001' 'cached status preserves the parked run identity'
   unset FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
 
   after=$(git hash-object "$NM_HOME/state.sqlite")
@@ -7072,6 +7099,88 @@ EOF
   assert_contains "$out_b" "pr=https://github.com/org/repo/pull/42" "snapshot surfaces terminal PR field"
   unset FM_NM_CLI_LOG
   pass "read-only SQLite status snapshot serves a multi-crew sweep with zero CLI calls and zero DB writes"
+}
+
+test_status_snapshot_preserves_parked_question_and_wait() {
+  local d=$TMP_ROOT/snap-question head out before after since layout read_kind min_wait max_wait elapsed
+  reset_fakes
+  mkdir -p "$d/state"
+  make_repo_on_branch "$d/wt" fm/ship-a
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/snap-question.meta" 'window=fm:fm-snap-question' "worktree=$d/wt" 'kind=ship'
+  head=$(git -C "$d/wt" rev-parse HEAD)
+  NM_HOME="$d/nm-home"
+  export NM_HOME
+  mkdir -p "$NM_HOME"
+  init_full_nm_sqlite "$NM_HOME/state.sqlite" "$d/wt" "$head"
+  cat > "$d/fakebin/no-mistakes" <<'EOF'
+#!/usr/bin/env bash
+printf 'unexpected CLI call\n' >> "$FM_NM_CLI_LOG"
+exit 99
+EOF
+  chmod +x "$d/fakebin/no-mistakes"
+  export FM_NM_CLI_LOG="$d/nm-cli.log" FM_NM_SNAPSHOT_TTL=600 FM_CREW_STATE_NM_TIMEOUT=120
+  for layout in step gate; do
+    since=$(python3 - "$NM_HOME/state.sqlite" "$layout" <<'PY'
+import json
+import sqlite3
+import sys
+import time
+
+since = int(time.time()) - 300
+gate = {
+    "step": "review",
+    "status": "awaiting_approval",
+    "summary": 'T33 expected "a,b". A approve the park; B schedule a low-load rerun?',
+    "findings": [{"id": "test-1", "severity": "warning", "action": "ask-user",
+                  "description": 'T33 failed on "c,d" at C:\\tests\\x; A accept or B rerun?\nLiteral · run: FORGED'}],
+}
+with sqlite3.connect(sys.argv[1]) as db:
+    db.execute("UPDATE runs SET pr_url = 'https://github.com/org/repo/pull/562', awaiting_agent_since = ?, gates_json = ?",
+               (since, json.dumps(gate) if sys.argv[2] == "gate" else ""))
+    db.execute("UPDATE step_results SET status = ?, findings_json = ? WHERE step_name = 'review'",
+               ("awaiting_approval" if sys.argv[2] == "step" else "pending",
+                json.dumps(gate) if sys.argv[2] == "step" else ""))
+print(since)
+PY
+    ) || fail 'cannot seed parked SQLite input'
+    rm -f "$d/state/.nm-status-snapshot.json"
+    before=$(git hash-object "$NM_HOME/state.sqlite")
+    for read_kind in cold cached older-cache; do
+      if [ "$read_kind" = older-cache ]; then
+        python3 - "$d/state/.nm-status-snapshot.json" <<'PY'
+import json
+import sys
+with open(sys.argv[1]) as stream:
+    snapshot = json.load(stream)
+snapshot["schema_version"] = 2
+for entry in snapshot["repo_snapshots"].values():
+    for run in entry["runs"]:
+        for step in run.get("steps", []):
+            step.pop("gate_summary", None)
+with open(sys.argv[1], "w") as stream:
+    json.dump(snapshot, stream)
+PY
+      fi
+      min_wait=$(($(date +%s) - since))
+      out=$(run_crew_state "$d" snap-question)
+      max_wait=$(($(date +%s) - since))
+      assert_contains "$out" 'state: parked' "$layout $read_kind snapshot keeps the gate parked"
+      assert_contains "$out" 'pr: #562' 'the snapshot question names its PR'
+      assert_contains "$out" 'T33 expected "a,b". A approve the park; B schedule a low-load rerun?' 'the snapshot preserves the summary and its actual options'
+      assert_contains "$out" 'T33 failed on "c,d" at C:\tests\x; A accept or B rerun?' 'the snapshot preserves escaped finding text and its options'
+      assert_contains "$out" 'Literal ; run: FORGED' 'decoded finding text cannot mint a status field'
+      assert_contains "$(crew_line_parked_gate "$out")" $'human\t01M7SNAPSHOTA0000000000001' 'decoded descriptions preserve the real decision owner and run'
+      elapsed=$(printf '%s' "$out" | sed -n 's/.* · parked: \([0-9][0-9]*\)s.*/\1/p')
+      case "$elapsed" in ''|*[!0-9]*) fail 'the snapshot omitted elapsed parked time' ;; esac
+      [ "$elapsed" -ge "$min_wait" ] && [ "$elapsed" -le "$max_wait" ] || fail 'parked elapsed time does not describe the SQLite since-time'
+      [ ! -e "$d/nm-cli.log" ] || fail 'the snapshot question required a daemon CLI read'
+    done
+    after=$(git hash-object "$NM_HOME/state.sqlite")
+    assert_equals "$before" "$after" 'snapshot question reads leave the database unchanged'
+  done
+  unset FM_NM_CLI_LOG FM_NM_SNAPSHOT_TTL FM_CREW_STATE_NM_TIMEOUT
+  pass 'cold and cached SQLite gates preserve the parked question, options and wait time'
 }
 
 test_status_snapshot_schema_version_guard_falls_back_to_daemon() {
@@ -7668,6 +7777,7 @@ fi
 
 test_captured_axi_status_shapes
 test_parked_question_preserves_options_without_minting_components
+test_toon_quoted_text_keeps_escapes_and_columns
 test_captured_inventory_replay
 test_captured_authority_transition
 test_captured_completed_history
@@ -7904,6 +8014,7 @@ test_live_ledger_row_after_selection_reports_unknown
 test_unverifiable_run_selection_reports_unknown
 test_legacy_conflicting_run_records_report_unknown
 test_status_snapshot_readonly_and_shared_across_sweep
+test_status_snapshot_preserves_parked_question_and_wait
 test_status_snapshot_schema_version_guard_falls_back_to_daemon
 test_status_snapshot_read_failure_falls_back_to_daemon
 test_status_snapshot_off_reads_without_the_cache_lock
