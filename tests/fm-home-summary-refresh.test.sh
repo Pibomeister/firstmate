@@ -24,6 +24,7 @@ WATCH_PID=
 SLOW_WRITER_PID=
 SLOW_WORKER_PGID=
 SLOW_NM_PID=
+SLOW_VALIDATOR_PID=
 LOCK_HOLDER_PID=
 
 cleanup() {
@@ -32,7 +33,7 @@ cleanup() {
     ''|*[!0-9]*) ;;
     *) kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 || true ;;
   esac
-  for pid in "$WATCH_PID" "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$LOCK_HOLDER_PID"; do
+  for pid in "$WATCH_PID" "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$SLOW_VALIDATOR_PID" "$LOCK_HOLDER_PID"; do
     [ -n "$pid" ] || continue
     kill -KILL "$pid" >/dev/null 2>&1 || true
   done
@@ -226,6 +227,8 @@ jq -e --arg home "$HOME_DIR" --arg now "$NOW_ONE" --argjson epoch "$EPOCH_ONE" '
   and .generated_epoch == $epoch
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "initial ledger did not expose the extended producer schema"
+
+if [ "${1:-}" != --interruption ]; then
 
 PATH="$FAKEBIN:$PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
@@ -451,18 +454,40 @@ jq -e '
   || fail "fleet snapshot did not consume the published local ledger: $(jq -c '.secondmate_current.records[0]' "$TMP_ROOT/parent-snapshot.json")"
 pass "fleet snapshot consumes the published local ledger by default"
 
-# Restore the established ledger, then stop a real writer while its real producer
-# is blocked in a current-state read. The prior ledger must remain byte-identical
-# and valid because no partial producer output is ever published at its path.
+fi
+
+# Stop the writer after real validation accepts the old document.
+# The prior ledger must stay complete, and replacement publication must survive
+# the old attempt finishing after its lock owner is killed.
 run_writer "$NOW_TWO" "$EPOCH_TWO" || fail "could not restore the real ledger"
 printf 'working: replacement summary is being computed\n' \
   >> "$HOME_DIR/state/ledger-task.status"
 cp "$HOME_DIR/state/home-summary.json" "$TMP_ROOT/prior-ledger.json"
-SLOW_MARKER="$TMP_ROOT/slow-no-mistakes.pid"
-PATH="$FAKEBIN:$PATH" \
+SLOW_MARKER="$TMP_ROOT/slow-validator.pid"
+VALIDATION_RELEASE="$TMP_ROOT/validation-release"
+VALIDATION_BIN="$TMP_ROOT/validation-bin"
+mkdir -p "$VALIDATION_BIN"
+cat > "$VALIDATION_BIN/jq" <<'SH'
+#!/usr/bin/env bash
+jq_rc=0
+"$FM_TEST_REAL_JQ" "$@" || jq_rc=$?
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*)
+      [ "$jq_rc" -eq 0 ] || exit "$jq_rc"
+      printf '%s\n' "$$" > "$FM_TEST_VALIDATOR_MARKER"
+      while [ ! -e "$FM_TEST_VALIDATION_RELEASE" ]; do sleep 0.1; done
+      ;;
+  esac
+done
+exit "$jq_rc"
+SH
+chmod +x "$VALIDATION_BIN/jq"
+PATH="$VALIDATION_BIN:$FAKEBIN:$PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
-  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_TEST_NM_MARKER="$SLOW_MARKER" FM_TEST_NM_SLEEP=30 \
+  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+  FM_TEST_REAL_JQ="$(command -v jq)" FM_TEST_VALIDATOR_MARKER="$SLOW_MARKER" \
+  FM_TEST_VALIDATION_RELEASE="$VALIDATION_RELEASE" FM_HOME_SUMMARY_TIMEOUT=120 \
   "$WRITER" > "$TMP_ROOT/killed-writer.out" 2> "$TMP_ROOT/killed-writer.err" &
 SLOW_WRITER_PID=$!
 i=0
@@ -471,13 +496,15 @@ while [ ! -s "$SLOW_MARKER" ] && [ "$i" -lt 100 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ -s "$SLOW_MARKER" ] || fail "the real producer did not reach the controlled slow current-state read"
-SLOW_NM_PID=$(cat "$SLOW_MARKER" 2>/dev/null || true)
+[ -s "$SLOW_MARKER" ] || fail "the writer did not reach controlled validation of a valid document"
+SLOW_VALIDATOR_PID=$(cat "$SLOW_MARKER")
 writer_pgid=$(ps -o pgid= -p "$SLOW_WRITER_PID" 2>/dev/null | tr -d '[:space:]')
-ancestor=$SLOW_NM_PID
+ancestor=$SLOW_VALIDATOR_PID
+slow_ancestors=
 child_pgid=
 i=0
 while [ "$i" -lt 20 ]; do
+  slow_ancestors="${slow_ancestors:+$slow_ancestors,}$ancestor"
   ancestor_pgid=$(ps -o pgid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
   parent=$(ps -o ppid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
   if [ "$parent" = "$SLOW_WRITER_PID" ]; then
@@ -502,7 +529,6 @@ kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 \
 wait "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
 SLOW_WRITER_PID=
 SLOW_WORKER_PGID=
-SLOW_NM_PID=
 jq -e . "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "killing the writer exposed invalid JSON at the ledger path"
 cmp -s "$TMP_ROOT/prior-ledger.json" "$HOME_DIR/state/home-summary.json" \
@@ -534,7 +560,21 @@ jq -e --arg now "$NOW_THREE" --argjson epoch "$EPOCH_THREE" '
   .generated == $now and .generated_epoch == $epoch
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "the successful replacement did not publish the new complete document"
-pass "writer kill and replacement preserve an atomic JSON ledger"
+: > "$VALIDATION_RELEASE"
+i=0
+while ps -p "$slow_ancestors" -o stat= 2>/dev/null \
+    | awk '$1 !~ /^Z/ { alive=1 } END { exit !alive }'; do
+  [ "$i" -lt 600 ] || fail "the interrupted attempt did not finish within its controlled delay"
+  sleep 0.1
+  i=$((i + 1))
+done
+SLOW_VALIDATOR_PID=
+jq -e --arg now "$NOW_THREE" --argjson epoch "$EPOCH_THREE" '
+  .generated == $now and .generated_epoch == $epoch
+' "$HOME_DIR/state/home-summary.json" >/dev/null \
+  || fail "an interrupted attempt overwrote the newer replacement ledger"
+pass "writer interruption cannot overwrite a later atomic replacement"
+[ "${1:-}" != --interruption ] || exit 0
 
 # Best-effort mode is the contract used by every lifecycle trigger. A failed
 # producer records the failure and returns success without touching the ledger.

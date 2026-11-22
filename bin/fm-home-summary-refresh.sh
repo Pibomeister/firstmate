@@ -93,11 +93,6 @@ case "${1:-}" in
     HOME_SUMMARY_MODE=worker
     BEST_EFFORT=${FM_HOME_SUMMARY_WORKER_BEST_EFFORT:-0}
     ;;
-  --_publish)
-    HOME_SUMMARY_MODE=publish
-    BEST_EFFORT=${FM_HOME_SUMMARY_WORKER_BEST_EFFORT:-0}
-    SECONDS=${FM_SNAPSHOT_STAGE_BASE:-0}
-    ;;
   --_log-failure) HOME_SUMMARY_MODE=log-failure ;;
   --_stage-note) HOME_SUMMARY_MODE=stage-note ;;
   -h|--help) usage; exit 0 ;;
@@ -223,15 +218,11 @@ home_summary_fail() {
 }
 
 home_summary_refresh_once() {
-  local producer_rc producer_error
+  local producer_rc producer_error validation_rc remaining
   if ! mkdir -p "$STATE" 2>/dev/null; then
     home_summary_fail "state directory is unavailable: $STATE"
     return 1
   fi
-  trap home_summary_cleanup EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
   HOME_SUMMARY_TMP=$(umask 077; mktemp "$STATE/.home-summary.json.XXXXXX") || {
     home_summary_fail "could not create an atomic publication file in $STATE"
     return 1
@@ -242,7 +233,9 @@ home_summary_refresh_once() {
   }
 
   home_summary_stage producer
-  if env \
+  remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
+  [ "$remaining" -gt 0 ] || return 124
+  if fm_run_timed "$remaining" env \
     FM_SNAPSHOT_STAGE_BASE="$SECONDS" \
     FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_HOME="$FM_HOME" \
@@ -256,6 +249,7 @@ home_summary_refresh_once() {
   else
     producer_rc=$?
   fi
+  [ "$producer_rc" -ne 124 ] || return 124
   if [ "$producer_rc" -ne 0 ]; then
     producer_error=$(tail -n 1 "$HOME_SUMMARY_ERR_TMP" 2>/dev/null \
       | tr '\t\r\n' '   ' | cut -c1-500)
@@ -269,7 +263,9 @@ home_summary_refresh_once() {
   rm -f -- "$HOME_SUMMARY_ERR_TMP"
   HOME_SUMMARY_ERR_TMP=
   home_summary_stage validate
-  if ! jq -e --arg home "$FM_HOME" '
+  remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
+  [ "$remaining" -gt 0 ] || return 124
+  if fm_run_timed "$remaining" jq -e --arg home "$FM_HOME" '
     .schema == "fm-secondmate-home-summary.v1"
     and .hold_classifier_schema == "fm-captain-hold-buckets.v1"
     and .home == $home
@@ -290,20 +286,25 @@ home_summary_refresh_once() {
     and (.counts | type) == "object"
     and (.omitted | type) == "array"
   ' "$HOME_SUMMARY_TMP" >/dev/null 2>&1; then
+    :
+  else
+    validation_rc=$?
+    [ "$validation_rc" -ne 124 ] || return 124
     home_summary_fail "summary producer returned a malformed ledger document"
     return 1
   fi
   home_summary_stage publish
+  [ "$SECONDS" -lt "$HOME_SUMMARY_TIMEOUT" ] || return 124
   if ! chmod 600 "$HOME_SUMMARY_TMP" 2>/dev/null; then
     home_summary_fail "could not set the publication file mode"
     return 1
   fi
+  [ "$SECONDS" -lt "$HOME_SUMMARY_TIMEOUT" ] || return 124
   if ! mv -f -- "$HOME_SUMMARY_TMP" "$LEDGER" 2>/dev/null; then
     home_summary_fail "atomic ledger replacement failed: $LEDGER"
     return 1
   fi
   HOME_SUMMARY_TMP=
-  trap - EXIT HUP INT TERM
   return 0
 }
 
@@ -435,8 +436,8 @@ fi
 # the descriptor so a stage file the parent already removed is never recreated by
 # a later append. The wake library, sourced before this point, already creates
 # the state directory, so a fresh home reports its stages too.
-if [ "$HOME_SUMMARY_MODE" = worker ]; then FM_SNAPSHOT_STAGE_FD=; fi
-if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
+FM_SNAPSHOT_STAGE_FD=
+if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
     && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_FILE" \
     && [ -d "$STATE" ]; then
   stage_umask=$(umask)
@@ -448,49 +449,33 @@ if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]
 fi
 export FM_SNAPSHOT_STAGE_FD
 
-if [ "$HOME_SUMMARY_MODE" = worker ]; then
-  trap home_summary_cleanup EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-  if [ "$HOME_SUMMARY_IF_IDLE" -eq 1 ]; then
-    fm_lock_try_acquire "$REFRESH_LOCK" || exit 0
-  else
-    home_summary_stage lock-wait
-    remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
-    [ "$remaining" -gt 0 ] || exit 124
-    fm_lock_acquire_wait_bounded "$REFRESH_LOCK" "$remaining" || exit "$?"
-  fi
-  HOME_SUMMARY_LOCK_HELD=1
-  backoff_active && exit 0
+trap home_summary_cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [ "$HOME_SUMMARY_IF_IDLE" -eq 1 ]; then
+  fm_lock_try_acquire "$REFRESH_LOCK" || exit 0
+else
+  home_summary_stage lock-wait
   remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
-  if [ "$remaining" -le 0 ]; then
-    refresh_rc=124
-  elif fm_run_timed "$remaining" env \
-    FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
-    FM_SNAPSHOT_STAGE_BASE="$SECONDS" \
-    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_publish; then
-    rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
-    exit 0
-  else
-    refresh_rc=$?
-  fi
-  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
-  case "$backoff_failure_now" in
-    ''|*[!0-9]*) ;;
-    *) backoff_record_failure "$backoff_failure_now" ;;
-  esac
-  if [ "$BEST_EFFORT" -eq 1 ] && [ "$refresh_rc" -eq 1 ]; then
-    exit 0
-  fi
-  exit "$refresh_rc"
+  [ "$remaining" -gt 0 ] || exit 124
+  fm_lock_acquire_wait_bounded "$REFRESH_LOCK" "$remaining" || exit "$?"
 fi
-
+HOME_SUMMARY_LOCK_HELD=1
+backoff_active && exit 0
 if home_summary_refresh_once; then
+  rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
   exit 0
 else
   refresh_rc=$?
 fi
+backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
+case "$backoff_failure_now" in
+  ''|*[!0-9]*) ;;
+  *) backoff_record_failure "$backoff_failure_now" ;;
+esac
+[ "$refresh_rc" -ne 124 ] || exit 124
+
 # A failure the worker handled itself names its stage too, like a deadline the
 # parent reports, so every failed refresh says where it stopped.
 if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
@@ -499,7 +484,7 @@ if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
   home_summary_log_failure
-  exit "$refresh_rc"
+  exit 0
 fi
 printf 'fm-home-summary-refresh: %s\n' "$HOME_SUMMARY_ERROR" >&2
 exit "$refresh_rc"
