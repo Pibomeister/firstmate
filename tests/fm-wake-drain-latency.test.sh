@@ -22,6 +22,7 @@ FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" fm_run_timed 15 "$ROOT/bin/fm-wa
 [ "$rc" = 0 ] || fail "large-history drain exceeded its 15-second fixture budget or failed: $rc"
 cmp "$home/queue.before" "$home/state/.wake-queue" || fail "presentation consumed or changed an unhandled wake"
 cmp "$home/status.before" "$home/state/mate.status" || fail "presentation changed authoritative status bytes"
+# shellcheck disable=SC2016 # Positional arguments expand in the child Bash.
 FM_STATE_OVERRIDE="$home/state" fm_run_timed 5 bash -c '
   . "$1/bin/fm-classify-lib.sh"
   status_open_decisions_incremental "$2"

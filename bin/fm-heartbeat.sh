@@ -860,6 +860,7 @@ fm_epoch_seconds_to heartbeat_cleanup_now
 for heartbeat_old_work in "$STATE"/.heartbeat-work.*; do
   [ -d "$heartbeat_old_work" ] && [ ! -L "$heartbeat_old_work" ] || continue
   heartbeat_old_mtime=$(fm_path_mtime "$heartbeat_old_work") || continue
+  # shellcheck disable=SC2154 # fm_epoch_seconds_to assigns its named output.
   if [ $(((heartbeat_cleanup_now - heartbeat_old_mtime) / 60)) -gt 10 ]; then
     rm -rf -- "$heartbeat_old_work" 2>/dev/null || true
   fi
