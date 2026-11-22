@@ -479,7 +479,7 @@ family_for_basename_var() {
       REPLY_FAMILY=afk
       ;;
     fm-bearings-board-render.test.sh|fm-bearings-snapshot.test.sh|fm-contributions.test.sh|\
-    fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh)
+    fm-fleet-snapshot-view.test.sh|fm-home-summary-refresh.test.sh|fm-refresh-singleflight.test.sh)
       REPLY_FAMILY=snapshot-bearings
       ;;
     fm-backend-cmux.test.sh|fm-backend-cmux-smoke.test.sh)
@@ -519,7 +519,7 @@ family_for_basename_var() {
     fm-send-remote-delivery.test.sh|fm-soak-record.test.sh|fm-spawn-pool-base-freshen.test.sh|\
     fm-test-fixture-cleanup.test.sh|fm-test-fixtures.test.sh|\
     fm-voice-relay.test.sh|fm-wake-drain-open-decisions-cursor.test.sh|\
-    fm-wake-drain-open-decisions.test.sh|fm-wake-drain-outcome-backstop.test.sh)
+    fm-wake-drain-open-decisions.test.sh|fm-wake-drain-outcome-backstop.test.sh|fm-wake-drain-latency.test.sh)
       REPLY_FAMILY=standalone
       ;;
     *)

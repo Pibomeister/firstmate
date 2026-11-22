@@ -6,12 +6,18 @@
 # The command does not acquire the session lock, drain wakes, arm watchers,
 # mutate backlog state, or write reports. Its default ledger collector may
 # atomically refresh parent-side cached copies of remote home summaries under
-# state/secondmate-summary-cache; those observational cache writes are its only
-# fleet-state mutation.
+# state/secondmate-summary-cache; those cached copies and the home-local
+# observation lock/results below are its only fleet-state writes.
+# Concurrent equivalent readers share the complete observation produced while
+# they waited. Independent later calls always collect again. Worker-observing
+# modes share one per-home collector lock, so heartbeat and summary readers
+# cannot multiply per-task probes. Contribution-only inventory uses a separate
+# flight and never waits for worker probes. Missing state stays observational.
 #
 # Top-level fields:
 #   schema: stable schema id.
-#   generated: UTC observation time for this fresh command execution.
+#   generated: UTC observation time of the collected pass, shared by overlapping
+#     equivalent readers without stamping old evidence as newly observed.
 #   fm_home: resolved operational home.
 #   session: {endpoint:{backend,target}} from state/.lock-session, the endpoint
 #     recorded when the primary session took the lock.
@@ -315,6 +321,116 @@ case "${1:---json}" in
 esac
 
 command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; exit 1; }
+
+# Keep the public entrypoint single-flight, including callers outside a watcher.
+# The collector itself owns the lock: there is no unlocked re-entry environment
+# flag and no wrapper that can die while leaving an unowned collector running.
+# Read header and body from one descriptor so publications cannot mix passes.
+SNAPSHOT_FLIGHT_HELD=0
+SNAPSHOT_FLIGHT_TMP=
+snapshot_flight_finish() {  # <original-exit-status>
+  local rc=$1
+  [ "$SNAPSHOT_FLIGHT_HELD" -eq 1 ] || return "$rc"
+  trap - EXIT
+  if [ "$SNAPSHOT_FLIGHT_OUT_FD" = 6 ]; then exec 1>&6 6>&-; else exec 1>&7 7>&-; fi
+  if {
+    printf '%s %s %s\n' "${SNAPSHOT_FLIGHT_TMP##*/}" "$SNAPSHOT_FLIGHT_VIEW" "$rc"
+    cat "$SNAPSHOT_FLIGHT_TMP.body"
+  } > "$SNAPSHOT_FLIGHT_TMP" && chmod 600 "$SNAPSHOT_FLIGHT_TMP"; then
+    mv -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_RESULT" || rc=1
+  else
+    rc=1
+  fi
+  cat "$SNAPSHOT_FLIGHT_TMP.body" || rc=1
+  rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body"
+  fm_lock_release "$SNAPSHOT_FLIGHT_LOCK" || rc=1
+  exit "$rc"
+}
+if [ -d "$STATE" ]; then
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  SNAPSHOT_FLIGHT_LOCK="$STATE/.fleet-observation.lock"
+  if [ "$OUTPUT_MODE" = contribution-input ]; then
+    SNAPSHOT_FLIGHT_LOCK="$STATE/.fleet-contribution-input.lock"
+  fi
+  SNAPSHOT_FLIGHT_RESULT="$STATE/.fleet-observation-$OUTPUT_MODE"
+  if [ -L "$SNAPSHOT_FLIGHT_RESULT" ] || { [ -e "$SNAPSHOT_FLIGHT_RESULT" ] && [ ! -f "$SNAPSHOT_FLIGHT_RESULT" ]; }; then
+    echo 'fm-fleet-snapshot: unsafe observation result path' >&2
+    exit 1
+  fi
+  # Different roots, code installations or projection bounds are different
+  # requests, even when they happen to use the same home and output mode.
+  SNAPSHOT_FLIGHT_VIEW=$({
+    printf '%s\n' "$SCRIPT_DIR" "$FM_ROOT" "$DATA" "$CONFIG" "$PROJECTS"
+    for snapshot_var in ${!FM_SNAPSHOT_@} ${!FM_CLASSIFY_@}; do
+      case "$snapshot_var" in FM_SNAPSHOT_STAGE_FD|FM_SNAPSHOT_STAGE_BASE) continue ;; esac
+      printf '%s=%s\n' "$snapshot_var" "${!snapshot_var}"
+    done
+    # One metadata process, not a process per historical task. A caller whose
+    # authoritative local inputs changed during collection needs a fresh pass;
+    # it must not share the earlier pass merely because its mode is the same.
+    perl -e '
+      for my $dir (@ARGV) {
+        opendir(my $dh, $dir) or next;
+        for my $name (sort readdir($dh)) {
+          next if $name eq "." || $name eq "..";
+          next if $dir eq $ARGV[0] && $name !~ /\.(?:meta|status|turn-ended)$/;
+          my $path = "$dir/$name";
+          my @s = lstat($path);
+          print "$path\0", join(":", @s[0,1,2,7,9,10]), "\n" if @s;
+        }
+        closedir($dh);
+      }
+    ' "$STATE" "$DATA" "$CONFIG"
+  } | cksum)
+  SNAPSHOT_FLIGHT_VIEW=${SNAPSHOT_FLIGHT_VIEW// /-}
+  SNAPSHOT_FLIGHT_BEFORE=
+  if [ -f "$SNAPSHOT_FLIGHT_RESULT" ] && [ ! -L "$SNAPSHOT_FLIGHT_RESULT" ]; then
+    IFS= read -r SNAPSHOT_FLIGHT_BEFORE < "$SNAPSHOT_FLIGHT_RESULT" || true
+  fi
+  snapshot_flight_read() {
+    local header view rc
+    [ -f "$SNAPSHOT_FLIGHT_RESULT" ] && [ ! -L "$SNAPSHOT_FLIGHT_RESULT" ] || return 1
+    {
+      IFS= read -r header || return 1
+      [ "$header" != "$SNAPSHOT_FLIGHT_BEFORE" ] || return 1
+      read -r _ view rc <<< "$header"
+      [ "$view" = "$SNAPSHOT_FLIGHT_VIEW" ] || return 1
+      case "$rc" in ''|*[!0-9]*) return 1 ;; esac
+      cat || rc=1
+      exit "$rc"
+    } < "$SNAPSHOT_FLIGHT_RESULT"
+  }
+  trap 'snapshot_flight_finish "$?"' EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  while ! fm_lock_try_acquire "$SNAPSHOT_FLIGHT_LOCK"; do
+    # Completed-result reads are builtin I/O until a result is ready. Retry
+    # the identity-aware lock at most once per two seconds while it exists,
+    # rather than making every waiting reader fork identity probes at 5 Hz.
+    snapshot_flight_tick=0
+    while [ "$snapshot_flight_tick" -lt 10 ]; do
+      snapshot_flight_read || true
+      [ -e "$SNAPSHOT_FLIGHT_LOCK" ] || [ -L "$SNAPSHOT_FLIGHT_LOCK" ] || break
+      sleep 0.2
+      snapshot_flight_tick=$((snapshot_flight_tick + 1))
+    done
+  done
+  # A waiter can share a pass that finished before it acquired the lock.
+  # Release this newly acquired lock if that read exits successfully or fails.
+  trap 'rc=$?; fm_lock_release "$SNAPSHOT_FLIGHT_LOCK"; exit "$rc"' EXIT
+  snapshot_flight_read || true
+  SNAPSHOT_FLIGHT_TMP=$(umask 077; mktemp "$STATE/.fleet-observation.XXXXXX") || exit 1
+  (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") || exit 1
+  snapshot_stage_fd=${FM_SNAPSHOT_STAGE_FD:-}
+  snapshot_stage_fd=${snapshot_stage_fd#"${snapshot_stage_fd%%[!0]*}"}
+  SNAPSHOT_FLIGHT_OUT_FD=7
+  if [ "$snapshot_stage_fd" = 7 ]; then SNAPSHOT_FLIGHT_OUT_FD=6; exec 6>&1; else exec 7>&1; fi
+  exec > "$SNAPSHOT_FLIGHT_TMP.body"
+  SNAPSHOT_FLIGHT_HELD=1
+  trap 'snapshot_flight_finish "$?"' EXIT
+fi
 
 # Stage timing: with FM_SNAPSHOT_STAGE_FD set to an open append descriptor, each
 # stage boundary writes one "<stage>\t<seconds since start>" line to it, so a
@@ -1616,7 +1732,7 @@ snapshot_cleanup() {
   snapshot_collection_cleanup
   cleanup_json_files
 }
-trap snapshot_cleanup EXIT
+trap 'rc=$?; snapshot_cleanup; snapshot_flight_finish "$rc"' EXIT
 
 bounded_parent_activities_json() {  # <status-file>
   local f=$1 out rc reason script
@@ -2114,7 +2230,7 @@ if [ "$OUTPUT_MODE" = contribution-input ]; then
   contribution_tasks=$(contribution_tasks_json) || { echo "fm-fleet-snapshot: contribution task read failed" >&2; exit 1; }
   contribution_input_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-fleet-snapshot.contrib.XXXXXX") || { echo "fm-fleet-snapshot: contribution temp dir failed" >&2; exit 1; }
   # shellcheck disable=SC2064  # The trap resolves this invocation's directory at exit.
-  trap 'rm -rf -- "$contribution_input_dir"' EXIT
+  trap 'rc=$?; rm -rf -- "$contribution_input_dir"; snapshot_flight_finish "$rc"' EXIT
   printf '%s' "$BACKLOG_JSON" > "$contribution_input_dir/backlog.json" || { echo "fm-fleet-snapshot: contribution backlog write failed" >&2; exit 1; }
   printf '%s' "$contribution_tasks" > "$contribution_input_dir/tasks.json" || { echo "fm-fleet-snapshot: contribution tasks write failed" >&2; exit 1; }
   jq -n --slurpfile backlog "$contribution_input_dir/backlog.json" --slurpfile tasks "$contribution_input_dir/tasks.json" '{backlog:$backlog[0],tasks:$tasks[0]}' || { echo "fm-fleet-snapshot: contribution input assembly failed" >&2; exit 1; }

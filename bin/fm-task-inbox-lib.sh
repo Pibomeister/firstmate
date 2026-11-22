@@ -666,7 +666,10 @@ fm_task_inbox_records_in() {  # <inbox-dir>
   local f n
   for f in "$1"/*.msg; do
     [ -e "$f" ] || continue
-    n=$(fm_task_inbox_seq_of "${f##*/}") || continue
+    n=${f##*/}
+    n=${n%.msg}
+    case "$n" in ''|*[!0-9]*) continue ;; esac
+    n=$((10#$n))
     printf '%s\t%s\n' "$n" "${f##*/}"
   done | sort -n | cut -f2
 }

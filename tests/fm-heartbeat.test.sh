@@ -803,7 +803,8 @@ test_stale_work_dir_is_swept() {
   stale="$home/state/.heartbeat-work.killed"
   mkdir "$stale"
   fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$stale"
-  publish "$home"
+  # Observation-time fixtures must not move the real scratch-retention clock.
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
   assert_no_work_left "$home"
   pass "the next run removes what a SIGKILLed run left"
 }

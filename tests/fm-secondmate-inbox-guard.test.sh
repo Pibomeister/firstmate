@@ -271,6 +271,33 @@ test_guard_allows_everything_it_does_not_own() {
   pass "inbox guard: primaries, crewmates, nested or foreign sessions, stale bindings, young records and other payloads are allowed"
 }
 
+test_guard_window_does_not_wait_for_process_inventory() {
+  local home slowbin="$TMP_ROOT/slow-ps" real_ps
+  home=$(make_secondmate fast-window)
+  add_record "$home" 001
+  hook_call "$home" "$home" self
+  expect_deny "initial inbox-first reminder"
+  mkdir -p "$slowbin"
+  real_ps=$(command -v ps)
+  cat > "$slowbin/ps" <<SH
+#!/usr/bin/env bash
+sleep 6
+exec "$real_ps" "\$@"
+SH
+  chmod +x "$slowbin/ps"
+  # A slow OS inventory must not use the hook budget while the existing
+  # re-deny window already allows tools needed to drain this inbox.
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  PAYLOAD=$(jq -cn --arg command "bash '$ROOT/bin/fm-wake-drain.sh'" \
+    '{tool_input:{command:$command},session_id:"s1",turn_id:"u1"}') \
+    fm_run_timed_fn 3 hook_call "$home" "$home" self PATH="$slowbin:$PATH" \
+    || fail "the allowed drain path waited for process inventory past its hook budget"
+  [ "$(cut -f2 "$home/state/.inbox-guard")" = 1 ] || fail "the drain call spent another deny inside the window"
+  [ ! -s "$OUT" ] && [ ! -s "$ERR" ] || fail "the allowed drain call emitted a hook denial"
+  pass "inbox handling inside the existing re-deny window does not wait for process inventory"
+}
+
 test_guard_denies_a_waiting_record_then_lets_the_drain_run
 test_guard_denies_with_a_marker_without_a_trailing_newline
 test_guard_moves_past_a_stuck_oldest_record
@@ -281,3 +308,4 @@ test_guard_age_read_survives_gnu_stat
 test_guard_skips_fire_and_forget_records
 test_guard_allows_everything_it_does_not_own
 test_hook_records_payload_key_names_only
+test_guard_window_does_not_wait_for_process_inventory
