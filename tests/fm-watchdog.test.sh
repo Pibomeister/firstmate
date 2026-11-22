@@ -2380,6 +2380,48 @@ council-seats=claude:haiku,agy:flash'
   pass "council: a PR-caused failure stays held, and a negated or read-only flake still defaults to approve, not clean"
 }
 
+test_native_revisit_ignores_only_parked_age() {
+  local out record before line
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  make_native_gate_pointer
+  printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
+  fake_models "$H" ok:'PROCEED B DEFER_PARK' ok:'PROCEED B DEFER_PARK'
+  out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "initial native council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED B' 'the initial native decision is recorded'
+  printf '\nLater standing order: accept this known unreachable flake risk.\n' >> "$H/data/t1/nm-01NATIVE-findings.txt"
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  out=$(run_wd 10 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" --revisit 2>&1) || fail "native revisit failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'a changed standing order convenes a documented revisit'
+  assert_contains "$out" 'prior=0' 'the changed evidence publishes a new outcome'
+  assert_equals 4 "$(seat_calls)" 'both native convenings reached both seats'
+  record=$(council_record_path rulings t1 nm-01NATIVE-test)
+  before=$(git hash-object "$record")
+  sed 's/parked 300s/parked 320s/' "$H/run.toon" > "$H/run-later.toon"
+  mv "$H/run-later.toon" "$H/run.toon"
+  line=$(FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" bash "$ROOT/bin/fm-crew-state.sh" t1)
+  assert_contains "$line" ' · parked: 320s' 'the current visible status retains its advancing wait time'
+  fake_models "$H" ok:'PROCEED B DEFER_PARK' ok:'PROCEED B DEFER_PARK'
+  out=$(run_wd 20 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" --revisit 2>&1) || fail "native revisit replay failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'advancing parked age cannot replace the recorded answer'
+  assert_contains "$out" 'prior=1' 'identical native revisit evidence replays despite the age change'
+  assert_equals 4 "$(seat_calls)" 'the elapsed-age retry calls no additional seats'
+  assert_equals "$before" "$(git hash-object "$record")" 'an elapsed-age replay preserves the original record bytes'
+  printf '\nLater nudge: schedule the low-load rerun instead; observation · parked: 100s · recorded.\n' >> "$H/data/t1/nm-01NATIVE-findings.txt"
+  out=$(run_wd 30 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" --revisit 2>&1) || fail "changed native revisit failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED B' 'genuine changed evidence can still select another answer'
+  assert_contains "$out" 'prior=0' 'the later nudge is new evidence'
+  assert_equals 6 "$(seat_calls)" 'the genuine changed evidence convenes both seats once'
+  sed 's/parked: 100s/parked: 120s/' "$H/data/t1/nm-01NATIVE-findings.txt" > "$H/finding-later.txt"
+  mv "$H/finding-later.txt" "$H/data/t1/nm-01NATIVE-findings.txt"
+  out=$(run_wd 40 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" --revisit 2>&1) || fail "changed prose revisit failed: $out"
+  assert_contains "$out" 'prior=0' 'parked-age-looking prose after the native run field remains evidence'
+  assert_equals 8 "$(seat_calls)" 'changing finding prose can still convene both seats'
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'native revisit retries ignore elapsed parked age and retain genuine changed evidence'
+}
+
 test_council_revisit_on_contradicting_record() {
   local out archived
   make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
@@ -7968,6 +8010,7 @@ fm_test_run \
   test_human_only_holds_normalized_sign_in_variants \
   test_pr_caused_failure_stays_held_and_a_negated_flake_reaches_council \
   test_council_revisit_on_contradicting_record \
+  test_native_revisit_ignores_only_parked_age \
   test_council_failed_revisit_keeps_the_prior_ruling \
   test_decision_nudge_names_pr_by_number \
   test_judge_fallback_and_spend_cap \

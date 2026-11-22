@@ -269,7 +269,7 @@ Each decision gets one council, for its task and key.
 A valid ruling or no-ruling record is final: no later pass and no repeated command convenes that task and key again.
 Apart from the revisit below, removing the record file is the only way to allow a new council, and that is the owner's or the supervisor's act.
 The one documented exception is that revisit: `fm-watchdog.sh council --revisit` with a `--record-file` carrying a later standing order or supervisor nudge that contradicts the recorded outcome convenes once more on the new record, and archives that outcome under `data/watchdog/revisits/` only when the new council publishes a ruling or no-ruling record; a failed, refused, or busy revisit leaves the prior outcome in place.
-A revisit whose record matches the stored evidence after whitespace normalization replays the prior outcome without calling any seat.
+A revisit whose record matches the stored evidence after whitespace normalization and exclusion of native parked age replays the prior outcome without calling any seat.
 Re-asking on contradicting evidence is a revisit, never a silent re-roll, and an automatic pass never revisits on its own.
 A council records agreement as evidence for the supervisor; it is never the owner's approval.
 A record that establishes a known unreachable timing flake as the sole remaining failure after the once-rerun is put to the seats with a default: approve the park, labeled approved, not clean, on whichever option approves it.

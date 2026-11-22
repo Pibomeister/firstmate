@@ -1212,7 +1212,17 @@ wd_council_qualification() {
 }
 
 wd_council_normalize_evidence() {  # <text>
-  printf '%s' "$1" | tr '\t\r\n' '   ' | tr -s ' ' | sed 's/^ //;s/ $//'
+  printf '%s' "$1" | tr '\t\r\n' '   ' | tr -s ' ' | sed 's/^ //;s/ $//' |
+    awk -F ' · ' '{
+      native=0; seen=0; sep=""
+      for (i=1; i<=NF; i++) {
+        if (!seen && $i ~ /(^|; )state: parked$/ && $(i+1) == "source: run-step") { native=1; seen=1 }
+        if (native && $i ~ /^parked: [0-9][0-9A-Za-z]*$/) continue
+        if (native && $i ~ /^run: /) native=0
+        printf "%s%s", sep, $i
+        sep=" · "
+      }
+    }'
 }
 
 wd_council_prior_evidence() {  # <record-path>
