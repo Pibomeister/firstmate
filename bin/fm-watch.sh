@@ -2040,13 +2040,13 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 # config/turnend-churn-absorb gates its own widened absorb.
 #
 # The second record takes TWO signals, and needs both. The crew's authoritative
-# current state must be a no-mistakes gate whose answer is owed by a HUMAN
+# current state must be a no-mistakes gate whose answer is owed by the supervisor
 # (crew_gate_awaits_human_decision in fm-classify-lib.sh, minted from the
 # findings table's `action` column by position), AND the task's own decision fold
 # must still hold an open `needs-decision` record whose key is `nm-<run>-<step>`
 # for the run that verdict reports. The gate's table alone says only that the
-# answer is owed by a human; the open decision bound to that run is the positive
-# evidence that firstmate was actually told about THIS gate and has not answered
+# answer is owed by the supervisor; the open decision bound to that run is the
+# positive evidence that firstmate was told about THIS gate and has not answered
 # yet, which is what makes the lane's quiet a wait rather than a suspected wedge.
 # An open decision under any other key - an unrelated question never closed - is
 # not that evidence, and neither is a verdict that names no run. The wait is owed
@@ -2061,8 +2061,8 @@ wait_record() {  # <kind> <subject> <whom> <action> <age-record>
 #     ask-user row, but `fm-send --resolve-key` wrote the closing `resolved` line
 #     at answer time, so the fold is empty and what is outstanding is the
 #     crewmate's OWN next move;
-#   - the crewmate parked at a human-owed gate and went quiet before escalating
-#     it at all: nobody was ever told, so there is no wait to defer to.
+#   - the crewmate parked at a supervisor-owed gate and went quiet before
+#     escalating it at all: nobody was ever told, so there is no wait to defer to.
 # A `blocked` record does not count here: a blocker is not an unanswered gate
 # decision and a different action clears it. A gate awaiting the CREWMATE's own answer is
 # deliberately NOT evidence either: a crewmate that goes quiet before answering

@@ -2795,15 +2795,15 @@ crew_is_paused() {  # <id>
   [ "$(crew_absorb_class "$1")" = paused ]
 }
 
-# The one spelling of the verdict component that says a parked gate's answer is
-# owed by a HUMAN. bin/fm-crew-state.sh mints it (nm_gate_awaits_human_decision
-# owns the derivation: the findings table's `action` column, read by position);
-# crew_line_parked_gate below is its only reader.
+# The one spelling of the supervisor-owed parked-gate marker. Its derivation
+# belongs to nm_gate_awaits_human_decision in bin/fm-crew-state.sh;
+# crew_line_parked_gate below reads it.
 FM_GATE_HUMAN_DECISION='ask-user: authority decision'
 
 # Pure: read ONE fm-crew-state.sh line as a no-mistakes run parked at a gate.
 # Returns 1 for every other verdict. On success prints "<owner>\t<run-id>":
-#   owner  - `human` when the line carries the minted component above as a whole
+#   owner  - the legacy token `human` means supervisor-owed, not human-only.
+#            It is set when the line carries the marker above as a whole
 #            ` · ` component, else `worker`: the gate waits on the crewmate
 #            itself. The whole component is compared for equality rather than
 #            searched for, so a gate name or a reconciliation note that happens
@@ -2832,8 +2832,8 @@ crew_line_parked_gate() {  # <crew-state-line> -> "<owner>\t<run-id>" on stdout
   printf '%s\t%s\n' "$owner" "$run"
 }
 
-# 0 if crew <id>'s authoritative current state is a no-mistakes gate whose answer
-# is owed by a human rather than by the crewmate itself.
+# 0 if crew <id>'s authoritative current-state line carries the supervisor-owed
+# parked-gate marker documented above.
 #
 # A crewmate that goes quiet before answering its OWN gate is precisely the wedge
 # the escalation ladder exists to catch, so only crew_line_parked_gate's `human`

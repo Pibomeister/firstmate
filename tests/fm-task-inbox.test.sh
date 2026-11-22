@@ -1548,6 +1548,9 @@ test_watcher_usage_limit_unread_inbox_does_not_name_interrupt() {
     '' \
     'Enter to confirm · Esc to cancel' > "$capture"
   printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
+  # Start at the escalation boundary this case asserts. Ring pacing has its
+  # own ladder tests and need not add another full watcher poll here.
+  inbox_lib "$state" fm_task_inbox_record_ring "$state" t1 "$rec"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$capture" \
     FM_TASK_INBOX_RING_MAX=1 FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999

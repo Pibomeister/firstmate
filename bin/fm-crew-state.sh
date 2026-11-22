@@ -744,7 +744,7 @@ nm_parked_duration() {
 }
 # 0 when the gate's own findings table holds at least one row whose `action`
 # column is exactly `ask-user` - the pipeline's own record that this gate's
-# answer is owed by a HUMAN, not by the crewmate (the gate's shape -
+# answer is owed by the supervisor, not by the crewmate (the gate's shape -
 # awaiting_approval, fix_review, awaiting_agent - is reported parked in every
 # case and does not by itself say who owes the answer; only a findings row whose
 # `action` column is exactly `ask-user` does).
@@ -756,9 +756,9 @@ nm_parked_duration() {
 # trailing `description` column is free text that routinely quotes finding
 # actions, and the payload also carries the branch name and step names, so a
 # gate owed the crewmate's own answer would match just as readily as one owed a
-# human. Column order is read from the header rather than assumed, so a table
-# that grows a column keeps answering correctly. Both the header match and the
-# row scan require the BRACE, so the count, the index and the rows all come from
+# supervisor. Column order is read from the header rather than assumed, so a
+# table that grows a column keeps answering correctly. Both the header match and
+# the row scan require the BRACE, so the count, the index and the rows come from
 # the same block: an earlier unbraced `findings[N]:` line from a resolved round
 # must not supply the rows while the braced gate table supplies the index, which
 # would read the wrong block's rows at the right block's offset
