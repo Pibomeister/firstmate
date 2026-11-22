@@ -1,0 +1,8 @@
+[
+  {
+    "name": "Real watcher and real collectors retain fractional polling and collect on idle deadlines",
+    "result": "fail",
+    "live": true,
+    "reason": "13"
+  }
+]

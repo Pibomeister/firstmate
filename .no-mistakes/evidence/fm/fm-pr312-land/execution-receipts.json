@@ -1,0 +1,38 @@
+{
+  "revision": "d9f1640881435f7f9fab5c9cf9f651097f98a421",
+  "completed_live_drivers": {
+    "live-validation.py": 0,
+    "live-adversarial.py": 0,
+    "live-events.py": 0,
+    "live-scheduler-final.py": 0
+  },
+  "live_driver_notes": "Initial scheduler attempts failed driver observation limits; final idle and event scenarios passed in separately scoped drivers.",
+  "baseline": {
+    "stall_ledger_full_with_trace": 0,
+    "watchdog_five_freshness_selectors": 0,
+    "summary_original_attempts": [
+      1,
+      1
+    ],
+    "summary_diagnostic_copy_all_original_assertions": 0,
+    "heartbeat_initial_full_attempt": 1,
+    "heartbeat_slow_snapshot_retry": 0,
+    "heartbeat_continuation_23_selectors": 1,
+    "heartbeat_continuation_note": "All selectors passed except final allowance selector, which observed an unrelated primary-writer-anchor timeout.",
+    "heartbeat_allowance_retry_read_timeout_15": 0,
+    "heartbeat_fractional_variants": 0,
+    "interrupted_initial_housekeeping_attempts": [
+      137,
+      137,
+      137,
+      137
+    ],
+    "broad_watchdog_attempt_stopped_for_scoped_selectors": 143
+  },
+  "cleanup": {
+    "remaining_worktree_product_processes": [],
+    "worktree_status": "",
+    "live_lab_removed": true,
+    "temporary_test_removed": true
+  }
+}

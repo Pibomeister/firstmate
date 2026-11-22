@@ -1,171 +1,151 @@
-import os, json, pathlib, subprocess, time, signal, shutil, traceback
-ROOT=pathlib.Path.cwd()
-EV=pathlib.Path('~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY')
-BASE=ROOT/'.gate-testing/live'
-BASE.mkdir(parents=True, exist_ok=True)
-log=open(EV/'live-transcript.log','w', buffering=1)
-processes=[]
+import os, json, time, subprocess, pathlib, signal, threading, shutil, traceback
+R=pathlib.Path.cwd()
+E=pathlib.Path('~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE')
+L=R/'.test-idle-live'
+log=(E/'live-transcript.log').open('w', buffering=1)
+results=[]
+children=[]
 def say(s):
-    print(s, flush=True); print(s,file=log,flush=True)
-def env_for(home, **extra):
-    e=os.environ.copy()
-    for k in list(e):
-        if k.startswith(('FM_','TASKS_AXI_')) or k in ('TMUX','TMUX_PANE','HERDR_SESSION','HERDR_PANE_ID','REX_SESSION','REX_BLOCK','ORCA_TERMINAL_HANDLE','CLAUDE_CONFIG_DIR'):
-            e.pop(k,None)
-    e.update(PATH='/usr/bin:/bin:/usr/sbin:/sbin', HOME=str(home), FM_HOME=str(home), TMPDIR=str(BASE), CLAUDE_CONFIG_DIR=str(home/'claude'))
-    e.update({k:str(v) for k,v in extra.items()})
-    return e
-def run(args, env, check=True):
-    p=subprocess.run(args,cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=90)
-    if p.returncode and check:
-        raise RuntimeError(f'{args}: rc={p.returncode}\n{p.stdout}\n{p.stderr}')
-    return p
+ print(s,flush=True); print(s,file=log,flush=True)
+def env(home, **kw):
+ e={k:v for k,v in os.environ.items() if not k.startswith(('FM_','ORCA_','REX_','HERDR_','CLAUDE_','CODEX_')) and k not in ('TMUX','TMUX_PANE','BASH_ENV','TASKS_AXI_FILE','TASKS_AXI_BACKEND')}
+ e.update(PATH='/usr/bin:/bin:/usr/sbin:/sbin',FM_HOME=str(home),CLAUDE_CONFIG_DIR=str(home/'claude'),NM_HOME=str(home/'nm'))
+ e.update({k:str(v) for k,v in kw.items()}); return e
+def run(args,home,check=True,**kw):
+ p=subprocess.run([str(x) for x in args],cwd=R,env=env(home,**kw),capture_output=True,text=True,timeout=90)
+ say('$ '+' '.join(str(x).replace(str(R),'$WORKTREE') for x in args)+'\n'+p.stdout+p.stderr+'exit='+str(p.returncode))
+ if check: assert p.returncode==0
+ return p
+
 def home(name):
-    p=BASE/name
-    run(['bin/fm-lab-home.sh','create',str(p)],env_for(p))
-    (p/'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
-    (p/'config/watchdog').write_text('mode=dry-run\nmodels=\nquota-guard=off\nmemory-guard=off\n')
-    return p
-def read(p):
-    try: return json.loads(p.read_text())
-    except (FileNotFoundError,json.JSONDecodeError): return None
-def wait(pred, secs=30):
-    end=time.monotonic()+secs
-    while time.monotonic()<end:
-        v=pred()
-        if v: return v
-        time.sleep(.1)
-    raise AssertionError('timed out waiting for published state')
-def start(home, interval, jitter=0, **extra):
-    e=env_for(home,FM_POLL=.2,FM_SIGNAL_GRACE=0,FM_CHECK_INTERVAL=999999,FM_HEARTBEAT=999999,
-              FM_HEARTBEAT_LEDGER_IDLE_SECS=interval,FM_HEARTBEAT_LEDGER_JITTER=jitter,
-              FM_HOME_SUMMARY_INTERVAL=interval,FM_HOME_SUMMARY_JITTER=0,
-              FM_WATCH_MANAGED_HOLD=1,**extra)
-    out=open(EV/f'{home.name}-watcher.log','w')
-    p=subprocess.Popen(['bin/fm-watch.sh'],cwd=ROOT,env=e,stdout=out,stderr=subprocess.STDOUT,start_new_session=True)
-    processes.append((p,out))
-    return p,e
-def stop(p):
-    # Managed-hold deliberately survives TERM. Stop this disposable process group.
-    try: os.killpg(p.pid,signal.SIGKILL)
-    except ProcessLookupError: pass
-    p.wait(timeout=15)
-    say(f'stopped disposable watcher group {p.pid}; rc={p.returncode}')
-def observe(home,e,seconds):
-    end=time.monotonic()+seconds; hbs=[]; sums=[]; beats=[]
-    while time.monotonic()<end:
-        for file, seq, key in [('heartbeat.json',hbs,'published_epoch'),('home-summary.json',sums,'generated_epoch')]:
-            d=read(home/'state'/file)
-            if d and (not seq or seq[-1][key]!=d[key]):
-                seq.append(d); say(f'{home.name} {file}: generated={d.get("generated_epoch")} published={d.get("published_epoch")} stale_after={d.get("stale_after_secs")}')
-        try:
-            mt=(home/'state/.last-watcher-beat').stat().st_mtime_ns
-            if not beats or beats[-1]!=mt: beats.append(mt)
-        except FileNotFoundError: pass
-        time.sleep(.1)
-    assert len(beats)>=3, ('watcher beat stopped',len(beats))
-    return hbs,sums,beats
+ h=L/name
+ run(['bin/fm-lab-home.sh','create',h],h)
+ (h/'data/backlog.md').write_text('## In flight\n\n## Queued\n\n## Done\n')
+ (h/'.tasks.toml').write_text('backend = "markdown"\n[markdown]\npath = "data/backlog.md"\n')
+ return h
+
+def atomic(p,obj):
+ q=p.with_suffix('.next'); q.write_text(json.dumps(obj)); os.replace(q,p)
+def rows(h):
+ p=h/'state/stall-ledger.tsv'
+ return [r.split('\t') for r in p.read_text().splitlines() if len(r.split('\t'))==10] if p.exists() else []
+def observe(h,n): return run(['bin/fm-stall-ledger.sh','observe'],h,FM_TEST_SEAM=1,FM_NOW=n,FM_STALL_LEDGER_MIN_SECS=0)
+def record(name,fn):
+ try: fn(); results.append(dict(name=name,result='pass',live=True)); say('SCENARIO PASS: '+name)
+ except Exception as e: results.append(dict(name=name,result='fail',live=True,reason=str(e))); say('SCENARIO FAIL: '+name+'\n'+traceback.format_exc())
+ (E/'live-results.json').write_text(json.dumps(results,indent=2))
+
+def fresh_boundary():
+ h=home('freshness')
+ run(['bin/fm-heartbeat.sh','--write'],h,FM_HEARTBEAT_CYCLE_SECS=900)
+ doc=json.loads((h/'state/heartbeat.json').read_text())
+ say('actual published heartbeat: '+json.dumps({k:doc[k] for k in ['schema','generated_epoch','published_epoch','stale_after_secs','failure']}))
+ assert doc['stale_after_secs']==1371 and doc['failure'] is None
+ shutil.copy(h/'state/heartbeat.json',E/'real-heartbeat.json')
+ p=doc['published_epoch']; b=doc['stale_after_secs']
+ for age in [601,900,b]:
+  observe(h,p+age)
+  assert not any(r[1]=='stall-open' for r in rows(h))
+  say('age '+str(age)+': no stall through inclusive bound '+str(b))
+ observe(h,p+b+1)
+ assert any(r[1]=='stall-open' and int(r[5])==p+b+1 for r in rows(h))
+ bad=run(['bin/fm-stall-ledger.sh','score','--since',str(p+b+1),'--until',str(p+b+2)],h,check=False,FM_TEST_SEAM=1,FM_NOW=p+b+2)
+ assert bad.returncode==1 and 'heartbeat-age' in bad.stdout
+ doc['published_epoch']=p+b+2; doc['generated_epoch']=p+b+2
+ atomic(h/'state/heartbeat.json',doc); observe(h,p+b+2)
+ assert any(r[1]=='stall-close' and int(r[7])==p+b+2 for r in rows(h))
+ shutil.copy(h/'state/stall-ledger.tsv',E/'freshness-ledger.tsv')
+ for cls,bound in [('legacy',None),('short-bound',30)]:
+  q=home(cls); atomic(q/'state/heartbeat.json',dict(published_epoch=p,stale_after_secs=bound))
+  observe(q,p+600); assert not any(r[1]=='stall-open' for r in rows(q))
+  observe(q,p+601); assert any(r[1]=='stall-open' for r in rows(q))
+  say(cls+': 600-second floor passes at 600 and expires at 601')
+
+
+def coherent():
+ n=int(time.time()); h=home('atomic-owner'); m=home('atomic-mate')
+ (h/'state/mate.meta').write_text('kind=secondmate\nhome='+str(m)+'\n')
+ expected={n+801,n+772}
+ for key in ['published_epoch','generated_epoch']:
+  stop=threading.Event(); counts=[0]
+  def writer():
+   while not stop.is_set():
+    for target in [h,m]:
+     atomic(target/'state/heartbeat.json',{key:n-1000,'stale_after_secs':1800})
+     atomic(target/'state/heartbeat.json',{'published_epoch':n,'generated_epoch':n,'stale_after_secs':771})
+    counts[0]+=1; time.sleep(.002)
+  t=threading.Thread(target=writer); t.start()
+  try:
+   for i in range(8): observe(h,n+i)
+  finally: stop.set(); t.join()
+  for r in rows(h):
+   if r[1]=='hb': assert int(r[5]) in expected, r
+  assert not any(r[1]=='stall-open' for r in rows(h))
+  say(key+': '+str(counts[0])+' pairs of real atomic replacements; primary and secondmate samples retain one valid timestamp/deadline pair')
+  # clear only generated local output so the fallback variant gets fresh samples
+  shutil.copy(h/'state/stall-ledger.tsv',E/('atomic-'+key+'.tsv'))
+  for f in ['stall-ledger.tsv','.stall-ledger-last-observe']:
+   (h/'state'/f).unlink(missing_ok=True)
+
+
+def scheduler():
+ h=home('scheduler'); pubs=[]; summaries=[]; beats=set(); seen=set(); sumseen=set()
+ out=(E/'watcher-stdout.log').open('w'); err=(E/'watcher-stderr.log').open('w')
+ e=env(h,FM_POLL='.2',FM_SIGNAL_GRACE=30,FM_HEARTBEAT_LEDGER_IDLE_SECS=24,FM_HEARTBEAT_LEDGER_JITTER=0,FM_HOME_SUMMARY_INTERVAL=24,FM_HOME_SUMMARY_JITTER=0,FM_CHECK_INTERVAL=9999999,FM_HEARTBEAT=9999999,FM_WATCH_MANAGED_HOLD=1)
+ p=subprocess.Popen(['bin/fm-watch.sh'],cwd=R,env=e,stdout=out,stderr=err,start_new_session=True); children.append(p)
+ start=time.monotonic()
+ def sample(seconds,until=None):
+  deadline=time.monotonic()+seconds
+  while time.monotonic()<deadline:
+   assert p.poll() is None,'watcher exited '+str(p.returncode)
+   for file,arr,keys in [('heartbeat.json',pubs,seen),('home-summary.json',summaries,sumseen)]:
+    try:
+     doc=json.loads((h/'state'/file).read_text()); k=doc.get('published_epoch',doc.get('generated_epoch'))
+     if k not in keys:
+      keys.add(k); arr.append((time.monotonic()-start,doc)); say(file+' '+json.dumps({x:doc.get(x) for x in ['generated_epoch','published_epoch','stale_after_secs','failure']}))
+    except (OSError,ValueError): pass
+   try: beats.add((h/'state/.last-watcher-beat').stat().st_mtime_ns)
+   except OSError: pass
+   if until and until(): return
+   time.sleep(.1)
+  if until: assert until(),'timed out waiting for real publication'
+ try:
+  sample(75,lambda:len(pubs)>=3 and len(summaries)>=2)
+  gaps=[pubs[i][1]['generated_epoch']-pubs[i-1][1]['generated_epoch'] for i in range(1,len(pubs))]
+  assert min(gaps)>=23, gaps
+  assert len(beats)>20,len(beats)
+  say('unchanged home: collection start gaps='+str(gaps)+'; distinct watcher beats='+str(len(beats)))
+  before=len(pubs); trigger=time.monotonic()-start
+  shell='STATE="$FM_HOME/state"; . bin/fm-wake-lib.sh; fm_wake_append check synthetic-producer "synthetic wake"'
+  run(['/bin/bash','-c',shell],h)
+  sample(23,lambda:len(pubs)>before)
+  say('wake to real completed heartbeat: '+str(round(pubs[-1][0]-trigger,2))+' seconds, before 24-second idle deadline')
+  sample(2)
+  before=len(pubs); trigger=time.monotonic()-start; seq=(h/'state/.wake-queue.seq').read_text()
+  (h/'state/synthetic.status').write_text('working: synthetic progress\n')
+  sample(23,lambda:len(pubs)>before)
+  assert (h/'state/.wake-queue.seq').read_text()==seq,'status unexpectedly queued a wake'
+  say('status-only to real completed heartbeat: '+str(round(pubs[-1][0]-trigger,2))+' seconds, before 30-second signal grace; queue unchanged')
+  sample(36,lambda:len(summaries)>=3)
+  assert 'integer expression expected' not in (E/'watcher-stderr.log').read_text()
+  (E/'watcher-publications.json').write_text(json.dumps(dict(heartbeats=[dict(observed_seconds=round(t,3),document=d) for t,d in pubs],summaries=[dict(observed_seconds=round(t,3),document=d) for t,d in summaries],distinct_beats=len(beats)),indent=2))
+ finally:
+  p.terminate()
+  try: p.wait(timeout=15)
+  except subprocess.TimeoutExpired: os.killpg(p.pid,signal.SIGKILL); p.wait()
+  # Finish any collector already launched, then terminate only this disposable process group.
+  time.sleep(12)
+  try: os.killpg(p.pid,signal.SIGTERM)
+  except ProcessLookupError: pass
+  out.close(); err.close()
+  say('watcher stopped and reaped, exit='+str(p.returncode))
+
 try:
-    # S1: real empty-home watcher, publisher, summary producer; no replacement collectors.
-    h=home('quiet'); p,e=start(h,12)
-    wait(lambda: read(h/'state/heartbeat.json'))
-    hbs,sums,beats=observe(h,e,39)
-    assert p.poll() is None
-    assert 3<=len(hbs)<=5, len(hbs)
-    assert 2<=len(sums)<=5, len(sums)
-    for seq,key in [(hbs,'generated_epoch'),(sums,'generated_epoch')]:
-        gaps=[b[key]-a[key] for a,b in zip(seq,seq[1:])]
-        assert all(10<=g<=17 for g in gaps),gaps
-    assert len(beats)>len(hbs)*2
-    (EV/'quiet-heartbeats.json').write_text(json.dumps(hbs,indent=2))
-    (EV/'quiet-summaries.json').write_text(json.dumps(sums,indent=2))
-    say(f'PASS quiet: {len(hbs)} heartbeat publications; {len(sums)} summaries; {len(beats)} distinct cheap beats in 39s')
-    stop(p)
-    # S2: long idle deadline, fractional poll. Real wake-queue producer and status input.
-    h=home('change'); p,e=start(h,300)
-    first=wait(lambda:read(h/'state/heartbeat.json'))
-    wait(lambda:read(h/'state/home-summary.json'))
-    time.sleep(2)
-    before=read(h/'state/heartbeat.json')['published_epoch']
-    start_at=time.monotonic()
-    cmd='. "$1/bin/fm-wake-lib.sh"; fm_wake_append check live-validation "isolated synthetic wake"'
-    run(['/bin/bash','-c',cmd,'_',str(ROOT)],e)
-    hb=wait(lambda:(d if (d:=read(h/'state/heartbeat.json')) and d['published_epoch']>before else None),15)
-    wake_latency=time.monotonic()-start_at
-    say(f'PASS fractional poll wake: new publication in {wake_latency:.2f}s against a 300s idle deadline; stale_after_secs={hb["stale_after_secs"]}')
-    assert hb['stale_after_secs']==771
-    time.sleep(2)
-    before=read(h/'state/heartbeat.json')['published_epoch']; summary_before=read(h/'state/home-summary.json')['generated_epoch']
-    start_at=time.monotonic(); (h/'state/synthetic.status').write_text('needs-decision: isolated synthetic status\n')
-    hb=wait(lambda:(d if (d:=read(h/'state/heartbeat.json')) and d['published_epoch']>before else None),15)
-    wait(lambda:(d if (d:=read(h/'state/home-summary.json')) and d['generated_epoch']>summary_before else None),15)
-    say(f'PASS fractional poll status: heartbeat and home summary changed within {time.monotonic()-start_at:.2f}s')
-    (EV/'change-heartbeat.json').write_text(json.dumps(hb,indent=2)); stop(p)
-    # S3: real publications with deterministic jitter draws, accelerated idle interval.
-    h=home('jitter'); p,e=start(h,6,4,FM_TEST_SEAM=1,FM_WATCH_RANDOM_SEED=42)
-    wait(lambda:read(h/'state/heartbeat.json'))
-    hbs,sums,beats=observe(h,e,48)
-    gaps=[b['generated_epoch']-a['generated_epoch'] for a,b in zip(hbs,hbs[1:])]
-    assert len(hbs)>=5, len(hbs)
-    assert all(1<=g<=10 for g in gaps),gaps
-    assert any(g<=4 for g in gaps),gaps
-    say(f'PASS jitter: actual heartbeat observation-time gaps {gaps}; interval=6, jitter=4, seed=42')
-    (EV/'jitter-heartbeats.json').write_text(json.dumps(hbs,indent=2)); stop(p)
-    # S4: real publisher with 900s cycle and absent optional grace; drive real ledger CLI using clock seam.
-    h=home('freshness'); e=env_for(h,FM_HEARTBEAT_CYCLE_SECS=900)
-    run(['bin/fm-heartbeat.sh','--write'],e)
-    hb=read(h/'state/heartbeat.json'); assert hb['stale_after_secs']==1371,hb
-    (EV/'long-cadence-heartbeat.json').write_text(json.dumps(hb,indent=2))
-    base=hb['published_epoch']; samples=[]
-    for age in [601,900,1371,1372]:
-        e=env_for(h,FM_TEST_SEAM=1,FM_NOW=base+age,FM_STALL_LEDGER_MIN_SECS=0)
-        run(['bin/fm-stall-ledger.sh','observe'],e)
-        rows=(h/'state/stall-ledger.tsv').read_text()
-        opened=[r for r in rows.splitlines() if '\tstall-open\t' in r]
-        assert len(opened)==(1 if age==1372 else 0),(age,rows)
-        say(f'long-cadence age={age}: stall-open rows={len(opened)}')
-    e=env_for(h)
-    scored=run(['bin/fm-stall-ledger.sh','score','--since',str(base+601),'--until',str(base+1372)],e)
-    assert scored.stdout.strip()=='PASS',scored.stdout
-    failed=run(['bin/fm-stall-ledger.sh','score','--since',str(base+1372),'--until',str(base+1373)],e,False)
-    assert failed.returncode==1 and 'heartbeat-age' in failed.stdout,failed.stdout
-    say('healthy score: '+scored.stdout.strip()); say('expired score:\n'+failed.stdout)
-    # Restore clock to wall time; real fresh publication closes the episode.
-    run(['bin/fm-heartbeat.sh','--write'],env_for(h,FM_HEARTBEAT_CYCLE_SECS=900))
-    fresh=read(h/'state/heartbeat.json')
-    run(['bin/fm-stall-ledger.sh','observe'],env_for(h,FM_STALL_LEDGER_MIN_SECS=0))
-    rows=(h/'state/stall-ledger.tsv').read_text()
-    # Recovery needs monotonic observation time. Supply a generated public heartbeat input at the future test clock.
-    future=base+1380
-    fresh['published_epoch']=future; fresh['generated_epoch']=future
-    (h/'state/heartbeat.json').write_text(json.dumps(fresh))
-    run(['bin/fm-stall-ledger.sh','observe'],env_for(h,FM_TEST_SEAM=1,FM_NOW=future,FM_STALL_LEDGER_MIN_SECS=0))
-    rows=(h/'state/stall-ledger.tsv').read_text(); assert '\tstall-close\t' in rows,rows
-    (EV/'stall-ledger.tsv').write_text(rows)
-    say('PASS cadence-safe bound, exact expiration, scoring, and recovery through real CLI with synthetic clock inputs')
-    # S5: real watchdog dry-run, live process lock, synthetic heartbeat ages; no model or harness substitute.
-    h=home('watchdog'); e=env_for(h)
-    (h/'state/.lock').write_text(str(os.getpid())+'\n')
-    (h/'state/.lock-session').write_text('00000000-0000-4000-8000-000000000001\n')
-    now=int(time.time())
-    for age in [837,899,900]:
-        (h/'state/heartbeat.json').write_text(json.dumps({'schema':'fm-heartbeat.v1','generated_epoch':now-age,'published_epoch':now-age}))
-        ee=env_for(h,FM_TEST_SEAM=1,FM_WD_NOW=now)
-        run(['bin/fm-watchdog.sh','once','--dry-run','--home',str(h)],ee)
-        ledger=h/'state/watchdog/actions.tsv'
-        rows=ledger.read_text() if ledger.exists() else ''
-        detects=[r for r in rows.splitlines() if '\theartbeat-frozen\tdetect\t' in r]
-        assert len(detects)==(1 if age==900 else 0),(age,rows)
-        scan=run(['bin/fm-watchdog.sh','scan','--home',str(h)],ee)
-        say(f'watchdog age={age}: detects={len(detects)}\n{scan.stdout}')
-    (EV/'watchdog-actions.tsv').write_text(rows)
-    say('PASS watchdog default freeze: no detection at 837/899s; detection at 900s; dry-run only')
-    say('ALL LIVE SCENARIOS PASSED')
-except Exception:
-    traceback.print_exc(file=log); traceback.print_exc(); raise
+ record('Real publisher and stall-ledger CLI honor cadence, expiry, recovery and legacy floors',fresh_boundary)
+ record('Real stall-ledger CLI keeps coherent primary and secondmate samples during atomic publication replacement',coherent)
+ record('Real watcher and collectors retain fractional polling, idle gaps and prompt wake/status refreshes',scheduler)
 finally:
-    for p,out in processes:
-        if p.poll() is None: stop(p)
-        out.close()
-    shutil.rmtree(BASE)
-    log.close()
+ for p in children:
+  if p.poll() is None:
+   os.killpg(p.pid,signal.SIGKILL); p.wait()
+ log.close()

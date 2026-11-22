@@ -1,0 +1,82 @@
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/freshness
+{run-worktree}/.test-idle-live/freshness
+exit=0
+$ bin/fm-heartbeat.sh --write
+exit=0
+actual published heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795340083, "published_epoch": 1795340091, "stale_after_secs": 1371, "failure": null}
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 601: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 900: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 1371: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh score --since 1795341463 --until 1795341464
+FAIL
+heartbeat-age	1795341463	hb	primary	-	1795340091	1795341463	-	-	-	-
+stall-open	1795341463	stall-open	primary	-	1795340091	1795341463	-	-	-	primary:-:1795340091
+exit=1
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/legacy
+{run-worktree}/.test-idle-live/legacy
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+legacy: 600-second floor passes at 600 and expires at 601
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/short-bound
+{run-worktree}/.test-idle-live/short-bound
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+short-bound: 600-second floor passes at 600 and expires at 601
+SCENARIO PASS: Real publisher and stall-ledger CLI honor cadence, expiry, recovery and legacy floors
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/atomic-owner
+{run-worktree}/.test-idle-live/atomic-owner
+exit=0
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/atomic-mate
+{run-worktree}/.test-idle-live/atomic-mate
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+published_epoch: 394 pairs of real atomic replacements; primary and secondmate samples retain one valid timestamp/deadline pair
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+generated_epoch: 419 pairs of real atomic replacements; primary and secondmate samples retain one valid timestamp/deadline pair
+SCENARIO PASS: Real stall-ledger CLI keeps coherent primary and secondmate samples during atomic publication replacement

@@ -1,0 +1,10 @@
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/events
+{run-worktree}/.test-idle-live/events
+exit=0
+$ /bin/bash -c STATE="$FM_HOME/state"; . bin/fm-wake-lib.sh; fm_wake_append check synthetic-producer "synthetic wake"
+exit=0
+wake triggered real collector in 1.719s at 999-second idle interval
+status-only change triggered real collector in 3.441s before 90-second grace, without appending a wake
+coalesced status published real summary before 999-second idle deadline
+event watcher stopped and reaped, exit=-15
+SCENARIO PASS: Real watcher refreshes heartbeat on wake and status before grace, and publishes coalesced summary

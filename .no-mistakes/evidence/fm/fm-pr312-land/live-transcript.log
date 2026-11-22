@@ -1,31 +1,100 @@
-quiet heartbeat.json: generated=1795323210 published=1795323221 stale_after=483
-quiet home-summary.json: generated=1795323212 published=None stale_after=None
-quiet home-summary.json: generated=1795323227 published=None stale_after=None
-quiet heartbeat.json: generated=1795323222 published=1795323229 stale_after=483
-quiet heartbeat.json: generated=1795323234 published=1795323239 stale_after=483
-quiet home-summary.json: generated=1795323242 published=None stale_after=None
-quiet heartbeat.json: generated=1795323246 published=1795323251 stale_after=483
-PASS quiet: 4 heartbeat publications; 3 summaries; 20 distinct cheap beats in 39s
-stopped disposable watcher group 97167; rc=-9
-PASS fractional poll wake: new publication in 8.50s against a 300s idle deadline; stale_after_secs=771
-PASS fractional poll status: heartbeat and home summary changed within 8.03s
-stopped disposable watcher group 85898; rc=-9
-jitter heartbeat.json: generated=1795323296 published=1795323300 stale_after=477
-jitter home-summary.json: generated=1795323297 published=None stale_after=None
-jitter home-summary.json: generated=1795323305 published=None stale_after=None
-jitter heartbeat.json: generated=1795323301 published=1795323307 stale_after=477
-jitter heartbeat.json: generated=1795323307 published=1795323314 stale_after=477
-jitter home-summary.json: generated=1795323316 published=None stale_after=None
-jitter heartbeat.json: generated=1795323314 published=1795323320 stale_after=477
-jitter home-summary.json: generated=1795323324 published=None stale_after=None
-jitter heartbeat.json: generated=1795323320 published=1795323326 stale_after=477
-jitter heartbeat.json: generated=1795323327 published=1795323332 stale_after=477
-jitter home-summary.json: generated=1795323333 published=None stale_after=None
-jitter heartbeat.json: generated=1795323332 published=1795323338 stale_after=477
-jitter home-summary.json: generated=1795323340 published=None stale_after=None
-jitter heartbeat.json: generated=1795323338 published=1795323344 stale_after=477
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/freshness
+{run-worktree}/.test-idle-live/freshness
+exit=0
+$ bin/fm-heartbeat.sh --write
+exit=0
+actual published heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795340083, "published_epoch": 1795340091, "stale_after_secs": 1371, "failure": null}
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 601: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 900: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+age 1371: no stall through inclusive bound 1371
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh score --since 1795341463 --until 1795341464
+FAIL
+heartbeat-age	1795341463	hb	primary	-	1795340091	1795341463	-	-	-	-
+stall-open	1795341463	stall-open	primary	-	1795340091	1795341463	-	-	-	primary:-:1795340091
+exit=1
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/legacy
+{run-worktree}/.test-idle-live/legacy
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+legacy: 600-second floor passes at 600 and expires at 601
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/short-bound
+{run-worktree}/.test-idle-live/short-bound
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+short-bound: 600-second floor passes at 600 and expires at 601
+SCENARIO PASS: Real publisher and stall-ledger CLI honor cadence, expiry, recovery and legacy floors
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/atomic-owner
+{run-worktree}/.test-idle-live/atomic-owner
+exit=0
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/atomic-mate
+{run-worktree}/.test-idle-live/atomic-mate
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+published_epoch: 394 pairs of real atomic replacements; primary and secondmate samples retain one valid timestamp/deadline pair
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+$ bin/fm-stall-ledger.sh observe
+exit=0
+generated_epoch: 419 pairs of real atomic replacements; primary and secondmate samples retain one valid timestamp/deadline pair
+SCENARIO PASS: Real stall-ledger CLI keeps coherent primary and secondmate samples during atomic publication replacement
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/scheduler
+{run-worktree}/.test-idle-live/scheduler
+exit=0
+home-summary.json {"generated_epoch": 1795340145, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340142, "published_epoch": 1795340152, "stale_after_secs": 495, "failure": null}
+home-summary.json {"generated_epoch": 1795340196, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340172, "published_epoch": 1795340204, "stale_after_secs": 495, "failure": null}
+watcher stopped and reaped, exit=-15
+SCENARIO FAIL: Real watcher and collectors retain fractional polling, idle gaps and prompt wake/status refreshes
 Traceback (most recent call last):
-  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation.py", line 111, in <module>
-    assert any(g<=4 for g in gaps),gaps
-AssertionError: [5, 6, 7, 6, 7, 5, 6]
-stopped disposable watcher group 32089; rc=-9
+  File "~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE/live-validation.py", line 34, in record
+    try: fn(); results.append(dict(name=name,result='pass',live=True)); say('SCENARIO PASS: '+name)
+  File "~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE/live-validation.py", line 113, in scheduler
+    sample(75,lambda:len(pubs)>=3 and len(summaries)>=2)
+  File "~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE/live-validation.py", line 111, in sample
+    if until: assert until(),'timed out waiting for real publication'
+AssertionError: timed out waiting for real publication
+

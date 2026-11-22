@@ -1,0 +1,185 @@
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/watchdog-derived
+{run-worktree}/.test-idle-live/watchdog-derived
+exit=0
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+derived generated-age=1300 detected=False
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:08:20Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:19:20Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-derived: NO-ENDPOINT, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:08:20Z
+
+## Actions since last read (2026-11-22T08:08:20Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-derived: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-derived: no recorded terminal endpoint; the pane cannot be read or typed into
+
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+derived generated-age=2671 detected=False
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:31:11Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:42:11Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-derived: NO-ENDPOINT, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:08:20Z
+
+## Actions since last read (2026-11-22T08:31:11Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-derived: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-derived: no recorded terminal endpoint; the pane cannot be read or typed into
+
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+derived generated-age=2672 detected=True
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:31:12Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:42:12Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-derived: HEARTBEAT-FROZEN, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:08:20Z
+
+## Actions since last read (2026-11-22T08:31:12Z)
+- 09:31 watchdog-derived detect heartbeat-frozen held
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-derived: heartbeat is stale but the existing composer or quota guard takes precedence
+- watchdog-derived: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-derived: no recorded terminal endpoint; the pane cannot be read or typed into
+- watchdog-derived: watcher heartbeat is 44m old
+
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/watchdog-override
+{run-worktree}/.test-idle-live/watchdog-override
+exit=0
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+override generated-age=599 detected=False
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T08:56:39Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:07:39Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-override: NO-ENDPOINT, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T08:56:39Z
+
+## Actions since last read (2026-11-22T07:56:39Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-override: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-override: no recorded terminal endpoint; the pane cannot be read or typed into
+
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+override generated-age=600 detected=True
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T08:56:40Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:07:40Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-override: HEARTBEAT-FROZEN, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T08:56:39Z
+
+## Actions since last read (2026-11-22T07:56:40Z)
+- 08:56 watchdog-override detect heartbeat-frozen held
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-override: heartbeat is stale but the existing composer or quota guard takes precedence
+- watchdog-override: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-override: no recorded terminal endpoint; the pane cannot be read or typed into
+- watchdog-override: watcher heartbeat is 10m old
+
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/watchdog-disabled
+{run-worktree}/.test-idle-live/watchdog-disabled
+exit=0
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+disabled generated-age=3400 detected=False
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:43:20Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:54:20Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-disabled: NO-ENDPOINT, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:38:44Z
+
+## Actions since last read (2026-11-22T08:43:20Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-disabled: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-disabled: no recorded terminal endpoint; the pane cannot be read or typed into
+- watchdog-disabled: watcher heartbeat is 56m old
+
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/watchdog-invalid
+{run-worktree}/.test-idle-live/watchdog-invalid
+exit=0
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+invalid generated-age=899 detected=False
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:01:39Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:12:39Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-invalid: NO-ENDPOINT, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:01:39Z
+
+## Actions since last read (2026-11-22T08:01:39Z)
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-invalid: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-invalid: no recorded terminal endpoint; the pane cannot be read or typed into
+
+$ bin/fm-watchdog.sh once --dry-run
+exit=0
+invalid generated-age=900 detected=True
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T09:01:40Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T09:12:40Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- watchdog-invalid: HEARTBEAT-FROZEN, owed 0, ctx unknown; captain pid 11574 live on an unknown terminal, moved 2026-11-22T09:01:39Z
+
+## Actions since last read (2026-11-22T08:01:40Z)
+- 09:01 watchdog-invalid detect heartbeat-frozen held
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- watchdog-invalid: heartbeat is stale but the existing composer or quota guard takes precedence
+- watchdog-invalid: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- watchdog-invalid: no recorded terminal endpoint; the pane cannot be read or typed into
+- watchdog-invalid: watcher heartbeat is 15m old
+
+SCENARIO PASS: Real watchdog CLI honors publication deadlines, duration offset, explicit overrides and malformed-bound fallback
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/collections-jitter
+{run-worktree}/.test-idle-live/collections-jitter
+exit=0
+jitter actual real snapshot invocation epochs=[1795340377, 1795340395, 1795340402] gaps=[18, 7]
+jitter watcher stopped and reaped, exit=-15
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/collections-slow
+{run-worktree}/.test-idle-live/collections-slow
+exit=0
+$ /bin/bash -c STATE="$FM_HOME/state"; . bin/fm-wake-lib.sh; fm_wake_append check producer "synthetic change"
+exit=0
+$ /bin/bash -c STATE="$FM_HOME/state"; . bin/fm-wake-lib.sh; fm_wake_append check producer "synthetic change"
+exit=0
+$ /bin/bash -c STATE="$FM_HOME/state"; . bin/fm-wake-lib.sh; fm_wake_append check producer "synthetic change"
+exit=0
+while first real collection is delayed: three queued changes, one collector launch
+slow actual real snapshot invocation epochs=[1795340430, 1795340449, 1795340469] gaps=[19, 20]
+slow watcher stopped and reaped, exit=-15
+SCENARIO PASS: Real watcher jitter shortens idle gaps and slow real collection coalesces changes without overlap

@@ -1,0 +1,12 @@
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/scheduler-final
+{run-worktree}/.test-idle-live/scheduler-final
+exit=0
+home-summary.json {"generated_epoch": 1795340467, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340465, "published_epoch": 1795340472, "stale_after_secs": 495, "failure": null}
+heartbeat.json {"generated_epoch": 1795340488, "published_epoch": 1795340500, "stale_after_secs": 495, "failure": null}
+home-summary.json {"generated_epoch": 1795340499, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340512, "published_epoch": 1795340520, "stale_after_secs": 495, "failure": null}
+real collection start gaps=[23, 24]; independently observed liveness beats=17
+unchanged home: collection start gaps=[23, 24]; distinct watcher beats=17
+watcher stopped and reaped, exit=-15
+SCENARIO PASS: Real watcher and real collectors retain fractional polling and collect on idle deadlines

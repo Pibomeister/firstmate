@@ -1,0 +1,166 @@
+1..23
+ok - each hung primary read has its own bound and sets failure
+ok - a run past its deadline publishes unread tasks as unknown
+ok - TERM during the snapshot read publishes unknown markers and leaks no temp files
+ok - TERM during a task read publishes the whole task list with unknown markers
+ok - the next run removes what a SIGKILLed run left
+ok - a watcher poll does not wait for a slow heartbeat
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+{run-worktree}/bin/fm-nm-run-lib.sh: line 45: 45850 Killed: 9               "$have_timeout" -k 1 "$timeout_secs" "$@" 0<&0
+ok - AC-14: a bounded read whose child or grandchild ignores TERM is killed one second after its bound
+ok - AC-14: the watcher launches a publication every idle interval whatever its loop work, and stops with the watcher
+ok - AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults
+ok - AC-14: the stale bound covers the watcher cycle, configured or default grace, and run cap
+ok - AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp
+ok - AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence
+ok - an unchanged home collects once per idle interval while the watcher beat keeps the poll period
+ok - jittered idle gaps stay between the interval less the jitter and the interval
+ok - an appended wake or a status line collects at once, without waiting for the idle interval
+ok - a status-only change refreshes the heartbeat before grace without creating a wake
+ok - an attended open-work watcher retains fractional poll waits without comparison errors
+ok - a foreground checkpoint waits its fractional budget instead of busy-spinning
+ok - AC-14: context_left carries the footer and the derived percentage side by side
+ok - AC-14: the derived reading is unknown, with its reason, when there is no token usage to read
+ok - AC-14: the derived reading is unknown, with its reason, under a state or config directory override
+not ok - unreadable quota output became a heartbeat failure or a guessed allowance: {
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-22T10:03:03Z",
+  "generated_epoch": 1795341783,
+  "published_epoch": 1795341834,
+  "fm_home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-heartbeat.IyVPij/weekly",
+  "stale_after_secs": null,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-11-22T10:03:03Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": "01a20290-0b54-7693-9dda-89cd49d5747c"
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "hb-task",
+      "terminal": {
+        "backend": "tmux",
+        "target": "fmtest:hb",
+        "exists": false
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:hb"
+      },
+      "last_commit": {
+        "sha": "6884f893a3594e037fb4d6ae69f28f77606b69f5",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": null,
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": [],
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    }
+  ],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi output was not readable"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1795341783,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s",
+    "count": 1
+  }
+}

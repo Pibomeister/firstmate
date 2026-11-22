@@ -1,0 +1,7 @@
+1..5
+ok - the default heartbeat freeze stays above a quiet home's healthy age and still fires at 900s
+ok - default heartbeat recovery and stale reporting honor publication freshness and collection duration
+ok - explicit positive heartbeat recovery thresholds and zero disable retain their behavior
+ok - long-cadence context stays usable under the derived default and honors explicit staleness
+ok - unusable publication freshness cannot extend the legacy watchdog default
+FM_TEST_COMPLETE

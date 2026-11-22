@@ -1,0 +1,361 @@
+{
+  "heartbeats": [
+    {
+      "observed_seconds": 11.96,
+      "document": {
+        "schema": "fm-heartbeat.v1",
+        "generated": "2026-11-22T09:41:05Z",
+        "generated_epoch": 1795340465,
+        "published_epoch": 1795340472,
+        "fm_home": "{run-worktree}/.test-idle-live/scheduler-final",
+        "stale_after_secs": 495,
+        "snapshot": {
+          "ok": true,
+          "schema": "fm-fleet-snapshot.v1",
+          "generated": "2026-11-22T09:41:05Z",
+          "failure": null
+        },
+        "primary": {
+          "terminal": {
+            "backend": {
+              "unknown": true,
+              "reason": "no supervisor backend discovered"
+            },
+            "target": {
+              "unknown": true,
+              "reason": "no supervisor target discovered"
+            },
+            "present": {
+              "unknown": true,
+              "reason": "no supervisor endpoint discovered"
+            }
+          },
+          "session": {
+            "trusted_id": {
+              "unknown": true,
+              "reason": "no session recorded"
+            },
+            "anchor_pid": {
+              "unknown": true,
+              "reason": "no lock anchor read"
+            },
+            "recorded": false
+          },
+          "writer": {
+            "anchor_pid": 74126,
+            "session_id": {
+              "unknown": true,
+              "reason": "writer has no trusted session id"
+            }
+          },
+          "last_turn": {
+            "unknown": true,
+            "reason": "no transcript found"
+          },
+          "unread_inbox_age_seconds": null,
+          "composer_state": "unknown",
+          "context_left": {
+            "used_tokens": {
+              "unknown": true,
+              "reason": "transcript had no token usage"
+            },
+            "remaining": {
+              "unknown": true,
+              "reason": "harness showed no context text in its pane"
+            },
+            "derived": {
+              "unknown": true,
+              "reason": "no readable transcript"
+            }
+          }
+        },
+        "tasks": [],
+        "weekly_allowance": {
+          "unknown": true,
+          "reason": "quota-axi could not be read"
+        },
+        "ready_pr_discovery": {
+          "schema": "fm-ready-pr-discovery.v1",
+          "generated_epoch": 1795340465,
+          "runs": [],
+          "unreadable": [],
+          "warnings": []
+        },
+        "failure": null
+      }
+    },
+    {
+      "observed_seconds": 40.295,
+      "document": {
+        "schema": "fm-heartbeat.v1",
+        "generated": "2026-11-22T09:41:28Z",
+        "generated_epoch": 1795340488,
+        "published_epoch": 1795340500,
+        "fm_home": "{run-worktree}/.test-idle-live/scheduler-final",
+        "stale_after_secs": 495,
+        "snapshot": {
+          "ok": true,
+          "schema": "fm-fleet-snapshot.v1",
+          "generated": "2026-11-22T09:41:28Z",
+          "failure": null
+        },
+        "primary": {
+          "terminal": {
+            "backend": {
+              "unknown": true,
+              "reason": "no supervisor backend discovered"
+            },
+            "target": {
+              "unknown": true,
+              "reason": "no supervisor target discovered"
+            },
+            "present": {
+              "unknown": true,
+              "reason": "no supervisor endpoint discovered"
+            }
+          },
+          "session": {
+            "trusted_id": {
+              "unknown": true,
+              "reason": "no session recorded"
+            },
+            "anchor_pid": {
+              "unknown": true,
+              "reason": "no lock anchor read"
+            },
+            "recorded": false
+          },
+          "writer": {
+            "anchor_pid": 74126,
+            "session_id": {
+              "unknown": true,
+              "reason": "writer has no trusted session id"
+            }
+          },
+          "last_turn": {
+            "unknown": true,
+            "reason": "no transcript found"
+          },
+          "unread_inbox_age_seconds": null,
+          "composer_state": "unknown",
+          "context_left": {
+            "used_tokens": {
+              "unknown": true,
+              "reason": "transcript had no token usage"
+            },
+            "remaining": {
+              "unknown": true,
+              "reason": "harness showed no context text in its pane"
+            },
+            "derived": {
+              "unknown": true,
+              "reason": "no readable transcript"
+            }
+          }
+        },
+        "tasks": [],
+        "weekly_allowance": {
+          "unknown": true,
+          "reason": "quota-axi could not be read"
+        },
+        "ready_pr_discovery": {
+          "schema": "fm-ready-pr-discovery.v1",
+          "generated_epoch": 1795340488,
+          "runs": [],
+          "unreadable": [],
+          "warnings": []
+        },
+        "failure": null
+      }
+    },
+    {
+      "observed_seconds": 59.848,
+      "document": {
+        "schema": "fm-heartbeat.v1",
+        "generated": "2026-11-22T09:41:52Z",
+        "generated_epoch": 1795340512,
+        "published_epoch": 1795340520,
+        "fm_home": "{run-worktree}/.test-idle-live/scheduler-final",
+        "stale_after_secs": 495,
+        "snapshot": {
+          "ok": true,
+          "schema": "fm-fleet-snapshot.v1",
+          "generated": "2026-11-22T09:41:52Z",
+          "failure": null
+        },
+        "primary": {
+          "terminal": {
+            "backend": {
+              "unknown": true,
+              "reason": "no supervisor backend discovered"
+            },
+            "target": {
+              "unknown": true,
+              "reason": "no supervisor target discovered"
+            },
+            "present": {
+              "unknown": true,
+              "reason": "no supervisor endpoint discovered"
+            }
+          },
+          "session": {
+            "trusted_id": {
+              "unknown": true,
+              "reason": "no session recorded"
+            },
+            "anchor_pid": {
+              "unknown": true,
+              "reason": "no lock anchor read"
+            },
+            "recorded": false
+          },
+          "writer": {
+            "anchor_pid": 74126,
+            "session_id": {
+              "unknown": true,
+              "reason": "writer has no trusted session id"
+            }
+          },
+          "last_turn": {
+            "unknown": true,
+            "reason": "no transcript found"
+          },
+          "unread_inbox_age_seconds": null,
+          "composer_state": "unknown",
+          "context_left": {
+            "used_tokens": {
+              "unknown": true,
+              "reason": "transcript had no token usage"
+            },
+            "remaining": {
+              "unknown": true,
+              "reason": "harness showed no context text in its pane"
+            },
+            "derived": {
+              "unknown": true,
+              "reason": "no readable transcript"
+            }
+          }
+        },
+        "tasks": [],
+        "weekly_allowance": {
+          "unknown": true,
+          "reason": "quota-axi could not be read"
+        },
+        "ready_pr_discovery": {
+          "schema": "fm-ready-pr-discovery.v1",
+          "generated_epoch": 1795340512,
+          "runs": [],
+          "unreadable": [],
+          "warnings": []
+        },
+        "failure": null
+      }
+    }
+  ],
+  "summaries": [
+    {
+      "observed_seconds": 7.975,
+      "document": {
+        "schema": "fm-secondmate-home-summary.v1",
+        "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+        "contributions": {
+          "known": 0,
+          "checked": 0,
+          "counts": {
+            "captain": 0,
+            "fleet": 0,
+            "maintainer": 0,
+            "nobody": 0
+          },
+          "unmeasured": 0,
+          "complete": true,
+          "proven_clear": true,
+          "stale_verdicts": 0,
+          "missing_verdicts": 0,
+          "unreadable_records": 0,
+          "valid_until": 900,
+          "captain": [],
+          "captain_omitted": 0
+        },
+        "generated": "2026-11-22T09:41:07Z",
+        "generated_epoch": 1795340467,
+        "home": "{run-worktree}/.test-idle-live/scheduler-final",
+        "valid": true,
+        "reason": null,
+        "invalidity": {
+          "kind": null,
+          "ids": []
+        },
+        "state": "no_active_work",
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": []
+      }
+    },
+    {
+      "observed_seconds": 41.554,
+      "document": {
+        "schema": "fm-secondmate-home-summary.v1",
+        "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+        "contributions": {
+          "known": 0,
+          "checked": 0,
+          "counts": {
+            "captain": 0,
+            "fleet": 0,
+            "maintainer": 0,
+            "nobody": 0
+          },
+          "unmeasured": 0,
+          "complete": true,
+          "proven_clear": true,
+          "stale_verdicts": 0,
+          "missing_verdicts": 0,
+          "unreadable_records": 0,
+          "valid_until": 900,
+          "captain": [],
+          "captain_omitted": 0
+        },
+        "generated": "2026-11-22T09:41:39Z",
+        "generated_epoch": 1795340499,
+        "home": "{run-worktree}/.test-idle-live/scheduler-final",
+        "valid": true,
+        "reason": null,
+        "invalidity": {
+          "kind": null,
+          "ids": []
+        },
+        "state": "no_active_work",
+        "active_children": [],
+        "decisions_open": [],
+        "holds": [],
+        "queued": [],
+        "landed": [],
+        "endpoints": [],
+        "counts": {
+          "active_children": 0,
+          "decisions_open": 0,
+          "holds": 0,
+          "queued": 0,
+          "landed": 0,
+          "endpoints": 0
+        },
+        "omitted": []
+      }
+    }
+  ],
+  "distinct_beats": 17
+}

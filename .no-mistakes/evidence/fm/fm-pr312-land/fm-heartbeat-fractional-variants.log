@@ -1,0 +1,5 @@
+1..3
+ok - AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence
+ok - AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence
+ok - an appended wake or a status line collects at once, without waiting for the idle interval
+FM_TEST_COMPLETE

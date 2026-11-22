@@ -1,0 +1,7 @@
+[
+  {
+    "name": "Real watcher refreshes heartbeat on wake and status before grace, and publishes coalesced summary",
+    "result": "pass",
+    "live": true
+  }
+]

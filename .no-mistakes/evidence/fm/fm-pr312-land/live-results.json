@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Real publisher and stall-ledger CLI honor cadence, expiry, recovery and legacy floors",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Real stall-ledger CLI keeps coherent primary and secondmate samples during atomic publication replacement",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Real watcher and collectors retain fractional polling, idle gaps and prompt wake/status refreshes",
+    "result": "fail",
+    "live": true,
+    "reason": "timed out waiting for real publication"
+  }
+]

@@ -1,0 +1,17 @@
+$ bin/fm-lab-home.sh create $WORKTREE/.test-idle-live/scheduler-retry
+{run-worktree}/.test-idle-live/scheduler-retry
+exit=0
+home-summary.json {"generated_epoch": 1795340337, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340335, "published_epoch": 1795340346, "stale_after_secs": 495, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+heartbeat.json {"generated_epoch": 1795340358, "published_epoch": 1795340378, "stale_after_secs": 495, "failure": null}
+home-summary.json {"generated_epoch": 1795340378, "published_epoch": null, "stale_after_secs": null, "failure": null}
+heartbeat.json {"generated_epoch": 1795340382, "published_epoch": 1795340390, "stale_after_secs": 495, "failure": null}
+watcher stopped and reaped, exit=-15
+SCENARIO FAIL: Real watcher and real collectors retain fractional polling and collect on idle deadlines
+Traceback (most recent call last):
+  File "~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE/live-scheduler-retry.py", line 34, in record
+    try: fn(); results.append(dict(name=name,result='pass',live=True)); say('SCENARIO PASS: '+name)
+  File "~/.no-mistakes/evidence/01M816SJHG88GY66TXQVTDXJXE/live-scheduler-retry.py", line 116, in scheduler
+    assert len(beats)>20,len(beats)
+AssertionError: 13
+
