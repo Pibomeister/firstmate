@@ -5294,10 +5294,10 @@ fi
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
 #
-# A status signal starts a refresh at once. Without one, a refresh starts only
+# A status signal launches the helper at once. Without one, it launches only
 # when both the ledger and this watcher's last launch are older than the idle
-# gap drawn at that launch, so a home whose publication keeps failing retries
-# once per idle gap rather than on every poll.
+# gap drawn at that launch, so a stale ledger cannot cause launches on every
+# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
