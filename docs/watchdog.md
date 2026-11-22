@@ -543,6 +543,7 @@ The independent [supervisor-gap record](#supervisor-gap-record) keeps its fixed 
 ## Verification
 
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
+Its captain-hold stall-page case requires `tasks-axi` and reports a capability skip when that tool is not on `PATH`.
 `tests/fm-permission-prompt.test.sh` classifies real Claude Code 2.1.325 prompt captures in `tests/fixtures/permission-prompt/` and drives the worker route against real tmux panes that react to Escape as Claude did.
 `tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.
 `tests/fm-watchdog-live.test.sh` reads real installed Claude Code panes without spending tokens; [`verification/runtime-backends.md`](verification/runtime-backends.md) records its dated results.

@@ -3209,7 +3209,7 @@ wd_home_awaits_restart() {
   fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$1" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'
 }
 
-# wd_handle_subject: one symptom per pass, by precedence, then the side checks.
+# Stall paging precedes restart exits; docs/watchdog.md owns the action ladder.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
   wd_handle_stall
