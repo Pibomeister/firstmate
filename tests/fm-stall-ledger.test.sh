@@ -351,6 +351,59 @@ test_observe_uses_the_heartbeat_stale_bound() {
   pass "the stall ledger honors the heartbeat's own stale bound with a 600 second floor"
 }
 
+test_observe_keeps_one_heartbeat_publication() {
+  local fakebin real_awk real_cat cls key home source ledger start subject
+  fakebin=$TMP_ROOT/publication-bin
+  real_awk=$(command -v awk)
+  real_cat=$(command -v cat)
+  mkdir -p "$fakebin"
+  cat > "$fakebin/cat" <<'SH'
+#!/usr/bin/env bash
+case "${0##*/}" in
+  awk) reader=$HB_REAL_AWK ;;
+  cat) reader=$HB_REAL_CAT ;;
+esac
+"$reader" "$@" || exit $?
+for arg in "$@"; do
+  if [ "$arg" = "$HB_FILE" ] && [ -f "$HB_FILE.next" ]; then
+    mv "$HB_FILE.next" "$HB_FILE" || exit 1
+  fi
+done
+SH
+  cp "$fakebin/cat" "$fakebin/awk"
+  chmod +x "$fakebin/cat" "$fakebin/awk"
+  start=$((T0 - 1000))
+  for cls in primary secondmate; do
+    for key in published_epoch generated_epoch; do
+      home=$(new_home "publication-$cls-$key")
+      source=$home
+      subject=-
+      ledger=$(ledger_of "$home")
+      if [ "$cls" = secondmate ]; then
+        source=$(new_home "publication-$cls-$key-mate")
+        subject=mate1
+        printf 'kind=secondmate\nhome=%s\n' "$source" > "$home/state/mate1.meta"
+        write_hb "$home/state/heartbeat.json" "$T0"
+      fi
+      printf '{"%s":%s,"stale_after_secs":1800}\n' "$key" "$start" > "$source/state/heartbeat.json"
+      printf '{\n"published_epoch":%s,\n"generated_epoch":%s,\n"stale_after_secs":771\n}\n' "$T0" "$T0" > "$source/state/heartbeat.json.next"
+      PATH="$fakebin:$PATH" HB_REAL_AWK="$real_awk" HB_REAL_CAT="$real_cat" \
+        HB_FILE="$source/state/heartbeat.json" observe_ok "$home" "$T0"
+      [ ! -e "$source/state/heartbeat.json.next" ] || fail "the concurrent publication did not occur"
+      awk -F '\t' -v cls="$cls" -v subject="$subject" -v start="$start" -v detect="$((T0 + 801))" '
+        $2 == "hb" && $3 == cls && $4 == subject && $5 == start && $6 == detect { ok = 1 }
+        END { exit !ok }
+      ' "$ledger" || fail "$cls $key mixed heartbeat publications"
+      assert_equals 0 "$(count_rows "$ledger" stall-open)" "replacing a fresh heartbeat must not open a stall"
+      run_score "$home" "$T0" "$((T0 + 600))"
+      assert_equals PASS "$OUT" "the coherent publication stays healthy in scoring"
+      observe_ok "$home" "$((T0 + 1))"
+      assert_equals 0 "$(count_rows "$ledger" stall-open)" "the next observation uses the fresh replacement"
+    done
+  done
+  pass "primary and secondmate observations keep timestamps and bounds from one publication"
+}
+
 test_observe_watchdog_closes_only_on_done() {
   local home ledger actions start
   home=$(new_home wd-step)
@@ -1036,6 +1089,7 @@ fm_test_run \
   test_observe_records_one_fresh_heartbeat \
   test_observe_opens_and_closes_a_stale_heartbeat \
   test_observe_uses_the_heartbeat_stale_bound \
+  test_observe_keeps_one_heartbeat_publication \
   test_observe_watchdog_closes_only_on_done \
   test_observe_secondmate_progress_closes_as_agentkit \
   test_observe_stale_wake_closes_as_firstmate \

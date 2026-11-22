@@ -102,9 +102,8 @@ _fm_stall_subject() {
   printf '%s' "$s"
 }
 
-_fm_stall_json_epoch() { # <file> <key>
-  local file=$1 key=$2
-  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+_fm_stall_json_epoch() { # <json> <key>
+  local json=$1 key=$2
   awk -v k="$key" '
     {
       needle = "\"" k "\""
@@ -117,7 +116,7 @@ _fm_stall_json_epoch() { # <file> <key>
       print s
       exit
     }
-  ' "$file"
+  ' <<< "$json"
 }
 
 _fm_stall_meta_value() { # <meta> <key>
@@ -270,13 +269,15 @@ _fm_stall_prepare() {
 }
 
 _fm_stall_record_hb() { # <file> <class> <subject>
-  local file=$1 cls=$2 sub=$3 published bound detect
-  published=$(_fm_stall_json_epoch "$file" published_epoch)
+  local file=$1 cls=$2 sub=$3 snapshot published bound detect
+  [ -f "$file" ] && [ ! -L "$file" ] || return 0
+  snapshot=$(cat "$file" 2>/dev/null) || return 0
+  published=$(_fm_stall_json_epoch "$snapshot" published_epoch)
   if ! _fm_stall_is_num "$published"; then
-    published=$(_fm_stall_json_epoch "$file" generated_epoch)
+    published=$(_fm_stall_json_epoch "$snapshot" generated_epoch)
   fi
   _fm_stall_is_num "$published" || return 0
-  bound=$(_fm_stall_json_epoch "$file" stale_after_secs)
+  bound=$(_fm_stall_json_epoch "$snapshot" stale_after_secs)
   if ! _fm_stall_is_num "$bound" || [ "$bound" -lt 600 ]; then
     bound=600
   fi
