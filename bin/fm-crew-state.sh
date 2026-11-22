@@ -35,7 +35,8 @@
 # from (rule 2b).
 # A parked reading carries the parked question's structured parts before that
 # run field, each only when the run itself proves it: `pr: #<n>`, `findings:
-# <ids>`, `summary: <gate summary>`, `question: <finding descriptions>`, and `parked:
+# <ids>`, `summary: <gate summary>`, `question: <ask-user descriptions>`,
+# `other findings: <remaining descriptions>`, and `parked:
 # <duration>`. The question retains the recorded options rather than inventing
 # them. Control characters are removed, rows are joined, and field separators
 # in the question become semicolons so prose cannot mint structured fields.
@@ -1441,8 +1442,10 @@ if [ "$HAVE_RUN" = 1 ]; then
       [ -z "$parked_ids" ] || RUN_DETAIL="$RUN_DETAIL${SEP}findings: $parked_ids"
       parked_summary=$(strip_quotes "$(nm_field summary)" | nm_status_text)
       [ -z "$parked_summary" ] || RUN_DETAIL="$RUN_DETAIL${SEP}summary: $parked_summary"
-      parked_question=$(fm_nm_table_column "$RUN_OUT" findings description | nm_status_text)
+      parked_question=$(fm_nm_table_column "$RUN_OUT" findings description action ask-user | nm_status_text)
       [ -z "$parked_question" ] || RUN_DETAIL="$RUN_DETAIL${SEP}question: $parked_question"
+      parked_other=$(fm_nm_table_column "$RUN_OUT" findings description action ask-user 1 | nm_status_text)
+      [ -z "$parked_other" ] || RUN_DETAIL="$RUN_DETAIL${SEP}other findings: $parked_other"
       parked_dur=$(nm_parked_duration)
       [ -z "$parked_dur" ] || RUN_DETAIL="$RUN_DETAIL${SEP}parked: $parked_dur"
     else

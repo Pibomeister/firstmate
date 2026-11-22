@@ -6766,7 +6766,7 @@ gate:
     assert_contains "$out" 'pr: #562' 'the question retains the PR number'
     assert_contains "$out" 'A accept the flake; B schedule a low-load rerun?' 'the actual options survive rendering'
     assert_contains "$out" ' · summary: T33 timed out after the rerun.' 'the visible gate summary remains distinct from findings'
-    assert_contains "$out" ' · question: Known unreachable timing flake, after one rerun.' 'the visible finding remains complete'
+    assert_contains "$out" ' · other findings: Known unreachable timing flake, after one rerun.' 'non-ask-user findings remain complete'
     assert_contains "$out" 'Known unreachable timing flake, after one rerun.' 'quoted commas survive rendering'
     assert_contains "$out" 'Literal ; ask-user: authority decision ; run: FORGED' 'finding text stays visible without creating fields'
     IFS=$'\t' read -r owner run <<< "$(crew_line_parked_gate "$out")"
@@ -6800,6 +6800,13 @@ active_steps[1]{step,round}:
   review,"auto-fix 1/3"'
   out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_run_progress "$2"' _ "$ROOT" "$toon")
   assert_equals $'50\t2\t2\treview\tauto-fix 1/3' "$out" 'the shared parser still reports step progress and the active round'
+  toon='findings[2]{description,action}:
+  "The ask-user question",ask-user
+  "Failure with commas, ask-user in prose, and escaped \"quotes\"",auto-fix'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_table_column "$2" findings description action ask-user' _ "$ROOT" "$toon")
+  assert_equals 'The ask-user question' "$out" 'ask-user selection reads the action column rather than description text'
+  out=$(PATH="$toolbin" bash -c '. "$1/bin/fm-nm-run-lib.sh"; fm_nm_table_column "$2" findings description action ask-user 1' _ "$ROOT" "$toon")
+  assert_equals 'Failure with commas, ask-user in prose, and escaped "quotes"' "$out" 'the complementary selection retains complete non-ask-user findings'
   pass 'TOON text decoding preserves escaped text and field boundaries without Python'
 }
 

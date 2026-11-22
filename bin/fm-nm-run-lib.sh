@@ -658,12 +658,13 @@ fm_nm_runs_status_for_worktree() {  # <worktree> <branch> <runs-list-output> [ex
 # is found by name in the table's own header, so column order is never
 # assumed; commas and escaped quotes inside a quoted cell do not split it.
 # Prints nothing when the table or column is absent.
-fm_nm_table_column() {  # <toon-output> <table> <column>
-  fm_nm_toon_read "$1" "$2" "$3"
+fm_nm_table_column() {  # <toon-output> <table> <column> [filter-column filter-value exclude]
+  fm_nm_toon_read "$1" "$2" "$3" "${4:-}" "${5:-}" "${6:-0}"
 }
 
 fm_nm_toon_read() {
-  printf '%s\n' "$1" | LC_ALL=C awk -v table="${2:-}" -v column="${3:-}" '
+  printf '%s\n' "$1" | LC_ALL=C awk -v table="${2:-}" -v column="${3:-}" \
+    -v filter_column="${4:-}" -v filter_value="${5:-}" -v exclude="${6:-0}" '
     function hex(s,    n, i, v) {
       n = 0
       for (i = 1; i <= length(s); i++) {
@@ -726,7 +727,11 @@ fm_nm_toon_read() {
         cols = substr(cols, 1, index(cols, "}") - 1)
         ncol = split(cols, names, ",")
         want = 0
-        for (i = 1; i <= ncol; i++) if (trim(names[i]) == column) want = i
+        filter_index = 0
+        for (i = 1; i <= ncol; i++) {
+          if (trim(names[i]) == column) want = i
+          if (trim(names[i]) == filter_column) filter_index = i
+        }
         if (!want) exit
         inblock = 1
       }
@@ -737,6 +742,8 @@ fm_nm_toon_read() {
       match($0, /[^ \t]/)
       if (RSTART <= hdr) exit
       n = cells(trim($0), row)
+      matches = (filter_index && filter_index <= n && value(trim(row[filter_index])) == filter_value)
+      if (filter_column && matches == exclude) next
       print (want <= n ? value(trim(row[want])) : "")
     }
   '

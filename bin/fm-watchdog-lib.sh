@@ -32,11 +32,9 @@
 #       A real failure that remains after a negation still does.
 #   fm_wd_known_unreachable_timing_flake <text>
 #       Returns 0 when the text describes a known timing flake in a test the
-#       PR cannot reach: a timing word (`timing`, `load-sensitive`, or
-#       `load-shaped`, and `load shaped` counts as `load-shaped`), a flake
-#       word, and an unreachable word.
+#       PR cannot reach as the sole remaining failure after the once-rerun.
 #   fm_wd_pr_label <text>
-#       Prints `PR #<n>` for the PR the text names: its first `/pull/<n>` URL,
+#       Prints `PR #<n>` from a separated native `pr:` field, else its first `/pull/<n>` URL,
 #       else its first `PR #<n>`, else its first structured `pr: #<n>` or
 #       `pr: <n>` component, else its first bare `#<n>`; prints nothing when
 #       it names none.
@@ -399,15 +397,22 @@ fm_wd_human_only() {  # <text>
 
 fm_wd_known_unreachable_timing_flake() {  # <text>
   local view
-  view=$(_fm_wd_guard_view "$1")
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load-sensitive|load[- ]shaped' || return 1
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'flake|flaky' || return 1
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable'
+  view=$(fm_wd_lower "$1" | tr '\t\r\n_-' '     ' | tr -s ' ')
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])known (unreachable |load sensitive |load shaped |load |timing )*(flake|flaky)([^a-z]|$)' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load sensitive|load shaped' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'once rerun (failed|left) only|only[^.;!?]*(flake|flaky)[^.;!?]*survived (the |a )?once rerun' || return 1
+  ! printf '%s\n' "$view" | LC_ALL=C grep -Eq 'unknown|not (a |yet |previously )?known|new (timing |load sensitive |load shaped )?flake|no (once )?rerun|rerun (not |is |still )?(attempted|pending|planned)|if (the |a )?once rerun|not (the )?only|another (test )?(failure|error|failed)|additional (test )?(failure|error)|unrelated (failure|error)|also [^.;!?]*failed|additionally [^.;!?]*failed|failed (too|as well)|plus (a |an )?(failure|error|timeout)'
 }
 
 fm_wd_pr_label() {  # <text>
-  local hit n
-  hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
+  local hit='' n
+  case "$1" in
+    *'state: parked · source: run-step · '*)
+      hit=$(printf '%s\n' "$1" | awk -F ' · ' '{ for (i=1; i<=NF; i++) { if ($i ~ /^run: /) exit; if ($i ~ /^pr: #[0-9]+$/) { print $i; exit } } }')
+      [ -n "$hit" ] || return 0 ;;
+  esac
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE 'PR #[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE '(^|[^A-Za-z])pr:[[:space:]]*#?[0-9]+' | head -n 1 || true)
   [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '#[0-9]+' | head -n 1 || true)

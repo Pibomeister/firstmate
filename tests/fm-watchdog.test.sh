@@ -1810,7 +1810,7 @@ EOF
 id: test-1
 severity: warning
 authority: ask-user
-description: T33 survived the once-rerun only as a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun?
+description: T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. A approve the park, or B schedule a low-load rerun?
 EOF
   cat > "$FAKEBIN/no-mistakes" <<'SH'
 #!/usr/bin/env bash
@@ -1840,8 +1840,9 @@ import pathlib
 import sys
 
 home = pathlib.Path(sys.argv[1])
-description = ('T33 survived the once-rerun only as a known unreachable load-sensitive timing flake. '
-               + 'check ' * 180 + 'A approve the park, or B schedule a low-load rerun?')
+description = ('T33: the once-rerun failed only on a known unreachable load-sensitive timing flake. '
+               + 'check ' * 180 + 'Equivalent park: https://github.com/org/repo/pull/577. '
+               + 'A approve the park, or B schedule a low-load rerun?')
 (home / 'description.txt').write_text(description)
 (home / 'data/t1/nm-01NATIVE-findings.txt').write_text(
     'id: test-1\nseverity: warning\nauthority: ask-user\ndescription: ' + description + '\n')
@@ -1856,10 +1857,12 @@ PY
       transcript 100 'Working.'
       run_wd 0 once >/dev/null 2>&1 || fail 'native decision nudge failed'
       assert_contains "$(ledger | awk -F'\t' '$5 == "decisions" && $6 == "nudge"')" 'PR #562' 'the native decision nudge names its authenticated PR'
+      assert_not_contains "$(ledger | awk -F'\t' '$5 == "decisions" && $6 == "nudge"')" 'PR #577' 'a referenced PR cannot rename the native decision'
       run_wd 2000 once >/dev/null 2>&1 || fail 'native automatic council failed'
       assert_contains "$(ledger | awk -F'\t' '$5 == "ruling:nm-01NATIVE-test" && $6 == "nudge"')" 'PROCEED A (approved, not clean)' 'the native ruling nudge carries the flake qualification'
       run_wd 2100 once >/dev/null 2>&1 || fail 'native ruling status failed'
       assert_grep 'PR #562' "$H/data/watchdog/status.md" 'the native ruling status names its PR'
+      assert_no_grep 'PR #577' "$H/data/watchdog/status.md" 'a referenced PR cannot rename native ruling status'
     else
       if [ "$mode" = file ]; then
         printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
@@ -1872,6 +1875,7 @@ PY
     fi
     record=$(council_record_path rulings t1 nm-01NATIVE-test)
     assert_grep 'PR #562' "$record" 'the persisted native ruling identifies the PR'
+    assert_grep 'https://github.com/org/repo/pull/577' "$record" 'the reference remains evidence without replacing run identity'
     assert_grep 'B schedule a low-load rerun?' "$record" 'the persisted ruling retains the snapshot options'
     assert_grep 'C schedule a low-load rerun at 04:00 UTC.' "$record" 'the persisted ruling retains unique gate-summary options'
     python3 - "$record" "$H/description.txt" <<'PY' || fail 'the native ruling duplicated the finding description'
@@ -1928,6 +1932,101 @@ council-seats=claude:haiku,agy:flash'
   rm -f "$FAKEBIN/no-mistakes"
   unset NM_HOME FM_TEST_GATE_HOME
   pass 'native pointer authentication failures and PR-caused failures stay held'
+}
+
+test_native_gate_retains_non_ask_user_failures() {
+  local mode out
+  for mode in demand file automatic; do
+    make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+    make_native_gate_pointer
+    python3 - "$H/run.toon" <<'PY'
+import pathlib
+import sys
+path = pathlib.Path(sys.argv[1])
+payload = path.read_text().replace('findings[1]', 'findings[2]').replace('test,awaiting_approval,1,100', 'test,awaiting_approval,2,100')
+payload += '    test-2,error,"",auto-fix,"The test failed in code modified by this PR."\n'
+path.write_text(payload)
+PY
+    printf '\nother: fix=test-2 decline=\n' >> "$H/data/t1/nm-01NATIVE-findings.txt"
+    fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+    if [ "$mode" = automatic ]; then
+      transcript 100 'Working.'
+      run_wd 0 once >/dev/null 2>&1 || fail 'mixed native automatic pass failed'
+      assert_grep 'held for the owner' "$H/data/watchdog/status.md" 'an automatic mixed gate retains the PR-caused failure'
+      run_wd 2000 once >/dev/null 2>&1 || fail 'mixed native later pass failed'
+    elif [ "$mode" = file ]; then
+      printf 'ask-user findings=test-1 file=%s/data/t1/nm-01NATIVE-findings.txt\n' "$H" > "$H/pointer.txt"
+      out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test --record-file "$H/pointer.txt" 2>&1) || fail "mixed native file council failed: $out"
+      assert_contains "$out" 'council=held answer=none' 'a native record-file retains the non-ask-user failure'
+    else
+      out=$(run_wd 0 council --task t1 --key nm-01NATIVE-test 2>&1) || fail "mixed native council failed: $out"
+      assert_contains "$out" 'council=held answer=none' 'a native on-demand record retains the non-ask-user failure'
+    fi
+    assert_equals 0 "$(seat_calls)" 'no seat sees a gate with a remaining changed-code failure'
+  done
+  rm -f "$FAKEBIN/no-mistakes"
+  unset NM_HOME FM_TEST_GATE_HOME
+  pass 'native deduplication preserves non-ask-user failures on every ingestion path'
+}
+
+test_flake_default_requires_known_sole_failure_after_rerun() {
+  local text
+  for text in \
+    'The once-rerun failed only on a known unreachable timing flake.' \
+    'Only a known load-shaped flake in a test the PR cannot reach survived the once-rerun.' \
+    $'The once_rerun failed only on a known unreachable\ntiming flake.'; do
+    lib fm_wd_known_unreachable_timing_flake "$text" || fail "eligible flake lost its default: $text"
+  done
+  for text in \
+    'First run found a new timing flake in a test the PR cannot reach; no rerun attempted.' \
+    'Only an unknown unreachable timing flake survived the once-rerun.' \
+    'Only a not previously known unreachable timing flake survived the once-rerun.' \
+    'A known unreachable timing flake was found; no rerun attempted.' \
+    'A known unreachable timing flake survived the once-rerun.' \
+    'T33 survived the once-rerun only as a known unreachable load-sensitive timing flake.' \
+    'The once-rerun failed only on a known timing flake in changed code.' \
+    'If the once-rerun failed only on a known unreachable timing flake, approve.' \
+    'The once-rerun failed only on a known unreachable timing flake. Another test failed.' \
+    'The once-rerun failed only on a known unreachable timing flake. T34 failed too.' \
+    'The once-rerun failed only on a known unreachable timing flake, plus a timeout.'; do
+    ! lib fm_wd_known_unreachable_timing_flake "$text" || fail "ineligible record received the default: $text"
+  done
+  pass 'flake default requires known status, a completed once-rerun, exclusivity and unreachability'
+}
+
+test_ineligible_flakes_reach_council_without_default() {
+  local text out i=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:'PROCEED A' ok:'PROCEED A'
+  for text in \
+    'First run found a new timing flake in a test the PR cannot reach; no rerun attempted.' \
+    'Only an unknown unreachable timing flake survived the once-rerun.' \
+    'T33 survived the once-rerun only as a known unreachable load-sensitive timing flake.' \
+    'The once-rerun failed only on a known unreachable timing flake. Another test failed.'; do
+    i=$((i + 1))
+    : > "$H/prompt.log"
+    printf 'PR #562 no-mistakes test awaiting_approval. %s A approve, B rerun.\n' "$text" > "$H/record.txt"
+    out=$(run_wd "$i" council --task t1 --key "ineligible-$i" --record-file "$H/record.txt" 2>&1) || fail "ineligible council failed: $out"
+    assert_contains "$out" 'council=ruled answer=PROCEED A' 'the record remains a council decision'
+    assert_not_contains "$out" 'approved, not clean' 'the record receives no flake approval qualification'
+    assert_no_grep 'This record describes a known unreachable timing flake' "$H/prompt.log" 'the delivered prompt does not claim eligibility'
+  done
+  pass 'unknown, pre-rerun and mixed failures receive no flake default'
+}
+
+test_native_pr_identity_precedes_reference_urls() {
+  local out
+  out=$(lib fm_wd_pr_label 'state: parked · source: run-step · pr: #562 · question: Equivalent park https://github.com/org/repo/pull/577 · run: 01NATIVE')
+  assert_equals 'PR #562' "$out" 'native structured identity wins over a reference URL'
+  out=$(lib fm_wd_pr_label 'state: parked · source: run-step · question: Equivalent park https://github.com/org/repo/pull/577 · run: 01NATIVE')
+  assert_equals '' "$out" 'an unassigned native PR does not inherit a referenced PR'
+  out=$(lib fm_wd_pr_label 'state: parked · source: run-step · run: 01NATIVE; referenced status · pr: #577 · run: OTHER')
+  assert_equals '' "$out" 'structured references after the native run field cannot supply its PR'
+  out=$(lib fm_wd_pr_label 'issue #306, PR #562, reference https://github.com/org/repo/pull/577')
+  assert_equals 'PR #577' "$out" 'unstructured records retain the approved URL-first order'
+  pass 'native PR identity is authoritative and unstructured PR precedence is preserved'
 }
 
 test_known_unreachable_timing_flake_defaults_approve_not_clean() {
@@ -2026,7 +2125,7 @@ council-seats=claude:haiku,agy:flash'
   for choice in 'schedule a low-load rerun' 'hold for the owner'; do
     key=nm-flake-rerun
     [ "$choice" != 'hold for the owner' ] || key=nm-flake-owner
-    printf '%s\n' "PR #562 no-mistakes test awaiting_approval. A known unreachable timing flake survived the once-rerun. A approve the park, or B $choice?" > "$H/record.txt"
+    printf '%s\n' "PR #562 no-mistakes test awaiting_approval. Only a known unreachable timing flake survived the once-rerun. A approve the park, or B $choice?" > "$H/record.txt"
     out=$(run_wd 0 council --task t1 --key "$key" --record-file "$H/record.txt" 2>&1) || fail "deferral failed: $out"
     assert_contains "$out" 'council=ruled answer=PROCEED B' 'a deferral preserves the selected option'
     assert_not_contains "$out" 'approved, not clean' 'a deferral is not called an approval'
@@ -7798,6 +7897,10 @@ fm_test_run \
   test_known_unreachable_timing_flake_defaults_approve_not_clean \
   test_native_gate_pointer_reaches_council_with_evidence \
   test_native_gate_pointer_holds_unverifiable_or_human_only_evidence \
+  test_native_gate_retains_non_ask_user_failures \
+  test_flake_default_requires_known_sole_failure_after_rerun \
+  test_ineligible_flakes_reach_council_without_default \
+  test_native_pr_identity_precedes_reference_urls \
   test_flake_qualification_survives_automatic_nudges \
   test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \
