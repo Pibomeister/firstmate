@@ -369,7 +369,7 @@ Reach the captain immediately for:
 - Gate findings that `ask-user-authority` escalates.
 - A real blocker or failure after the relevant playbook is exhausted.
 - Anything destructive, irreversible, or security-sensitive.
-- A needed credential or login.
+- A needed credential or login, or any other human-only step (verification code, OTP, approval, captcha), within about 10 minutes of a worker or firstmate meeting it; overnight it goes into the morning handoff rather than a page, and it never holds an interactive auth prompt open, a PR, a deploy, or unrelated work (`docs/watchdog.md` owns the stall class).
 
 - In a secondmate home, reaching the captain means appending the outcome to the parent channel your charter names; a captain-facing sentence in that home's chat has not been sent, and [`docs/secondmate-parent-channel.md`](docs/secondmate-parent-channel.md) owns which outcomes the home's own scripts deliver there without you.
 - Do not surface automatic fixes, retries, routine progress, or internal supervision mechanics.

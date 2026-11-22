@@ -1077,13 +1077,22 @@ EOF
 # remote reply mirror
 # (bin/fm-procevent-remote-reply.sh), and a `captain-hold-` key relays a child
 # decision a secondmate escalated to the captain (bin/fm-captain-hold.sh) while
-# it keeps working, so the task is not waiting on any of them. Pending-reply
+# it keeps working, and a `human-step-` key is a human-only step the task
+# reports while it keeps working (bin/fm-brief.sh rule 11), so the task is
+# not waiting on any of them. Pending-reply
 # recovery and a fire-and-forget retry ring consult this set and leave a task
 # alone while it is non-empty.
 status_own_open_decisions() {  # <status-file>
-  local line prefix
-  status_open_decisions "$1" | while IFS= read -r line || [ -n "$line" ]; do
-    for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} remote-reply-continuity- captain-hold-; do
+  _fm_open_decisions_without "$1" remote-reply-continuity- captain-hold- human-step-
+}
+
+# status_open_decisions without the reserved-namespace keys and the given key
+# prefixes.
+_fm_open_decisions_without() {  # <status-file> <prefix>...
+  local f=$1 line prefix
+  shift
+  status_open_decisions "$f" | while IFS= read -r line || [ -n "$line" ]; do
+    for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT} "$@"; do
       case "$line" in "$prefix"*) continue 2 ;; esac
     done
     printf '%s\n' "$line"
@@ -1122,8 +1131,11 @@ EOF
 
 # 0, printing `blocked` or `needs-decision`, when the task's newest status event
 # is a line of that verb that the worker wrote and that is still open: its key
-# must hold that verb in status_own_open_decisions, so a supervisor-reserved key
-# never counts. Only the newest event is read, so any later line ends it - a
+# must still hold that verb in status_open_decisions after excluding reserved
+# namespaces, remote-reply-continuity-, and captain-hold-. Unlike
+# status_own_open_decisions, this includes a worker's `human-step-` key, so an
+# idle worker whose last line reports one is bounded like any blocker.
+# Only the newest event is read, so any later line ends it - a
 # resolved line for any key included. A steering-inbox record does not end it
 # here: a steer the worker acknowledged may as easily be "keep waiting" as the
 # answer, so a caller that bounds repeated alarms reads this and lets the
@@ -1135,7 +1147,7 @@ status_worker_open_wait_verb() {  # <status-file>
   status_line_verb "$last" verb
   case "$verb" in blocked|needs-decision) ;; *) return 1 ;; esac
   key=$(_fm_decision_key "$last") || return 1
-  own=$(status_own_open_decisions "$f")
+  own=$(_fm_open_decisions_without "$f" remote-reply-continuity- captain-hold-)
   case "$own" in
     "$key"$'\t'"$verb"$'\t'*|*$'\n'"$key"$'\t'"$verb"$'\t'*) ;;
     *) return 1 ;;

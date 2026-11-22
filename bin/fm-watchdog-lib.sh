@@ -88,6 +88,34 @@
 #   fm_wd_handoff_in_progress <claim-file> <lock-pid> <now> <max-secs>
 #       Returns 0 for a bounded pending handoff claim for that lock owner;
 #       bin/fm-handoff-lib.sh owns the claim format.
+#   fm_wd_codex_dialog <screen>
+#       Prints the rows of a recorded Codex CLI 0.151.0 command-approval or
+#       hook-review dialog, from its heading through its lowercase footer, when
+#       the screen ends in one, else nothing (exit 1). fm_wd_pane_dialog does not
+#       read it; bin/fm-permission-prompt.sh and fm_wd_human_step do.
+#   fm_wd_human_step <screen>
+#       Prints `captcha`, `otp`, `verification-code`, `approval`, or `sign-in`
+#       when the last 14 non-blank rows show that human-only step, else nothing
+#       (exit 1). On a proven dialog, whose cursor row sits above the picker
+#       footer (`Esc to cancel` and the like) as its last non-blank row, only
+#       the paragraph just above the options counts; an unnumbered picker's
+#       cursor row is its option row. A tool permission dialog
+#       (fm_wd_pane_dialog `permission`) and a Codex command-approval or
+#       hook-review dialog (fm_wd_codex_dialog) never count. A composer rule or
+#       `? for shortcuts` footer below the prompt excludes every later row,
+#       including multiline drafts with empty rows. Without a prompt in the
+#       window, that same boundary excludes the whole window. Otherwise only
+#       rows below the last prompt row count, up to the first blank row, after
+#       skipping the indented rows a wrapped draft fills under the prompt.
+#       With no composer rule or footer below it, a prompt row followed by an
+#       empty row and then output, other than one indented footer row, is an
+#       echoed earlier turn, so the rows after that empty row count instead.
+#       With neither a prompt row nor a composer boundary, as on a full-screen
+#       sign-in view, every one of those rows counts. Conversation above a
+#       prompt row does not count, except a row among the 4 just above it
+#       that opens by stating a sign-in error
+#       such as `Not logged in`, `Please run /login`, `Login expired`, or
+#       `Failed to authenticate: OAuth session expired`.
 #   fm_wd_dialog_options <screen>
 #       Prints `<number>\t<text>` for each numbered option of the dialog.
 #   fm_wd_dialog_text <screen>
@@ -469,6 +497,42 @@ fm_wd_feedback_dialog_key() {  # <screen> [<harness>]
   printf '%s\n' "${spec#*$'\t'}"
 }
 
+FM_WD_PICKER_FOOTER_RE='(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑/↓ to (navigate|select)|Tab:next answer)'
+
+# The screen rows of a picker from the top of the paragraph that holds its
+# first option row through the end of the screen, read from it because the
+# prompt rows drop blank rows. The option rows are found the way main's
+# `_fm_wd_dialog_rows` finds them: the last cursor row within the last 14
+# non-blank rows, then the last `1.` or `1)` row at or above it, or the cursor
+# row itself for an unnumbered picker. When the option rows open their own
+# paragraph, the paragraph above them is the picker's title and is included.
+# Empty when no option row is found.
+_fm_wd_picker_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (r[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      sel = 0
+      for (i = last; i >= floor; i--) if (r[i] ~ /(❯|›)[ \t]*[^ \t]/ || r[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { sel = i; break }
+      first = 0
+      for (i = (sel ? sel : last); i >= floor; i--) if (r[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { first = i; break }
+      if (!first) first = sel
+      if (!first) exit 0
+      top = first
+      while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      # Options that open their own paragraph take the paragraph above them
+      # as the picker title, the way Claude draws `Select login method:`.
+      if (top == first) {
+        while (top > 1 && r[top - 1] !~ /[^ \t]/) top--
+        while (top > 1 && r[top - 1] ~ /[^ \t]/) top--
+      }
+      for (i = top; i <= NR; i++) print r[i]
+    }'
+}
+
 fm_wd_pane_dialog() {  # <screen> [<harness>]
   local tail
   [ -n "${1-}" ] || return 1
@@ -480,12 +544,12 @@ fm_wd_pane_dialog() {  # <screen> [<harness>]
   # A picker: its last non-blank row is the recorded footer and a selected
   # row sits above it. Claude Code 2.1.316's folder-trust picker has no
   # numbers, so a cursor glyph before any text counts; a bare `>` needs a number.
-  printf '%s\n' "$tail" | awk '
+  printf '%s\n' "$tail" | awk -v footer="$FM_WD_PICKER_FOOTER_RE" '
     /(❯|›)[ \t]*[^ \t]/ || />[ \t]*[0-9]+[.)][ \t]/ { selected = 1 }
     NF { last = $0 }
-    END { exit !(selected && last ~ /(Enter to (confirm|select|submit|continue)|Esc to (cancel|exit|go back)|↑\/↓ to (navigate|select)|Tab:next answer)/) }
+    END { exit !(selected && last ~ footer) }
   ' || return 1
-  if _fm_wd_dialog_rows "$1" all | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
+  if _fm_wd_picker_rows "$1" | LC_ALL=C grep -Eiq "do you want to (proceed|make this edit|create|allow|run|overwrite|delete)|allow (this|once|always)|yes, and don.t ask again|background work is running|trust (this|the files)"; then
     printf 'permission\n'
   elif _fm_wd_dialog_rows "$1" own | LC_ALL=C grep -Eiq "$FM_WD_USAGE_LIMIT_RE"; then
     printf 'usage-limit\n'
@@ -531,6 +595,102 @@ _fm_wd_dialog_rows() {  # <screen> <own|all|options>
       }
       for (i = top; i <= stop; i++) if (rows[i] ~ /[^ \t]/) print rows[i]
     }'
+}
+
+# Human-only steps, matched on lowercased rows. The order is the order the
+# kinds are tried, so a row naming a one-time code is `otp` before it is a code.
+FM_WD_HS_CAPTCHA_RE='captcha|verify (that )?you.{0,4}(are|re) (a )?human|i.{0,3}m not a robot'
+FM_WD_HS_OTP_RE='one.?time (pass(word|code)|code)|(^|[^a-z0-9])(otp|2fa|mfa)([^a-z0-9]|$)|two.?factor|multi.?factor|authenticator app'
+FM_WD_HS_CODE_RE='(verification|confirmation|security|authori[sz]ation|device|login|sign.?in|pairing) code|(^|[^a-z])(enter|paste|type|input) (the |your |this )?([0-9]+.digit )?code|code sent to'
+FM_WD_HS_APPROVAL_RE='waiting for (your |the )?approval|approve (this|the|your) (sign.?in|log.?in|login|request|device|session|connection)|(sign.?in|log.?in|login|device) approval|approval (is )?required|(check|open) your (phone|device|email|inbox|app) to (approve|confirm|continue|sign)'
+FM_WD_HS_SIGNIN_RE='(^|[^a-z])(sign|log).?in (to|with|required|again|via|using)|(^|[^a-z])signing in|(not|no longer) (signed|logged) in|log.?in required|authenticat(e|ion) (is )?required|authenticate to continue|waiting for (the )?(browser )?(authentication|auth|sign.?in|log.?in)|select (a |your )?login method|run /login'
+FM_WD_HS_AUTH_ERROR_RE='^[^a-z]*(not logged in|invalid api key|oauth token (has )?expired|please run /login|login expired|failed to authenticate: oauth session expired|api error: 401|authentication (error|failed))'
+
+# A recorded Codex CLI 0.151.0 dialog, which fm_wd_pane_dialog does not read:
+# its command-approval question or hook-review heading, a numbered cursor row
+# (`›` or `>`) below it, and its whole lowercase footer as the last row.
+fm_wd_codex_dialog() {  # <screen>
+  local rows
+  rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
+    { r[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && r[last] !~ /[^ \t]/) last--
+      if (r[last] !~ /^[ \t]*Press enter to confirm or esc to (cancel|go back)[ \t]*$/) exit 1
+      floor = last - 40; if (floor < 1) floor = 1
+      head = 0
+      for (i = last - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(Would you like to run the following command\?|Hooks need review)[ \t]*$/) { head = i; break }
+      if (!head) exit 1
+      cursor = 0
+      for (i = head + 1; i < last; i++) if (r[i] ~ /^[ \t]*(›|>)[ \t]*[0-9]+\.[ \t]/) cursor++
+      if (cursor != 1) exit 1
+      for (i = head; i <= last; i++) print r[i]
+    }') || return 1
+  [ -n "$rows" ] || return 1
+  printf '%s\n' "$rows"
+}
+
+fm_wd_human_step() {  # <screen>
+  local tag row kind re
+  [ -n "${1-}" ] || return 1
+  # A tool permission dialog names the command or file it asks about, and that
+  # text is not a human-only step; permission handling owns it. A Codex
+  # approval dialog is one too, though fm_wd_pane_dialog does not read it.
+  [ "$(fm_wd_pane_dialog "$1")" != permission ] || return 1
+  ! fm_wd_codex_dialog "$1" >/dev/null || return 1
+  while IFS=$'\t' read -r tag row; do
+    row=$(fm_wd_lower "$row")
+    printf '%s' "$row" | LC_ALL=C grep -Eq "$FM_WD_HS_AUTH_ERROR_RE" && { printf 'sign-in\n'; return 0; }
+    [ "$tag" != above ] || continue
+    for kind in captcha otp verification-code approval sign-in; do
+      case "$kind" in
+        captcha) re=$FM_WD_HS_CAPTCHA_RE ;;
+        otp) re=$FM_WD_HS_OTP_RE ;;
+        verification-code) re=$FM_WD_HS_CODE_RE ;;
+        approval) re=$FM_WD_HS_APPROVAL_RE ;;
+        *) re=$FM_WD_HS_SIGNIN_RE ;;
+      esac
+      printf '%s' "$row" | LC_ALL=C grep -Eq "$re" && { printf '%s\n' "$kind"; return 0; }
+    done
+  done < <(printf '%s\n' "$1" | fm_wd_strip_ansi | awk -v glyph="$FM_WD_PROMPT_RE" -v footer="$FM_WD_PICKER_FOOTER_RE" '
+    function blank(r) { gsub(/[ \t│┃|─━╭╮╰╯┌┐└┘-]/, "", r); return r == "" }
+    { row[NR] = $0 }
+    END {
+      last = NR
+      while (last > 0 && row[last] !~ /[^ \t]/) last--
+      seen = 0; floor = 1
+      for (i = last; i > 0; i--) if (row[i] ~ /[^ \t]/ && ++seen == 14) { floor = i; break }
+      # A picker cursor, as fm_wd_pane_dialog reads it: a cursor glyph before
+      # any text, or a bare `>` before a number. An unnumbered picker has no
+      # `1.` row, so its cursor row stands for its options.
+      if (row[last] ~ footer) for (i = last; i >= floor; i--) if (row[i] ~ /(❯|›)[ \t]*[^ \t]/ || row[i] ~ />[ \t]*[0-9]+[.)][ \t]/) { opt = i; break }
+      if (opt) {
+        if (row[opt] ~ /(❯|›|>)[ \t]*[0-9]+[.)][ \t]/) for (i = opt; i >= floor; i--) if (row[i] ~ /^[^0-9A-Za-z]*1[.)][ \t]/) { opt = i; break }
+        i = opt - 1
+        while (i >= floor && blank(row[i])) i--
+        for (; i >= floor && !blank(row[i]); i--) print "rows\t" row[i]
+        exit
+      }
+      for (i = last; i >= floor; i--) if (row[i] ~ glyph) { g = i; break }
+      for (i = last; i >= floor && i > g; i--) if ((blank(row[i]) && (index(row[i], "─") || index(row[i], "━"))) || row[i] ~ /\? for shortcuts/) { composer = 1; break }
+      if (!g && composer) exit
+      if (!g) { for (i = floor; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]; exit }
+      for (i = g - 1; i >= floor && n < 4; i--) if (row[i] ~ /[^ \t]/) { print "above\t" row[i]; n++ }
+      if (composer) exit
+      # A typed draft wraps onto rows indented under the glyph, inside the
+      # composer body; only a row at column 0 belongs to the harness.
+      for (i = g + 1; i <= last && !blank(row[i]) && row[i] ~ /^(│|┃|[|])?[ \t]/; i++) ;
+      for (; i <= last && !blank(row[i]); i++) print "below\t" row[i]
+      # An empty row, not a border, and then output below the prompt row: the
+      # prompt row is an echoed earlier turn and no composer shows below it.
+      # One indented row there is a footer, as under a Codex composer.
+      if (i > last || row[i] ~ /[^ \t]/) exit
+      n = 0
+      for (j = i; j <= last; j++) if (row[j] ~ /[^ \t]/) { n++; one = row[j] }
+      if (n == 0 || (n == 1 && one ~ /^[ \t]/)) exit
+      for (; i <= last; i++) if (row[i] ~ /[^ \t]/) print "rows\t" row[i]
+    }')
+  return 1
 }
 
 fm_wd_dialog_options() {  # <screen>
