@@ -1,0 +1,36 @@
+1795332252	22	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332232	20	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 22 --recovery-generation 9148.1795332251.tdnlLV
+wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=k] [at=1000]: need local deployment key
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: resolved [key=k]: answer consumed
+wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=k] [at=1000]: need local deployment key
+wake annotation: latest wake-EVENT observed at drain, not current state: p1.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p2.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p3.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p4.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: question.status: needs-decision [key=q] [at=1000]: choose local fixture
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+p0 [key=k] blocked: need local deployment key
+p1 [key=default] blocked: ordinary priority blocker
+p2 [key=default] blocked: ordinary priority blocker
+p3 [key=default] blocked: ordinary priority blocker
+p4 [key=default] blocked: ordinary priority blocker
+question [key=q] needs-decision: choose local fixture
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  6 task(s) in flight, but no live watcher process holds this home lock (last beat: 36s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.

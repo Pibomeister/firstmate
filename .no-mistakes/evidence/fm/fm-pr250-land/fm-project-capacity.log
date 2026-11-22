@@ -7,8 +7,21 @@ ok - a spawn beyond capacity is deferred before any record, brief, endpoint, wor
 ok - a prioritized order gets a dedicated worker immediately while full ordinary lanes keep running
 ok - an explicit priority is admitted past the lane cap and load ceiling that defer ordinary work
 ok - a prioritized spawn still refuses when the lane-capacity file cannot be read
+ok - a backlog priority that changes during endpoint startup keeps the worker and records the row's priority
+ok - a failed priority rewrite at the dispatch commit keeps the launched worker and warns with the manual fix
+ok - explicit priorities 1-4 are admitted past a full project and recorded
+ok - a missing or mismatched --priority is refused before any record, endpoint, worktree, or backlog move
+ok - a missing --priority is reported before a full project's capacity deferral
 ok - a project name with spaces is declared by taking the capacity from the last field
 ok - a project name beginning with # is declared, and a # comment stays a comment
 ok - a home reached through a symlink counts each of its workers once
 ok - a recorded PR handoff or a cleanup each frees exactly one place
 ok - a restart of a task id does not count that task's own record
+ok - only this project's ship and scout records hold places
+ok - every local home shares one declared capacity per project origin, and remote homes do not count
+ok - an unreadable state directory or task record refuses admission rather than undercounting
+ok - concurrent spawns can never both take the last place
+ok - a spawn that fails after admission leaves no record and holds no place
+ok - an unreadable declaration refuses every fresh spawn rather than guessing the limit
+ok - a batch reports a capacity deferral as deferred, not failed
+ok - an Orca spawn takes the shared project lock whenever a same-origin clone is capped and defers before creating anything

@@ -1,321 +1,224 @@
-
-$ bash bin/fm-lab-home.sh create {run-worktree}/.test-watch-live/home
-{run-worktree}/.test-watch-live/home
-
-exit=0
-
-$ bash bin/fm-lab-home.sh tmux-dir {run-worktree}/.test-watch-live/home
-/tmp/fml.tNGWLt
-
-exit=0
-
-$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-watch-live/home new-session -d -s watch -n primary -x 120 -y 40 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default display-message -p #{pid}
-18133
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p0 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p1 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p2 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p3 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p4 /bin/bash --noprofile --norc
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-question /bin/bash --noprofile --norc
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-live-watch/home
+{run-worktree}/.test-live-watch/home
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-session -d -s proof -n fm-p0 -x 120 -y 40 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-p1 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-p2 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-p3 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-p4 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-question /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-watch.sh
+signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+$ bash bin/fm-watch.sh
+stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
 $ bash bin/fm-watch.sh
 heartbeat
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
-$ bash bin/fm-watch.sh
-stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default new-window -d -t watch -n fm-p0-replacement /bin/bash --noprofile --norc
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home new-window -t proof -n fm-p0-replacement /bin/bash --noprofile --norc
+EXIT 0
 $ bash bin/fm-watch.sh
 heartbeat
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+1795332204	15	heartbeat	heartbeat	heartbeat
 $ bash bin/fm-watch.sh
-signal: {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+signal: {run-worktree}/.test-live-watch/home/state/p0.status
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332213	16	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332214	17	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
 $ bash bin/fm-watch.sh
-stale: watch:fm-p1
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+signal: {run-worktree}/.test-live-watch/home/state/p0.status
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332213	16	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332214	17	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332226	18	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332228	19	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
 $ bash bin/fm-watch.sh
-stale: watch:fm-p0-replacement
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p0.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p2.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p4.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p1.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/question.status
-
-exit=0
-
-$ bash -c . "$1/bin/fm-wake-lib.sh"; fm_wake_status_mark_current "$2" "$3" _ {run-worktree} {run-worktree}/.test-watch-live/home/state {run-worktree}/.test-watch-live/home/state/p3.status
-
-exit=0
-
+stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332213	16	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332214	17	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332226	18	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332228	19	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332232	20	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
 $ bash bin/fm-watch.sh
-stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
-
-exit=0
-
-PERSISTED P0 WAKE ROWS
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-1795320421	9	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
-
+signal: {run-worktree}/.test-live-watch/home/state/p0.status
+EXIT 0
+PERSISTED QUEUE
+1795332168	1	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332170	2	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332171	3	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332173	4	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	5	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332174	6	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	7	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332193	14	heartbeat	heartbeat	heartbeat
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332213	16	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332214	17	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332226	18	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332228	19	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332232	20	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332250	21	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332252	22	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
 $ bash bin/fm-wake-drain.sh
-1795320324	4	heartbeat	heartbeat	heartbeat
-1795320299	2	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=network] [at=1000]: synthetic network route missing)
-1795320299	3	stale	watch:fm-p0	stale: watch:fm-p0 (P0 blocker open for 600s: blocked [key=deploy] [at=1500]: synthetic deployment key still missing)
-1795320378	6	signal	p0.status	signal: {run-worktree}/.test-watch-live/home/state/p0.status
-1795320405	7	stale	watch:fm-p1	stale: watch:fm-p1
-1795320418	8	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement
-1795320421	9	stale	watch:fm-p0-replacement	stale: watch:fm-p0-replacement (P0 blocker open for 600s: blocked [key=deploy] [at=2000]: synthetic key missing again)
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 9 --recovery-generation 45281.1795320422.C4TnCB
-wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=deploy] [at=1000]: synthetic deployment key missing
-wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=network] [at=1000]: synthetic network route missing
-wake annotation: unread wake-EVENT since last drain, not current state: p0.status: blocked [key=deploy] [at=1500]: synthetic deployment key still missing
-wake annotation: unread wake-EVENT since last drain, not current state: p0.status: resolved [key=deploy] [at=1950]: synthetic key supplied
-wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=deploy] [at=2000]: synthetic key missing again
+1795332252	22	signal	p0.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status
+1795332175	8	signal	p1.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	9	signal	p2.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332176	10	signal	p3.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	11	signal	p4.status	signal: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332177	12	signal	question.status	needs-decision: {run-worktree}/.test-live-watch/home/state/p0.status {run-worktree}/.test-live-watch/home/state/p1.status {run-worktree}/.test-live-watch/home/state/p2.status {run-worktree}/.test-live-watch/home/state/p3.status {run-worktree}/.test-live-watch/home/state/p4.status {run-worktree}/.test-live-watch/home/state/question.status
+1795332181	13	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+1795332204	15	heartbeat	heartbeat	heartbeat
+1795332232	20	stale	proof:fm-p0	stale: proof:fm-p0 (P0 blocker open for 600s: blocked [key=k] [at=1000]: need local deployment key)
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 22 --recovery-generation 9148.1795332251.tdnlLV
+wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=k] [at=1000]: need local deployment key
+wake annotation: unread wake-EVENT since last drain, not current state: p0.status: resolved [key=k]: answer consumed
+wake annotation: latest wake-EVENT observed at drain, not current state: p0.status: blocked [key=k] [at=1000]: need local deployment key
+wake annotation: latest wake-EVENT observed at drain, not current state: p1.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p2.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p3.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: p4.status: blocked [at=1000]: ordinary priority blocker
+wake annotation: latest wake-EVENT observed at drain, not current state: question.status: needs-decision [key=q] [at=1000]: choose local fixture
 OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
-p0 [key=network] blocked: synthetic network route missing
-p0 [key=deploy] blocked: synthetic key missing again
-p1 [key=default] blocked: lower-priority synthetic blocker
-p2 [key=default] blocked: lower-priority synthetic blocker
-p3 [key=default] blocked: lower-priority synthetic blocker
-p4 [key=default] blocked: lower-priority synthetic blocker
-question [key=region] needs-decision: synthetic region choice
+p0 [key=k] blocked: need local deployment key
+p1 [key=default] blocked: ordinary priority blocker
+p2 [key=default] blocked: ordinary priority blocker
+p3 [key=default] blocked: ordinary priority blocker
+p4 [key=default] blocked: ordinary priority blocker
+question [key=q] needs-decision: choose local fixture
 OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
 OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
 ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ●  WATCHER DOWN - SUPERVISION IS OFF
-●  6 task(s) in flight, but no live watcher process holds this home lock (last beat: 12s ago).
+●  6 task(s) in flight, but no live watcher process holds this home lock (last beat: 36s ago).
 ●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
 ●  down 2s.
 ●  This is a supervision warning only; the guarded operation WILL still run.
 ●  After draining queued wakes, do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
 ●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
-
-exit=0
-
-$ tmux -S /tmp/fml.tNGWLt/tmux-501/default kill-server
-
-exit=0
-
-$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-watch-live/home
-
-exit=0
-
-CLEANUP disposable watcher lab removed.
+EXIT 0
+OBSERVED: no alarm at age 599; one at 600; no repeat after endpoint replacement or unreadable log; identical reopenings both delivered; priorities 1-4 and needs-decision had no P0 alarm.
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-watch/home kill-server
+EXIT 0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-live-watch/home
+EXIT 0

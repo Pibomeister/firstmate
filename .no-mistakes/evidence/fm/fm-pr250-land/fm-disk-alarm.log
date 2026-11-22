@@ -1,0 +1,30 @@
+1..28
+ok - help names the volume and threshold, and usage does not probe
+ok - levels nest at the 15, 10, and 5 GiB boundaries
+ok - a path that is not a directory leaves the alarm not in force
+ok - an unreadable volume refuses a crew launch and a new lane
+ok - the volume override is inert unless the test seam is armed
+ok - the host reading is a real probe or an absent volume
+ok - a fresh launch refuses before it creates anything, and a relaunch does not
+ok - a stop refuses a new home before any lease
+ok - a stop refuses a new local clone home before the clone, and a pause does not
+ok - a stop leaves an existing home unaffected
+ok - a stop refuses a new remote home before staging and leaves an existing home alone
+ok - the suite default leaves the alarm off the host volume
+ok - dispatch prints the alarm and still returns off
+ok - a no-mistakes worker is told to read the lane gate before starting a run
+ok - a disk-refused fresh launch is recorded with its arguments, and a relaunch is not
+ok - a cleared alarm dispatches every disk-refused task again by itself and reports it once
+ok - a record of work already launched or placed elsewhere is dropped without a second launch
+ok - a capacity deferral keeps its record and a failed re-dispatch is reported once
+ok - a launch the alarm admits removes its own retry record
+ok - the watcher dispatches the refused task again in the background and reports it once
+ok - a re-dispatch keeps each launch flag's value and drops the recorded routing in every form
+ok - disk recovery preserves priorities 0-4 in both option forms for ships and scouts
+ok - a recorded account is kept on the same harness, and a route it cannot satisfy is dispatched by hand
+ok - a recorded Hermes profile is kept on the same harness, and a harness change under it is dispatched by hand
+ok - a re-dispatch whose fresh routing is not clear launches nothing and asks for dispatch by hand
+ok - a held or blocked backlog item is skipped once, keeps its record, and is never launched
+ok - the scan report is written in full before it becomes visible
+ok - the retry record refuses malformed input
+FM_TEST_COMPLETE

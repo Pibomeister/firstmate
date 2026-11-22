@@ -1,0 +1,2 @@
+ok - a signal-deferred spawn bounds its verification so an unresponsive tasks-axi cannot hold the meta lock forever
+FOCUSED_COMPLETE

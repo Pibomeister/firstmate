@@ -1,0 +1,30 @@
+[
+  {
+    "suite": "fm-wake-queue",
+    "selectors": [
+      "test_drain_preserves_p0_alarm_before_later_stale",
+      "test_drain_preserves_identical_p0_reopenings"
+    ],
+    "exit": 0,
+    "seconds": 185.4
+  },
+  {
+    "suite": "fm-watch-triage",
+    "selectors": [
+      "test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+      "test_p0_alarms_scan_all_workers_before_sibling_signals",
+      "test_p0_blocker_fold_preserves_open_keys_and_ages"
+    ],
+    "exit": 0,
+    "seconds": 300.5
+  },
+  {
+    "suite": "fm-control-relaunch",
+    "selectors": [
+      "test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it",
+      "test_spawn_relaunch_refuses_contradicting_flags"
+    ],
+    "exit": 0,
+    "seconds": 415.6
+  }
+]

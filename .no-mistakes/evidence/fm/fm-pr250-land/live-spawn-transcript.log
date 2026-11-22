@@ -1,0 +1,923 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-live-spawn/home
+{run-worktree}/.test-live-spawn/home
+EXIT 0
+$ git init -q -b main {run-worktree}/.test-live-spawn/project
+EXIT 0
+$ git -C {run-worktree}/.test-live-spawn/project add README.md
+EXIT 0
+$ git -C {run-worktree}/.test-live-spawn/project commit -qm Fixture
+EXIT 0
+$ git clone --bare -q {run-worktree}/.test-live-spawn/project {run-worktree}/.test-live-spawn/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-spawn/project remote add origin {run-worktree}/.test-live-spawn/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-spawn/project fetch -q origin
+EXIT 0
+$ git -C {run-worktree}/.test-live-spawn/project remote set-head origin main
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home set-option -g default-shell /bin/bash
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home set-option -g default-command /bin/bash --noprofile --norc
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home display-message -p #{pid}
+38441
+EXIT 0
+$ tasks-axi add ordinary Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+ok: added ordinary (ship) -> Queued
+task:
+  id: ordinary
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start ordinary --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block ordinary --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh ordinary {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+deferred: project project admits 1 worker(s) at once on this machine ({run-worktree}/.test-live-spawn/home/config/project-capacity) and 1 already hold a place (holder); task ordinary was not launched and its backlog item stays queued - dispatch it again once one of them records its ready PR or is cleaned up
+EXIT 75
+$ tasks-axi add missing Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 2
+ok: added missing (ship) -> Queued
+task:
+  id: missing
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start missing --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block missing --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh missing {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+error: task missing has backlog priority 2; pass --priority 2 so its dedicated worker cannot wait behind ordinary lanes
+EXIT 1
+$ tasks-axi add mismatch Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 1
+ok: added mismatch (ship) -> Queued
+task:
+  id: mismatch
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start mismatch --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block mismatch --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh mismatch {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+error: task mismatch priority mismatch: its backlog row is 1, but this spawn passed --priority 0
+EXIT 1
+$ tasks-axi add unreadable Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 0
+ok: added unreadable (ship) -> Queued
+task:
+  id: unreadable
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start unreadable --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block unreadable --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh unreadable {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+fm-capacity: config/lane-capacity: unreadable
+error: spawn refused: lane capacity admission failed (fm-capacity.sh --spawn-gate exited 1); fix config/lane-capacity or config/load-relief, as its message above names, so the captain's worker limits are known
+EXIT 1
+$ tasks-axi add priority-0 Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 0
+ok: added priority-0 (ship) -> Queued
+task:
+  id: priority-0
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-0 --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-0 --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-0 {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+note: explicit --priority 0 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-spawn/home/data/priority-0/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-0
+notice: priority-0 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-spawn/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-0 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-0 harness=bash kind=ship mode=local-only yolo=off window=proof:fm-priority-0 worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/1/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-0
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@1
+endpoint_task_id=priority-0
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/1/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=ship
+priority=0
+mode=local-only
+yolo=off
+branch=fm/priority-0
+tasktmp=/tmp/fm-priority-0
+model=default
+effort=default
+spawn_gen=s1795332340.81839.25111
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home capture-pane -p -t proof:fm-priority-0
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-0/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-0
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-0+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332340.81839.25111.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE TERMINAL
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-0/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-0
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-0+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332340.81839.25111.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi show priority-0 --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+task:
+  id: priority-0
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home has-session -t proof
+EXIT 0
+$ tasks-axi add priority-1 Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 1
+ok: added priority-1 (ship) -> Queued
+task:
+  id: priority-1
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-1 --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-1 --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-1 {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+note: explicit --priority 1 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-spawn/home/data/priority-1/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-1
+notice: priority-1 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-spawn/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-1 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-1 harness=bash kind=ship mode=local-only yolo=off window=proof:fm-priority-1 worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/2/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-1
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@2
+endpoint_task_id=priority-1
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/2/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=ship
+priority=1
+mode=local-only
+yolo=off
+branch=fm/priority-1
+tasktmp=/tmp/fm-priority-1
+model=default
+effort=default
+spawn_gen=s1795332378.11822.31748
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home capture-pane -p -t proof:fm-priority-1
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/2/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/2/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-1/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-1+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332378.11822.31748.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE TERMINAL
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/2/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/2/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-1/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-1+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332378.11822.31748.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi show priority-1 --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+task:
+  id: priority-1
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home has-session -t proof
+EXIT 0
+$ tasks-axi add priority-2 Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 2
+ok: added priority-2 (ship) -> Queued
+task:
+  id: priority-2
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-2 --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-2 --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-2 {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+note: explicit --priority 2 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-spawn/home/data/priority-2/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-2
+notice: priority-2 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-spawn/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-2 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-2 harness=bash kind=ship mode=local-only yolo=off window=proof:fm-priority-2 worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/3/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-2
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@3
+endpoint_task_id=priority-2
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/3/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=ship
+priority=2
+mode=local-only
+yolo=off
+branch=fm/priority-2
+tasktmp=/tmp/fm-priority-2
+model=default
+effort=default
+spawn_gen=s1795332422.52527.28742
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home capture-pane -p -t proof:fm-priority-2
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/3/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/3/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-2/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-2
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-2+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332422.52527.28742.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE TERMINAL
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/3/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/3/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-2/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-2
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-2+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332422.52527.28742.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi show priority-2 --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+task:
+  id: priority-2
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 2
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home has-session -t proof
+EXIT 0
+$ tasks-axi add priority-3 Disposable admission proof --kind ship --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 3
+ok: added priority-3 (ship) -> Queued
+task:
+  id: priority-3
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-3 --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-3 --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-3 {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 3
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+note: explicit --priority 3 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-spawn/home/data/priority-3/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-3
+notice: priority-3 ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-spawn/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-3 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-3 harness=bash kind=ship mode=local-only yolo=off window=proof:fm-priority-3 worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/4/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-3
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@4
+endpoint_task_id=priority-3
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/4/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=ship
+priority=3
+mode=local-only
+yolo=off
+branch=fm/priority-3
+tasktmp=/tmp/fm-priority-3
+model=default
+effort=default
+spawn_gen=s1795332454.8998.17583
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home capture-pane -p -t proof:fm-priority-3
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/4/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/4/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-3/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-3
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-3+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332454.8998.17583.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE TERMINAL
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/4/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/4/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-3/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-3
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-3+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332454.8998.17583.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi show priority-3 --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+task:
+  id: priority-3
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home has-session -t proof
+EXIT 0
+$ tasks-axi add priority-4 Disposable admission proof --kind scout --file {run-worktree}/.test-live-spawn/home/data/backlog.md --priority 4
+ok: added priority-4 (scout) -> Queued
+task:
+  id: priority-4
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: scout
+  repo: "-"
+  priority: 4
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-4 --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-4 --by <other> --file={run-worktree}/.test-live-spawn/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-4 {run-worktree}/.test-live-spawn/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --scout --priority 4
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-spawn/home
+note: explicit --priority 4 admitted past the lane capacity deferral
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-spawn/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-4 without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-4 harness=bash kind=scout window=proof:fm-priority-4 worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/5/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-4
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@5
+endpoint_task_id=priority-4
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/5/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=scout
+priority=4
+tasktmp=/tmp/fm-priority-4
+model=default
+effort=default
+spawn_gen=s1795332495.68962.8592
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home capture-pane -p -t proof:fm-priority-4
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/5/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/5/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-4/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-4
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-4+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332495.68962.8592.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE TERMINAL
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-sp
+awn/pool/.treehouse/project-06f95d/5/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-spawn/pool/.treehouse/project-06f95d/5/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-4/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-4
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-4+b9eee79b6304b94c356116f9bff4d78f17a7cc7461d6428fd84d
+53a5b66f7ff5/launch.s1795332495.68962.8592.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi show priority-4 --file {run-worktree}/.test-live-spawn/home/data/backlog.md
+task:
+  id: priority-4
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: scout
+  repo: "-"
+  priority: 4
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home has-session -t proof
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-spawn/home kill-server
+EXIT 0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-live-spawn/home
+EXIT 0

@@ -1,0 +1,22 @@
+{
+  "window": "proof:fm-retry-0",
+  "tmux_socket": "/private/tmp/fml.IVxTuc/tmux-501/default",
+  "tmux_server_pid": "8779",
+  "tmux_server_identity": "Sun Nov 22 08:03:39 2026     tmux -f /dev/null -S /tmp/fml.IVxTuc/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc",
+  "tmux_window_id": "@1",
+  "endpoint_task_id": "retry-0",
+  "worktree": "{run-worktree}/.test-live-retry-4379/pool/.treehouse/project-b7025c/1/project",
+  "project": "{run-worktree}/.test-live-retry-4379/project",
+  "harness": "codex",
+  "approval_mode": "bypass",
+  "kind": "ship",
+  "mode": "local-only",
+  "yolo": "off",
+  "branch": "fm/retry-0",
+  "tasktmp": "/tmp/fm-retry-0",
+  "model": "default",
+  "effort": "default",
+  "spawn_gen": "s1795334743.32339.5542",
+  "control_relaunch_tx": "18087.20261122T080533Z.5204",
+  "priority": "0"
+}

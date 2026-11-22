@@ -10,4 +10,4 @@ ok - an abandoned same-process lock hold is reclaimed; a parent's live hold is n
 ok - a lock wait returns within its bound once its directory is removed
 ok - without BASHPID a subshell cannot release or reclaim its parent lock and owns its own hold
 ok - bounded acquire hands ownership to the waiting caller after contention
-not ok - presentation lock delayed the drain for 14s
+not ok - presentation lock delayed the drain for 8s

@@ -1,0 +1,17 @@
+{
+  "contract": "fm-claude-seed.v1 git blob identities, explicit merge intent paths",
+  "results": [
+    {
+      "path": ".agents/skills/afk/SKILL.md",
+      "declared_blob": "1fb8d37d9a017a579b6a15301d5bc6a51fa53620",
+      "actual_blob": "1fb8d37d9a017a579b6a15301d5bc6a51fa53620",
+      "match": true
+    },
+    {
+      "path": ".agents/skills/agent-skill-trigger-index/SKILL.md",
+      "declared_blob": "00918a4bb074b1304218bd57902563d21871e659",
+      "actual_blob": "00918a4bb074b1304218bd57902563d21871e659",
+      "match": true
+    }
+  ]
+}

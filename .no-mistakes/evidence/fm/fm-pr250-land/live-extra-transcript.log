@@ -1,0 +1,337 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-live-extra/home
+{run-worktree}/.test-live-extra/home
+EXIT 0
+$ git init -q -b main {run-worktree}/.test-live-extra/project
+EXIT 0
+$ git -C {run-worktree}/.test-live-extra/project add README.md
+EXIT 0
+$ git -C {run-worktree}/.test-live-extra/project commit -qm Fixture
+EXIT 0
+$ git clone --bare -q {run-worktree}/.test-live-extra/project {run-worktree}/.test-live-extra/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-extra/project remote add origin {run-worktree}/.test-live-extra/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-extra/project fetch -q origin
+EXIT 0
+$ git -C {run-worktree}/.test-live-extra/project remote set-head origin main
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-extra/progress; sleep 1; done"
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home set-option -g default-shell /bin/bash
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home set-option -g default-command /bin/bash --noprofile --norc
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home display-message -p #{pid}
+49735
+EXIT 0
+$ tasks-axi add race Disposable admission proof --kind ship --file {run-worktree}/.test-live-extra/home/data/backlog.md --priority 0
+ok: added race (ship) -> Queued
+task:
+  id: race
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start race --file={run-worktree}/.test-live-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block race --by <other> --file={run-worktree}/.test-live-extra/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh race {run-worktree}/.test-live-extra/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home list-windows -t proof -F #{window_name}
+fm-ordinary
+fm-race
+EXIT 0
+$ tasks-axi update race --priority 3 --file {run-worktree}/.test-live-extra/home/data/backlog.md
+ok: updated race (priority)
+task:
+  id: race
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[1]:
+  - Run `tasks-axi show race --full --file={run-worktree}/.test-live-extra/home/data/backlog.md` to see the result
+EXIT 0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-extra/home
+note: explicit --priority 0 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-extra/home/data/race/launch-brief.md records no ship branch; defaulting to legacy branch fm/race
+notice: race ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-extra/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching race without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+warning: backlog item race priority changed while its worker started: its row is 3, so the task record now carries 3 instead of 0
+spawned race harness=bash kind=ship mode=local-only yolo=off window=proof:fm-race worktree={run-worktree}/.test-live-extra/pool/.treehouse/project-214f93/1/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-race
+tmux_socket=/private/tmp/fml.wUQ1qc/tmux-501/default
+tmux_server_pid=49735
+tmux_server_identity=Sun Nov 22 07:32:39 2026     tmux -f /dev/null -S /tmp/fml.wUQ1qc/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-extra/progress; sleep 1; done"
+tmux_window_id=@1
+endpoint_task_id=race
+worktree={run-worktree}/.test-live-extra/pool/.treehouse/project-214f93/1/project
+project={run-worktree}/.test-live-extra/project
+harness=bash
+kind=ship
+mode=local-only
+yolo=off
+branch=fm/race
+tasktmp=/tmp/fm-race
+model=default
+effort=default
+spawn_gen=s1795332783.58135.9353
+priority=3
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home capture-pane -p -t proof:fm-race
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-ex
+tra/pool/.treehouse/project-214f93/1/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-extra/pool/.treehouse/project-214f93/1/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-race/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=race
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-race+01c01947ecc96dcfe0b3a9bcb7c139f1e8c342def4dfd8d63892536a4c
+80856a/launch.s1795332783.58135.9353.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+$ tasks-axi show race --file {run-worktree}/.test-live-extra/home/data/backlog.md
+task:
+  id: race
+  title: Disposable admission proof
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 3
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+EXIT 0
+$ bash bin/fm-afk-contract.sh enter --words Run the disposable prioritized order only. --spend 1
+Away posture recorded at 2026-11-22T07:33:46Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 1 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-22T07:33:46Z
+  expected return: not given
+  spend cap: 1 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    Run the disposable prioritized order only.
+EXIT 0
+$ tasks-axi add ordinary-away Disposable admission proof --kind ship --file {run-worktree}/.test-live-extra/home/data/backlog.md
+ok: added ordinary-away (ship) -> Queued
+task:
+  id: ordinary-away
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start ordinary-away --file={run-worktree}/.test-live-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block ordinary-away --by <other> --file={run-worktree}/.test-live-extra/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh ordinary-away {run-worktree}/.test-live-extra/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-extra/home
+error: spawn refused - the away-posture record caps concurrent workers at 1 and 2 ordinary task(s) are live in this home; task ordinary-away stays queued for the captain's return or for a worker to finish (spend cap: bin/fm-afk-contract.sh)
+EXIT 1
+$ tasks-axi add priority-away Disposable admission proof --kind ship --file {run-worktree}/.test-live-extra/home/data/backlog.md --priority 1
+ok: added priority-away (ship) -> Queued
+task:
+  id: priority-away
+  title: Disposable admission proof
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 1
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start priority-away --file={run-worktree}/.test-live-extra/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block priority-away --by <other> --file={run-worktree}/.test-live-extra/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-spawn.sh priority-away {run-worktree}/.test-live-extra/project /bin/bash -c 'echo REAL-SHELL-WORKER-READY; while read -r line; do echo shell-received; done' --mode local-only --yolo off --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-extra/home
+note: explicit --priority 1 admitted past the lane capacity deferral
+warning: {run-worktree}/.test-live-extra/home/data/priority-away/launch-brief.md records no ship branch; defaulting to legacy branch fm/priority-away
+notice: priority-away ships mode=local-only while the standing posture for project is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+warning: agent-kit supervisor declaration: {run-worktree}/.test-live-extra/user-home is inside the git repository at {run-worktree}; set XDG_STATE_HOME to a directory outside every repository
+warning: launching priority-away without AK_LIFECYCLE_SUPERVISOR_DECLARATION (reason above), so agent-kit will refuse its unattended lifecycle runs
+spawned priority-away harness=bash kind=ship mode=local-only yolo=off window=proof:fm-priority-away worktree={run-worktree}/.test-live-extra/pool/.treehouse/project-214f93/2/project
+EXIT 0
+PERSISTED TASK
+window=proof:fm-priority-away
+tmux_socket=/private/tmp/fml.wUQ1qc/tmux-501/default
+tmux_server_pid=49735
+tmux_server_identity=Sun Nov 22 07:32:39 2026     tmux -f /dev/null -S /tmp/fml.wUQ1qc/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-extra/progress; sleep 1; done"
+tmux_window_id=@2
+endpoint_task_id=priority-away
+worktree={run-worktree}/.test-live-extra/pool/.treehouse/project-214f93/2/project
+project={run-worktree}/.test-live-extra/project
+harness=bash
+kind=ship
+priority=1
+mode=local-only
+yolo=off
+branch=fm/priority-away
+tasktmp=/tmp/fm-priority-away
+model=default
+effort=default
+spawn_gen=s1795332854.66861.10680
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home capture-pane -p -t proof:fm-priority-away
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ treehouse get
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Entered worktree at {run-worktree}/.test-live-ex
+tra/pool/.treehouse/project-214f93/2/project. Type 'exit' to return.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+Eduardos-MacBook-Pro-2:project eduardopicazo$ cd -- '{run-worktree}
+5BSSJW7H9CA89HYN/.test-live-extra/pool/.treehouse/project-214f93/2/project'
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export GOTMPDIR=/tmp/fm-priority-away/gotmp
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export COMPACT_ADVISER_DISABLE=1
+Eduardos-MacBook-Pro-2:project eduardopicazo$ export FM_TASK_ID=priority-away
+Eduardos-MacBook-Pro-2:project eduardopicazo$ . '/tmp/fm-priority-away+01c01947ecc96dcfe0b3a9bcb7c139f1e8c342def4dfd8d63
+892536a4c80856a/launch.s1795332854.66861.10680.sh'
+REAL-SHELL-WORKER-READY
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+$ bash {run-worktree}/bin/fm-lab-home.sh tmux {run-worktree}/.test-live-extra/home kill-server
+EXIT 0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-live-extra/home
+EXIT 0

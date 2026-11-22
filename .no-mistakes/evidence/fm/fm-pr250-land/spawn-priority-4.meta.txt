@@ -1,0 +1,15 @@
+window=proof:fm-priority-4
+tmux_socket=/private/tmp/fml.YWlPGV/tmux-501/default
+tmux_server_pid=38441
+tmux_server_identity=Sun Nov 22 07:25:08 2026     tmux -f /dev/null -S /tmp/fml.YWlPGV/tmux-501/default new-session -d -s proof -n fm-ordinary -x 120 -y 40 /bin/bash -c "while :; do echo progress >> {run-worktree}/.test-live-spawn/progress; sleep 1; done"
+tmux_window_id=@5
+endpoint_task_id=priority-4
+worktree={run-worktree}/.test-live-spawn/pool/.treehouse/project-06f95d/5/project
+project={run-worktree}/.test-live-spawn/project
+harness=bash
+kind=scout
+priority=4
+tasktmp=/tmp/fm-priority-4
+model=default
+effort=default
+spawn_gen=s1795332495.68962.8592

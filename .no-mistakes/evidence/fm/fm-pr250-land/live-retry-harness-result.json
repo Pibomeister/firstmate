@@ -1,0 +1,16 @@
+{
+  "result": "pass",
+  "surface": "Real fm-disk-retry, localhost routing emulator, fm-spawn, fm-control, treehouse, private tmux, and machine Codex 0.169.0; no production account or model execution validation.",
+  "requests": [
+    {
+      "path": "/v1/systemone",
+      "model": "local-routing-oracle"
+    },
+    {
+      "path": "/v1/systemone",
+      "model": "local-routing-oracle"
+    }
+  ],
+  "native_runtime_evidence": "native-selected-executables.json",
+  "transaction_evidence": "relaunch-transaction.txt"
+}

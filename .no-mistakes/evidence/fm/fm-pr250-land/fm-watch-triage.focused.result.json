@@ -1,0 +1,10 @@
+{
+  "suite": "fm-watch-triage",
+  "selectors": [
+    "test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
+    "test_p0_alarms_scan_all_workers_before_sibling_signals",
+    "test_p0_blocker_fold_preserves_open_keys_and_ages"
+  ],
+  "exit": 0,
+  "seconds": 300.5
+}

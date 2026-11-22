@@ -1,0 +1,6 @@
+{
+  "suite": "fm-watch-open-decisions",
+  "selector": "test_watcher_loop",
+  "exit": 0,
+  "seconds": 7.4
+}

@@ -1,0 +1,5 @@
+{
+  "reason": "Required native transaction was already complete in the preceding run; stop the redundant retry and retain its finally cleanup.",
+  "parent": 79185,
+  "stopped_children": []
+}

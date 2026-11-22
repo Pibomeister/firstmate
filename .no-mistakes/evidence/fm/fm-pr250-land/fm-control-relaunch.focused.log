@@ -1,0 +1,3 @@
+ok - relaunch preserves ordinary and prioritized In-flight items without rewriting the transition
+ok - fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses
+FOCUSED_COMPLETE

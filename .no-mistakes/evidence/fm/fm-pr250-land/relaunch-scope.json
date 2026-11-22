@@ -1,0 +1,9 @@
+{
+  "broad_command": "bash tests/fm-control-relaunch.test.sh",
+  "disposition": "stopped; superseded by supported selector-based priority coverage",
+  "selectors": [
+    "test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it",
+    "test_spawn_relaunch_refuses_contradicting_flags"
+  ],
+  "reason": "The changed behavior is priority retention and refusal of a new priority; broad unrelated relaunch cases belong to CI."
+}

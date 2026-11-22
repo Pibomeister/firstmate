@@ -1,0 +1,16 @@
+window=proof:fm-retry-4
+tmux_socket=/private/tmp/fml.qOkh9M/tmux-501/default
+tmux_server_pid=87985
+tmux_server_identity=Sun Nov 22 08:07:10 2026     tmux -f /dev/null -S /tmp/fml.qOkh9M/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@2
+endpoint_task_id=retry-4
+worktree={run-worktree}/.test-live-retry-79185/pool/.treehouse/project-4441e9/2/project
+project={run-worktree}/.test-live-retry-79185/project
+harness=codex
+approval_mode=bypass
+kind=scout
+priority=4
+tasktmp=/tmp/fm-retry-4
+model=default
+effort=default
+spawn_gen=s1795334870.17102.15987

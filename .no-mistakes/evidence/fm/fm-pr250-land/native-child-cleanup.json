@@ -1,0 +1,16 @@
+{
+  "reason": "Native children retained the exact disposable fixture path after private tmux shutdown; all were launched by this test run.",
+  "owned_pids": [
+    61427,
+    66004,
+    67148,
+    93069
+  ],
+  "native_groups": [
+    61427,
+    66004,
+    93069,
+    67148
+  ],
+  "remaining": {}
+}

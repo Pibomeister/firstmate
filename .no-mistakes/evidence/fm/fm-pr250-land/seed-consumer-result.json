@@ -1,0 +1,6 @@
+{
+  "command": "bin/fm-quota-reroute.sh claude-tooling --config-dir <disposable-empty-config> --worktree \"$PWD\"",
+  "exit": 0,
+  "stdout": "worktree .agents/skills/ask-user-authority/SKILL.md\n",
+  "stderr": ""
+}

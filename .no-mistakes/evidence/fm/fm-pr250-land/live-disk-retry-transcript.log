@@ -1,0 +1,293 @@
+$ {run-worktree}/.test-codex-tool/node_modules/.bin/codex --version
+WARNING: proceeding, even though we could not create PATH aliases: CODEX_HOME points to "{run-worktree}/.test-live-retry-79185/codex-config", but that path does not exist
+codex-cli 0.162.1
+EXIT 0
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-live-retry-79185/home
+{run-worktree}/.test-live-retry-79185/home
+EXIT 0
+$ git init -q -b main {run-worktree}/.test-live-retry-79185/project
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-79185/project add README.md
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-79185/project commit -qm Fixture
+EXIT 0
+$ git clone --bare -q {run-worktree}/.test-live-retry-79185/project {run-worktree}/.test-live-retry-79185/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-79185/project remote add origin {run-worktree}/.test-live-retry-79185/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-79185/project fetch -q origin
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-79185/project remote set-head origin main
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home set-option -g default-shell /bin/bash
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home set-option -g default-command /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home display-message -p #{pid}
+87985
+EXIT 0
+$ tasks-axi add retry-0 Disposable local retry --kind ship --priority 0 --file {run-worktree}/.test-live-retry-79185/home/data/backlog.md
+ok: added retry-0 (ship) -> Queued
+task:
+  id: retry-0
+  title: Disposable local retry
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start retry-0 --file={run-worktree}/.test-live-retry-79185/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block retry-0 --by <other> --file={run-worktree}/.test-live-retry-79185/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-disk-retry.sh record retry-0 retry-0 {run-worktree}/.test-live-retry-79185/project --priority 0 --mode local-only --yolo off --harness codex
+EXIT 0
+$ bash bin/fm-disk-retry.sh scan
+check: disk alarm cleared (level=ok free_kib=38794284): re-dispatched by bin/fm-spawn.sh: retry-0
+EXIT 0
+PERSISTED TASK
+window=proof:fm-retry-0
+tmux_socket=/private/tmp/fml.qOkh9M/tmux-501/default
+tmux_server_pid=87985
+tmux_server_identity=Sun Nov 22 08:07:10 2026     tmux -f /dev/null -S /tmp/fml.qOkh9M/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@1
+endpoint_task_id=retry-0
+worktree={run-worktree}/.test-live-retry-79185/pool/.treehouse/project-4441e9/1/project
+project={run-worktree}/.test-live-retry-79185/project
+harness=codex
+approval_mode=bypass
+kind=ship
+priority=0
+mode=local-only
+yolo=off
+branch=fm/retry-0
+tasktmp=/tmp/fm-retry-0
+model=default
+effort=default
+spawn_gen=s1795334848.95832.20391
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home capture-pane -p -t proof:fm-retry-0
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-4441e9/1/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+EXIT 0
+LIVE CODEX TERMINAL
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-4441e9/1/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+$ tasks-axi add retry-4 Disposable local retry --kind scout --priority 4 --file {run-worktree}/.test-live-retry-79185/home/data/backlog.md
+ok: added retry-4 (scout) -> Queued
+task:
+  id: retry-4
+  title: Disposable local retry
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: scout
+  repo: "-"
+  priority: 4
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start retry-4 --file={run-worktree}/.test-live-retry-79185/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block retry-4 --by <other> --file={run-worktree}/.test-live-retry-79185/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-disk-retry.sh record retry-4 retry-4 {run-worktree}/.test-live-retry-79185/project --priority=4 --scout --harness codex
+EXIT 0
+$ bash bin/fm-disk-retry.sh scan
+check: disk alarm cleared (level=ok free_kib=38803132): re-dispatched by bin/fm-spawn.sh: retry-4
+EXIT 0
+PERSISTED TASK
+window=proof:fm-retry-4
+tmux_socket=/private/tmp/fml.qOkh9M/tmux-501/default
+tmux_server_pid=87985
+tmux_server_identity=Sun Nov 22 08:07:10 2026     tmux -f /dev/null -S /tmp/fml.qOkh9M/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@2
+endpoint_task_id=retry-4
+worktree={run-worktree}/.test-live-retry-79185/pool/.treehouse/project-4441e9/2/project
+project={run-worktree}/.test-live-retry-79185/project
+harness=codex
+approval_mode=bypass
+kind=scout
+priority=4
+tasktmp=/tmp/fm-retry-4
+model=default
+effort=default
+spawn_gen=s1795334870.17102.15987
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-79185/home capture-pane -p -t proof:fm-retry-4
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-4441e9/2/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+EXIT 0
+LIVE CODEX TERMINAL
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-4441e9/2/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+
+Required disk retry cases complete. Subsequent redundant setup is retained in redundant-extra-probe.log.

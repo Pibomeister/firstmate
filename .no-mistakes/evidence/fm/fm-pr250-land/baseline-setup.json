@@ -1,0 +1,4 @@
+{
+  "initial_runs": "stopped during shared orphan-fixture scan before any test result",
+  "rerun": "use repository-supported FM_TEST_SKIP_ORPHAN_REAP=1 to avoid the shared host temp scan"
+}

@@ -1,0 +1,9 @@
+{
+  "suite": "fm-wake-queue",
+  "selectors": [
+    "test_drain_preserves_p0_alarm_before_later_stale",
+    "test_drain_preserves_identical_p0_reopenings"
+  ],
+  "exit": 0,
+  "seconds": 185.4
+}

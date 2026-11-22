@@ -1,0 +1,449 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.test-live-retry-16362/home
+{run-worktree}/.test-live-retry-16362/home
+EXIT 0
+$ git init -q -b main {run-worktree}/.test-live-retry-16362/project
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-16362/project add README.md
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-16362/project commit -qm Fixture
+EXIT 0
+$ git clone --bare -q {run-worktree}/.test-live-retry-16362/project {run-worktree}/.test-live-retry-16362/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-16362/project remote add origin {run-worktree}/.test-live-retry-16362/origin.git
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-16362/project fetch -q origin
+EXIT 0
+$ git -C {run-worktree}/.test-live-retry-16362/project remote set-head origin main
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home set-option -g default-shell /bin/bash
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home set-option -g default-command /bin/bash --noprofile --norc
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home display-message -p #{pid}
+18720
+EXIT 0
+$ tasks-axi add retry-0 Disposable local retry --kind ship --priority 0 --file {run-worktree}/.test-live-retry-16362/home/data/backlog.md
+ok: added retry-0 (ship) -> Queued
+task:
+  id: retry-0
+  title: Disposable local retry
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: 0
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start retry-0 --file={run-worktree}/.test-live-retry-16362/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block retry-0 --by <other> --file={run-worktree}/.test-live-retry-16362/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-disk-retry.sh record retry-0 retry-0 {run-worktree}/.test-live-retry-16362/project --priority 0 --mode local-only --yolo off --harness codex
+EXIT 0
+$ bash bin/fm-disk-retry.sh scan
+check: disk alarm cleared (level=ok free_kib=38788324): re-dispatched by bin/fm-spawn.sh: retry-0
+EXIT 0
+PERSISTED TASK
+window=proof:fm-retry-0
+tmux_socket=/private/tmp/fml.e7V8TO/tmux-501/default
+tmux_server_pid=18720
+tmux_server_identity=Sun Nov 22 08:01:00 2026     tmux -f /dev/null -S /tmp/fml.e7V8TO/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@1
+endpoint_task_id=retry-0
+worktree={run-worktree}/.test-live-retry-16362/pool/.treehouse/project-9c1edb/1/project
+project={run-worktree}/.test-live-retry-16362/project
+harness=codex
+approval_mode=bypass
+kind=ship
+priority=0
+mode=local-only
+yolo=off
+branch=fm/retry-0
+tasktmp=/tmp/fm-retry-0
+model=default
+effort=default
+spawn_gen=s1795334472.24662.23677
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home capture-pane -p -t proof:fm-retry-0
+
+  Folder access
+  {run-worktree}/.test-live-retry-16362/pool/.tre
+  ehouse/project-9c1edb/1/project
+
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:
+  {run-worktree}/.test-live-retry-16362/project
+
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings
+  can run code automatically, even without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+
+› 1. Trust and continue
+  2. Back to Agent Command Center
+
+  enter continue · esc back
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+LIVE CODEX TERMINAL
+
+  Folder access
+  {run-worktree}/.test-live-retry-16362/pool/.tre
+  ehouse/project-9c1edb/1/project
+
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:
+  {run-worktree}/.test-live-retry-16362/project
+
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings
+  can run code automatically, even without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+
+› 1. Trust and continue
+  2. Back to Agent Command Center
+
+  enter continue · esc back
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+$ tasks-axi add retry-4 Disposable local retry --kind scout --priority 4 --file {run-worktree}/.test-live-retry-16362/home/data/backlog.md
+ok: added retry-4 (scout) -> Queued
+task:
+  id: retry-4
+  title: Disposable local retry
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: scout
+  repo: "-"
+  priority: 4
+  created: 2026-11-22
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start retry-4 --file={run-worktree}/.test-live-retry-16362/home/data/backlog.md` to move it to in flight
+  - Run `tasks-axi block retry-4 --by <other> --file={run-worktree}/.test-live-retry-16362/home/data/backlog.md` to record a dependency
+EXIT 0
+$ bash bin/fm-disk-retry.sh record retry-4 retry-4 {run-worktree}/.test-live-retry-16362/project --priority=4 --scout --harness codex
+EXIT 0
+$ bash bin/fm-disk-retry.sh scan
+check: disk alarm cleared (level=ok free_kib=38794796): re-dispatched by bin/fm-spawn.sh: retry-4
+EXIT 0
+PERSISTED TASK
+window=proof:fm-retry-4
+tmux_socket=/private/tmp/fml.e7V8TO/tmux-501/default
+tmux_server_pid=18720
+tmux_server_identity=Sun Nov 22 08:01:00 2026     tmux -f /dev/null -S /tmp/fml.e7V8TO/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@2
+endpoint_task_id=retry-4
+worktree={run-worktree}/.test-live-retry-16362/pool/.treehouse/project-9c1edb/2/project
+project={run-worktree}/.test-live-retry-16362/project
+harness=codex
+approval_mode=bypass
+kind=scout
+priority=4
+tasktmp=/tmp/fm-retry-4
+model=default
+effort=default
+spawn_gen=s1795334491.80242.2179
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home capture-pane -p -t proof:fm-retry-4
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-9c1edb/2/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+EXIT 0
+LIVE CODEX TERMINAL
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-9c1edb/2/project
+
+
+
+
+
+
+
+
+                                                       ⣀⣤⣤⣤⣀⣀
+                                                    ⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣦⣤⣤⣤⣤⣤⣤⡀
+                                                  ⢀⣾⣿⣿⠿⠋⠉⠉⢉⣭⣿⣿⣿⣿⣿⠿⣿⣿⣿⣿⣷⣄
+                                                 ⣀⣾⣿⣿⠃ ⣀⣴⣾⣿⣿⡿⠟⠋ ⣀⡀ ⠈⠙⢿⣿⣿⣧
+                                              ⣀⣶⣿⣿⣿⣿⡇ ⢸⣿⣿⡿⠛⠉⢀⣠⣴⣿⣿⣿⣷⣦⣀⠈⢻⣿⣿⡇
+                                             ⣰⣿⣿⡿⢿⣿⣿⡇ ⢸⣿⣿⢀⣤⣶⣿⣿⣿⠟⠛⠻⣿⣿⣿⣿⣮⣿⣿⡷
+                                            ⢰⣿⣿⡟⠁⢸⣿⣿⡇ ⢸⣿⣿⣿⣿⠿⠿⣿⣿⣿⣦⣄⡀⠈⠛⠿⣿⣿⣿⣧⡀
+                                            ⣾⣿⣿⠃ ⢸⣿⣿⡇ ⢸⣿⣿⠋⠁  ⠈⠙⢻⣿⣿⣿⣶⣤⡀ ⠹⢿⣿⣷⡄
+                                            ⢸⣿⣿⣇ ⠸⣿⣿⣷⣦⣼⣿⣿      ⢸⣿⣿⠻⢿⣿⣿⡇ ⠘⣿⣿⣿
+                                            ⠈⢿⣿⣿⣦⡀⠈⠛⠿⣿⣿⣿⣿⣄⡀  ⢀⣠⣼⣿⣿  ⣿⣿⡇  ⣿⣿⣿⠇
+                                              ⢻⣿⣿⣿⣷⣦⣀⠈⠙⠻⣿⣿⣿⣶⣶⣿⣿⣿⣿⣿  ⣿⣿⡇ ⣠⣿⣿⣿
+                                              ⢸⣿⣿⡿⢿⣿⣿⣿⣦⣠⣴⣿⣿⣿⡿⠟⠋⢸⣿⣿  ⣿⣿⣷⣴⣿⣿⣿⠃
+                                              ⠘⣿⣿⣷ ⠈⠛⢿⣿⣿⣿⠿⠋⠉ ⣠⣴⣿⣿⣿  ⣿⣿⣿⣿⣿⠟⠁
+                                               ⠻⣿⣿⣿⣤⣀ ⠈⠉ ⢀⣤⣶⣿⣿⣿⠿⠟⠁ ⣰⣿⣿⡟⠋⠁
+                                                ⠈⠿⣿⣿⣿⣿⣶⣾⣿⣿⣿⣿⠟⠋⠁  ⣠⣼⣿⣿⡟
+                                                   ⠙⠛⠛⠛⠻⠛⢿⣿⣿⣿⣿⣷⣾⣿⣿⣿⡿⠏
+                                                          ⠈⠙⠛⠿⠿⠿⠿⠛⠉
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  ? for shortcuts
+$ bash bin/fm-spawn.sh retry-0 --relaunch --priority 1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-retry-16362/home
+error: --relaunch reuses the task's recorded priority; --priority cannot override it
+EXIT 1
+PERSISTED TASK
+window=proof:fm-retry-0
+tmux_socket=/private/tmp/fml.e7V8TO/tmux-501/default
+tmux_server_pid=18720
+tmux_server_identity=Sun Nov 22 08:01:00 2026     tmux -f /dev/null -S /tmp/fml.e7V8TO/tmux-501/default new-session -d -s proof -n primary -x 120 -y 40 /bin/bash --noprofile --norc
+tmux_window_id=@1
+endpoint_task_id=retry-0
+worktree={run-worktree}/.test-live-retry-16362/pool/.treehouse/project-9c1edb/1/project
+project={run-worktree}/.test-live-retry-16362/project
+harness=codex
+approval_mode=bypass
+kind=ship
+priority=0
+mode=local-only
+yolo=off
+branch=fm/retry-0
+tasktmp=/tmp/fm-retry-0
+model=default
+effort=default
+spawn_gen=s1795334472.24662.23677
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home capture-pane -p -t proof:fm-retry-0
+
+  Folder access
+  {run-worktree}/.test-live-retry-16362/pool/.tre
+  ehouse/project-9c1edb/1/project
+
+  Note: You’re in a subdirectory of a Git project. Trusting will apply to the repository root:
+  {run-worktree}/.test-live-retry-16362/project
+
+  Trust this folder? Codex can read, edit, and run files here, subject to your permission settings. Folder settings
+  can run code automatically, even without a model request. Continue only if you trust these files. Your trust
+  decision will be saved.
+
+› 1. Trust and continue
+  2. Back to Agent Command Center
+
+  enter continue · esc back
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home send-keys -t proof:fm-retry-0 Enter
+EXIT 0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home capture-pane -p -t proof:fm-retry-0
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-9c1edb/1/project
+  permissions: YOLO mode
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol default · {run-worktree}/.test-live-
+  retry-16362/pool/.treehouse/project-9c1edb/1/project
+  ← for agents · ? for shortcuts                                                               ⚠ 1 warning · f2 to view
+EXIT 0
+COMPOSER empty
+READY TERMINAL
+
+  >_ OpenAI Codex (v0.169.0)
+     {run-worktree}/…/project-9c1edb/1/project
+  permissions: YOLO mode
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+› Ask Codex to do anything
+
+  GPT-6.1-Sol default · {run-worktree}/.test-live-
+  retry-16362/pool/.treehouse/project-9c1edb/1/project
+  ← for agents · ? for shortcuts                                                               ⚠ 1 warning · f2 to view
+$ bash bin/fm-control.sh retry-0 relaunch --note Continue observing the local disposable refusal without editing files.
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.test-live-retry-16362/home
+error: exit-delivered retry-0 interrupt=not-needed exit-command=delivered agent-state=alive exit=unconfirmed; the agent did not stop within 30s
+error: relaunch of retry-0 failed while stopping the old agent, which is still running; its original instructions were restored
+EXIT 1
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.test-live-retry-16362/home kill-server
+EXIT 0
+NATIVE CHILD CLEANUP {"owned": [19110, 64132], "remaining": {}}
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.test-live-retry-16362/home
+EXIT 0

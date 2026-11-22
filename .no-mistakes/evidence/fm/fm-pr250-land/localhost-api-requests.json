@@ -1,0 +1,10 @@
+[
+  {
+    "path": "/v1/systemone",
+    "model": "local-routing-oracle"
+  },
+  {
+    "path": "/v1/systemone",
+    "model": "local-routing-oracle"
+  }
+]

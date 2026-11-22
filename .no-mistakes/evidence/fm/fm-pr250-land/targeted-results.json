@@ -1,158 +1,77 @@
 [
   {
-    "name": "project-capacity",
-    "command": [
-      "bash",
-      "tests/fm-project-capacity.test.sh"
-    ],
+    "suite": "fm-project-capacity",
     "exit": 0,
-    "timeout": false,
-    "seconds": 799.81
+    "seconds": 1487.8
   },
   {
-    "name": "afk-contract",
-    "command": [
-      "bash",
-      "tests/fm-afk-contract.test.sh"
-    ],
-    "exit": 0,
-    "timeout": false,
-    "seconds": 97.9
-  },
-  {
-    "name": "backlog-atomicity",
-    "command": [
-      "bash",
-      "tests/fm-backlog-atomicity.test.sh"
-    ],
+    "suite": "fm-watch-open-decisions",
     "exit": 1,
-    "timeout": false,
-    "seconds": 686.72
+    "seconds": 180.6
   },
   {
-    "name": "classify-decision-key",
-    "command": [
-      "bash",
-      "tests/fm-classify-decision-key.test.sh"
-    ],
+    "suite": "fm-disk-alarm",
     "exit": 0,
-    "timeout": false,
-    "seconds": 25.95
+    "seconds": 223.6
   },
   {
-    "name": "classify-corr-token",
-    "command": [
-      "bash",
-      "tests/fm-classify-corr-token.test.sh"
-    ],
-    "exit": 0,
-    "timeout": false,
-    "seconds": 130.09
-  },
-  {
-    "name": "branch-priority",
-    "command": [
-      "bash",
-      "tests/fm-branch-supervision.test.sh",
-      "test_branch_prompt_delivers_priority_supervision"
-    ],
-    "exit": 0,
-    "timeout": false,
-    "seconds": 1.56
-  },
-  {
-    "name": "daemon-priority",
-    "command": [
-      "bash",
-      "tests/fm-daemon.test.sh",
-      "test_p0_alarm_reaches_supervision_after_blocker_signal"
-    ],
-    "exit": 0,
-    "timeout": false,
-    "seconds": 18.63
-  },
-  {
-    "name": "wake-queue",
-    "command": [
-      "bash",
-      "tests/fm-wake-queue.test.sh"
-    ],
+    "suite": "fm-backlog-atomicity",
     "exit": 1,
-    "timeout": false,
-    "seconds": 310.75
+    "seconds": 1230.3
   },
   {
-    "name": "watch-open-p0",
-    "command": [
-      "bash",
-      "tests/fm-watch-open-decisions.test.sh",
-      "test_p0_origins_only_for_due_unsurfaced_blockers",
-      "test_p0_keyed_note_updates_keep_first_opening",
-      "test_p0_once_only_survives_endpoint_replacement",
-      "test_p0_marker_survives_unreadable_status",
-      "test_p0_invalid_opening_time_is_explicit_and_reopens",
-      "test_timed_cursor_retirement"
-    ],
+    "suite": "fm-branch-supervision",
     "exit": 0,
-    "timeout": false,
-    "seconds": 30.62
+    "seconds": 432.4
   },
   {
-    "name": "control-priority",
-    "command": [
-      "bash",
-      "tests/fm-control-relaunch.test.sh",
-      "test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it",
-      "test_spawn_relaunch_refuses_contradicting_flags"
-    ],
+    "suite": "fm-capacity",
     "exit": 0,
-    "timeout": false,
-    "seconds": 270.39
+    "seconds": 150.9
   },
   {
-    "name": "priority-worker-live",
-    "command": [
-      "bash",
-      "tests/fm-priority-worker-live-e2e.test.sh"
-    ],
+    "suite": "fm-classify-decision-key",
     "exit": 0,
-    "timeout": false,
-    "seconds": 0.52
+    "seconds": 22.7
   },
   {
-    "name": "test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
-    "command": [
-      "env",
-      "FM_TEST_ONLY=test_p0_blocker_surfaces_exact_text_once_at_ten_minutes",
-      "bash",
-      "tests/fm-watch-triage.test.sh"
-    ],
+    "suite": "fm-daemon",
     "exit": 0,
-    "timeout": false,
-    "seconds": 49.19
+    "seconds": 647.6
   },
   {
-    "name": "test_p0_alarms_scan_all_workers_before_sibling_signals",
-    "command": [
-      "env",
-      "FM_TEST_ONLY=test_p0_alarms_scan_all_workers_before_sibling_signals",
-      "bash",
-      "tests/fm-watch-triage.test.sh"
-    ],
-    "exit": 0,
-    "timeout": false,
-    "seconds": 24.94
+    "suite": "fm-wake-queue",
+    "exit": 1,
+    "seconds": 47.7
   },
   {
-    "name": "test_p0_blocker_fold_preserves_open_keys_and_ages",
-    "command": [
-      "env",
-      "FM_TEST_ONLY=test_p0_blocker_fold_preserves_open_keys_and_ages",
-      "bash",
-      "tests/fm-watch-triage.test.sh"
-    ],
+    "suite": "fm-watch-triage",
+    "exit": 1,
+    "seconds": 29.8
+  },
+  {
+    "suite": "fm-failover",
     "exit": 0,
-    "timeout": false,
-    "seconds": 59.61
+    "seconds": 620.2
+  },
+  {
+    "suite": "fm-control-relaunch",
+    "exit": 143,
+    "seconds": 175.1
+  },
+  {
+    "suite": "fm-afk-contract",
+    "exit": 0,
+    "seconds": 161.9
+  },
+  {
+    "suite": "fm-spawn-batch",
+    "exit": 0,
+    "seconds": 69.6
+  },
+  {
+    "suite": "fm-priority-worker-live-e2e",
+    "exit": 0,
+    "seconds": 0.8
   }
 ]
