@@ -877,8 +877,8 @@ fm_backlog_record_set_priority() {  # <meta> <priority-or-empty> <state>
         priority=*) ;;
         *) printf '%s\n' "$line" ;;
       esac
-    done < "$meta"
-    [ -z "$value" ] || printf 'priority=%s\n' "$value"
+    done < "$meta" &&
+      { [ -z "$value" ] || printf 'priority=%s\n' "$value"; }
   } > "$tmp" || {
     rm -f "$tmp"
     FM_BACKLOG_TRANSITION_ERROR="could not stage the task record's priority update"

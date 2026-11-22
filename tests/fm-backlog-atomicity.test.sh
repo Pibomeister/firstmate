@@ -759,6 +759,37 @@ test_backlog_callers_refuse_unreadable_backend_config() (
   pass "backlog readers and mutations refuse unresolved backends without touching either backlog"
 )
 
+# A priority rewrite whose source record cannot be read must keep the original
+# record: publishing what was staged would replace it with a record holding
+# only the priority field.
+test_priority_rewrite_keeps_an_unreadable_record() (
+  local case_dir state meta leftover rc=0
+  case_dir="$TMP_ROOT/priority-unreadable"
+  state="$case_dir/home/state"
+  meta="$state/task-u.meta"
+  mkdir -p "$state"
+  printf '%s\n' 'window=fm-task-u' 'spawn_gen=g1' 'priority=2' > "$meta"
+  cp "$meta" "$case_dir/meta-before"
+  chmod 000 "$meta"
+  if [ -r "$meta" ]; then
+    chmod 600 "$meta"
+    pass "skipped: this user can read a mode-000 file, so the source record cannot be made unreadable"
+    return 0
+  fi
+  . "$ROOT/bin/fm-tasks-axi-lib.sh"
+  . "$ROOT/bin/fm-backlog-transition-lib.sh"
+  fm_backlog_record_set_priority "$meta" 0 "$state" 2>/dev/null || rc=$?
+  chmod 600 "$meta"
+  [ "$rc" -ne 0 ] || fail "the priority rewrite reported success although its source record was unreadable"
+  cmp -s "$case_dir/meta-before" "$meta" \
+    || fail "the priority rewrite replaced an unreadable record: $(cat "$meta")"
+  leftover=$(find "$state" -name '.task-u.meta.priority.*' -print)
+  [ -z "$leftover" ] || fail "the refused priority rewrite left its staging file: $leftover"
+  assert_contains "$FM_BACKLOG_TRANSITION_ERROR" "could not stage the task record's priority update" \
+    "the refused priority rewrite did not say why"
+  pass "a priority rewrite refuses to publish when its source record cannot be read"
+)
+
 test_captain_hold_preserves_relocated_backlog_on_backend_error() {
   local case_dir home data config_state id out rc show
   id='backend-hold-row'
@@ -3067,6 +3098,7 @@ test_a_persistent_secondmate_is_never_a_backlog_item() {
 test_backend_resolution_preserves_config_errors
 test_backend_resolution_preserves_precedence_and_defaults
 test_backlog_callers_refuse_unreadable_backend_config
+test_priority_rewrite_keeps_an_unreadable_record
 test_captain_hold_preserves_relocated_backlog_on_backend_error
 test_dispatch_moves_the_item_in_flight_in_the_same_run
 test_dispatch_omits_the_file_for_a_beads_show

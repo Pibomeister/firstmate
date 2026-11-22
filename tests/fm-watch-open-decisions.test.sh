@@ -254,6 +254,25 @@ test_p0_marker_survives_unreadable_status() {
   [ ! -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'an absent status log kept the surfaced marker'
   pass 'an unreadable status log keeps the once-only marker; an absent one clears it'
 }
+test_p0_marker_survives_status_read_failure() {
+  local fail_reader="$TMP_ROOT/p0-failing-reader"
+  printf '#!/bin/sh\nexit 1\n' > "$fail_reader"
+  chmod +x "$fail_reader"
+  reset_case
+  printf 'priority=0\nkind=ship\nwindow=test:worker\n' > "$STATE/worker.meta"
+  printf 'blocked [key=key] [at=1000]: deployment key missing\n' > "$STATE/worker.status"
+  FM_WATCH_NOW=1600 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'due blocker did not alarm'
+  rm -f "$STATE"/.worker.open-decisions-cursor*
+  ( FM_STATUS_IDENTITY_READER="$fail_reader" FM_WATCH_NOW=1700 p0_blocker_alarm test:worker worker ) 2>/dev/null || true
+  [ -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'a failed status identity read with no cursor dropped the surfaced marker'
+  printf 'not a cursor\n' > "$STATE/.worker.open-decisions-cursor.timed-all"
+  ( FM_STATUS_SPAN_READER="$fail_reader" FM_WATCH_NOW=1750 p0_blocker_alarm test:worker worker ) 2>/dev/null || true
+  [ -e "$STATE/.p0-blocker-surfaced-worker" ] || fail 'a failed status span read with an invalid cursor dropped the surfaced marker'
+  FM_WATCH_NOW=1800 p0_blocker_alarm test:worker worker
+  [ "$(count_wakes)" = 1 ] || fail 'a failed status read re-alarmed the same opening'
+  pass 'a status log read failure with no trusted cursor keeps the once-only marker'
+}
 test_p0_invalid_opening_time_is_explicit_and_reopens() {
   local declaration diagnostic
   for declaration in \
@@ -794,7 +813,7 @@ fm_test_run test_disabled test_oldest_and_backoff test_numeric_keys_are_distinct
   test_wait_exemptions test_unknown_times_and_keyless test_timed_fold_is_incremental \
   test_p0_origins_only_for_due_unsurfaced_blockers \
   test_p0_keyed_note_updates_keep_first_opening test_p0_once_only_survives_endpoint_replacement \
-  test_p0_marker_survives_unreadable_status \
+  test_p0_marker_survives_unreadable_status test_p0_marker_survives_status_read_failure \
   test_p0_invalid_opening_time_is_explicit_and_reopens \
   test_invalid_settings test_timed_cursor_retirement test_watcher_loop \
   test_away_age_route test_away_age_page_and_staleness \

@@ -708,7 +708,7 @@ hash_pane() {
 }
 
 p0_blocker_alarm() {  # <window> <task>
-  local win=$1 task=$2 meta statusf last opened now age marker scope reason
+  local win=$1 task=$2 meta statusf last opened now age marker scope reason read_rc=0
   local open origins='' key verb until opening note origin_key number surfaced scopes='' detail
   [ -n "$task" ] || return 0
   meta="$STATE/$task.meta"
@@ -723,10 +723,17 @@ p0_blocker_alarm() {  # <window> <task>
   fi
   # A status log that exists but cannot be read right now proves nothing about
   # its openings, so the marker stays; dropping it would re-alarm them later.
+  # The strict read reports a failed stat or span read the same way, instead of
+  # an empty open set when no trusted cursor exists.
   if [ ! -f "$statusf" ] || [ ! -r "$statusf" ] || [ -L "$statusf" ]; then
     return 0
   fi
-  open=$(status_open_decisions_incremental "$statusf" '' timed-all) || exit 1
+  open=$(status_open_decisions_incremental "$statusf" '' timed-all strict) || read_rc=$?
+  case "$read_rc" in
+    0) ;;
+    3) return 0 ;;
+    *) exit 1 ;;
+  esac
   surfaced=$(cat "$marker" 2>/dev/null || true)
   fm_watch_now now
   while IFS=$'\t' read -r key verb opened until opening note; do
@@ -771,7 +778,8 @@ EOF
 $open
 EOF
   if [ -n "$scopes" ]; then
-    printf '%s' "$scopes" > "$marker" || {
+    { printf '%s' "$scopes" > "$marker.tmp.$$" && mv -f "$marker.tmp.$$" "$marker"; } || {
+      rm -f "$marker.tmp.$$"
       echo "error: P0 blocker wakes were queued for $task but their once-only marker could not be written" >&2
       exit 1
     }
@@ -5740,9 +5748,12 @@ while :; do
     task=$(window_to_task "$w" "$STATE")
     p0_blocker_alarm "$w" "$task"
   done < <(recorded_windows)
-  [ -z "$P0_BLOCKER_ALARMS" ] || wake "$P0_BLOCKER_ALARMS"
 
+  # The P0 alarms are already queued, so a captain failover wake that ends this
+  # poll first still leaves them for the supervisor; the reverse order would
+  # skip the failover check until a later poll.
   captain_provider_failover_check || true
+  [ -z "$P0_BLOCKER_ALARMS" ] || wake "$P0_BLOCKER_ALARMS"
 
   fleet_heartbeat_publish_detached
 

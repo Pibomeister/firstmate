@@ -1386,6 +1386,9 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # malformed worker stamp whose colons used to pose as the head/note separator
 # no longer opens or closes anything; cursors folded under that reading are
 # discarded.
+# 10: the fold gained the timed-all view, which ages keyless events and keeps
+# each opening's identity across keyed note updates, so cursors folded before
+# it are discarded.
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.

@@ -874,7 +874,7 @@ test_priorities_one_to_four_are_admitted_past_full_capacity() {
   pass "explicit priorities 1-4 are admitted past a full project and recorded"
 }
 
-# A priority refusal comes after the launch brief is rendered but before any
+# A priority refusal comes before the launch brief is rendered and before any
 # record, endpoint, worktree, or backlog move exists.
 assert_priority_refusal_launched_nothing() {  # <case-dir> <home> <id> <calls-before> <worktrees-before>
   local case_dir=$1 home=$2 id=$3 before=$4 worktrees=$5 after
