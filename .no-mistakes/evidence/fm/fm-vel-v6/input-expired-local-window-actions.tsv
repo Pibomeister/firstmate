@@ -1,0 +1,5 @@
+1795378821	wd17953788216d0d47	{run-worktree}/.stall-validation-lab/input	input	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795378822	wd17953788216d0d47	{run-worktree}/.stall-validation-lab/input	input	stall-input	page	done	owner paged
+1795378823	wd1795378823ebbdd2	{run-worktree}/.stall-validation-lab/input	input	unread-input	nudge	refused	no recorded endpoint
+1795378830	wd17953788305adda4	{run-worktree}/.stall-validation-lab/input	input	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795378830	wd17953788305adda4	{run-worktree}/.stall-validation-lab/input	input	stall-input	page	done	owner paged

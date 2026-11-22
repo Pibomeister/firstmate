@@ -1,0 +1,1 @@
+Firstmate watchdog: 1 ready PRs on unheld have waited up to 16 minutes without landing under standing authority: https://github.com/synthetic/repo/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is {run-worktree}/.stall-validation-lab/unheld/state/watchdog/actions.tsv.

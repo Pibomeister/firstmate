@@ -1,26 +1,42 @@
 [
   {
-    "name": "Input threshold, live holder, fresh beacon, rate limit and inbox",
-    "result": "pass"
+    "name": "Synthetic local input crosses 900 seconds; live holder and fresh heartbeat do not suppress the page; repeats are limited",
+    "result": "pass",
+    "live": true
   },
   {
-    "name": "Finished statuses, decision closers and no-mistakes handoff",
-    "result": "pass"
+    "name": "Synthetic local ready GitHub and Forgejo PRs page once using the delivered PR and exact merge-marker identity",
+    "result": "pass",
+    "live": true
   },
   {
-    "name": "Declared waits and malformed timestamps",
-    "result": "pass"
+    "name": "Synthetic local declared waits and done/failed-only homes stay quiet; active work beside finished work still pages",
+    "result": "pass",
+    "live": true
   },
   {
-    "name": "Owner hold and failed hold read",
-    "result": "pass"
+    "name": "Synthetic local backlog captain hold suppresses ready PR paging; unheld and unreadable holds do not hide stalls",
+    "result": "pass",
+    "live": true
   },
   {
-    "name": "Stall pages during pending restart pickup",
-    "result": "pass"
+    "name": "Synthetic local owner-merge waits, Gerrit, scouts, and PRs below 900 seconds stay quiet",
+    "result": "pass",
+    "live": true
   },
   {
-    "name": "Delivered PR identity, merge markers and authority guards",
-    "result": "pass"
+    "name": "Synthetic local dry-run records without sending; disabled alerts report a refused page",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Synthetic local no-mistakes handoffs remain in flight while direct-PR/local-only done reports finish; decision closers preserve delivered PRs",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "Synthetic local persisted restart-pickup state still pages both stalls once without an added restart or lock change",
+    "result": "pass",
+    "live": true
   }
 ]

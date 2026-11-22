@@ -1,0 +1,1 @@
+Firstmate watchdog: 1 ready PRs on forgejo have waited up to 16 minutes without landing under standing authority: https://git.example.test/o/r/pulls/9. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is {run-worktree}/.stall-validation-lab/forgejo/state/watchdog/actions.tsv.

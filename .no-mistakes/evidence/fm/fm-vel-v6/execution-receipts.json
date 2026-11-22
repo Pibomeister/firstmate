@@ -1,0 +1,25 @@
+{
+  "revision": "3b6f0a6eb20c3023bd4a946039a6987be8039450",
+  "manual_runs": {
+    "initial": {
+      "exit": 1,
+      "reason": "Incorrect manual oracle: latest captain-held is a declared wait. Corrected without a product change."
+    },
+    "handoffs_redrive": {
+      "exit": 0
+    },
+    "pickup": {
+      "exit": 0
+    }
+  },
+  "missing_tasks_regression": {
+    "before_revision": "add3488f",
+    "before_exit": 1,
+    "after_exit": 0,
+    "after_result": "capability skip"
+  },
+  "isolation": "Disposable marked lab homes within the gate worktree; synthetic records; local command alert channel; no production fleet or forge traffic.",
+  "test_startup": "Two initial suite starts were stopped before test execution during the shared-temp orphan scan. Final suite uses worktree-local TMPDIR and FM_TEST_SKIP_ORPHAN_REAP=1.",
+  "targeted_watchdog_exit": 0,
+  "cleanup": "All launched commands completed or were stopped; lab homes and temporary test files removed. No remaining suite process group or marked fixture processes."
+}

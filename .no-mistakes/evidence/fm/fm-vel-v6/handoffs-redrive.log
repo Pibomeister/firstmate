@@ -1,0 +1,154 @@
+
+SCENARIO Synthetic local no-mistakes handoffs remain in flight while direct-PR/local-only done reports finish; decision closers preserve delivered PRs
+RUN handoff/pipeline: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (4.1s) 
+--- pipeline: state/watchdog/actions.tsv ---
+1795378980	wd1795378980d097c7	{run-worktree}/.stall-validation-lab/handoff	handoff	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795378981	wd1795378980d097c7	{run-worktree}/.stall-validation-lab/handoff	handoff	stall-input	page	done	owner paged
+1795378981	wd179537898120c98c	{run-worktree}/.stall-validation-lab/handoff	handoff	unread-input	nudge	refused	no recorded endpoint
+
+--- pipeline: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:02Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:02Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- handoff: UNREAD-INPUT, owed 1, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:22:58Z
+
+## Actions since last read (2026-11-22T19:23:02Z)
+- 20:23 handoff page stall-input done
+- 20:23 handoff nudge unread-input refused
+
+## Open gaps
+- handoff: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- handoff: no recorded terminal endpoint; the pane cannot be read or typed into
+- handoff: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+- handoff: unread-input held; composer is unknown, so nothing is typed
+- no model configured; judged symptoms are reported only
+
+--- pipeline: pages.txt ---
+Firstmate watchdog: handoff has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is {run-worktree}/.stall-validation-lab/handoff/state/watchdog/captain and the ledger is {run-worktree}/.stall-validation-lab/handoff/state/watchdog/actions.tsv.
+
+RUN empty-mode/default-pipeline: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (3.7s) 
+--- default-pipeline: state/watchdog/actions.tsv ---
+1795378984	wd17953789843760dd	{run-worktree}/.stall-validation-lab/empty-mode	empty-mode	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795378985	wd17953789843760dd	{run-worktree}/.stall-validation-lab/empty-mode	empty-mode	stall-input	page	done	owner paged
+1795378985	wd17953789852dfcb0	{run-worktree}/.stall-validation-lab/empty-mode	empty-mode	unread-input	nudge	refused	no recorded endpoint
+
+--- default-pipeline: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:06Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:06Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- empty-mode: UNREAD-INPUT, owed 1, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:23:02Z
+
+## Actions since last read (2026-11-22T19:23:06Z)
+- 20:23 empty-mode page stall-input done
+- 20:23 empty-mode nudge unread-input refused
+
+## Open gaps
+- empty-mode: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- empty-mode: no recorded terminal endpoint; the pane cannot be read or typed into
+- empty-mode: stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+- empty-mode: unread-input held; composer is unknown, so nothing is typed
+- no model configured; judged symptoms are reported only
+
+--- default-pipeline: pages.txt ---
+Firstmate watchdog: empty-mode has 1 unhandled inputs, the oldest 16 minutes old, while 1 tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is {run-worktree}/.stall-validation-lab/empty-mode/state/watchdog/captain and the ledger is {run-worktree}/.stall-validation-lab/empty-mode/state/watchdog/actions.tsv.
+
+RUN finished-direct-PR/finished: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (2.7s) 
+--- finished: state/watchdog/actions.tsv ---
+1795378988	wd1795378988717848	{run-worktree}/.stall-validation-lab/finished-direct-PR	finished-direct-PR	unread-input	nudge	refused	no recorded endpoint
+
+--- finished: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:08Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:08Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- finished-direct-PR: UNREAD-INPUT, owed 1, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:23:06Z
+
+## Actions since last read (2026-11-22T19:23:08Z)
+- 20:23 finished-direct-PR nudge unread-input refused
+
+## Open gaps
+- finished-direct-PR: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- finished-direct-PR: no recorded terminal endpoint; the pane cannot be read or typed into
+- finished-direct-PR: unread-input held; composer is unknown, so nothing is typed
+- no model configured; judged symptoms are reported only
+
+RUN finished-local-only/finished: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (2.7s) 
+--- finished: state/watchdog/actions.tsv ---
+1795378991	wd1795378991d5b04b	{run-worktree}/.stall-validation-lab/finished-local-only	finished-local-only	unread-input	nudge	refused	no recorded endpoint
+
+--- finished: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:11Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:11Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- finished-local-only: UNREAD-INPUT, owed 1, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:23:09Z
+
+## Actions since last read (2026-11-22T19:23:11Z)
+- 20:23 finished-local-only nudge unread-input refused
+
+## Open gaps
+- finished-local-only: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- finished-local-only: no recorded terminal endpoint; the pane cannot be read or typed into
+- finished-local-only: unread-input held; composer is unknown, so nothing is typed
+- no model configured; judged symptoms are reported only
+
+RUN closers/declared-owner-wait: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (1.6s) 
+--- declared-owner-wait: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:13Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:13Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- closers: NO-ENDPOINT, owed 0, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:23:12Z
+
+## Actions since last read (2026-11-22T19:23:13Z)
+
+## Open gaps
+- closers: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- closers: no recorded terminal endpoint; the pane cannot be read or typed into
+- no model configured; judged symptoms are reported only
+
+RUN closers/ready: FM_HOME=<disposable lab> bash bin/fm-watchdog.sh once
+EXIT 0 (4.4s) 
+--- ready: state/watchdog/actions.tsv ---
+1795378996	wd17953789964d1330	{run-worktree}/.stall-validation-lab/closers	closers	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/synthetic/repo/pull/7
+1795378997	wd17953789964d1330	{run-worktree}/.stall-validation-lab/closers	closers	stall-pr	page	done	owner paged
+
+--- ready: data/watchdog/status.md ---
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T20:23:17Z, scan every 120s, mode act, restart off
+STALE IF NOT UPDATED BY 2026-11-22T20:34:17Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- closers: NO-ENDPOINT, owed 0, ctx unknown; captain pid 4988 live on an unknown terminal, moved 2026-11-22T20:23:12Z
+
+## Actions since last read (2026-11-22T19:23:17Z)
+- 20:23 closers page stall-pr done
+
+## Open gaps
+- closers: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+- closers: no recorded terminal endpoint; the pane cannot be read or typed into
+- closers: stalled: 1 ready PRs unlanded for up to 16m: https://github.com/synthetic/repo/pull/7
+- no model configured; judged symptoms are reported only
+
+--- ready: pages.txt ---
+Firstmate watchdog: 1 ready PRs on closers have waited up to 16 minutes without landing under standing authority: https://github.com/synthetic/repo/pull/7. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is {run-worktree}/.stall-validation-lab/closers/state/watchdog/actions.tsv.
+
+RESULT pass

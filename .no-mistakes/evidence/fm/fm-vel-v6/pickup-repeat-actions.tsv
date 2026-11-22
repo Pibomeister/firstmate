@@ -1,0 +1,5 @@
+1795379000	lab-pending	{run-worktree}/.stall-validation-lab/pickup	pickup	agent-gone	restart	pending	token=abc old_pid=999999
+1795379003	wd1795379003257bd6	{run-worktree}/.stall-validation-lab/pickup	pickup	stall-input	page	pending	stalled: 1 inputs unhandled for 16m while 1 tasks are in flight
+1795379003	wd1795379003257bd6	{run-worktree}/.stall-validation-lab/pickup	pickup	stall-input	page	done	owner paged
+1795379004	wd1795379004be6f54	{run-worktree}/.stall-validation-lab/pickup	pickup	stall-pr	page	pending	stalled: 1 ready PRs unlanded for up to 16m: https://github.com/synthetic/repo/pull/7
+1795379004	wd1795379004be6f54	{run-worktree}/.stall-validation-lab/pickup	pickup	stall-pr	page	done	owner paged
