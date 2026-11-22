@@ -296,7 +296,7 @@ test_turn_after_the_compaction_boundary_stands_down() {
 }
 
 test_newer_context_waits_out_an_older_doorbell() {
-  local dir pid holder
+  local dir pid holder i
   # Doorbell A settles under one compaction; a second compaction replaces the
   # epoch and starts B. B must wait for A to stand down and deliver.
   dir=$(make_home takeover-newer-context)
@@ -379,9 +379,24 @@ test_newer_context_waits_out_an_older_doorbell() {
   printf '%s\n' "$holder" >> "$TMP_ROOT/sleepers"
   printf '%s\n' "$holder" > "$dir/state/.resume-doorbell.lock/pid"
   ln "$dir/state/old-epoch" "$dir/state/.resume-doorbell.lock/context-epoch.$holder"
-  run_doorbell "$dir" --source compact &
+  # Observe the lock-wait poll before removing the holder's identity. A fixed
+  # startup delay can expire before a loaded doorbell has seen the old owner.
+  mkdir "$dir/fakebin"
+  cat > "$dir/fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+[ "${1:-}" != 0.2 ] || : > "$FM_TEST_HOLDER_POLL"
+exec "$FM_TEST_REAL_SLEEP" "$@"
+SH
+  chmod +x "$dir/fakebin/sleep"
+  FM_TEST_REAL_SLEEP="$(command -v sleep)" PATH="$dir/fakebin:$PATH" \
+    FM_TEST_HOLDER_POLL="$dir/fake/holder-poll" run_doorbell "$dir" --source compact &
   pid=$!
-  sleep 0.8
+  for ((i=0; i<200; i++)); do
+    [ ! -e "$dir/fake/holder-poll" ] || break
+    sleep 0.05
+  done
+  [ -e "$dir/fake/holder-poll" ] \
+    || fail "the newer doorbell never waited for the older holder"
   rm -f "$dir/state/.resume-doorbell.lock/pid" "$dir/state/.resume-doorbell.lock/context-epoch.$holder"
   sleep 0.8
   [ -z "$(cat "$dir/state/.resume-doorbell.log" 2>/dev/null)" ] || fail "the newer doorbell must keep waiting while the older one removes its lock: $(cat "$dir/state/.resume-doorbell.log")"
