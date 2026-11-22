@@ -1,0 +1,112 @@
+{run-worktree}/.test-306/noticehome2
+Real Claude pane before watcher:
+
+ ▐▛███▛█   Claude Code v2.1.330
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M7ZVEBH1V4QBZFMZ76991HYS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                            ◐ medium · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+──────────────────────────────────────────────────────
+
+
+
+watcher first observation: inbox records=1 process=None
+after parked duration grew by five minutes: inbox records=1
+Persisted steering record:
+schema=fm-task-inbox.v1
+at=2026-11-22T02:03:18Z
+body-terminator=1
+--
+Your no-mistakes run is parked at a gate that is waiting on you while your status still declares a pause: run `no-mistakes axi status` now, then answer the gate or escalate its ask-user findings as your brief directs, instead of waiting.
+
+Marker:
+strong:16777232:1422106152:1795312983.045245287
+1:paused: waiting for the parked test step
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · run: 01LOCAL306PARK
+Real Claude pane after watcher:
+
+ ▐▛███▛█   Claude Code v2.1.330
+▝▜██████▀  Opus 5.5 · Claude Ultra
+ ▝▝   ▝▝   ~/.no-mistakes/worktrees/075d7f40c28a/01M7ZVEBH1V4QBZFMZ76991HYS
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                          tmux focus-events off · add 'set -g focus-events on' to ~/.tmux.conf and reattach for focus tracking
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ : Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your 'park.inbox' steering inbox, read and act on each in numeric order, then mv each into
+  its handled/.
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  ⏵⏵ auto mode on (shift+tab to cycle)
+
+watcher stopped exit=-15
+
+Persisted runtime snapshot after the wait changed: [{"id": "01LOCAL306PARK", "awaiting_agent_since": 1795311743, "captured_at": 1795313011.323534}]
+The watcher repopulated this snapshot after the driver removed the old cache. Its recorded parked-since value equals the updated database input.

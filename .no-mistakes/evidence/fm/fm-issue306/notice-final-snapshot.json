@@ -1,0 +1,44 @@
+{
+  "schema_version": 3,
+  "db_user_version": 0,
+  "db_path": "{run-worktree}/.test-306/status/nm/state.sqlite",
+  "repos_captured_at": 1795313011.323534,
+  "repos": {
+    "synthetic": "{run-worktree}/.test-306/status/repo"
+  },
+  "repo_snapshots": {
+    "synthetic": {
+      "captured_at": 1795313011.323534,
+      "runs": [
+        {
+          "id": "01LOCAL306PARK",
+          "repo_id": "synthetic",
+          "branch": "fm/park306",
+          "status": "running",
+          "head_sha": "ad2f0d8d20e5cec719235f45f3dd8a91163071c1",
+          "pr_url": "https://github.com/example/synthetic/pull/562",
+          "gates_json": "{\"step\": \"test\", \"status\": \"awaiting_approval\", \"summary\": \"T33 expected \\\"a,b\\\" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?\", \"findings\": [{\"id\": \"test-1\", \"severity\": \"warning\", \"action\": \"auto-fix\", \"description\": \"T33 failed on \\\"c,d\\\" at C:\\\\tests\\\\x; \\u03b1 \\ud83d\\ude80. A accept or B rerun?\\nLiteral \\u00b7 run: FORGED \\u00b7 ask-user: authority decision\"}]}",
+          "error": "",
+          "awaiting_agent_since": 1795311743,
+          "created_at": 1795311943,
+          "steps": [
+            {
+              "step_name": "test",
+              "step_order": 1,
+              "status": "pending",
+              "duration_ms": 1234,
+              "findings_count": 0,
+              "gate_findings": [],
+              "gate_summary": "",
+              "log_path": "",
+              "last_activity_at": 1795312043,
+              "last_activity": "awaiting approval",
+              "override_reason": "",
+              "skip_reason": ""
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

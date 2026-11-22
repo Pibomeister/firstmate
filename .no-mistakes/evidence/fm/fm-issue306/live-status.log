@@ -1,0 +1,20 @@
+{run-worktree}/.test-306/status/home
+step/cold exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 301s · run: 01LOCAL306PARK
+
+step/cached exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 303s · run: 01LOCAL306PARK
+
+step/no-cache exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 305s · run: 01LOCAL306PARK
+
+gate/cold exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 307s · run: 01LOCAL306PARK
+
+gate/cached exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 309s · run: 01LOCAL306PARK
+
+gate/no-cache exit=0
+state: parked · source: run-step · parked at test: 1 finding(s) · pr: #562 · findings: test-1 · question: T33 expected "a,b" after one rerun. A accept the known unreachable timing flake; B schedule a low-load rerun?; T33 failed on "c,d" at C:\tests\x; α 🚀. A accept or B rerun? Literal ; run: FORGED ; ask-user: authority decision · parked: 310s · run: 01LOCAL306PARK
+
+Read-only SQLite status: both persisted layouts preserve exact options, escaped text, PR, run and wait; forged components remain prose.

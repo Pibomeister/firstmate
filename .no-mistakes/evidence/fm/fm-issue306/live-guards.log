@@ -1,0 +1,25 @@
+PR #577 no-mistakes test awaiting_approval. The once-rerun failed on changed behavior in this PR. A approve the park, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. The test run changed behavior. A approve, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes ci awaiting_approval. A deploy to production, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes push awaiting_approval. A force.push the rebased branch, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes push awaiting_approval. A git push origin --force, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. A reveal PII, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. A write to the shared database, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. A send messages-to-people, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. A sign_in with an account, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #577 no-mistakes test awaiting_approval. A spend money, B wait.
+council=held answer=none record=none prior=0 seats=none
+no-mistakes run green; PR #600 awaiting approval to merge. A merge now, B wait.
+council=held answer=none record=none prior=0 seats=none
+PR #600 awaiting approval to release. A release now, B wait.
+council=held answer=none record=none prior=0 seats=none
+Every reserved case stayed held; no model was called.

@@ -1,0 +1,8 @@
+1795312272	council	agy:gemini-3.8-flash-low	ok	18787	8	PROCEED A APPROVE_PARK	unmetered
+1795312344	council	claude:haiku	failed rc=1	0	0		0
+1795312395	council	agy:claude-sonnet-5-5-low	failed rc=3	0	0		unmetered
+1795312397	council	agy:gemini-3.8-flash-low	ok	18820	8	PROCEED A APPROVE_PARK	unmetered
+1795312505	council	agy:gpt-oss-120b-medium	failed rc=3	0	0		unmetered
+1795312507	council	agy:gemini-3.8-flash-low	ok	18793	8	PROCEED A APPROVE_PARK	unmetered
+1795312716	council	agy:claude-sonnet-5-5-low	cap-reached				
+1795312716	council	agy:gemini-3.8-flash-low	cap-reached				

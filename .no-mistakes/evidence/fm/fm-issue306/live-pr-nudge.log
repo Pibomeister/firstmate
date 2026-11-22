@@ -1,0 +1,21 @@
+once --dry-run exit=0
+
+Operator dry-run action ledger:
+1795313055	wd17953130551da360	{run-worktree}/.test-306/nudge	nudge	decisions	nudge	dry-run	Watchdog (automated, not the captain or the owner): 1 open decisions have waited over 30 minutes, oldest first: t1/nm-306-test (PR #562). Answer each, or settle it by council per the captain rules, and record the answer with fm-send --resolve-key.
+
+Operator status:
+# Firstmate watchdog - Eduardos-MacBook-Pro-2
+updated 2026-11-22T02:04:15Z, scan every 120s, mode dry-run, restart off
+STALE IF NOT UPDATED BY 2026-11-22T02:15:15Z (watchdog may be down)
+models: none; spent 24h $0 of $1.00
+
+## Homes
+- nudge: NO-ACTIVITY-SOURCE, owed 0, ctx unknown; captain pid 93669 live on tmux:primary:fm-park, moved 2026-11-22T02:04:12Z
+
+## Actions since last read (2026-11-22T01:04:15Z)
+- 02:04 nudge nudge decisions dry-run
+
+## Open gaps
+- no model configured; judged symptoms are reported only
+- nudge: no activity source; frozen, dead-holder, and low-context restarts are unavailable
+

@@ -1,0 +1,28 @@
+{
+  "revision": "c0543edc3175801ec856acc8de4f73faeda4de06",
+  "base": "15bb485a1f31715251633818422931dacb8b8ec7",
+  "isolation": "Synthetic SQLite and fleet records under .test-306; real Claude panes only on private fm-lab sockets; lab sockets stopped through fm-lab-home teardown.",
+  "completed": {
+    "watchdog_selected_regressions": 0,
+    "inbox_initial_full": 1,
+    "inbox_focused_default_concurrency_and_parked_notices": 0,
+    "live_status": 0,
+    "live_guard_commands": 0,
+    "live_revisit_and_failure_preservation": 0,
+    "live_notice_real_claude": 0,
+    "live_pr_number_dry_run": 0,
+    "inbox_focused_rerun_with_initial_ring_checks": 0,
+    "initial_test_setup_stopped_before_assertions": 137,
+    "crew_state_full_workspace_temp": 1,
+    "crew_state_linked_workspace_temp_confirmation": 1,
+    "crew_state_linked_and_remaining_cases_normal_temp": 0
+  },
+  "limitations": [
+    "Initial test-helper shared temp scan was stopped before test execution; checks restarted with FM_TEST_SKIP_ORPHAN_REAP=1 and workspace-local TMPDIR.",
+    "Initial watcher setup attempts surfaced unacknowledged lab wake records and a migrated WAL fixture; final disposable-home run used a readable DELETE-journal SQLite fixture and passed.",
+    "Successful two-family flake ruling could not be exercised: available non-Google model calls failed; native Claude and AGY Anthropic reported quota exhaustion.",
+    "The crew-state linked-worktree case failed with TMPDIR nested under the gate worktree, whose path supplied an extra worktrees/<repo_id> component. It and the remaining cases passed with normal ephemeral TMPDIR. No source change was needed.",
+    "The full inbox suite failed once at the unchanged concurrent-writer test. Default-setting focused reruns passed. The original suite is not reported as green."
+  ],
+  "cleanup": "All launched test commands returned terminal exit statuses. Real Claude panes and watcher process groups were stopped. Lab socket teardown completed; no socket records or processes naming the disposable root remained. The untracked .test-306 tree was removed."
+}

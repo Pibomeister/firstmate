@@ -1,0 +1,5 @@
+1..3
+ok - a task worktree binds by repo id and worktree_dir when working_path is the main checkout
+ok - an unknown status on any branch rejects the snapshot and falls back to the CLI
+ok - an unknown status on the crew's own branch rejects the snapshot and falls back to the CLI
+FM_TEST_COMPLETE

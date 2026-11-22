@@ -1,0 +1,16 @@
+1..14
+ok - council: a no-mistakes awaiting_approval step reaches the council despite a merge word; a human-only category stays held
+ok - council: a known unreachable timing flake is put to the seats as a default approve, labeled not clean
+ok - automatic flake rulings qualify approvals but not reruns in nudges and status
+ok - flake rerun and owner deferrals remain unqualified across replay and revisits
+ok - human-only: a real changed behavior or shared-database write stays held, and a negation of either does not
+ok - human-only: passing changed behavior releases the flake but not a later real failure
+ok - human-only: a production mention is not a write, while production mutations stay held
+ok - awaiting_approval: a plain merge or release never opens the council carve-out
+ok - awaiting_approval: genuine pipeline steps open the council carve-out, including parked-at wording
+ok - human-only: spaced, underscored, hyphenated, and joined sign-in variants stay held
+ok - council: a PR-caused failure stays held, and a negated or read-only flake still defaults to approve, not clean
+ok - council: a later contradicting order revisits a hold through --revisit, archiving the prior ruling
+ok - council: a failed or refused revisit leaves the prior ruling final, so no later pass re-rolls it
+ok - decisions: the nudge names work by PR number from the record, not by a goal alias alone
+FM_TEST_COMPLETE

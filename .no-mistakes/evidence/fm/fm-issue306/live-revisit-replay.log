@@ -1,0 +1,34 @@
+council=no-ruling answer=none record={run-worktree}/.test-306/council/data/watchdog/no-rulings/council-f2c929a6784532befb51091597d3d6f82d80cf4c.md prior=1 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+Published revisit and archived prior record:
+# Watchdog council record - no ruling
+
+- home: {run-worktree}/.test-306/council
+- task: live306
+- key: flake
+- ruling: none (not unanimous, 2 blind seats; held for the owner)
+- seats: seat1=FAILED seat2=PROCEED A APPROVE_PARK
+- seat models: agy:claude-sonnet-5-5-low,agy:gemini-3.8-flash-low
+- at: 2026-11-22T01:53:17Z
+
+Record:
+
+PR #562 no-mistakes test awaiting_approval. After one rerun, only the known T33 load-shaped timing flake in run-workflow.feature fails. The PR cannot reach that test. A (recommended) approve the park accepting the flake risk; B schedule a low-load rerun. Approving this test step would unblock a merge after the other gates pass. Later supervisor nudge: the prior record had one unavailable seat. A standing order explicitly accepts this isolated flake risk. Revisit the hold on this evidence and approve option A as not clean.
+
+Archived initial council:
+# Watchdog council record - no ruling
+
+- home: {run-worktree}/.test-306/council
+- task: live306
+- key: flake
+- ruling: none (not unanimous, 2 blind seats; held for the owner)
+- seats: seat1=FAILED seat2=PROCEED A APPROVE_PARK
+- seat models: claude:haiku,agy:gemini-3.8-flash-low
+- at: 2026-11-22T01:52:24Z
+
+Record:
+
+PR #562 no-mistakes test awaiting_approval. After one rerun, only the known T33 load-shaped timing flake in run-workflow.feature fails. The PR cannot reach that test. A (recommended) approve the park accepting the flake risk; B schedule a low-load rerun. Approving this test step would unblock a merge after the other gates pass.
+
+council=failed answer=none record=none prior=0 seats=seat1=FAILED seat2=FAILED
+council=no-ruling answer=none record={run-worktree}/.test-306/council/data/watchdog/no-rulings/council-f2c929a6784532befb51091597d3d6f82d80cf4c.md prior=1 seats=seat1=FAILED seat2=PROCEED A APPROVE_PARK
+Failed revisit left prior record byte-identical; ordinary call replayed it without reconvening.

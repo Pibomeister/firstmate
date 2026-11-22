@@ -1,0 +1,20 @@
+ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+ok - inbox: a hostile-name doorbell executes as a no-op in bare shells
+ok - inbox: terminal-control inbox names are rejected without typing
+ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+ok - inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths
+ok - inbox: the ring submits whole repeated copies of its own doorbell and protects a same-length paste placeholder and other text
+ok - inbox: the ring submits its own doorbell split into Orca draft and protects other split text
+ok - inbox: a stale Orca prefix joined to the current draft is not submitted
+ok - inbox: a complete Orca doorbell tail plus a foreign draft is not submitted
+ok - inbox: owned doorbells are submitted on a busy Codex, other busy harnesses stay protected, and a changed composer gets no retry
+ok - inbox: a ring records a codex turn start that survives the ack and ladder reset, and a non-codex ring records none
+ok - inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not
+ok - inbox: the idempotent enqueue compares steers without their standing holds block
+ok - inbox: unrelated pending and handled history avoids per-record parsing and comparison
+ok - inbox: prefilter preserves multiline, blank, legacy and delivery-mode exact matching
+ok - inbox: a prefilter error falls back without duplicating an exact retry
+ok - inbox: pending prefilter precedes handled and finds an ack before grep opens the record in both modes
+ok - inbox: idempotent enqueue follows a record concurrently moved to handled
+ok - inbox: the handled mv is the idempotent ack and sequences are never reissued
+not ok - a concurrent inbox write failed

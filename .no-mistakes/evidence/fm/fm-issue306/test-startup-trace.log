@@ -1,0 +1,66 @@
++ . tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ umask 022
++++ dirname tests/lib.sh
+++ . tests/git-config-helpers.sh
++++ export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
++++ GIT_CONFIG_GLOBAL=/dev/null
++++ GIT_CONFIG_NOSYSTEM=1
++++ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++ export FM_TEST_SEAM=1
+++ FM_TEST_SEAM=1
+++ export FM_HEARTBEAT_BIN=true
+++ FM_HEARTBEAT_BIN=true
+++ export FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
+++ FM_DISK_ALARM_VOLUME=/nonexistent/fm-test-disk-alarm-volume
+++ unset FM_TASK_ID
+++ unset TASKS_AXI_FILE TASKS_AXI_BACKEND
+++ unset REX_SESSION REX_BLOCK
+++ unset ORCA_TERMINAL_HANDLE
+++++ dirname tests/lib.sh
++++ cd tests/..
++++ pwd
+++ ROOT={run-worktree}
++++ fm_test_tmpdir
++++ local base=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/ physical
++++ base=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
++++ '[' -n /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T ']'
++++ case "$base" in
+++++ CDPATH=
+++++ cd -- /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+++++ pwd -P
++++ physical=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
++++ base=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
++++ '[' -e /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.git ']'
++++ printf '%s\n' /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+++ FM_TEST_TMPDIR=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-cleanup.10686.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-cleanup.10686.4CqJH2
++++ fm_test_pid_identity 10686
++++ local pid=10686
++++ FM_STATE_OVERRIDE=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ {run-worktree}/bin/fm-wake-lib.sh 10686
+++ FM_TEST_OWNER_IDENTITY='Sun Nov 22 01:53:26 2026     bash -x -c . tests/lib.sh; echo READY'
++++ mktemp /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-procevent.10686.XXXXXX
+++ FM_TEST_PROCEVENT_REGISTRY=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-procevent.10686.NpJwV1
++++ mktemp /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-watcher.10686.XXXXXX
+++ FM_TEST_WATCHER_REGISTRY=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/.fm-test-watcher.10686.BsTmcn
+++ FM_TEST_STUB_MAX_BLOCK_SECONDS=120
+++ export FM_TEST_STUB_MAX_BLOCK_SECONDS
+++ FM_TEST_SUITE_PID=10686
+++ export FM_TEST_SUITE_PID
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ trap 'fm_test_cleanup; exit 129' HUP
+++ trap 'fm_test_cleanup; exit 131' QUIT
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 0 '!=' 1 ']'
+++ fm_test_reap_orphans
+++ local marker dir mtime now owner_pid owner_identity current_identity
++++ date +%s
+++ now=1795312407
