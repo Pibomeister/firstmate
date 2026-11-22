@@ -373,13 +373,47 @@ test_drain_preserves_p0_alarm_before_later_stale() {
   ' _ "$ROOT/bin/fm-watch.sh" "$win") || fail "watcher alarm mint failed"
   [ -n "$reason" ] || fail "watcher did not mint a P0 alarm"
   append_wake "$state" stale "$win" "stale: $win (idle 240s, possible wedge, escalation 1)" || fail "later stale append failed"
-  append_wake "$state" stale "$win" "$reason" || fail "identical alarm append failed"
   append_wake "$state" stale "$win" "stale: $win (idle 480s, possible wedge, escalation 2)" || fail "latest stale append failed"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "P0 drain failed"
   [ "$(grep -cF "$reason" "$out")" = 1 ] || fail "drain hid or repeated the once-only P0 alarm"
   grep -F 'idle 480s, possible wedge, escalation 2' "$out" >/dev/null || fail "drain hid the latest ordinary stale"
   grep -F 'idle 240s, possible wedge, escalation 1' "$out" >/dev/null && fail "ordinary stale rows stopped deduplicating"
   pass "drain preserves P0 alarm text independently of later same-window stale rows"
+}
+
+test_drain_preserves_identical_p0_reopenings() {
+  local dir state out declaration key shape win=test:fm-p0
+  for shape in keyed keyless missing malformed future; do
+    dir=$(make_case "p0-reopen-$shape"); state="$dir/state"; out="$dir/drain.out"
+    key=k
+    case "$shape" in
+      keyed) declaration='blocked [key=k] [at=1000]: need key' ;;
+      keyless) declaration='blocked [at=1000]: need key'; key=default ;;
+      missing) declaration='blocked [key=k]: need key' ;;
+      malformed) declaration='blocked [key=k] [at=bad]: need key' ;;
+      future) declaration='blocked [key=k] [at=2000]: need key' ;;
+    esac
+    fm_write_meta "$state/p0.meta" "window=$win" "priority=0" "kind=ship"
+    PATH="$dir/fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+      . "$1"
+      printf "%s\n" "$3" > "$STATE/p0.status"
+      FM_WATCH_NOW=1600 p0_blocker_alarm "$2" p0
+      FM_WATCH_NOW=1600 p0_blocker_alarm "$2" p0
+      printf "resolved [key=%s]: answered\n%s\n" "$4" "$3" >> "$STATE/p0.status"
+      FM_WATCH_NOW=1600 p0_blocker_alarm "$2" p0
+      FM_WATCH_NOW=1600 p0_blocker_alarm "$2" p0
+    ' _ "$WATCH" "$win" "$declaration" "$key" || fail "$shape blocker mint failed"
+    [ "$(awk -F '\t' '$3 == "stale" { n++ } END { print n+0 }' "$state/.wake-queue")" = 2 ] \
+      || fail "$shape openings did not queue exactly one alarm each"
+    [ "$(cut -f5- "$state/.wake-queue" | sort -u | wc -l | tr -d ' ')" = 1 ] \
+      || fail "$shape fixture did not produce identical alarm payloads"
+    FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" 2> "$dir/drain.err" || fail "$shape drain failed"
+    [ "$(awk -F '\t' '$3 == "stale" && index($5, " (P0 blocker ") { n++ } END { print n+0 }' "$out")" = 2 ] \
+      || fail "$shape drain hid a separate blocker opening"
+    ack_drain_err "$state" "$dir/drain.err" || fail "$shape acknowledgement failed"
+    [ ! -s "$state/.wake-queue" ] || fail "$shape alarms remained after acknowledgement"
+  done
+  pass "drain presents identical P0 reopenings separately and acknowledges both"
 }
 
 # Run one watcher leg of the foreign-stall case at fake time <now>. Each leg
@@ -3838,6 +3872,7 @@ test_atomic_double_drain
 test_drain_dedupes_obvious_duplicates
 test_drain_presents_every_distinct_check_payload
 test_drain_preserves_p0_alarm_before_later_stale
+test_drain_preserves_identical_p0_reopenings
 test_drain_asserts_watcher_liveness
 test_structural_signal_enrichment_preserves_raw_rows
 test_enrichment_preserves_all_unread_lines_and_status_file_failures

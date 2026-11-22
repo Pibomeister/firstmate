@@ -3187,11 +3187,11 @@ fm_wake_print_deduped() {
       if ($3 == "heartbeat") {
         dedupe = "heartbeat"
       }
-      # Check payloads and once-only P0 alarms are events, not newer views of
-      # one state. Acknowledgement consumes every hidden row, so collapse only
-      # identical payloads for these events, including invalid-time P0 alarms.
-      if ($3 == "check" || ($3 == "stale" && index($5, " (P0 blocker "))) {
+      if ($3 == "check") {
         dedupe = dedupe SUBSEP $5
+      }
+      if ($3 == "stale" && index($5, " (P0 blocker ")) {
+        dedupe = dedupe SUBSEP NR
       }
       if (!(dedupe in seen)) {
         order[++count] = dedupe
