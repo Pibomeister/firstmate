@@ -5342,8 +5342,8 @@ restart-command=/bin/true'
       run_wd 120 once >/dev/null 2>&1 || fail "pickup pass failed"
       assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the restart still awaits pickup when both stalls cross the threshold"
     fi
-    assert_equals 1 "$(ledger_rows stall-input page done)" "$phase: the input stall page is delivered"
-    assert_equals 1 "$(ledger_rows stall-pr page done)" "$phase: the PR stall page is delivered"
+    assert_equals 1 "$(ledger_rows stall-input page 'done')" "$phase: the input stall page is delivered"
+    assert_equals 1 "$(ledger_rows stall-pr page 'done')" "$phase: the PR stall page is delivered"
     assert_grep "unhandled inputs" "$H/paged.log" "$phase: the alert channel receives the input page"
     assert_grep "$url" "$H/paged.log" "$phase: the alert channel receives the ready PR page"
     run_wd 180 once >/dev/null 2>&1 || fail "$phase: rate-limit pass failed"
