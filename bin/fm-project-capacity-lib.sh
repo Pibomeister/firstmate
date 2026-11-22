@@ -59,10 +59,10 @@
 # no place. Remote homes are never walked, because their workers run on another
 # machine.
 #
-# Race safety: bin/fm-spawn.sh evaluates admission while holding the shared
-# project lock and keeps holding it until the new task record is published, so
-# two concurrent spawns for one project can never both publish from the same
-# count. A spawn on an uncapped project can still publish a holder for a capped
+# Race safety: bin/fm-spawn.sh evaluates ordinary admission under the shared
+# project lock and holds it until the new task record is published, so two
+# concurrent ordinary spawns for one project never publish from the same count.
+# A spawn on an uncapped project can still publish a holder for a capped
 # same-origin clone, so every backend takes that lock whenever the declaration
 # caps any project; Orca, which otherwise never takes it, is included. Freeing a
 # place needs no lock, because removing a record or adding pr= only ever lowers
