@@ -1,0 +1,5 @@
+1..3
+ok - the default heartbeat freeze stays above a quiet home's healthy age and still fires at 900s
+ok - supervisor-gap record: each action pass appends the reading, a gap row over 600 s, and scan appends nothing
+ok - heartbeat recovery respects the newest verified session activity source
+FM_TEST_COMPLETE

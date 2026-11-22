@@ -1,0 +1,2 @@
+check: rearm-resurface
+signal: {run-worktree}/.gate-testing/live/change/state/synthetic.status

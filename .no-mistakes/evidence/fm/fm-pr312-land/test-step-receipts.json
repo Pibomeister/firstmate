@@ -1,0 +1,24 @@
+{
+  "target": "15062fa72b6d511c591958cf1754591ad2403af7",
+  "checks": {
+    "stall-ledger suite": 0,
+    "watchdog selected tests": 0,
+    "heartbeat cadence selected rerun": 0,
+    "heartbeat remaining selected tests": 0,
+    "home-summary complete repaired suite": 0,
+    "concurrency diagnostic probe": 0
+  },
+  "initial_failures": "Resolved test setup isolation and timing assumptions. Initial heartbeat run stopped at the fixed wall-clock assertion; earlier checks passed, cadence and remaining checks passed in selected reruns.",
+  "live_scenarios": [
+    "quiet collection and failed-summary retry throttling",
+    "fractional polling with wake and status triggers",
+    "seeded jitter with real publications",
+    "long-cadence freshness, expiration, scoring and recovery",
+    "watchdog dry-run freeze threshold"
+  ],
+  "cleanup": {
+    "owned_live_fixture_processes_remaining": [],
+    "worktree_fixture_directory_removed": true
+  },
+  "product_code_changed_by_test_phase": false
+}

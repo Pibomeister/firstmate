@@ -1,0 +1,21 @@
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer kill and replacement preserve an atomic JSON ledger
+ok - best-effort publication logs and continues
+Terminated: 15
+Terminated: 15
+Terminated: 15
+ok - best-effort refresh bounds publication lock acquisition
+Terminated: 15
+ok - a deadline failure names the slow stage and keeps the last good summary
+ok - a signalled parent removes its stage file
+ok - the producer never recreates a deleted stage log
+ok - stage-file open is bounded by the refresh deadline
+Terminated: 15
+ok - best-effort refresh bounds validation and publication
+Terminated: 15
+not ok - the worker did not write to the stage file the parent named: [2026-11-22T05:02:17Z] refresh exceeded its 3-second deadline in stage task-observation (stages: lock-wait@0 producer@0 backlog@0 task-observation@0)

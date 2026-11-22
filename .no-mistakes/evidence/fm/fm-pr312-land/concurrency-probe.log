@@ -1,0 +1,2 @@
+ok - current-state reads refill a free slot and never change the summary
+ok - row composition overlaps behind the window and keeps every task row identical

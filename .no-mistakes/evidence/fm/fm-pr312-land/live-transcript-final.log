@@ -1,0 +1,27 @@
+jitter heartbeat.json: generated=1795323419 published=1795323426 stale_after=491
+jitter home-summary.json: generated=1795323421 published=None stale_after=None
+jitter heartbeat.json: generated=1795323432 published=1795323445 stale_after=491
+jitter home-summary.json: generated=1795323450 published=None stale_after=None
+jitter heartbeat.json: generated=1795323446 published=1795323457 stale_after=491
+jitter heartbeat.json: generated=1795323462 published=1795323476 stale_after=491
+jitter home-summary.json: generated=1795323476 published=None stale_after=None
+jitter heartbeat.json: generated=1795323477 published=1795323491 stale_after=491
+jitter home-summary.json: generated=1795323506 published=None stale_after=None
+jitter heartbeat.json: generated=1795323496 published=1795323509 stale_after=491
+PASS jitter: actual heartbeat observation-time gaps [13, 14, 16, 15, 19]; interval=20, jitter=16, seed=42
+stopped disposable watcher group 25180; rc=-9
+long-cadence age=601: stall-open rows=0
+long-cadence age=900: stall-open rows=0
+long-cadence age=1371: stall-open rows=0
+long-cadence age=1372: stall-open rows=1
+Traceback (most recent call last):
+  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation-part2.py", line 105, in <module>
+    scored=run(['bin/fm-stall-ledger.sh','score','--since',str(base+601),'--until',str(base+1372)],e)
+  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation-part2.py", line 21, in run
+    raise RuntimeError(f'{args}: rc={p.returncode}\n{p.stdout}\n{p.stderr}')
+RuntimeError: ['bin/fm-stall-ledger.sh', 'score', '--since', '1795324133', '--until', '1795324904']: rc=1
+FAIL
+stall-open	1795324904	stall-open	primary	-	1795323532	1795324904	-	-	-	primary:-:1795323532
+stall-recovery	1795324904	stall-open	primary	-	1795323532	1795324904	-	-	-	primary:-:1795323532
+
+

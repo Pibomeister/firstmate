@@ -1,0 +1,36 @@
+long-cadence age=601: stall-open rows=0
+long-cadence age=900: stall-open rows=0
+long-cadence age=1371: stall-open rows=0
+healthy score: PASS
+expired score:
+FAIL
+heartbeat-age	1795324947	hb	primary	-	1795323575	1795324947	-	-	-	-
+stall-open	1795324947	stall-open	primary	-	1795323575	1795324947	-	-	-	primary:-:1795323575
+
+PASS cadence-safe bound, exact expiration, scoring, and recovery through real CLI with synthetic clock inputs
+watchdog age=837: detects=0
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=837s
+
+watchdog age=899: detects=0
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=899s
+
+watchdog age=900: detects=1
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=900s
+
+PASS watchdog default freeze: no detection at 837/899s; detection at 900s; dry-run only
+ALL LIVE SCENARIOS PASSED

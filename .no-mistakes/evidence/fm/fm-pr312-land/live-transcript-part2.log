@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation-part2.py", line 70, in <module>
+    h=home('jitter'); p,e=start(h,20,16,FM_TEST_SEAM=1,FM_WATCH_RANDOM_SEED=42)
+  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation-part2.py", line 25, in home
+    run(['bin/fm-lab-home.sh','create',str(p)],env_for(p))
+  File "~/.no-mistakes/evidence/01M80MFJN8J4DY8PDFAPA9FFHY/live-validation-part2.py", line 21, in run
+    raise RuntimeError(f'{args}: rc={p.returncode}\n{p.stdout}\n{p.stderr}')
+RuntimeError: ['bin/fm-lab-home.sh', 'create', '{run-worktree}/.gate-testing/live/jitter']: rc=1
+
+fm-lab-home: refusing '{run-worktree}/.gate-testing/live/jitter': a lab marker is only ever stamped on a fresh empty dir
+

@@ -1,0 +1,78 @@
+Local synthetic-input validation of 15062fa72b6d511c591958cf1754591ad2403af7.
+Real executable interfaces; no replacement watcher, publisher, snapshot producer, or watchdog.
+Watchdog checks use dry-run and synthetic heartbeat ages, not a real harness session.
+Collection timing includes this loaded host; this is cadence validation, not a performance benchmark.
+
+Quiet home and fractional polling (real watcher and producers)
+quiet heartbeat.json: generated=1795323210 published=1795323221 stale_after=483
+quiet home-summary.json: generated=1795323212 published=None stale_after=None
+quiet home-summary.json: generated=1795323227 published=None stale_after=None
+quiet heartbeat.json: generated=1795323222 published=1795323229 stale_after=483
+quiet heartbeat.json: generated=1795323234 published=1795323239 stale_after=483
+quiet home-summary.json: generated=1795323242 published=None stale_after=None
+quiet heartbeat.json: generated=1795323246 published=1795323251 stale_after=483
+PASS quiet: 4 heartbeat publications; 3 summaries; 20 distinct cheap beats in 39s
+stopped disposable watcher group 97167; rc=-9
+PASS fractional poll wake: new publication in 8.50s against a 300s idle deadline; stale_after_secs=771
+PASS fractional poll status: heartbeat and home summary changed within 8.03s
+stopped disposable watcher group 85898; rc=-9
+
+Jitter with interval longer than observed collection runtime
+jitter heartbeat.json: generated=1795323419 published=1795323426 stale_after=491
+jitter home-summary.json: generated=1795323421 published=None stale_after=None
+jitter heartbeat.json: generated=1795323432 published=1795323445 stale_after=491
+jitter home-summary.json: generated=1795323450 published=None stale_after=None
+jitter heartbeat.json: generated=1795323446 published=1795323457 stale_after=491
+jitter heartbeat.json: generated=1795323462 published=1795323476 stale_after=491
+jitter home-summary.json: generated=1795323476 published=None stale_after=None
+jitter heartbeat.json: generated=1795323477 published=1795323491 stale_after=491
+jitter home-summary.json: generated=1795323506 published=None stale_after=None
+jitter heartbeat.json: generated=1795323496 published=1795323509 stale_after=491
+PASS jitter: actual heartbeat observation-time gaps [13, 14, 16, 15, 19]; interval=20, jitter=16, seed=42
+stopped disposable watcher group 25180; rc=-9
+
+Failed home-summary retry cadence
+[2026-11-22T04:59:07Z] refresh exceeded its 1-second deadline in stage producer (stages: producer@1)
+[2026-11-22T04:59:18Z] refresh exceeded its 1-second deadline in stage producer (stages: producer@1)
+
+PASS missing summary under repeated real 1s deadline failures: 2 failure reports and 7 cheap beats over 34s with 10s retry interval
+stopped disposable watcher group 44827; rc=-9
+
+Freshness, stall scoring/recovery, watchdog threshold
+long-cadence age=601: stall-open rows=0
+long-cadence age=900: stall-open rows=0
+long-cadence age=1371: stall-open rows=0
+healthy score: PASS
+expired score:
+FAIL
+heartbeat-age	1795324947	hb	primary	-	1795323575	1795324947	-	-	-	-
+stall-open	1795324947	stall-open	primary	-	1795323575	1795324947	-	-	-	primary:-:1795323575
+
+PASS cadence-safe bound, exact expiration, scoring, and recovery through real CLI with synthetic clock inputs
+watchdog age=837: detects=0
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=837s
+
+watchdog age=899: detects=0
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=899s
+
+watchdog age=900: detects=1
+subject watchdog ({run-worktree}/.gate-testing/live/watchdog)
+  endpoint=none:none session=00000000-0000-4000-8000-000000000001 lock_pid=64760 alive=1 instance=match owner=live
+  captain=none:none moved_at=1795323583
+  pane_static=0s dialog=none usage_limit_autowait=0 composer=unknown turn_running=unknown cpu_busy=unknown human_step=none
+  activity_age=unknowns loop=none/0 restart_requested=0 ctx=unknown [footer=unknown derived=unknown owner=none disagreement=-]
+  owed=0 oldest=0s afk=0 daemon=unknown heartbeat_age=900s
+
+PASS watchdog default freeze: no detection at 837/899s; detection at 900s; dry-run only
+ALL LIVE SCENARIOS PASSED
+

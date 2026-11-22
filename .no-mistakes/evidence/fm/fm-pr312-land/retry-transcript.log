@@ -1,0 +1,5 @@
+[2026-11-22T04:59:07Z] refresh exceeded its 1-second deadline in stage producer (stages: producer@1)
+[2026-11-22T04:59:18Z] refresh exceeded its 1-second deadline in stage producer (stages: producer@1)
+
+PASS missing summary under repeated real 1s deadline failures: 2 failure reports and 7 cheap beats over 34s with 10s retry interval
+stopped disposable watcher group 44827; rc=-9

@@ -1,0 +1,5 @@
+1..3
+ok - an unchanged home collects once per idle interval while the watcher beat keeps the poll period
+ok - jittered idle gaps stay between the interval less the jitter and the interval
+ok - an appended wake or a status line collects at once, without waiting for the idle interval
+FM_TEST_COMPLETE

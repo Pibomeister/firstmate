@@ -1,0 +1,33 @@
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer kill and replacement preserve an atomic JSON ledger
+ok - best-effort publication logs and continues
+Terminated: 15
+Terminated: 15
+ok - best-effort refresh bounds publication lock acquisition
+ok - a deadline failure names the slow stage and keeps the last good summary
+ok - a signalled parent removes its stage file
+ok - the producer never recreates a deleted stage log
+ok - stage-file open is bounded by the refresh deadline
+Terminated: 15
+ok - best-effort refresh bounds validation and publication
+Terminated: 15
+ok - a stage file created before a deadline kill is removed
+Terminated: 15
+ok - parent-side stage-file reads and removals are bounded
+Terminated: 15
+ok - an unreadable stage file is reported as unreadable
+ok - a worker whose parent is gone removes its own stage file
+Terminated: 15
+ok - a first refresh on a home without a state directory names its stage
+Terminated: 15
+ok - a stray stage path override never touches an unrelated file
+Terminated: 15
+Terminated: 15
+ok - a deadline names the lock-wait, validate and publish stages
+ok - a failure the worker handles itself names its stage
+not ok - a free slot was not refilled while the slow read ran (barrier or serial reads): start slide-1 start slide-2 end slide-2 start slide-3 end slide-3 start slide-4 end slide-4 start slide-5 end slide-5 
