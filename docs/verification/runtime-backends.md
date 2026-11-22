@@ -1202,7 +1202,9 @@ ok - grok (grok 1.0.62 (1474f9cbdd91) [stable]): the same idle pane read cursorl
 
 On 2026-10-19 on macOS arm64, a read-only `fm_backend_composer_state herdr <pane> <label>` with `FM_COMPOSER_DIALOG_SINK` set, against five live Grok 4.7 panes at 0% weekly quota, read the idle 90-column quota-border composer as `empty` with no dialog.
 The other four panes showed the `You hit your weekly limit.` choice, read `pending`, and the sink named `Grok weekly-limit choice`, so `fm-control` exit and relaunch refuse to type into that choice.
-`tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both live captures.
+`tests/fm-composer-lib.test.sh` and `tests/fm-backend-herdr.test.sh` pin both recorded captures; the weekly-limit regressions cover the legacy footer and its exact `Ctrl+e:expand thinking` extension.
+The shared-classifier regression requires both choice rows and rejects quoted dialog text, trailing prose, and unsupported or repeated shortcut suffixes; `fm_composer_blocking_dialog` in `bin/fm-composer-lib.sh` owns the accepted structure.
+`tests/fm-control-relaunch.test.sh` covers the extended footer in ordinary relaunch, provider failover, and after a busy agent is interrupted, without typing into the picker.
 
 ### Usage-limit pane picker (pending 2026-11-06)
 
