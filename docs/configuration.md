@@ -744,7 +744,6 @@ Blank lines and lines that start with `#` are ignored, and an unusable value cou
 ## Heartbeat stale grace (config/heartbeat)
 
 `bin/fm-heartbeat.sh` publishes a stale bound, `stale_after_secs`, in `state/heartbeat.json`, and its header owns that record and the bound's formula.
-The bound is the watcher cycle period, plus the grace set here, plus one whole-run cap of the publisher.
 The record also carries `published_epoch`, stamped at the successful publication, and heartbeat age is measured from it.
 A dead publisher therefore reads stale `stale_after_secs` after its last publication, except on an idle home, which [`bin/fm-health-verdict.sh`](../bin/fm-health-verdict.sh) reads as `ok` (idle) at any heartbeat age.
 
@@ -752,7 +751,7 @@ The file is optional, local to each home, and read on every publication.
 It may hold this line:
 
 - `stale-grace-secs=<n>` sets the grace in seconds, and `0` is a valid grace.
-  Unset or unusable, the grace defaults to 60 seconds; `stale_after_secs` remains null only when the watcher cycle period is unavailable.
+  Unset or unusable, the grace defaults to 60 seconds.
 
 The last usable line counts.
 
@@ -3893,7 +3892,7 @@ FM_TASKS_AXI_CHECK_REASON=   # internal one-hop handoff of the reason behind tha
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
 FM_POLL=15              # seconds between watcher poll cycles
-FM_HOME_SUMMARY_INTERVAL=300   # longest seconds before a live watcher refreshes this home's state/home-summary.json without a status signal, with idle refreshes at least this interval minus FM_HOME_SUMMARY_JITTER apart; invalid or zero values use 300
+FM_HOME_SUMMARY_INTERVAL=300   # idle refresh interval for state/home-summary.json; the watcher checks both ledger age and time since its last launch against the jittered interval, and skips a launch while a refresh is running; invalid or zero values use 300
 FM_HOME_SUMMARY_JITTER=60      # seconds each idle refresh may come before FM_HOME_SUMMARY_INTERVAL, drawn at random per refresh; invalid values use 60, and values at or above the interval use the interval less one
 FM_HOME_SUMMARY_TIMEOUT=60     # seconds bounding the complete best-effort home-summary refresh, including lock acquisition, validation, atomic publication, and worker-side failure logging; invalid or zero values use 60
 FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES=65536   # approximate size cap for state/.home-summary-refresh.log before it is trimmed to the newest 200 lines; invalid or zero values use 65536
@@ -3914,9 +3913,9 @@ FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task 
 FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query inside bin/fm-heartbeat.sh; invalid or zero values use 2
 FM_HEARTBEAT_QUOTA_TIMEOUT=10      # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 10
 FM_HEARTBEAT_DEADLINE=240           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 240
-FM_HEARTBEAT_LEDGER_IDLE_SECS=300   # longest seconds a live watcher waits between state/heartbeat.json publications when nothing relevant changed; a new wake or a status signal publishes at once; invalid or zero values use 300
-FM_HEARTBEAT_LEDGER_JITTER=120      # seconds each idle publication may come before FM_HEARTBEAT_LEDGER_IDLE_SECS, drawn at random per publication; invalid values use 120, and values at or above the idle interval use it less one
-FM_HEARTBEAT_CYCLE_SECS=            # set by bin/fm-watch.sh for each heartbeat publication to the larger of FM_HEARTBEAT_LEDGER_IDLE_SECS and FM_POLL; see bin/fm-heartbeat.sh
+FM_HEARTBEAT_LEDGER_IDLE_SECS=300   # idle collection interval for state/heartbeat.json; the independent ticker checks for a new wake, status signal, or idle deadline each poll, waits for any running collection, then launches; invalid or zero values use 300
+FM_HEARTBEAT_LEDGER_JITTER=120      # seconds each idle collection may come before FM_HEARTBEAT_LEDGER_IDLE_SECS, drawn at random per launch; invalid values use 120, and values at or above the idle interval use it less one
+FM_HEARTBEAT_CYCLE_SECS=            # internal input for the stale bound; bin/fm-watch.sh owns its calculation and bin/fm-heartbeat.sh owns its use
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
 FM_INACTIVE_RECONCILE_BUDGET_SECS=10  # 1..30-second scan deadline; wedged-scan kill backstop follows one second later
 FM_CHECK_INTERVAL=300   # seconds between slow checks (authenticated merge polls, custom checks, or Relay dispatch)

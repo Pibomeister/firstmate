@@ -108,7 +108,7 @@ Rollout per host requires the watchdog in `act` mode with its status reader enab
 
 | Signal | Single owner | Permitted action |
 | --- | --- | --- |
-| Heartbeat publication and `stale_after_secs` | `bin/fm-heartbeat.sh --write`, started by the watcher poll | Publish `state/heartbeat.json` |
+| Heartbeat publication and `stale_after_secs` | `bin/fm-heartbeat.sh --write`, started by the watcher's independent ticker | Publish `state/heartbeat.json` |
 | Lock liveness verdict | The shared lock contract in `bin/fm-session-lock-lib.sh`, surfaced by `state/watchdog/captain` | Report `live`, `dead`, `unconfirmed`, or `none` |
 | Watcher polling liveness | `bin/fm-supervise-daemon.sh` and the process manager unit from `bin/fm-monitor-watchdog.sh` | Restart the watcher arm only |
 | Watcher freshness escalation | The monitor's `watchdog_alert` in `bin/fm-monitor-watchdog.sh`, through the escalation gate under class `watcher-recovery-failed` | Report one gap per home |

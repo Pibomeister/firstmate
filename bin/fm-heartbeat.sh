@@ -27,13 +27,13 @@
 #   published_epoch   Unix seconds stamped at the successful publication; the
 #                     health verdict measures heartbeat age from this stamp
 #   fm_home           resolved operational home
-#   stale_after_secs  the stale bound: the watcher's longest launch interval
-#                     (its cycle period), passed as FM_HEARTBEAT_CYCLE_SECS,
+#   stale_after_secs  the stale bound: the watcher's configured cycle period
+#                     (bin/fm-watch.sh), passed as FM_HEARTBEAT_CYCLE_SECS,
 #                     never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
 #                     (default 60; docs/configuration.md), plus one whole-run cap;
-#                     null while the cycle period is missing. The whole-run
-#                     cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
+#                     null while the cycle period is missing or unusable.
+#                     The whole-run cap is max(FM_HEARTBEAT_DEADLINE, FM_HEARTBEAT_SNAPSHOT_TIMEOUT)
 #                     + FM_HEARTBEAT_DISCOVERY_TIMEOUT (default 60)
 #                     + FM_HEARTBEAT_QUOTA_TIMEOUT + an overrun of
 #                     17 * (max(READ, NM timeout) + 1) + 5 * (5 + 1) + 3
@@ -47,11 +47,11 @@
 #                     reads and the state database lookup of an incomplete
 #                     run table); and that slack on the snapshot, discovery
 #                     and quota bounds. The watcher's independent ticker
-#                     launches a run on a relevant change and at least once
-#                     per cycle, whatever the watcher loop is doing, and a run
-#                     cannot outlast the cap, so a healthy home's age stays
-#                     within cycle + run cap. A dead
-#                     publisher stamps nothing more and reads past the bound
+#                     checks for relevant changes and idle deadlines independently
+#                     of the watcher loop, and waits for an in-flight run before
+#                     launching again. The bound allows for a collection run
+#                     after the idle deadline, with the grace for polling slack.
+#                     A dead publisher stamps nothing more and reads past the bound
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
 #                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,

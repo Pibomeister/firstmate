@@ -494,7 +494,7 @@ CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
 # Expensive idle collection (the home summary and the heartbeat ledger) runs on
 # a relevant change and otherwise once per idle interval. Each idle due is drawn
 # from [interval - jitter, interval], so homes started together drift apart and
-# the interval stays the longest gap. Cheap liveness (the watcher beat) and
+# no idle due exceeds the interval. Cheap liveness (the watcher beat) and
 # event delivery keep the poll period.
 watch_secs_or() {  # <output-variable> <value> <default>: a whole positive count, else the default
   case "$2" in
@@ -5373,9 +5373,10 @@ load_relief_check_detached() {
 # wake-queue sequence from any producer, or this loop's status-signal mark - and
 # otherwise once its idle due arrives, drawn from [HEARTBEAT_LEDGER_IDLE -
 # HEARTBEAT_LEDGER_JITTER, HEARTBEAT_LEDGER_IDLE] after each launch. The larger
-# of POLL and HEARTBEAT_LEDGER_IDLE is therefore the longest launch interval
-# that the heartbeat's stale bound counts (stale_after_secs, HB-3). Event
-# delivery and the watcher beat never wait on this ledger. The first launch is
+# of POLL rounded up to whole seconds and HEARTBEAT_LEDGER_IDLE is the cycle
+# period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
+# An in-flight publication defers the next launch until a poll sees it finish.
+# Event delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
 # singleton lock, and a publication already under way still completes.
 FLEET_HEARTBEAT_PID=
@@ -5386,8 +5387,8 @@ FLEET_HEARTBEAT_CHANGE_GEN=0
 FLEET_HEARTBEAT_CYCLE=$HEARTBEAT_LEDGER_IDLE
 [ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL_CEILING" ] || FLEET_HEARTBEAT_CYCLE=$POLL_CEILING
 fleet_heartbeat_launch() {
-  # The heartbeat's stale bound starts from this watcher's longest launch
-  # interval, never the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
+  # Pass the cycle period defined above, never the wake heartbeat cadence
+  # (bin/fm-heartbeat.sh stale_after_secs).
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
     FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &

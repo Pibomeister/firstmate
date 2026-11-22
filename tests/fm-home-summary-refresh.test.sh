@@ -614,7 +614,7 @@ cat > "$HANGBIN/jq" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
   case "$arg" in
-    */.home-summary.json.*) sleep 30 ;;
+    */.home-summary.json.*) sleep 120 ;;
   esac
 done
 exec "$FM_TEST_REAL_JQ" "$@"
@@ -634,15 +634,18 @@ pass "best-effort refresh bounds validation and publication"
 
 # A worker killed at the deadline right after it created the stage file must not
 # leave that file behind: the parent removes the name it handed out.
+# Use the normal 60-second collection budget here. A short budget can expire
+# during task observation on a loaded host, before the blocked validation this
+# case needs to exercise. Keep validation blocked beyond that whole budget.
 ORPHAN_PATH="$HOME_DIR/state/.home-summary-stage.orphan"
 rm -f "$ORPHAN_PATH"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_HOME_SUMMARY_STAGE_PATH="$ORPHAN_PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
   || fail "a deadline hit after stage-file creation changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+grep -F 'refresh exceeded its 60-second deadline in stage validate' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the worker did not write to the stage file the parent named: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 [ ! -e "$ORPHAN_PATH" ] || fail "a worker killed after creating the stage file left it behind"
@@ -774,10 +777,10 @@ rm -rf "${FRESH_HOME:?}"
 cp -R "$HOME_DIR" "$FRESH_HOME"
 rm -rf "${FRESH_HOME:?}/state"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$FRESH_HOME" FM_HOME_SUMMARY_TIMEOUT=3 \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$FRESH_HOME" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
   || fail "a first refresh on a home without a state directory changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+grep -F 'refresh exceeded its 60-second deadline in stage validate' \
   "$FRESH_HOME/state/.home-summary-refresh.log" >/dev/null \
   || fail "a first refresh with no state directory did not name its stage: $(cat "$FRESH_HOME/state/.home-summary-refresh.log" 2>&1)"
 pass "a first refresh on a home without a state directory names its stage"
@@ -801,12 +804,13 @@ pass "a stray stage path override never touches an unrelated file"
 # A deadline hit while validating, or while publishing, must name that stage
 # rather than blaming the producer's last stage, and the offsets must share one
 # timeline that includes the worker's own stages.
+# As above, allow the normal collection budget before requiring a late stage.
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
   || fail "a validation stage timeout changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline in stage validate' \
+grep -F 'refresh exceeded its 60-second deadline in stage validate' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the validate stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 grep -E 'stages: lock-wait@[0-9]+ producer@[0-9]+ backlog@[0-9]+ .*summary@[0-9]+ validate@[0-9]+' \
@@ -819,7 +823,7 @@ cat > "$PUBBIN/mv" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
   case "$arg" in
-    */home-summary.json) sleep 30 ;;
+    */home-summary.json) sleep 120 ;;
   esac
 done
 exec "$FM_TEST_REAL_MV" "$@"
@@ -827,10 +831,10 @@ SH
 chmod +x "$PUBBIN/mv"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 PATH="$PUBBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
   || fail "a publish stage timeout changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline in stage publish' \
+grep -F 'refresh exceeded its 60-second deadline in stage publish' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the publish stage was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
 pass "a deadline names the lock-wait, validate and publish stages"
@@ -891,7 +895,8 @@ pass "a failure the worker handles itself names its stage"
 # until the other four have, so it only finishes if the window refills a slot the
 # moment a fast task ends. A barrier, or serial reads, strand that read until the
 # fake gives up, and the event order below fails. The assertion counts reads and
-# their overlap, never elapsed time, so host load cannot change the verdict.
+# their overlap, never elapsed time. Give the intentionally blocked read enough
+# budget for all four peer reads, rather than the production per-read timeout.
 SLIDE_HOME="$TMP_ROOT/slide-home"
 mkdir -p "$SLIDE_HOME/state" "$SLIDE_HOME/data" "$SLIDE_HOME/config" "$SLIDE_HOME/projects"
 SLIDE_HOME=$(cd "$SLIDE_HOME" && pwd -P)
@@ -937,6 +942,7 @@ run_slide() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --secondmate-home-summary
 }
 SLIDE_LOG="$TMP_ROOT/slide-events.log"
@@ -1006,6 +1012,7 @@ run_rows() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --json
 }
 ROW_LOG="$TMP_ROOT/row-events.log"

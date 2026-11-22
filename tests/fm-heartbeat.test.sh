@@ -2,6 +2,7 @@
 # Behavioral coverage for bin/fm-heartbeat.sh: snapshot-backed assembly, atomic
 # --write publication, explicit unknowns, the failure field, bounded reads, stopped
 # runs, and detached single-flight watcher publication.
+# Optional arguments select test functions; no arguments run the full suite.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -1023,11 +1024,12 @@ launch_count() {  # <name>
 # Expensive idle collection: an unchanged home collects once per idle interval,
 # not once per poll, while the cheap watcher beat keeps the poll period.
 test_unchanged_home_collects_once_per_idle_interval() {
-  local home stub count beats=0 i gaps
+  local home stub count beats=0 i gaps started elapsed max_count
   home=$(make_home watch-idle)
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
   stub=$(launch_log_stub watch-idle)
   fm_test_track_watcher_state "$home/state"
+  started=$(date +%s)
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_HEARTBEAT_LEDGER_IDLE_SECS=4 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
@@ -1041,13 +1043,18 @@ test_unchanged_home_collects_once_per_idle_interval() {
     i=$((i + 1))
   done
   count=$(launch_count watch-idle)
+  elapsed=$(( $(date +%s) - started ))
+  # Ten observed beats can take longer than ten seconds on a loaded host.
+  # Bound collection by the actual observation window, allowing the initial
+  # launch and one second-boundary sample, and check the launch gaps below.
+  max_count=$((elapsed / 4 + 2))
   kill -0 "$WATCH_PID" 2>/dev/null || fail "the idle watcher exited: $(cat "$TMP_ROOT/watch-idle.out")"
   kill -TERM "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=
   [ "$beats" -ge 8 ] || fail "the watcher beat advanced only $beats time(s) across ten polls"
-  [ "$count" -ge 2 ] && [ "$count" -le 5 ] \
-    || fail "an unchanged home collected $count time(s) in about ten seconds at a four-second idle interval"
+  [ "$count" -ge 2 ] && [ "$count" -le "$max_count" ] \
+    || fail "an unchanged home collected $count time(s) in ${elapsed}s at a four-second idle interval (maximum $max_count)"
   gaps=$(awk 'NR>1 && $1-p < 3 {print $1-p} {p=$1}' "$TMP_ROOT/watch-idle.runs")
   [ -z "$gaps" ] || fail "an unchanged home collected again after only ${gaps}s"
   pass "an unchanged home collects once per idle interval while the watcher beat keeps the poll period"
@@ -1301,6 +1308,38 @@ test_derived_context_is_unknown_under_directory_overrides() {
   pass "AC-14: the derived reading is unknown, with its reason, under a state or config directory override"
 }
 
+test_weekly_allowance_reports_model_allowance_left() {
+  local home quota
+  home=$(make_home weekly)
+  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
+  publish "$home" "FAKE_QUOTA_JSON=$quota"
+  assert_ledger "$home" '
+    .failure == null
+    and .weekly_allowance.status == "ok"
+    and (.weekly_allowance.windows | length) == 2
+    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
+    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
+    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
+  ' "weekly model allowance was not published"
+  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
+  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
+  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
+    "a 3-second quota-axi read was cut off by the default timeout"
+  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
+    "a snapshot with no weekly window was treated as readable allowance"
+  publish "$home" FAKE_QUOTA_JSON='not-json'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
+    "unreadable quota output became a heartbeat failure or a guessed allowance"
+  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
+}
+
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
 test_ledger_schema_and_clean_run
 test_no_mistakes_run_is_parsed_from_real_status
 test_selection_owner_decides_the_run
@@ -1347,31 +1386,6 @@ test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
 test_derived_context_is_unknown_under_directory_overrides
 
-test_weekly_allowance_reports_model_allowance_left() {
-  local home quota
-  home=$(make_home weekly)
-  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
-  publish "$home" "FAKE_QUOTA_JSON=$quota"
-  assert_ledger "$home" '
-    .failure == null
-    and .weekly_allowance.status == "ok"
-    and (.weekly_allowance.windows | length) == 2
-    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
-    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
-    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
-  ' "weekly model allowance was not published"
-  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
-  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
-  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
-    "a 3-second quota-axi read was cut off by the default timeout"
-  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
-  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
-    "a snapshot with no weekly window was treated as readable allowance"
-  publish "$home" FAKE_QUOTA_JSON='not-json'
-  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
-    "unreadable quota output became a heartbeat failure or a guessed allowance"
-  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
-}
 
 test_weekly_allowance_reports_model_allowance_left
 
