@@ -1,0 +1,38 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gate-daemon-3yj2oz1i/own
+{run-worktree}/.gate-daemon-3yj2oz1i/own
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/own new-session -d -s primary -x 120 -y 40 -c {run-worktree} /bin/cat
+exit=0
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gate-daemon-3yj2oz1i/other
+{run-worktree}/.gate-daemon-3yj2oz1i/other
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/other new-session -d -s primary -x 120 -y 40 -c {run-worktree} /bin/cat
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/own display-message -p #{socket_path}
+/tmp/fml.1YQWuQ/tmux-501/default
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/other display-message -p #{socket_path}
+/tmp/fml.JYBPHD/tmux-501/default
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/own display-message -p #{pane_id}
+%0
+exit=0
+FOREIGN SERVER BUFFER:
+
+DAEMON LOG:
+[2026-11-21T22:54:36-0600] daemon starting (pid 4700); target=%0; target_source=FM_SUPERVISOR_TARGET; backend=tmux; backend_source=FM_SUPERVISOR_BACKEND; afk=off; inject_skip='heartbeat'; stale_escalate=300s; batch=999999s
+
+foreign-server pause marker after housekeeping=False
+SAME SERVER MISSING ENDPOINT BUFFER:
+paused worker gone: foreign:fm-paused-proof (agent missing - the recorded endpoint is gone, so the declared wait cannot clear on its own; recover the worker, and check for unlanded work before any cleanup): paused: awaiting local synthetic service
+
+daemon child exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/own kill-server
+exit=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.gate-daemon-3yj2oz1i/own
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-daemon-3yj2oz1i/other kill-server
+exit=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.gate-daemon-3yj2oz1i/other
+exit=0
+Disposed daemon, watcher and both private tmux servers

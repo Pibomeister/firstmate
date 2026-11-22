@@ -1,0 +1,10 @@
+[
+  {
+    "name": "real named Herdr lab provisions and tears down inside an owned private XDG tree",
+    "pass": true
+  },
+  {
+    "name": "timed-out real Herdr launch is cancelled and cannot start after release and teardown",
+    "pass": true
+  }
+]

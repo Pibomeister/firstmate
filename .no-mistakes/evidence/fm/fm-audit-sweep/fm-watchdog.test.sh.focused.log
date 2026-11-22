@@ -1,0 +1,10 @@
+$ FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-watchdog.test.sh test_heartbeat_failed_send_never_counts_as_delivery test_heartbeat_swallowed_enter_never_counts_as_delivery test_heartbeat_dryrun_never_counts_as_delivery test_heartbeat_recovery_preserves_account_pins test_heartbeat_response_cannot_suppress_recovery_forever
+1..5
+ok - a heartbeat nudge whose send failed never counts as delivery
+ok - a heartbeat nudge whose Enter was swallowed never counts as delivery
+ok - dry-run history cannot satisfy the active heartbeat delivery prerequisite
+ok - heartbeat recovery uses the configured restart without changing account pins
+ok - one transcript response cannot suppress later heartbeat recovery forever
+FM_TEST_COMPLETE
+
+EXIT_STATUS=0

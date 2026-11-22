@@ -1,0 +1,13 @@
+$ bin/fm-herdr-lab.sh fixture create
+/private/tmp/hx.cHCalh
+exit=0
+Synthetic ownership record names a live local sleep PID with matching start time, but cannot prove Herdr/XDG ownership.
+$ bin/fm-herdr-lab.sh fixture start /private/tmp/hx.cHCalh
+fm-herdr-lab: recorded herdr pid 76453 is still running but cannot be proven this fixture's; refusing to forget it
+exit=1
+$ bin/fm-herdr-lab.sh fixture cleanup /private/tmp/hx.cHCalh
+fm-herdr-lab: refusing pid 76453: comm is 'sleep', not herdr
+exit=1
+PID and exact ownership record retained; second start and cleanup both refused without signalling the unproven process.
+$ bin/fm-herdr-lab.sh fixture cleanup /private/tmp/hx.cHCalh
+exit=0

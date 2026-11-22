@@ -1,0 +1,26 @@
+[
+  {
+    "name": "hook bare done versus actual status completion",
+    "pass": true
+  },
+  {
+    "name": "hook counts one red per execution",
+    "pass": true
+  },
+  {
+    "name": "permission dumps hardstop; nested boundaries cannot hide command",
+    "pass": true
+  },
+  {
+    "name": "memory guard reports state-save failure despite appendable sample log",
+    "pass": true
+  },
+  {
+    "name": "ladder prune respects a fresh lock and reclaims a stale lock",
+    "pass": true
+  },
+  {
+    "name": "unconfirmed nudges neither recover an open stall nor create a phantom episode at installation",
+    "pass": true
+  }
+]

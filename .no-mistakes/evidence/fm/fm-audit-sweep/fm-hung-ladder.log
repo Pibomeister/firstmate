@@ -1,7 +1,7 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-hung-ladder.test.sh
+$ bash tests/fm-hung-ladder.test.sh
 1..18
 ok - observe records would-act rows for rungs 1-4, then later_self_progressed=yes, with zero actions
 ok - a worker that dies closes its episode with later_self_progressed=no
 Terminated: 15
 
-EXIT_STATUS: 124
+EXIT_STATUS=143 TIMEOUT=False

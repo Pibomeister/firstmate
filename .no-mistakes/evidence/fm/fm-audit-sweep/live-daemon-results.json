@@ -1,0 +1,10 @@
+[
+  {
+    "name": "running daemon preserves external wait for task recorded on another private tmux server",
+    "pass": true
+  },
+  {
+    "name": "running daemon surfaces a missing paused task on its own private tmux server",
+    "pass": true
+  }
+]

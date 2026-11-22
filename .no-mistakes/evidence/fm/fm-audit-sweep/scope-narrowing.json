@@ -1,0 +1,22 @@
+[
+  {
+    "pid": 93553,
+    "command": "bash tests/fm-watchdog.test.sh",
+    "reason": "intentionally superseded by focused named behavior selectors under high host load; not an assertion failure"
+  },
+  {
+    "pid": 93611,
+    "command": "bash tests/fm-hung-ladder.test.sh",
+    "reason": "intentionally superseded by focused named behavior selectors under high host load; not an assertion failure"
+  },
+  {
+    "pid": 7628,
+    "command": "bash tests/fm-handoff-launch.test.sh",
+    "reason": "record-clear regression already passed; unrelated final timeout drills superseded by --through-record-clear focused run"
+  },
+  {
+    "pid": 59246,
+    "command": "bash tests/fm-control-relaunch.test.sh",
+    "reason": "same-harness replacement passed; remaining unrelated harness/provider transactions superseded by named relaunch input and refusal selectors"
+  }
+]

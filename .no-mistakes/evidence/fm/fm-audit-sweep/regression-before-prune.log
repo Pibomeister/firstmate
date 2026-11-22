@@ -1,0 +1,6 @@
+Current regression test against base version of bin/fm-hung-ladder.sh
+$ bash tests/fm-hung-ladder.test.sh test_prune_reclaims_a_crashed_lock
+1..1
+not ok - a prune that reclaims a crashed lock removes the cleaned-up episode
+
+EXIT_STATUS=1

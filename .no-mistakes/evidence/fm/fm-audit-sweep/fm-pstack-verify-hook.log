@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-pstack-verify-hook.test.sh
+$ bash tests/fm-pstack-verify-hook.test.sh
 ok - a STATUS_APPEND command injects principle-prove-it-works
 ok - a loop's closing done line or a quoted done outside a status write is not a completion
 ok - a bare done on a status path is not a completion, and a real done line still is
@@ -92,4 +92,4 @@ ok - a second recurring-red test id in the same generation still injects princip
 ok - Cursor and Claude hook files register the helper on documented events
 ok - the four principle skills are vendored in both skill dirs
 
-EXIT_STATUS: 0
+EXIT_STATUS=0 TIMEOUT=False

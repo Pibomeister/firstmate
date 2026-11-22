@@ -1,0 +1,12 @@
+[
+  {
+    "command": "bash tests/fm-watchdog.test.sh test_heartbeat_failed_send_never_counts_as_delivery test_heartbeat_swallowed_enter_never_counts_as_delivery test_heartbeat_dryrun_never_counts_as_delivery test_heartbeat_recovery_preserves_account_pins test_heartbeat_response_cannot_suppress_recovery_forever",
+    "exit": 0,
+    "seconds": 273.27
+  },
+  {
+    "command": "bash tests/fm-hung-ladder.test.sh test_prune_reclaims_a_crashed_lock",
+    "exit": 0,
+    "seconds": 109.71
+  }
+]

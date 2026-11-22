@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-memory-guard.test.sh
+$ bash tests/fm-memory-guard.test.sh
 1..14
 ok - help and usage errors take no sample
 ok - the macOS reader parses swap, etime, and comm with spaces
@@ -16,4 +16,4 @@ ok - reap-scratch needs an interpreter running a single-link temp-root script
 ok - reap-scratch only reports would-stop, never signals, and deduplicates the alarm
 FM_TEST_COMPLETE
 
-EXIT_STATUS: 0
+EXIT_STATUS=0 TIMEOUT=False

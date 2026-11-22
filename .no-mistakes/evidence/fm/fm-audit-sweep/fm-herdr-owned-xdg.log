@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-herdr-owned-xdg.test.sh
+$ bash tests/fm-herdr-owned-xdg.test.sh
 ok - fm-herdr-lab fixture: create clears inherited Herdr identity and cleanup removes only the owned directory
 ok - fm-herdr-lab fixture: CLI refuses foreign paths, session names, and server stop
 ok - fm-herdr-lab fixture: stop refuses a live process that is not this fixture's herdr
@@ -23,6 +23,7 @@ ok - fm-herdr-lab fixture: start keeps the record of a live server it cannot pro
 ok - fm-herdr-lab fixture: a failed start whose forked pid is not comm=herdr signals the pid it forked, including the process group
 ok - fm-herdr-lab fixture: a write_record failure after fork signals the pid it started
 ok - fm-herdr-lab fixture: start fails fast when the forked pid has no start time and writes no usable record
-not ok - start took 25s; a first timed-out session list must return within 20s
+ok - fm-herdr-lab fixture: start reaps the forked pid when session list never returns
+ok - fm-herdr-lab fixture: reap_started does not signal a pid whose start time no longer matches
 
-EXIT_STATUS: 1
+EXIT_STATUS=0 TIMEOUT=False

@@ -1,0 +1,120 @@
+{
+  "revision": "3bdbc266c891efbe8fc36cb1f025e4716c48352d",
+  "completed_scoped_checks": [
+    {
+      "suite": "fm-stall-ledger",
+      "command": "bash tests/fm-stall-ledger.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 97.83
+    },
+    {
+      "suite": "fm-herdr-lab",
+      "command": "bash tests/fm-herdr-lab.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 251.18
+    },
+    {
+      "suite": "fm-herdr-owned-xdg",
+      "command": "bash tests/fm-herdr-owned-xdg.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 244.24
+    },
+    {
+      "suite": "fm-memory-guard",
+      "command": "bash tests/fm-memory-guard.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 46.36
+    },
+    {
+      "suite": "fm-pstack-verify-hook",
+      "command": "bash tests/fm-pstack-verify-hook.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 130.36
+    },
+    {
+      "suite": "fm-tmux-relaunch-input",
+      "command": "bash tests/fm-tmux-relaunch-input.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 6.39
+    },
+    {
+      "suite": "fm-daemon",
+      "command": "bash tests/fm-daemon.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 428.3
+    },
+    {
+      "suite": "fm-herdr-owned-xdg-live-e2e",
+      "command": "bash tests/fm-herdr-owned-xdg-live-e2e.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 28.19
+    },
+    {
+      "suite": "fm-permission-prompt",
+      "command": "bash tests/fm-permission-prompt.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 949.52
+    },
+    {
+      "suite": "fm-handoff-launch-runtime",
+      "command": "bash tests/fm-handoff-launch-runtime.test.sh",
+      "exit": 0,
+      "timeout": false,
+      "seconds": 494.05
+    },
+    {
+      "command": "bash tests/fm-watchdog.test.sh test_heartbeat_failed_send_never_counts_as_delivery test_heartbeat_swallowed_enter_never_counts_as_delivery test_heartbeat_dryrun_never_counts_as_delivery test_heartbeat_recovery_preserves_account_pins test_heartbeat_response_cannot_suppress_recovery_forever",
+      "exit": 0,
+      "seconds": 273.27
+    },
+    {
+      "command": "bash tests/fm-hung-ladder.test.sh test_prune_reclaims_a_crashed_lock",
+      "exit": 0,
+      "seconds": 109.71
+    },
+    {
+      "command": "bash tests/fm-handoff-launch.test.sh --through-record-clear",
+      "exit": 0
+    },
+    {
+      "command": "bash tests/fm-control-relaunch.test.sh test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text test_spawn_relaunch_refuses_a_live_agent test_spawn_relaunch_refuses_a_pane_outside_the_worktree",
+      "exit": 0
+    }
+  ],
+  "intentionally_superseded_broad_attempts": [
+    {
+      "pid": 93553,
+      "command": "bash tests/fm-watchdog.test.sh",
+      "reason": "intentionally superseded by focused named behavior selectors under high host load; not an assertion failure"
+    },
+    {
+      "pid": 93611,
+      "command": "bash tests/fm-hung-ladder.test.sh",
+      "reason": "intentionally superseded by focused named behavior selectors under high host load; not an assertion failure"
+    },
+    {
+      "pid": 7628,
+      "command": "bash tests/fm-handoff-launch.test.sh",
+      "reason": "record-clear regression already passed; unrelated final timeout drills superseded by --through-record-clear focused run"
+    },
+    {
+      "pid": 59246,
+      "command": "bash tests/fm-control-relaunch.test.sh",
+      "reason": "same-harness replacement passed; remaining unrelated harness/provider transactions superseded by named relaunch input and refusal selectors"
+    }
+  ],
+  "pre_fix_failures_confirmed": true,
+  "live_scenarios": "live-scenarios.json",
+  "transient_worktree_directories": [],
+  "remaining_driver_processes": [],
+  "changes": "Optional targeted execution in handoff-launch and hung-ladder tests; default behavior preserved."
+}

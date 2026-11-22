@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-permission-prompt.test.sh
+$ bash tests/fm-permission-prompt.test.sh
 1..15
 ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
 ok - declining-cursor dialogs: imports, bypass, hook review, and a moved cursor are held, and their fixed text names no stop
@@ -9,5 +9,12 @@ ok - decline cap: failed declines count toward the hourly cap
 ok - tool approval: one Escape, verified gone, then a durable rewrite instruction, one pass at a time per worker, and no key without a saved checksum
 ok - after Escape: a trust dialog, a paid-usage picker, or an unproven composer gets no instruction, no doorbell, and a keyed blocked line
 ok - declining dialogs and do-not-touch workers: no key and one keyed held line
+ok - decline guard: a repeated prompt, a prompt past the cap, and a prompt that stays after Escape are held, each reported once
+ok - trust dialog: no key, a controlled relaunch only on Orca once per window, and a refusal is reported
+ok - hard stops: credential, destructive, and spend prompts get no key and one keyed blocked line
+ok - hard stop after Escape: the keyed blocked line is the owner's and never reaches a council
+ok - hard stop: a key another writer resolved does not hide the next hard stop
+ok - guards: no recorded harness holds, dry-run only records, and off keeps the report-only path
+FM_TEST_COMPLETE
 
-EXIT_STATUS: 124
+EXIT_STATUS=0 TIMEOUT=False

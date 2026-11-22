@@ -1,0 +1,4 @@
+{
+  "name": "interrupt handoff at failure-record removal boundary retains current failure and predecessor lock",
+  "pass": true
+}

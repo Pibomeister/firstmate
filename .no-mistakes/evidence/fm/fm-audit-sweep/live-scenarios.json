@@ -1,0 +1,86 @@
+[
+  {
+    "name": "Interrupt a local handoff at failure-record removal; its interrupted record and predecessor lock survive",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-handoff-transcript.log",
+    "reason": "Real launcher in a disposable marked home, with TERM injected at the shell command boundary before any successor launch."
+  },
+  {
+    "name": "Provision a named local Herdr lab, then time out a delayed launch; teardown prevents any later server start",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-herdr-transcript.log",
+    "reason": "Installed Herdr 0.8.2 ran inside a helper-owned private XDG fixture. The launch-delay wrapper eventually execs the real binary; no server responses were mocked."
+  },
+  {
+    "name": "Try to restart or clean a fixture whose recorded PID is live but unprovable; both calls refuse and retain its record",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-owned-record-transcript.log",
+    "reason": "Real fixture CLI with a synthetic ownership record for a real disposable sleep process; no process or identity reader was mocked."
+  },
+  {
+    "name": "Prune local hung-worker state behind fresh and stale locks; only the stale lock is reclaimed",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real prune CLI with synthetic orphaned episode state and filesystem lock ages in a disposable marked home."
+  },
+  {
+    "name": "Sample host memory while state renames are denied; the CLI returns failure despite an appendable sample log",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real ps/sysctl sampling and filesystem permissions; the persisted log records both samples and the second command exits 1."
+  },
+  {
+    "name": "Classify synthetic environment-dump and nested-heredoc approval prompts; unsafe or unproven prompts never route",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real public permission classifier CLI; dump commands hard-stop, a harmless assignment routes, and nested command boundaries hold or hard-stop."
+  },
+  {
+    "name": "Send loop-closing done text and real completion lines through the hook; only status completions inject verification",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real hook stdin/stdout protocol with synthetic Claude tool-event JSON and disposable persistent state."
+  },
+  {
+    "name": "Send two failed test nodes in one hook event, then a second failing execution; only the second execution triggers the repeated-red principle",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real Cursor hook protocol with synthetic host events; one execution remains one red."
+  },
+  {
+    "name": "Prepare a real private tmux/zsh pane for relaunch; foreground exit is awaited, stale input clears, and replacement executes",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-relaunch-transcript.log",
+    "reason": "Real backend adapter and tmux/zsh, with a disposable sleep process as the old foreground job. This validates local relaunch preparation, not an authenticated worker task."
+  },
+  {
+    "name": "Replay unconfirmed nudge rows locally; existing stalls stay open and installation-boundary completions create no phantom episode",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-cli-transcript.log",
+    "reason": "Real ledger observe CLI with synthetic timestamps, heartbeat JSON and watchdog action records; confirmed progress still closes with watchdog attribution."
+  },
+  {
+    "name": "Run the daemon against foreign-server and same-server paused task records; only the same-server missing endpoint is reported gone",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-daemon-transcript.log",
+    "reason": "Real daemon and watcher with two private tmux servers, synthetic task metadata and no active production fleet."
+  },
+  {
+    "name": "Let a private tty swallow Enter in real Claude; the watchdog leaves the nudge pending without a delivery receipt or restart",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M80Q1H69WDB36Z47FP9D0CPE/live-watchdog-transcript.log",
+    "reason": "Real watchdog, tmux and Claude Code 2.1.330 in bare mode; IGNCR supplies the tty fault and heartbeat/transcript inputs are synthetic. No API key or model service was faked, and no model prompt was submitted."
+  }
+]

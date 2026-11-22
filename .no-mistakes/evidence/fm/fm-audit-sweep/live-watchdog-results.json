@@ -1,0 +1,5 @@
+{
+  "name": "real watchdog and Claude TUI: tty ignores Enter, pending composer earns no delivery receipt or restart",
+  "result": "pass",
+  "live": true
+}

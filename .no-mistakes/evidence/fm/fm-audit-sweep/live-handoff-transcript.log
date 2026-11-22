@@ -1,0 +1,22 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gate-handoff-tr__uuht/home
+{run-worktree}/.gate-handoff-tr__uuht/home
+
+
+exit=0
+$ bash bin/fm-lock.sh
+lock acquired: harness pid 22152
+
+
+exit=0
+$ bash bin/fm-handoff-launch.sh --harness codex {run-worktree}/.gate-handoff-tr__uuht/home/data/handoff.md
+
+successor: harness=codex model=default account=ambient reason=handoff verdict=unknown why=quota-axi_not_installed
+
+exit=1
+TERM at failure-record removal boundary
+
+PERSISTED FAILURE RECORD: at=1795323059 pid=22152 nonce=none attempt=0 reason=interrupted
+
+No handoff attempt started; predecessor still owns disposable home lock 22152
+
+Disposed lab home and fault-injection environment

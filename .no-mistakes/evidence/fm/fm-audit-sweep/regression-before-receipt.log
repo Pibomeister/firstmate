@@ -1,0 +1,6 @@
+Current regression test against base version of bin/fm-watchdog.sh
+$ bash tests/fm-watchdog.test.sh test_heartbeat_swallowed_enter_never_counts_as_delivery
+1..1
+not ok - a nudge whose Enter was swallowed was recorded as a delivery (expected '0', got '1')
+
+EXIT_STATUS=1

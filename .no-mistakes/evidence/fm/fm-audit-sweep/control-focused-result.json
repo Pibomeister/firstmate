@@ -1,0 +1,4 @@
+{
+  "command": "bash tests/fm-control-relaunch.test.sh test_relaunch_refuses_before_exit_when_the_composer_holds_pending_text test_spawn_relaunch_refuses_a_live_agent test_spawn_relaunch_refuses_a_pane_outside_the_worktree",
+  "exit": 0
+}

@@ -1,5 +1,5 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-watchdog.test.sh
-1..169
+$ bash tests/fm-watchdog.test.sh
+1..170
 ok - dialogs need their structure, and each kind is told apart
 ok - feedback claim: competing stale recovery preserves the fresh owner
 ok - feedback claim: legacy owners are recovered only after they exit
@@ -16,6 +16,5 @@ ok - stall proof needs two signals and no veto; merge and deploy text is refused
 ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
 ok - boundary: never types into a pane on the do-not-touch list
 ok - draft rows: from the prompt row to the rule, and no footer word cuts them
-ok - boundary: never accepts a merge autosuggestion, while ordinary unsent text is submitted
 
-EXIT_STATUS: 124
+EXIT_STATUS=143 TIMEOUT=False

@@ -1,0 +1,115 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gate-relaunch-uq985n86/home
+{run-worktree}/.gate-relaunch-uq985n86/home
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home new-session -d -s primary -x 140 -y 40 -c {run-worktree} /bin/zsh -f
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home display-message -p #{pane_id}
+%0
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home display-message -p #{socket_path}
+/tmp/fml.BXGP3Z/tmux-501/default
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home send-keys -t %0 -l /bin/sh -c 'echo $$ > "{run-worktree}/.gate-relaunch-uq985n86/old.pid"; exec sleep 120'
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home send-keys -t %0 Enter
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home send-keys -t %0 -l stale-input
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home capture-pane -p -t %0
+Eduardos-MacBook-Pro-2% /bin/sh -c 'echo $$ > "{run-worktree}/.gate-rel
+aunch-uq985n86/old.pid"; exec sleep 120'
+stale-input
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit=0
+BEFORE PREPARATION:
+Eduardos-MacBook-Pro-2% /bin/sh -c 'echo $$ > "{run-worktree}/.gate-rel
+aunch-uq985n86/old.pid"; exec sleep 120'
+stale-input
+$ bash -c . "$1/bin/fm-backend.sh"; fm_backend_source tmux; fm_backend_tmux_prepare_relaunch "$2"; fm_backend_tmux_send_text_line "$2" "printf 'result:%s\n' replacement-ready" local-proof {run-worktree} %0
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home capture-pane -p -t %0
+Eduardos-MacBook-Pro-2% printf 'result:%s\n' replacement-ready
+result:replacement-ready
+Eduardos-MacBook-Pro-2%
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+exit=0
+AFTER PREPARATION AND REPLACEMENT:
+Eduardos-MacBook-Pro-2% printf 'result:%s\n' replacement-ready
+result:replacement-ready
+Eduardos-MacBook-Pro-2%
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gate-relaunch-uq985n86/home kill-server
+exit=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.gate-relaunch-uq985n86/home
+exit=0

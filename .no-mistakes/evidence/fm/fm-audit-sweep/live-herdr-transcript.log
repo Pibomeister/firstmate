@@ -1,0 +1,59 @@
+$ bin/fm-herdr-lab.sh fixture create
+/private/tmp/hx.VWRsgC
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh fixture apply /private/tmp/hx.VWRsgC
+export XDG_CONFIG_HOME=/private/tmp/hx.VWRsgC/c
+export XDG_CACHE_HOME=/private/tmp/hx.VWRsgC/k
+export XDG_DATA_HOME=/private/tmp/hx.VWRsgC/d
+export XDG_RUNTIME_DIR=/private/tmp/hx.VWRsgC/r
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh fixture start /private/tmp/hx.VWRsgC
+<empty stdout>
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh fixture check /private/tmp/hx.VWRsgC
+<empty stdout>
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh name gate-proof
+fm-lab-gate-proof-61449-18795
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh provision fm-lab-gate-proof-61449-18795
+<empty stdout>
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh run fm-lab-gate-proof-61449-18795 status --json
+{"client":{"version":"0.8.2","channel":"stable","protocol":20,"binary":"~/.local/bin/herdr","session":"fm-lab-gate-proof-61449-18795"},"server":{"status":"running","running":true,"version":"0.8.2","protocol":20,"capabilities":{"live_handoff":true,"detached_server_daemon":false},"compatible":true,"socket":"/private/tmp/hx.VWRsgC/c/herdr/sessions/fm-lab-gate-proof-61449-18795/herdr.sock","session":"fm-lab-gate-proof-61449-18795","restart_needed":false},"update":{"restart_needed":false}}
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh teardown fm-lab-gate-proof-61449-18795
+<empty stdout>
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh name late-proof
+fm-lab-late-proof-65012-17289
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh provision fm-lab-late-proof-65012-17289
+<empty stdout>
+stderr: {run-worktree}/bin/fm-herdr-lab.sh: line 450: 66338 Terminated: 15          env -u HERDR_SOCKET_PATH -u HERDR_PANE_ID -u HERDR_TAB_ID -u HERDR_WORKSPACE_ID HERDR_SESSION="$name" herdr server --session "$name" > /dev/null 2>&1
+fm-herdr-lab: lab session 'fm-lab-late-proof-65012-17289' did not report running within 60 seconds
+exit=1
+delayed server launch pid=66338 alive after timeout=False
+$ bin/fm-herdr-lab.sh teardown fm-lab-late-proof-65012-17289
+<empty stdout>
+stderr: 
+exit=0
+$ bin/fm-herdr-lab.sh run fm-lab-late-proof-65012-17289 session list --json
+{"sessions":[{"default":true,"name":"default","running":true,"session_dir":"/private/tmp/hx.VWRsgC/c/herdr","socket_path":"/private/tmp/hx.VWRsgC/c/herdr/herdr.sock"}]}
+stderr: 
+exit=0
+released delayed launch after teardown: named session remains absent
+$ bin/fm-herdr-lab.sh fixture cleanup /private/tmp/hx.VWRsgC
+<empty stdout>
+stderr: 
+exit=0
+Disposed named sessions, server fixture and local launch-delay files

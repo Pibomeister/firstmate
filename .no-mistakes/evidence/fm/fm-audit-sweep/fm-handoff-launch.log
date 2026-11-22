@@ -1,17 +1,76 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-handoff-launch.test.sh
+$ bash tests/fm-handoff-launch.test.sh
 ok - tmux resume discovers %32 and preserves explicit metadata precedence
 ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
 ok - orca resume discovers term_new and preserves explicit metadata precedence
 ok - orca resume discovers term_explicit and preserves explicit metadata precedence
-HANDOFF v1 ts=1795295748 event=handoff_started nonce=957db1e0c74c44aebca4c7bebfe8089f attempt=1 pid=50382 handle=none reason=awaiting_ack
-HANDOFF v1 ts=1795295748 event=handoff_failed nonce=957db1e0c74c44aebca4c7bebfe8089f attempt=1 pid=50382 handle=none reason=interrupted
+HANDOFF v1 ts=1795322939 event=handoff_started nonce=71e9a8b766efc9ab1387ed646d959093 attempt=1 pid=82233 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795322940 event=handoff_failed nonce=71e9a8b766efc9ab1387ed646d959093 attempt=1 pid=82233 handle=none reason=interrupted
 ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
-HANDOFF v1 ts=1795295755 event=handoff_started nonce=74713fbf7f0f42b2af027cc3428aeb2f attempt=1 pid=62422 handle=none reason=awaiting_ack
-HANDOFF v1 ts=1795295756 event=handoff_failed nonce=74713fbf7f0f42b2af027cc3428aeb2f attempt=1 pid=62422 handle=none reason=error
+HANDOFF v1 ts=1795322949 event=handoff_started nonce=561b7df2d238e242a729fb729258618a attempt=1 pid=400 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795322950 event=handoff_failed nonce=561b7df2d238e242a729fb729258618a attempt=1 pid=400 handle=none reason=error
 ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
 ok - a handoff that omits an open captain order is refused before any claim, record, or launch
 ok - a failed planned fresh start releases its Stop gate and falls back to auto-compaction
 ok - a launch interrupted before any attempt still records its failure for the surviving session
 ok - a launch interrupted while removing the earlier failure record still records its failure
 ok - supervisor endpoint metadata retains precedence and generation
+ok - a transfer that rolls back after its verdict preserves predecessor leases
+ok - a lease retirement error after commit keeps the committed transfer
+ok - an interruption during lease retirement after commit keeps the committed transfer
+ok - a transfer interrupted after its line-1 write restores predecessor ownership and leases
+ok - a second signal during transaction rollback preserves ownership and releases its locks
+ok - a sidecar-less transfer interrupted after its line-1 write restores the predecessor
+ok - discovery reports only committed endpoints across an uncommitted transfer
+ok - lock endpoints follow supervisor-target precedence for nested and inherited terminals
+ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
+ok - discovery reports a pid and handle only from one unchanged snapshot
+ok - a completed handoff retires its claim, so later refused sessions emit no reject
+ok - foreign launch is refused and dead lock holders are not captain endpoints
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
+ok - tmux inside a session opens the successor in that session
+HANDOFF v1 ts=1795323302 event=handoff_retry nonce=9380b746421f2736e1737f3242096890 attempt=2 pid=75453 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323317 event=handoff_ack nonce=9380b746421f2736e1737f3242096890 attempt=0 pid=42999 handle=%9 reason=lock_transferred
+ok - DRILL tmux-display-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795323370 event=handoff_retry nonce=ea7131c489de6164bce7d30016867501 attempt=2 pid=72814 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323378 event=handoff_ack nonce=ea7131c489de6164bce7d30016867501 attempt=0 pid=53981 handle=%9 reason=lock_transferred
+ok - DRILL tmux-has-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795323388 event=handoff_started nonce=eaec682a96672f7f4e5496fa8c77d097 attempt=1 pid=73311 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323398 event=handoff_ack nonce=eaec682a96672f7f4e5496fa8c77d097 attempt=0 pid=84298 handle=term_lab_1 reason=lock_transferred
+ok - DRILL interrupt-after-ack: one completion outcome, no contradictory failure
+ok - DRILL precommit: completion waits for the committed transfer, not an uncommitted read
+HANDOFF v1 ts=1795323427 event=handoff_started nonce=470c2c6ebb151238a28cee848a02816e attempt=1 pid=29350 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323441 event=handoff_failed nonce=470c2c6ebb151238a28cee848a02816e attempt=1 pid=29350 handle=none reason=interrupted
+ok - DRILL cleanup-contention: failure is reported only after the claim is fenced
+ok - DRILL cleanup-second-signal: a second signal during cleanup still emits exactly one failure
+HANDOFF v1 ts=1795323467 event=handoff_reject nonce=41cc5604d78ee8e08cb60512ed44521d attempt=0 pid=0 handle=term_lab_1 reason=missing_claim
+HANDOFF v1 ts=1795323537 event=handoff_started nonce=93fa129baf1eb5d103a783e7f3a00fa2 attempt=1 pid=81027 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323553 event=handoff_retry nonce=709641c48338ce70a244902b5530cb92 attempt=2 pid=81027 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323563 event=handoff_failed nonce=709641c48338ce70a244902b5530cb92 attempt=2 pid=81027 handle=none reason=deadline
+ok - DRILL slow-claim: a slow initial claim still fails within the total budget
+HANDOFF v1 ts=1795323582 event=handoff_started nonce=c27f5e71151eda889f88bb3458b8f808 attempt=1 pid=68449 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323669 event=handoff_failed nonce=c27f5e71151eda889f88bb3458b8f808 attempt=1 pid=68449 handle=none reason=unresolved
+HANDOFF v1 ts=1795323671 event=handoff_ack nonce=c27f5e71151eda889f88bb3458b8f808 attempt=0 pid=83933 handle=term_lab_1 reason=lock_transferred
+ok - DRILL delayed-successor: a busy claim at the deadline is unresolved, then settled by the ack
+HANDOFF v1 ts=1795323684 event=handoff_started nonce=f3a85c0f4b2bae0f867c232cacab0a97 attempt=1 pid=65508 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323696 event=handoff_ack nonce=f3a85c0f4b2bae0f867c232cacab0a97 attempt=0 pid=78749 handle=term_lab_1 reason=stale_takeover
+ok - DRILL pred-dies: the successor takes the stale lock and the log names that path
+ok - unsupported backends and unenforceable permission posture refuse before launch
+HANDOFF v1 ts=1795323717 event=handoff_started nonce=716ed89122a9475dc8e7aa8a83f7e8dc attempt=1 pid=15899 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323757 event=handoff_retry nonce=790e4316c662b1dc984e2b134fa2723e attempt=2 pid=15899 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323795 event=handoff_failed nonce=790e4316c662b1dc984e2b134fa2723e attempt=2 pid=15899 handle=none reason=deadline
+ok - DRILL exit: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1795323800 event=handoff_started nonce=b1cd39d19e05a8cad315e4312529d09b attempt=1 pid=70418 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323840 event=handoff_retry nonce=e52e805cfae3dfd0e60c5266a8923df7 attempt=2 pid=70418 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323879 event=handoff_failed nonce=e52e805cfae3dfd0e60c5266a8923df7 attempt=2 pid=70418 handle=none reason=deadline
+zsh:1: parse error near `)'
+zsh:1: parse error near `)'
+ok - DRILL parse: failed within lab deadline, retried once, predecessor lock preserved
+HANDOFF v1 ts=1795323888 event=handoff_started nonce=ba180729137d57d9b4aa75da7e8d0677 attempt=1 pid=21381 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323891 event=handoff_reject nonce=none attempt=0 pid=38624 handle=term_lab_1 reason=lock_held_unbound
+HANDOFF v1 ts=1795323928 event=handoff_retry nonce=69d287df8fa2a5d9466d0503b92d94ec attempt=2 pid=21381 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795323930 event=handoff_reject nonce=none attempt=0 pid=98262 handle=term_lab_2 reason=lock_held_unbound
+HANDOFF v1 ts=1795323967 event=handoff_failed nonce=69d287df8fa2a5d9466d0503b92d94ec attempt=2 pid=21381 handle=none reason=deadline
+ok - DRILL reject: failed within lab deadline, retried once, predecessor lock preserved
 Terminated: 15
+
+EXIT_STATUS=143 TIMEOUT=False

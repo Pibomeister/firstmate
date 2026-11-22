@@ -1,0 +1,4 @@
+{
+  "name": "real tmux/zsh relaunch preparation waits for foreground exit, clears stale input, and executes replacement",
+  "pass": true
+}

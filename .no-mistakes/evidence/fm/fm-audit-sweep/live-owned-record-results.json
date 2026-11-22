@@ -1,0 +1,4 @@
+{
+  "name": "real fixture CLI refuses to forget or signal a live unprovable recorded PID",
+  "pass": true
+}

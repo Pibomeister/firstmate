@@ -1,0 +1,5 @@
+$ bash tests/fm-tmux-relaunch-input.test.sh
+ok - relaunch waits for zsh and clears the old input and notice
+ok - relaunch preparation waits for foreground exit
+
+EXIT_STATUS=0 TIMEOUT=False

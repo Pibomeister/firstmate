@@ -1,0 +1,6 @@
+$ FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-hung-ladder.test.sh test_prune_reclaims_a_crashed_lock
+1..1
+ok - prune skips a live lock and reclaims a crashed one
+FM_TEST_COMPLETE
+
+EXIT_STATUS=0

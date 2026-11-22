@@ -1,0 +1,4 @@
+{
+  "command": "bash tests/fm-handoff-launch.test.sh --through-record-clear",
+  "exit": 0
+}

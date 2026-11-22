@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-stall-ledger.test.sh
+$ bash tests/fm-stall-ledger.test.sh
 1..36
 ok - local watchdog recovery uses the documented active state override
 ok - fresh heartbeat evidence preserves the verified completion epoch without duplication
@@ -21,7 +21,7 @@ ok - a fresh heartbeat is one sample, and a symlink ledger is refused
 ok - a stale primary heartbeat opens one stall and a fresh one closes it as firstmate
 ok - watchdog dry-run and held stay open until a restart done closes them
 ok - an unconfirmed nudge keeps the stall open and a confirmed one closes it
-ok - a post-install unconfirmed nudge does not receive heartbeat recovery credit
+ok - a post-install unconfirmed nudge neither receives recovery credit nor creates a stall
 ok - a secondmate progress stall closes as agentkit, and mate homes stay read-only
 ok - a stale wake opens a worker stall, and a covered secondmate is not opened twice
 ok - kickoff maps to the next 08:00 America/Chicago, including the spring change
@@ -38,4 +38,4 @@ ok - quota, auto-wait, and a refused restart close only on later evidence
 ok - help, an unknown command, and an empty window exit as specified
 FM_TEST_COMPLETE
 
-EXIT_STATUS: 0
+EXIT_STATUS=0 TIMEOUT=False

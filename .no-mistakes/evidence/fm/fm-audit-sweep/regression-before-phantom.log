@@ -1,0 +1,27 @@
+Current installation-boundary regression against immediate pre-fix ffc2994f8 stall library
+$ bash tests/fm-stall-ledger.test.sh
+1..36
+ok - local watchdog recovery uses the documented active state override
+ok - fresh heartbeat evidence preserves the verified completion epoch without duplication
+ok - identical task IDs in two watched homes retain independent episode identities
+ok - completed watchdog history cannot recover a still-stale heartbeat
+ok - an unavailable secondmate heartbeat requires affirmative recovery evidence
+ok - worker-prefixed quota rows recover only from their source home's task status
+ok - historical completion never closes a later ongoing episode
+ok - a window on the 600, 1200, and 1800 boundaries scores PASS
+ok - a human intervention inside the window fails and is cited
+ok - a stall longer than 1800 seconds fails stall-duration only
+ok - recovery latency over 1200 seconds fails stall-recovery only
+ok - an open stall whose detect is 100 seconds before until fails stall-open only
+ok - heartbeat age 601 fails and age 600 passes
+ok - heartbeat age 700 during a 400 second verified handoff passes
+ok - a verified handoff longer than 600 seconds does not exempt heartbeat age
+ok - a sample gap fails, and a missing primary heartbeat fails closed
+ok - rows and score ignore malformed ledger lines
+ok - a fresh heartbeat is one sample, and a symlink ledger is refused
+ok - a stale primary heartbeat opens one stall and a fresh one closes it as firstmate
+ok - watchdog dry-run and held stay open until a restart done closes them
+ok - an unconfirmed nudge keeps the stall open and a confirmed one closes it
+not ok - an unconfirmed completion must not create a phantom stall (expected '1', got '2')
+
+EXIT_STATUS=1

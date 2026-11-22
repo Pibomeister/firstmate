@@ -1,0 +1,20 @@
+[
+  {
+    "regression": "stall",
+    "exit": 1,
+    "expected_failure_observed": true,
+    "oracle": "an unconfirmed nudge closed the stall"
+  },
+  {
+    "regression": "receipt",
+    "exit": 1,
+    "expected_failure_observed": true,
+    "oracle": "was recorded as a delivery"
+  },
+  {
+    "regression": "prune",
+    "exit": 1,
+    "expected_failure_observed": true,
+    "oracle": "reclaims a crashed lock"
+  }
+]

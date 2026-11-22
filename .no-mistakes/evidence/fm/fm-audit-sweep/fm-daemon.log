@@ -1,4 +1,4 @@
-COMMAND: FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-daemon.test.sh
+$ bash tests/fm-daemon.test.sh
 ok - fm-afk-start.sh fails before daemon startup when the afk flag cannot be written
 ok - fm-afk-start.sh ignores stale pidfile-only live pids
 ok - fm-afk-start.sh refuses tern as an away-mode supervisor backend (unsupported; documented in docs/tern-backend.md)
@@ -141,7 +141,7 @@ ok - a failing channel logs and falls back to the next channel, never crashing t
 ok - a hung notifier is bounded, logged, and falls through to the next channel
 ok - a backgrounded command notifier remains bounded until its process group is reaped
 ok - a hung notifier override is bounded, logged, and proceeds to the next channel
-{run-worktree}/bin/fm-notify-lib.sh: line 115: 65279 Terminated: 15          sh -c 'sleep 30 & printf "%s" "$!" > "$1"; wait' sh "$child_file"
+{run-worktree}/bin/fm-notify-lib.sh: line 115: 96041 Terminated: 15          sh -c 'sleep 30 & printf "%s" "$!" > "$1"; wait' sh "$child_file"
 ok - daemon shutdown stops and reaps the active notifier process group
 ok - inject_wedge_alarm writes the marker AND emits the active alert even with no tmux status-line (herdr backend)
 ok - in-process wedge throttle prevents alert spam when the marker cannot persist
@@ -175,4 +175,4 @@ ok - a seen terminal status on the picker clears like a plain stale
 ok - a dialog name joins the escalation of an unseen status
 ok - a dialog name after demand-deep-inspection still escalates, and a declared wait still pauses
 
-EXIT_STATUS: 0
+EXIT_STATUS=0 TIMEOUT=False
