@@ -67,8 +67,8 @@
 # A failed preparation falls back to ordinary local admission and retries after
 # 60 seconds while waiting. Preparation includes the snapshot upload and the
 # queue scripts, which travel beside the snapshot rather than inside it, so a
-# failure before the suite starts never becomes a test result. It never bypasses the local slot limit, and it reaches the load ceiling
-# only through the reserved-slot rule above.
+# failure before the suite starts never becomes a test result. Local fallback
+# follows the admission rules above.
 # Remote runs use the remote user's queue and its local load/slot policy;
 # FM_TEST_QUEUE_REMOTE_DISABLE=1 prevents recursive offloading there.
 # The transport snapshots the current Git checkout (shallow HEAD, tracked and

@@ -41,11 +41,14 @@
 # result. Without it, failures are printed and returned to the direct caller
 # for tests and diagnostics.
 #
-# A failed refresh backs off before the next --best-effort attempt: the
+# A refresh that fails while holding the publication lock records backoff
+# before releasing it, delaying the next --best-effort attempt: the
 # delay doubles after each consecutive failure, from 30 seconds up to
-# 1800 seconds, and a publication clears it.
+# 1800 seconds. Eligibility is rechecked under that lock, and a publication
+# clears the record. An attempt skipped for a busy lock or active backoff
+# leaves the record unchanged.
 # The record is state/.home-summary-refresh.backoff (failures and the next
-# permitted attempt epoch). A direct call without --best-effort always runs,
+# permitted attempt epoch). A direct call without --best-effort bypasses backoff,
 # so tests and diagnostics are never deferred. This is the interim relief
 # until the producer itself is fast enough that failures stop recurring.
 set -u
