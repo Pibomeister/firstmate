@@ -360,10 +360,12 @@ _fm_wd_category_line() {  # <view>
 
 # A production or shared-database mutation, not a bare or read-only mention.
 _fm_wd_data_writes() {  # <view>
-  local cleaned
+  local cleaned resource mutation relation
   cleaned=$(_fm_wd_category_line "$1")
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(prod(uction)?|shared[[:space:]]*(db|database))([^a-z]|$)' || return 1
-  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq '(^|[^a-z])(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing))([^a-z]|$)'
+  resource='(prod(uction)?|shared[[:space:]]*(db|database))([[:space:]]+(db|database|data|records|rows|tables|schema))?'
+  mutation='(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing)|migrat(e|es|ed|ing|ion|ions))'
+  relation='[[:space:]]+((data|records|rows|changes)[[:space:]]+)?((to|into|against|on|in|of|for)[[:space:]]+)?((the|a|an)[[:space:]]+)?'
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "(^|[^a-z])($mutation$relation$resource|$resource[[:space:]]+$mutation)([^a-z]|$)"
 }
 
 # A failure in the PR's own changed behavior, including code this PR modified, added, or introduced.
@@ -371,7 +373,9 @@ FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in thi
 
 _fm_wd_pr_caused_failure() {  # <view>
   local cleaned
-  cleaned=$(_fm_wd_category_line "$1" | LC_ALL=C sed -E "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
+  cleaned=$(_fm_wd_category_line "$1" | LC_ALL=C sed -E \
+    -e "s/(^|[^a-z])not ($FM_WD_PR_FAILURE_RE)[a-z]*/ /g" \
+    -e "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+tests?)?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
   printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
 }
 
@@ -401,7 +405,10 @@ fm_wd_known_unreachable_timing_flake() {  # <text>
   printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])known (unreachable |load sensitive |load shaped |load |timing )*(flake|flaky)([^a-z]|$)' || return 1
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load sensitive|load shaped' || return 1
   printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable' || return 1
-  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'once rerun (failed|left) only|only[^.;!?]*(flake|flaky)[^.;!?]*survived (the |a )?once rerun' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'once rerun (failed|left) only|only[^.;!?]*(flake|flaky)[^.;!?]*survived (the |a )?once rerun|after (the |a )?once rerun,? (the )?only failure (left|remaining) (was|is)' || return 1
+  if printf '%s\n' "$view" | awk -F ' · ' '{ for (i=1; i<=NF; i++) if (index($i, "other findings:") > 0) print $i }' | LC_ALL=C grep -Eq '(^|[^a-z])(failed|failures?|errors?)([^a-z]|$)'; then
+    return 1
+  fi
   ! printf '%s\n' "$view" | LC_ALL=C grep -Eq 'unknown|not (a |yet |previously )?known|new (timing |load sensitive |load shaped )?flake|no (once )?rerun|rerun (not |is |still )?(attempted|pending|planned)|if (the |a )?once rerun|not (the )?only|another (test )?(failure|error|failed)|additional (test )?(failure|error)|unrelated (failure|error)|also [^.;!?]*failed|additionally [^.;!?]*failed|failed (too|as well)|plus (a |an )?(failure|error|timeout)'
 }
 

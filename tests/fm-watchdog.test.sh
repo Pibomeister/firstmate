@@ -1974,6 +1974,8 @@ test_flake_default_requires_known_sole_failure_after_rerun() {
   local text
   for text in \
     'The once-rerun failed only on a known unreachable timing flake.' \
+    'After the once-rerun, the only failure left was a known load-sensitive timing flake in a test the PR cannot reach' \
+    'other findings: Changed code passed · The once-rerun failed only on a known unreachable timing flake.' \
     'Only a known load-shaped flake in a test the PR cannot reach survived the once-rerun.' \
     $'The once_rerun failed only on a known unreachable\ntiming flake.'; do
     lib fm_wd_known_unreachable_timing_flake "$text" || fail "eligible flake lost its default: $text"
@@ -1989,6 +1991,7 @@ test_flake_default_requires_known_sole_failure_after_rerun() {
     'If the once-rerun failed only on a known unreachable timing flake, approve.' \
     'The once-rerun failed only on a known unreachable timing flake. Another test failed.' \
     'The once-rerun failed only on a known unreachable timing flake. T34 failed too.' \
+    'other findings: T34 failed with an assertion mismatch · The once-rerun failed only on a known unreachable timing flake.' \
     'The once-rerun failed only on a known unreachable timing flake, plus a timeout.'; do
     ! lib fm_wd_known_unreachable_timing_flake "$text" || fail "ineligible record received the default: $text"
   done
@@ -2004,6 +2007,7 @@ council-seats=claude:haiku,agy:flash'
     'First run found a new timing flake in a test the PR cannot reach; no rerun attempted.' \
     'Only an unknown unreachable timing flake survived the once-rerun.' \
     'T33 survived the once-rerun only as a known unreachable load-sensitive timing flake.' \
+    'other findings: T34 failed with an assertion mismatch · The once-rerun failed only on a known unreachable timing flake.' \
     'The once-rerun failed only on a known unreachable timing flake. Another test failed.'; do
     i=$((i + 1))
     : > "$H/prompt.log"
@@ -2217,14 +2221,64 @@ test_human_only_releases_passing_changed_behavior() {
   pass "human-only: passing changed behavior releases the flake but not a later real failure"
 }
 
+test_human_only_respects_negative_pr_attribution() {
+  local phrase record
+  for phrase in 'not modified by this PR' 'not added in this PR' 'not introduced by this PR' \
+    'not code this PR modified' "not PR's own changed behavior" $'not\nmodified by this PR' 'not_added_in_this_PR'; do
+    record="PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake. T33 was $phrase. A approve, B schedule a low-load rerun"
+    ! lib fm_wd_human_only "$record" || fail "negative attribution caused a human-only hold: $phrase"
+    lib fm_wd_human_only "$record. Another test failed in code modified by this PR" || fail 'negative attribution erased a real PR-caused failure'
+    lib fm_wd_human_only "$record. Another test failed in code added in this PR" || fail 'negative attribution erased a real added-code failure'
+    lib fm_wd_human_only "$record. Another test failed in code introduced by this PR" || fail 'negative attribution erased a real introduced-code failure'
+  done
+  pass 'negative PR attributions release the flake without hiding genuine failures'
+}
+
 test_human_only_distinguishes_production_mentions_from_mutations() {
   local record='PR #9 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable load-sensitive timing flake in a read-only production database fixture; no writes. A approve, or B hold' phrase
   ! lib fm_wd_human_only "$record" || fail "a read-only production fixture held an unrelated flake"
-  for phrase in 'write production data' 'production database mutations' 'update production records' 'writes to prod DB' 'prod DB writes' 'update prod records' 'prod_db writes'; do
+  for phrase in 'write production data' 'production database mutations' 'update production records' 'writes to prod DB' 'prod DB writes' 'update prod records' 'prod_db writes' \
+    'running migrations against the shared database' 'shared database migrations' 'migrate the production database' \
+    'insert rows into the shared DB' 'alter the shared database schema' 'truncate production tables'; do
     lib fm_wd_human_only "$record. Also $phrase" || fail "a read-only mention hid a real mutation: $phrase"
   done
   ! lib fm_wd_human_only 'PR #9 no-mistakes test awaiting_approval. A known unreachable timing flake remains in a read-only prod DB fixture; no writes. A approve, B hold' || fail 'a read-only prod fixture was held'
+  ! lib fm_wd_human_only "$record. A update the PR description, B defer" || fail 'an unrelated PR-description update became a database mutation'
+  ! lib fm_wd_human_only 'PR #9 no-mistakes test awaiting_approval. Read-only production fixture with an unrelated option to update the PR description' || fail 'an unrelated update in the same clause became a database mutation'
+  ! lib fm_wd_human_only "$record. A update the PR description; B insert a paragraph; C alter the plan" || fail 'unrelated mutation verbs became database operations'
   pass "human-only: a production mention is not a write, while production mutations stay held"
+}
+
+test_council_shared_classifier_regressions() {
+  local out phrase i=0
+  make_home $'Captain session\n> ' 'models=claude:haiku,agy:flash
+council-seats=claude:haiku,agy:flash'
+  fake_models "$H" ok:'PROCEED A APPROVE_PARK' ok:'PROCEED A APPROVE_PARK'
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. After the once-rerun, the only failure left was a known load-sensitive timing flake in a test the PR cannot reach. A approve, B schedule a low-load rerun' > "$H/record.txt"
+  out=$(run_wd 0 council --task t1 --key literal-issue --record-file "$H/record.txt" 2>&1) || fail "literal-issue council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'the literal issue wording reaches the council'
+  assert_contains "$out" '(approved, not clean)' 'the literal issue wording gets the required flake default'
+  for phrase in 'not modified by this PR' 'not added in this PR' 'not introduced by this PR'; do
+    i=$((i + 1))
+    printf 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake. T33 was %s. A approve, B schedule a low-load rerun\n' "$phrase" > "$H/record.txt"
+    out=$(run_wd "$i" council --task t1 --key "negative-attribution-$i" --record-file "$H/record.txt" 2>&1) || fail "negative-attribution council failed: $out"
+    assert_contains "$out" 'council=ruled answer=PROCEED A' 'negative attribution remains a council decision'
+    assert_contains "$out" '(approved, not clean)' 'negative attribution preserves flake eligibility'
+  done
+  printf '%s\n' 'PR #9 no-mistakes test awaiting_approval. A approve running migrations against the shared database; B defer' > "$H/record.txt"
+  out=$(run_wd 10 council --task t1 --key shared-migration --record-file "$H/record.txt" 2>&1) || fail "migration council failed: $out"
+  assert_contains "$out" 'council=held answer=none' 'shared database migrations stay human-only'
+  assert_equals 8 "$(seat_calls)" 'no seat receives the database migration'
+  transcript 100 'Working.'
+  printf 'needs-decision [at=%s] [key=shared-migration]: %s\n' "$((BASE - 9000))" "$(cat "$H/record.txt")" > "$H/state/t1.status"
+  run_wd 0 once >/dev/null 2>&1 || fail 'automatic migration hold failed'
+  assert_grep 'held for the owner' "$H/data/watchdog/status.md" 'automatic migration decisions are human-only too'
+  assert_equals 8 "$(seat_calls)" 'automatic migration hold calls no seats'
+  printf '%s\n' 'PR #562 no-mistakes test awaiting_approval. The once-rerun failed only on a known unreachable timing flake in a read-only production fixture; no writes. A approve and update the PR description, B defer' > "$H/record.txt"
+  out=$(run_wd 20 council --task t1 --key unrelated-description-update --record-file "$H/record.txt" 2>&1) || fail "unrelated update council failed: $out"
+  assert_contains "$out" 'council=ruled answer=PROCEED A' 'updating a PR description does not mutate the fixture'
+  assert_contains "$out" '(approved, not clean)' 'the read-only fixture keeps its flake qualification'
+  pass 'shared classifiers route literal issue wording, negative attribution and database operations correctly'
 }
 
 test_council_routes_passing_code_and_holds_prod_writes() {
@@ -7905,6 +7959,8 @@ fm_test_run \
   test_flake_deferrals_are_not_approval_qualified \
   test_human_only_keeps_real_change_and_releases_negation \
   test_human_only_releases_passing_changed_behavior \
+  test_human_only_respects_negative_pr_attribution \
+  test_council_shared_classifier_regressions \
   test_council_routes_passing_code_and_holds_prod_writes \
   test_human_only_distinguishes_production_mentions_from_mutations \
   test_awaiting_approval_requires_no_mistakes_step_context \
