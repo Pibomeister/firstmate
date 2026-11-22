@@ -447,6 +447,7 @@ fi
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
 
 POLL=${FM_POLL:-15}                   # seconds between cycles
+POLL_CEILING=$(awk -v poll="$POLL" 'BEGIN { whole = int(poll); print whole + (poll > whole) }')
 # Keep the clock choice in one place. Unset, each form keeps the clock its call
 # sites read before: the output-variable form uses the portable epoch helper,
 # and the stdout form runs date +%s, which PATH-faked clocks in tests rely on.
@@ -5383,7 +5384,7 @@ FLEET_HEARTBEAT_SEEN=
 FLEET_HEARTBEAT_CHANGE_FILE=$STATE/.heartbeat-ledger-change
 FLEET_HEARTBEAT_CHANGE_GEN=0
 FLEET_HEARTBEAT_CYCLE=$HEARTBEAT_LEDGER_IDLE
-[ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL" ] 2>/dev/null || FLEET_HEARTBEAT_CYCLE=$POLL
+[ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL_CEILING" ] || FLEET_HEARTBEAT_CYCLE=$POLL_CEILING
 fleet_heartbeat_launch() {
   # The heartbeat's stale bound starts from this watcher's longest launch
   # interval, never the wake heartbeat cadence (bin/fm-heartbeat.sh stale_after_secs).
@@ -5422,7 +5423,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     # the launch interval rather than the next poll after it.
     nap=$POLL
     fm_watch_now now
-    [ "$due" -le "$now" ] || [ $((due - now)) -ge "$nap" ] || nap=$((due - now))
+    [ "$due" -le "$now" ] || [ $((due - now)) -ge "$POLL_CEILING" ] || nap=$((due - now))
     sleep "$nap" &
     nap=$!
     wait "$nap" 2>/dev/null || true

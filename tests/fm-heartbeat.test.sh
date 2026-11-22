@@ -1085,14 +1085,14 @@ test_jittered_idle_gaps_stay_within_the_interval() {
 # A relevant change - a wake any producer appends, or a status line the watcher
 # reads - collects at once, without waiting out the idle interval.
 test_a_relevant_change_collects_without_waiting_for_idle() {
-  local home stub before i
-  home=$(make_home watch-change)
+  local home stub before i poll=${1:-1}
+  home=$(make_home "watch-change-$poll")
   # A quiet home: no task row, so only the injected changes below wake it.
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
   stub=$(launch_log_stub watch-change)
   fm_test_track_watcher_state "$home/state"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
-    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
     "$WATCH" > "$TMP_ROOT/watch-change.out" 2> "$TMP_ROOT/watch-change.err" &
   WATCH_PID=$!
@@ -1180,12 +1180,12 @@ test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
 }
 
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
-  local home script rc
-  home=$(make_home watch-cycle)
+  local home script rc poll=${1:-2} cycle_bound=${2:-32}
+  home=$(make_home "watch-cycle-$poll")
   script=$(canned_snapshot "$home")
   printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
-    FM_POLL=2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
     FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
     "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
   WATCH_PID=$!
@@ -1195,9 +1195,11 @@ test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
   wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
   assert_ledger "$home" ".stale_after_secs == $((330 + DEFAULT_RUN_CAP))" \
     "the watcher's heartbeat bound is not its default idle interval plus the grace plus the run cap"
-  rm -f "$(ledger "$home")"
+  home=$(make_home "watch-cycle-short-idle-$poll")
+  script=$(canned_snapshot "$home")
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_HEARTBEAT_LEDGER_IDLE_SECS=1 \
-    FM_POLL=2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
     FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
     "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
   WATCH_PID=$!
@@ -1205,8 +1207,8 @@ test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
   WATCH_PID=
   [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
   wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
-  assert_ledger "$home" ".stale_after_secs == $((32 + DEFAULT_RUN_CAP))" \
-    "an idle interval below the poll did not give the poll plus the grace plus the run cap"
+  assert_ledger "$home" ".stale_after_secs == $((cycle_bound + DEFAULT_RUN_CAP))" \
+    "the heartbeat bound did not cover the idle interval and rounded-up poll plus the grace and run cap"
   pass "AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence"
 }
 
@@ -1333,9 +1335,12 @@ test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
 test_stale_bound_is_the_watcher_cycle_plus_the_grace
 test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
 test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 0.2 31
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 2.2 33
 test_unchanged_home_collects_once_per_idle_interval
 test_jittered_idle_gaps_stay_within_the_interval
 test_a_relevant_change_collects_without_waiting_for_idle
+test_a_relevant_change_collects_without_waiting_for_idle 0.2
 test_derived_context_sits_beside_the_footer
 test_derived_context_is_unknown_without_token_usage
 test_derived_context_is_unknown_under_directory_overrides
