@@ -845,6 +845,41 @@ test_priority_change_during_startup_keeps_worker_with_current_priority() {
   pass "a backlog priority that changes during endpoint startup keeps the worker and records the row's priority"
 }
 
+# A priority rewrite that fails at the dispatch commit is best effort: the
+# already-launched worker keeps its record and its In-flight item, and the
+# warning names the row priority, the recorded one, and the manual fix.
+test_failed_priority_rewrite_keeps_the_launched_worker() {
+  local case_dir home pane out rc=0 real
+  case_dir=$(make_case priority-rewrite-fails task-w)
+  home="$case_dir/home"
+  if [ "$HAVE_TASKS_AXI" != 1 ]; then
+    pass "skipped: tasks-axi is not installed, so no backlog priority can change mid-launch"
+    return 0
+  fi
+  real=$(command -v mktemp)
+  cat > "$case_dir/fakebin/mktemp" <<SH
+#!/usr/bin/env bash
+case "\$*" in *.priority.*) exit 1 ;; esac
+exec "$real" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/mktemp"
+  pane=$(new_worktree "$case_dir" task-w)
+  out=$(FM_FAKE_ON_NEW_WINDOW="tasks-axi update task-w --priority 0 --file '$home/data/backlog.md' >/dev/null" \
+    run_spawn "$case_dir" "$home" "$pane" task-w "$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
+  expect_code 0 "$rc" "a failed priority rewrite rolled back the launched worker: $out"
+  assert_contains "$out" "warning: backlog item task-w priority changed while its worker started" \
+    "the kept worker's warning did not name the priority change"
+  assert_contains "$out" "set priority=0" "the warning did not give the manual fix"
+  assert_present "$home/state/task-w.meta" "the launched worker lost its task record"
+  assert_equals "" "$(sed -n 's/^priority=//p' "$home/state/task-w.meta")" \
+    "the task record changed although its priority rewrite failed"
+  [ "$(row_state "$home" task-w)" = in_flight ] ||
+    fail "the kept worker's backlog item was not moved In flight: $(row_state "$home" task-w)"
+  grep -Fqx -- "fm-task-w" "$case_dir/calls.log.window" ||
+    fail "the launched endpoint for task-w was not left running"
+  pass "a failed priority rewrite at the dispatch commit keeps the launched worker and warns with the manual fix"
+}
+
 # Every explicit priority 1-4, not only P0, gets its worker past a full
 # project and records that priority for supervision.
 test_priorities_one_to_four_are_admitted_past_full_capacity() {
@@ -951,6 +986,7 @@ test_prioritized_spawn_preempts_capacity_without_stopping_other_lanes
 test_prioritized_spawn_passes_lane_and_load_deferral
 test_prioritized_spawn_still_refuses_unreadable_lane_config
 test_priority_change_during_startup_keeps_worker_with_current_priority
+test_failed_priority_rewrite_keeps_the_launched_worker
 test_priorities_one_to_four_are_admitted_past_full_capacity
 test_missing_or_mismatched_priority_refuses_before_anything_exists
 test_missing_priority_is_reported_before_capacity_deferral

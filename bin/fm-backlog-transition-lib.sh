@@ -896,9 +896,11 @@ fm_backlog_record_set_priority() {  # <meta> <priority-or-empty> <state>
 # A fresh dispatch whose row priority changed while the endpoint started adopts
 # the row's current priority into the task record and warns, instead of
 # refusing: the endpoint is already running, and a refusal here would roll back
-# the only record that lets supervision find it.
+# the only record that lets supervision find it. For the same reason that
+# adoption is best effort: a failed rewrite keeps the record as it was, warns
+# with the manual fix, and the dispatch still commits.
 fm_backlog_dispatch_transition() {
-  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status recorded
+  local meta=$1 data=$2 id=$3 state=$4 mode=${5:-dispatch} row row_status recorded fix
   fm_backlog_record_present "$meta" "task record" "$state" || return 1
   fm_backlog_row_probe "$data" "$id"
   row_status=$?
@@ -922,9 +924,16 @@ fm_backlog_dispatch_transition() {
   else
     recorded=$(sed -n 's/^priority=//p' "$meta" | tail -n 1)
     if [ "$recorded" != "$FM_BACKLOG_ROW_PRIORITY" ]; then
-      fm_backlog_record_set_priority "$meta" "$FM_BACKLOG_ROW_PRIORITY" "$state" || return 1
-      printf 'warning: backlog item %s priority changed while its worker started: its row is %s, so the task record now carries %s instead of %s\n' \
-        "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" >&2
+      if fm_backlog_record_set_priority "$meta" "$FM_BACKLOG_ROW_PRIORITY" "$state"; then
+        printf 'warning: backlog item %s priority changed while its worker started: its row is %s, so the task record now carries %s instead of %s\n' \
+          "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" >&2
+      else
+        fix="set priority=$FM_BACKLOG_ROW_PRIORITY"
+        [ -n "$FM_BACKLOG_ROW_PRIORITY" ] || fix='remove the priority line'
+        printf 'warning: backlog item %s priority changed while its worker started: its row is %s but the task record still carries %s, because the record could not be updated (%s); the worker keeps running - %s in %s by hand\n' \
+          "$id" "${FM_BACKLOG_ROW_PRIORITY:--}" "${recorded:--}" "${FM_BACKLOG_TRANSITION_ERROR:-no error recorded}" "$fix" "$meta" >&2
+        FM_BACKLOG_TRANSITION_ERROR=
+      fi
     fi
   fi
   case "$row" in

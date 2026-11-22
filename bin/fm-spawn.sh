@@ -306,6 +306,8 @@
 #   priority changes while the endpoint starts is adopted at the backlog
 #   dispatch commit: priority= takes the row's current value with a warning,
 #   because refusing there would drop the record of a worker already running.
+#   A rewrite that fails keeps the record unchanged and warns with the manual
+#   fix instead.
 #   When automatic backlog enforcement does not apply (including a manual
 #   backend), --priority is the caller's explicit intake authority and is not
 #   presented as row-verified.
