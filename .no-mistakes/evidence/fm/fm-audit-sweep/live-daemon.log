@@ -1,0 +1,5 @@
+Real worker endpoint on another private server:
+worker:0 zsh
+Foreign server result: pause|paused (awaiting external), rechecked on a long cadence: paused: awaiting external
+Same server, missing endpoint result: escalate|paused worker gone: worker:0 (agent missing - the recorded endpoint is gone, so the declared wait cannot clear on its own; recover the worker, and check for unlanded work before any cleanup): paused: awaiting external
+RESULT: foreign endpoint retains declared wait; missing endpoint on addressed server escalates.

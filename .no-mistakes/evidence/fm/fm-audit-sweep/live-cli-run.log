@@ -1,0 +1,157 @@
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1799999800 --until 1800000601
+1799999900	hb	primary	-	1799999895	-	-	-	-	-
+1800000000	hb	primary	-	1799999995	-	-	-	-	-
+1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
+1800000600	hb	primary	-	1800000595	-	-	-	-	-
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1799999800 --until 1800000901
+1799999900	hb	primary	-	1799999895	-	-	-	-	-
+1800000000	hb	primary	-	1799999995	-	-	-	-	-
+1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
+1800000600	hb	primary	-	1800000595	-	-	-	-	-
+1800000900	hb	primary	-	1800000895	-	-	-	-	-
+1800000900	stall-close	primary	-	1799999280	1800000000	watchdog	1800000900	1620	primary:-:1799999280
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1800000000 --until 1800000661
+1800000120	hb	primary	-	1799999400	-	-	-	-	-
+1800000120	stall-open	primary	-	1799999400	1800000001	-	-	-	primary:-:1799999400
+1800000600	hb	primary	-	1800000600	-	-	-	-	-
+1800000600	stall-close	primary	-	1799999400	1800000001	firstmate	1800000600	1200	primary:-:1799999400
+1800000660	hb	primary	-	1800000660	-	-	-	-	-
+exit=0
+STALL RESULT: unconfirmed completion preserves existing episode; confirmed progress closes it; no phantom episode after installation.
+$ fm-pstack-verify-hook.sh --claude
+exit=0
+input command=for f in state/*.status; do
+ echo "$f"
+done
+$ fm-pstack-verify-hook.sh --claude
+exit=0
+input command=echo "done" >> state/notes.txt
+$ fm-pstack-verify-hook.sh --claude
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "Load and follow principle-prove-it-works at .cursor/skills/principle-prove-it-works/SKILL.md (mirrored at .agents/skills/principle-prove-it-works/SKILL.md). A completion report is not proof; verify against the real artifact with a check you can rerun."
+  }
+}
+exit=0
+input command=echo "done: delivered export" >> state/task.status
+$ fm-pstack-verify-hook.sh --claude
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "Load and follow principle-prove-it-works at .cursor/skills/principle-prove-it-works/SKILL.md (mirrored at .agents/skills/principle-prove-it-works/SKILL.md). A completion report is not proof; verify against the real artifact with a check you can rerun."
+  }
+}
+exit=0
+input command=echo "done [at=1800000000]: delivered export" >> state/task.status
+HOOK RESULT: shell done stays silent; real completion emits verification context.
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ export
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
+hardstop	credential
+exit=0
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ declare -p
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
+hardstop	credential
+exit=0
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ typeset -p
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
+hardstop	credential
+exit=0
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ export FOO=bar
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
+route	tool-approval
+exit=0
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ rm -rf build && cat <<EOF
+────────────────────────────────────────
+────────────────────────────────────────
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+EOF
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
+hardstop	destructive
+exit=0
+PERMISSION RESULT: credential dumps and hidden destructive command stop; ordinary export routes.
+$ fm-memory-guard.sh check --observe --json
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999,"proc_rss_mb":999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":3651,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
+exit=0
+$ fm-memory-guard.sh check --observe --json
+memory-guard: cannot write {run-worktree}/.test-phase-tmp/live-cli/memory/state/memory-guard-seen.tsv
+memory-guard: cannot write {run-worktree}/.test-phase-tmp/live-cli/memory/state/memory-guard-alarms.tsv
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999,"proc_rss_mb":999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":3592,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
+exit=1
+MEMORY RESULT: real host sample appended but failed state save returns exit 1.
+$ fm-hung-ladder.sh prune
+exit=0
+$ fm-hung-ladder.sh prune
+exit=0
+PRUNE RESULT: fresh lock preserves orphan state; crashed lock reclaimed and orphan state removed.

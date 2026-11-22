@@ -1,0 +1,13 @@
+{
+  "revision": "739ff54ee2a94cf38c5ffa85f7b0bde194acbf29",
+  "worktree_clean": true,
+  "owned_process_inventory_exit": 1,
+  "owned_process_inventory": "No open files or working directories under the disposable workspace fixture tree remained.",
+  "disposable_fixture_paths_removed": [
+    "{run-worktree}/.test-phase-tmp",
+    "/tmp/fm-live-relaunch",
+    "/tmp/fm-live-relaunch+6b128ba29939bf7b0942025e7aeb0e022ef708d05382d4d428942e3091114ae2"
+  ],
+  "all_started_exec_sessions": "Completed or explicitly stopped; the broad test driver exited 143 when scope was narrowed.",
+  "source_changes": []
+}

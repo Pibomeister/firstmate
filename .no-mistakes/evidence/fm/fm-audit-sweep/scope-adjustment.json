@@ -1,0 +1,6 @@
+{
+  "stopped_command": "bash tests/fm-hung-ladder.test.sh",
+  "reason": "Broad baseline stopped to select changed stale-lock behavior; no failing assertion observed.",
+  "replacement": "bash tests/fm-hung-ladder.test.sh test_prune_reclaims_a_crashed_lock",
+  "terminated_driver": 95629
+}

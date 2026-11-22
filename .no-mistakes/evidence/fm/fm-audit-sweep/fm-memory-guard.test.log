@@ -1,0 +1,13 @@
+1..14
+ok - help and usage errors take no sample
+ok - the macOS reader parses swap, etime, and comm with spaces
+ok - the Linux reader parses /proc/meminfo and ps -eo
+ok - a failed read is reported and recorded, never guessed
+ok - a process alarms only after holding the limit for the whole window
+ok - the swap limit is inclusive, deduplicated, and configurable
+ok - the sample log stays bounded
+ok - an alarm is never hidden by a sample that cannot be recorded
+ok - a pass that cannot save its sustained-process or alarm state exits 1
+ok - --json prints one valid object
+ok - observe is the default, does no classification work, and --observe always wins
+not ok - action does not name scratch as would-stop: memory-guard: status=alarm swap_used_mb=0 top_pid=69554 top_rss_mb=9000 top_comm=bash mode=reap-scratch action=spared:69554,spared:69633,spared:69664,spared:69704,spared:69750,spared:69785,spared:69819,spared:69867,spared:69909,spared:69948,spared:69980,spared:70019,spared:70050,spared:70082,spared:70124,spared:70151

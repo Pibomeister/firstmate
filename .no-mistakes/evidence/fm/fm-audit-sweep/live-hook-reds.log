@@ -1,0 +1,14 @@
+INPUT {"cursor_version": "x", "conversation_id": "independent-red-run", "hook_event_name": "afterAgentResponse", "text": "fixed tests/a_test.py", "generation_id": "g1"}
+OUTPUT  EXIT 0
+INPUT {"cursor_version": "x", "conversation_id": "independent-red-run", "hook_event_name": "afterShellExecution", "command": "pytest tests/a_test.py", "output": "FAILED tests/a_test.py::test_one - assert\nFAILED tests/a_test.py::test_two - assert\n", "duration": 900, "generation_id": "g1"}
+OUTPUT  EXIT 0
+INPUT {"cursor_version": "x", "conversation_id": "independent-red-run", "hook_event_name": "postToolUse", "tool_name": "Read", "tool_input": {"path": "src/a.py"}, "tool_output": "{\"exitCode\":0}", "generation_id": "g1"}
+OUTPUT  EXIT 0
+INPUT {"cursor_version": "x", "conversation_id": "independent-red-run", "hook_event_name": "afterShellExecution", "command": "pytest tests/a_test.py", "output": "FAILED tests/a_test.py::test_one - assert\nFAILED tests/a_test.py::test_two - assert\n", "duration": 900, "generation_id": "g2"}
+OUTPUT  EXIT 0
+INPUT {"cursor_version": "x", "conversation_id": "independent-red-run", "hook_event_name": "postToolUse", "tool_name": "Read", "tool_input": {"path": "src/a.py"}, "tool_output": "{\"exitCode\":0}", "generation_id": "g2"}
+OUTPUT {
+  "additional_context": "Load and follow principle-attack-the-premise at .cursor/skills/principle-attack-the-premise/SKILL.md (mirrored at .agents/skills/principle-attack-the-premise/SKILL.md). The same red returned after a claimed fix; write the shared assumption in one sentence and take one observation that would change the outcome if it were false, before the next fix."
+}
+ EXIT 0
+RESULT: two failures in one run count once; a second failing run triggers the premise check.

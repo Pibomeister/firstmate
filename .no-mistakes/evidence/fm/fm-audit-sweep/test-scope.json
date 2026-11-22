@@ -1,0 +1,17 @@
+{
+  "revision": "739ff54ee2a94cf38c5ffa85f7b0bde194acbf29",
+  "base": "c81b71352a0b4d4636a7e46962134e25fa214d48",
+  "scenario_scope": [
+    "Interrupted handoff retains launch failure receipt",
+    "Herdr lab cancellation and unverifiable process ownership",
+    "Hung-ladder prune skips fresh locks and reclaims crashed locks",
+    "Memory guard reports state-save failure despite appended sample",
+    "Permission classifier stops credential dumps and misleading heredoc boundaries",
+    "Hook ignores bare done and counts one red per call",
+    "Real fm-spawn relaunch clears stale shell input before cd and starts installed Codex in the recorded task worktree",
+    "Unconfirmed nudge neither recovers nor creates stall episodes",
+    "Foreign tmux server endpoints preserve declared waits",
+    "Watchdog rejects swallowed or failed nudge delivery receipts"
+  ],
+  "isolation": "Disposable homes and private tmux/Herdr sessions; no operator fleet changes; source unchanged."
+}

@@ -1,0 +1,6 @@
+{run-worktree}/.test-phase-tmp/handoff-manual
+lock acquired: harness pid 42051
+successor: harness=codex model=default account=ambient reason=handoff verdict=unknown why=quota-axi_not_installed
+Launcher exit after record-clear SIGTERM: 1
+at=1795337941 pid=42051 nonce=none attempt=0 reason=interrupted
+RESULT: interruption at record removal leaves this launch failure receipt for the surviving owner.

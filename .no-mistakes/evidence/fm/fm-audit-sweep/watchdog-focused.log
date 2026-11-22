@@ -1,0 +1,7 @@
+1..5
+ok - a heartbeat nudge whose Enter was swallowed never counts as delivery
+ok - a heartbeat nudge whose send failed never counts as delivery
+ok - heartbeat recovery uses the configured restart without changing account pins
+ok - one transcript response cannot suppress later heartbeat recovery forever
+ok - dry-run history cannot satisfy the active heartbeat delivery prerequisite
+FM_TEST_COMPLETE

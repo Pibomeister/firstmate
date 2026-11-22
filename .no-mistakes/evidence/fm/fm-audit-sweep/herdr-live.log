@@ -1,0 +1,2 @@
+ok - fm-herdr-lab: live empty owned XDG still refuses provision without a running default
+ok - fm-herdr-lab fixture: live start/check/stop own only the recorded fixture and never call server stop

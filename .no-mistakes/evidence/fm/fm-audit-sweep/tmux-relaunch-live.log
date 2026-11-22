@@ -1,0 +1,2 @@
+ok - relaunch waits for zsh and clears the old input and notice
+ok - relaunch preparation waits for foreground exit

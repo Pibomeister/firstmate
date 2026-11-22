@@ -1,0 +1,8 @@
+1..6
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - fm-spawn relaunch: direct entry participates in lifecycle serialization
+ok - fm-spawn --relaunch: refuses to launch a second agent into a live endpoint
+ok - fm-spawn --relaunch: refuses to start a replacement outside the copy holding its work
+ok - tmux: a window absent from its session refuses both verbs rather than being assumed gone
+not ok - exit must succeed once the recorded tmux server is proven gone
+error: task rl64's endpoint fmses:fm-rl64 reads 'missing', but the working-directory scan of the task's copy could not finish; exit will not claim an agent stopped at an address it cannot trust, nor send lifecycle input to one: expected exit 0, got 1

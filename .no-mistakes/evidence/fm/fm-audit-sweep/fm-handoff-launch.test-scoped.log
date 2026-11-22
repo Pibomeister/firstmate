@@ -1,0 +1,14 @@
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1795339638 event=handoff_started nonce=84de2af2438e322fbac132fd57732206 attempt=1 pid=43059 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795339639 event=handoff_failed nonce=84de2af2438e322fbac132fd57732206 attempt=1 pid=43059 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795339649 event=handoff_started nonce=e1387b473b4cef00d4003f9c5f7e11f0 attempt=1 pid=69057 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795339649 event=handoff_failed nonce=e1387b473b4cef00d4003f9c5f7e11f0 attempt=1 pid=69057 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+ok - a handoff that omits an open captain order is refused before any claim, record, or launch
+ok - a failed planned fresh start releases its Stop gate and falls back to auto-compaction
+ok - a launch interrupted before any attempt still records its failure for the surviving session
+ok - a launch interrupted while removing the earlier failure record still records its failure

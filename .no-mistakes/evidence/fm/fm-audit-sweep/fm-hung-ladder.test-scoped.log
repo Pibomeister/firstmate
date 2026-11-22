@@ -1,0 +1,3 @@
+1..1
+ok - prune skips a live lock and reclaims a crashed one
+FM_TEST_COMPLETE

@@ -1,0 +1,10 @@
+tmux 3.3a
+jq-1.6
+smoke:0.0: [600x40] [history 0/2000, 1280 bytes] %0 (active)
+1..2
+ok - a heartbeat nudge whose Enter was swallowed never counts as delivery
+ok - a heartbeat nudge whose send failed never counts as delivery
+FM_TEST_COMPLETE
+1..1
+not ok - a nudge whose Enter was swallowed was recorded as a delivery (expected '0', got '1')
+PRE_FIX_EXIT=1

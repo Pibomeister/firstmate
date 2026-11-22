@@ -1,100 +1,38 @@
 [
   {
-    "suite": "fm-stall-ledger",
-    "command": "bash tests/fm-stall-ledger.test.sh",
+    "command": [
+      "bash",
+      "tests/fm-memory-guard.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 21.7,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-memory-guard.test.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-permission-prompt.test.sh"
+    ],
     "exit": 0,
-    "timeout": false,
-    "seconds": 97.83
+    "seconds": 717.4,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-permission-prompt.test.log"
   },
   {
-    "suite": "fm-hung-ladder",
-    "command": "bash tests/fm-hung-ladder.test.sh",
-    "exit": 143,
-    "timeout": false,
-    "seconds": 722.73
-  },
-  {
-    "suite": "fm-watchdog",
-    "command": "bash tests/fm-watchdog.test.sh",
-    "exit": 143,
-    "timeout": false,
-    "seconds": 736.42
-  },
-  {
-    "suite": "fm-herdr-lab",
-    "command": "bash tests/fm-herdr-lab.test.sh",
+    "command": [
+      "bash",
+      "tests/fm-pstack-verify-hook.test.sh"
+    ],
     "exit": 0,
-    "timeout": false,
-    "seconds": 251.18
+    "seconds": 125.9,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-pstack-verify-hook.test.log"
   },
   {
-    "suite": "fm-herdr-owned-xdg",
-    "command": "bash tests/fm-herdr-owned-xdg.test.sh",
+    "command": [
+      "bash",
+      "tests/fm-stall-ledger.test.sh"
+    ],
     "exit": 0,
-    "timeout": false,
-    "seconds": 244.24
-  },
-  {
-    "suite": "fm-memory-guard",
-    "command": "bash tests/fm-memory-guard.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 46.36
-  },
-  {
-    "suite": "fm-pstack-verify-hook",
-    "command": "bash tests/fm-pstack-verify-hook.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 130.36
-  },
-  {
-    "suite": "fm-handoff-launch",
-    "command": "bash tests/fm-handoff-launch.test.sh",
-    "exit": 143,
-    "timeout": false,
-    "seconds": 1138.12
-  },
-  {
-    "suite": "fm-control-relaunch",
-    "command": "bash tests/fm-control-relaunch.test.sh",
-    "exit": 143,
-    "timeout": false,
-    "seconds": 350.9
-  },
-  {
-    "suite": "fm-tmux-relaunch-input",
-    "command": "bash tests/fm-tmux-relaunch-input.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 6.39
-  },
-  {
-    "suite": "fm-daemon",
-    "command": "bash tests/fm-daemon.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 428.3
-  },
-  {
-    "suite": "fm-herdr-owned-xdg-live-e2e",
-    "command": "bash tests/fm-herdr-owned-xdg-live-e2e.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 28.19
-  },
-  {
-    "suite": "fm-permission-prompt",
-    "command": "bash tests/fm-permission-prompt.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 949.52
-  },
-  {
-    "suite": "fm-handoff-launch-runtime",
-    "command": "bash tests/fm-handoff-launch-runtime.test.sh",
-    "exit": 0,
-    "timeout": false,
-    "seconds": 494.05
+    "seconds": 87.5,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-stall-ledger.test.log"
   }
 ]

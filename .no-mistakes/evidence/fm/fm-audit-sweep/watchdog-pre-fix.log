@@ -1,0 +1,2 @@
+1..1
+not ok - a nudge whose Enter was swallowed was recorded as a delivery (expected '0', got '1')

@@ -1,0 +1,64 @@
+[
+  {
+    "command": [
+      "bash",
+      "tests/fm-hung-ladder.test.sh",
+      "test_prune_reclaims_a_crashed_lock"
+    ],
+    "exit": 0,
+    "seconds": 96.8,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-hung-ladder.test-scoped.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-herdr-lab.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 251.9,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-herdr-lab.test-scoped.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-herdr-owned-xdg.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 347.6,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-herdr-owned-xdg.test-scoped.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-handoff-launch.test.sh",
+      "--through-record-clear"
+    ],
+    "exit": 0,
+    "seconds": 314.9,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-handoff-launch.test-scoped.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-daemon.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 795.7,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-daemon.test-scoped.log"
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-control-relaunch.test.sh",
+      "test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint",
+      "test_direct_spawn_relaunch_participates_in_the_lifecycle_lock",
+      "test_spawn_relaunch_refuses_a_live_agent",
+      "test_spawn_relaunch_refuses_a_pane_outside_the_worktree",
+      "test_tmux_refuses_a_window_missing_from_its_session",
+      "test_tmux_reclaims_a_lost_server_from_its_record"
+    ],
+    "exit": 1,
+    "seconds": 261.0,
+    "log": "~/.no-mistakes/evidence/01M8163VN4CY93AVPMKASHZKBX/fm-control-relaunch.test-scoped.log"
+  }
+]

@@ -1,13 +1,48 @@
-INPUT command='for f in state/*.status; do\n echo "$f"\ndone'
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
-<empty stdout>
+$ fm-stall-ledger.sh observe
 exit=0
-INPUT command='echo "done" >> state/notes.txt'
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
-<empty stdout>
+$ fm-stall-ledger.sh observe
 exit=0
-INPUT command='echo "done: completed export" >> state/task.status'
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1799999800 --until 1800000601
+1799999900	hb	primary	-	1799999895	-	-	-	-	-
+1800000000	hb	primary	-	1799999995	-	-	-	-	-
+1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
+1800000600	hb	primary	-	1800000595	-	-	-	-	-
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1799999800 --until 1800000901
+1799999900	hb	primary	-	1799999895	-	-	-	-	-
+1800000000	hb	primary	-	1799999995	-	-	-	-	-
+1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
+1800000600	hb	primary	-	1800000595	-	-	-	-	-
+1800000900	hb	primary	-	1800000895	-	-	-	-	-
+1800000900	stall-close	primary	-	1799999280	1800000000	watchdog	1800000900	1620	primary:-:1799999280
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh observe
+exit=0
+$ fm-stall-ledger.sh rows --since 1800000000 --until 1800000661
+1800000120	hb	primary	-	1799999400	-	-	-	-	-
+1800000120	stall-open	primary	-	1799999400	1800000001	-	-	-	primary:-:1799999400
+1800000600	hb	primary	-	1800000600	-	-	-	-	-
+1800000600	stall-close	primary	-	1799999400	1800000001	firstmate	1800000600	1200	primary:-:1799999400
+1800000660	hb	primary	-	1800000660	-	-	-	-	-
+exit=0
+STALL RESULT: unconfirmed completion preserves existing episode; confirmed progress closes it; no phantom episode after installation.
+$ fm-pstack-verify-hook.sh --claude
+exit=0
+input command=for f in state/*.status; do
+ echo "$f"
+done
+$ fm-pstack-verify-hook.sh --claude
+exit=0
+input command=echo "done" >> state/notes.txt
+$ fm-pstack-verify-hook.sh --claude
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -15,8 +50,8 @@ $ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
   }
 }
 exit=0
-INPUT command='echo "done [at=1731880000]: completed export" >> state/task.status'
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
+input command=echo "done: delivered export" >> state/task.status
+$ fm-pstack-verify-hook.sh --claude
 {
   "hookSpecificOutput": {
     "hookEventName": "PreToolUse",
@@ -24,148 +59,99 @@ $ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --claude
   }
 }
 exit=0
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --cursor
-<empty stdout>
-exit=0
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --cursor
-<empty stdout>
-exit=0
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --cursor
-<empty stdout>
-exit=0
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --cursor
-<empty stdout>
-exit=0
-$ FM_HOME=<disposable hook> bash bin/fm-pstack-verify-hook.sh --cursor
-{
-  "additional_context": "Load and follow principle-attack-the-premise at .cursor/skills/principle-attack-the-premise/SKILL.md (mirrored at .agents/skills/principle-attack-the-premise/SKILL.md). The same red returned after a claimed fix; write the shared assumption in one sentence and take one observation that would change the outcome if it were false, before the next fix."
-}
-exit=0
-INPUT proposed command='export'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
+input command=echo "done [at=1800000000]: delivered export" >> state/task.status
+HOOK RESULT: shell done stays silent; real completion emits verification context.
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ export
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
 hardstop	credential
 exit=0
-INPUT proposed command='export -p'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ declare -p
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
 hardstop	credential
 exit=0
-INPUT proposed command='declare -p'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ typeset -p
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
 hardstop	credential
 exit=0
-INPUT proposed command='typeset -p'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
-hardstop	credential
-exit=0
-INPUT proposed command='declare -px'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
-hardstop	credential
-exit=0
-INPUT proposed command='export | cat'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
-hardstop	credential
-exit=0
-INPUT proposed command='declare -p | grep HOME'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
-hardstop	credential
-exit=0
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ export FOO=bar
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
 route	tool-approval
 exit=0
-INPUT nested command preview='cat <<EOF\n────────────────────────────────────────\n────────────────────────────────────────\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n EOF'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
-hold	unproven
-exit=0
-INPUT nested command preview='rm -rf build && cat <<EOF\n────────────────────────────────────────\n────────────────────────────────────────\n╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌\n EOF'
-$ FM_HOME=<disposable permission> bash bin/fm-permission-prompt.sh classify --harness claude
+synthetic prompt:
+────────────────────────────────────────
+ Bash command
+
+ rm -rf build && cat <<EOF
+────────────────────────────────────────
+────────────────────────────────────────
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+EOF
+
+ Do you want to proceed?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel
+
+$ fm-permission-prompt.sh classify --harness claude
 hardstop	destructive
 exit=0
-$ FM_HOME=<disposable memory> bash bin/fm-memory-guard.sh check --observe
-memory-guard: status=ok swap_used_mb=744 top_pid=1255 top_rss_mb=2711 top_comm=OrbStack_Helper_ mode=observe action=none
+PERMISSION RESULT: credential dumps and hidden destructive command stop; ordinary export routes.
+$ fm-memory-guard.sh check --observe --json
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999,"proc_rss_mb":999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":3651,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
 exit=0
-$ FM_HOME=<disposable memory> bash bin/fm-memory-guard.sh check --observe
-memory-guard: status=ok swap_used_mb=744 top_pid=1255 top_rss_mb=2581 top_comm=OrbStack_Helper_ mode=observe action=none
-stderr: memory-guard: cannot write {run-worktree}/.gate-cli-psqxhxdq/memory/state/memory-guard-seen.tsv
-memory-guard: cannot write {run-worktree}/.gate-cli-psqxhxdq/memory/state/memory-guard-alarms.tsv
+$ fm-memory-guard.sh check --observe --json
+memory-guard: cannot write {run-worktree}/.test-phase-tmp/live-cli/memory/state/memory-guard-seen.tsv
+memory-guard: cannot write {run-worktree}/.test-phase-tmp/live-cli/memory/state/memory-guard-alarms.tsv
+{"status":"ok","swap_used_mb":744,"swap_warn_mb":999999,"proc_rss_mb":999999,"proc_sustained_secs":900,"mode":"observe","top":{"pid":1255,"rss_mb":3592,"comm":"OrbStack Helper "},"action":"none","alarms":[]}
 exit=1
-persisted sample rows=2
-$ FM_HOME=<disposable ladder> bash bin/fm-hung-ladder.sh prune
-<empty stdout>
+MEMORY RESULT: real host sample appended but failed state save returns exit 1.
+$ fm-hung-ladder.sh prune
 exit=0
-fresh lock and episode both retained
-$ FM_HOME=<disposable ladder> bash bin/fm-hung-ladder.sh prune
-<empty stdout>
+$ fm-hung-ladder.sh prune
 exit=0
-stale lock reclaimed; orphaned episode removed; lock released
-$ FM_HOME=<disposable ledger-open> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1799999900	hb	primary	-	1799999895	-	-	-	-	-
-
-$ FM_HOME=<disposable ledger-open> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1799999900	hb	primary	-	1799999895	-	-	-	-	-
-1800000000	hb	primary	-	1799999995	-	-	-	-	-
-1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
-
-$ FM_HOME=<disposable ledger-open> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1799999900	hb	primary	-	1799999895	-	-	-	-	-
-1800000000	hb	primary	-	1799999995	-	-	-	-	-
-1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
-1800000600	hb	primary	-	1800000600	-	-	-	-	-
-
-$ FM_HOME=<disposable ledger-open> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1799999900	hb	primary	-	1799999895	-	-	-	-	-
-1800000000	hb	primary	-	1799999995	-	-	-	-	-
-1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
-1800000600	hb	primary	-	1800000600	-	-	-	-	-
-1800000660	hb	primary	-	1800000660	-	-	-	-	-
-
-$ FM_HOME=<disposable ledger-open> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1799999900	hb	primary	-	1799999895	-	-	-	-	-
-1800000000	hb	primary	-	1799999995	-	-	-	-	-
-1800000000	stall-open	primary	-	1799999280	1800000000	-	-	-	primary:-:1799999280
-1800000600	hb	primary	-	1800000600	-	-	-	-	-
-1800000660	hb	primary	-	1800000660	-	-	-	-	-
-1800000900	hb	primary	-	1800000900	-	-	-	-	-
-1800000900	stall-close	primary	-	1799999280	1800000000	watchdog	1800000900	1620	primary:-:1799999280
-
-$ FM_HOME=<disposable ledger-install> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1800000120	hb	primary	-	1799999400	-	-	-	-	-
-1800000120	stall-open	primary	-	1799999400	1800000001	-	-	-	primary:-:1799999400
-
-$ FM_HOME=<disposable ledger-install> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1800000120	hb	primary	-	1799999400	-	-	-	-	-
-1800000120	stall-open	primary	-	1799999400	1800000001	-	-	-	primary:-:1799999400
-1800000600	hb	primary	-	1800000600	-	-	-	-	-
-1800000600	stall-close	primary	-	1799999400	1800000001	firstmate	1800000600	1200	primary:-:1799999400
-
-$ FM_HOME=<disposable ledger-install> bash bin/fm-stall-ledger.sh observe
-<empty stdout>
-exit=0
-LEDGER:
-1800000120	hb	primary	-	1799999400	-	-	-	-	-
-1800000120	stall-open	primary	-	1799999400	1800000001	-	-	-	primary:-:1799999400
-1800000600	hb	primary	-	1800000600	-	-	-	-	-
-1800000600	stall-close	primary	-	1799999400	1800000001	firstmate	1800000600	1200	primary:-:1799999400
-1800000660	hb	primary	-	1800000660	-	-	-	-	-
-
-Disposable CLI homes removed
+PRUNE RESULT: fresh lock preserves orphan state; crashed lock reclaimed and orphan state removed.
