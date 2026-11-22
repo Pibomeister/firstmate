@@ -3212,6 +3212,7 @@ wd_home_awaits_restart() {
 # wd_handle_subject: one symptom per pass, by precedence, then the side checks.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
+  wd_handle_stall
   wd_rearm_feedback_dialog "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$O_PANE"
   if wd_home_awaits_restart "$O_HOME"; then
     WD_SYMPTOM='restart-awaiting-pickup'
@@ -3278,8 +3279,6 @@ wd_handle_subject() {
   # A restart this pass stopped the recorded session, so its old endpoint gets nothing more.
   if [ "$WD_RESTARTED" = 1 ]; then WD_SYMPTOM=$symptom; return 0; fi
   if [ -z "$O_HUMAN_STEP" ] && [ -n "$O_PANE" ] && [ "$O_DIALOG" != unknown ]; then wd_human_step_clear; fi
-  # Neither a live holder nor a dead one hides a stall, so this runs either way.
-  wd_handle_stall
   if [ "$dead" = 1 ] || [ "$symptom" = usage-limit-autowait ] || [ "$symptom" = human-step ]; then reachable=0; fi
   if [ "$reachable" = 1 ] && [ "$O_AFK" = 1 ] && [ "$O_DAEMON" = 0 ]; then
     [ -n "$symptom" ] || symptom='daemon-dead'
@@ -3415,8 +3414,6 @@ wd_once() {  # [home-filter]
     wd_score_activity
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
-    # A home whose restart awaits pickup gets no action, quota checks included,
-    # and the ledger is read again so that holds from the pass that starts it.
     if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
       wd_quota_guard_pass
     fi

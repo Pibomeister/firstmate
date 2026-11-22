@@ -87,7 +87,7 @@ A lock-refused session start and a context re-emit write nothing.
 ## Symptoms and the action ladder
 
 Each home gets at most one symptom per pass, in this order.
-A home whose restart awaits pickup gets no action at all until that restart closes, and its health line reads `RESTART-AWAITING-PICKUP`.
+A home whose restart awaits pickup gets only the record-only stall check until that restart closes, and its health line reads `RESTART-AWAITING-PICKUP`.
 
 | Symptom | Proof | Action |
 | --- | --- | --- |
@@ -136,7 +136,7 @@ These checks run on every pass as well:
   Declared waits stay quiet: a task the declared-wait read still holds (`status_declared_wait_line` in `bin/fm-classify-lib.sh`) is not in flight, and a wake row about that task or its recorded endpoint does not count.
   The owner's waits stay quiet too: a PR that waits on the owner's merge word (`yolo=off`), a task the captain holds (`bin/fm-captain-hold.sh open`), and a Gerrit change, which firstmate never lands.
   A hold that cannot be read does not hide the PR.
-  Each trigger is a gap on every pass and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
+  Each trigger is a gap on every pass, including the pass that starts a restart and passes awaiting its pickup, and pages the home's [alert channels](wedge-alarm.md#channels) at most once per `stall-page-secs` per home.
   The page carries counts, ages, and PR URLs, never input or pane text; it types nothing, restarts nothing, lands nothing, and never touches the session lock.
 - Decisions open longer than `decision-secs` get one rolled-up nudge per home.
   A window later, the oldest unsettled decision goes to a council of blind seats, at most `council-per-pass` per home per pass.

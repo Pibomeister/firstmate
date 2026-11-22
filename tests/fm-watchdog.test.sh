@@ -5320,6 +5320,45 @@ test_stall_page_unhandled_input_pages_once_per_window() {
   pass "stall page: input unhandled past stall-secs with work in flight pages the owner once per window and restarts nothing"
 }
 
+test_stall_page_runs_during_restart_and_pickup() {
+  local phase age url=https://github.com/acme/repo/pull/42
+  for phase in pickup start; do
+    stall_home 'restart=on
+pickup-secs=600
+restart-command=/bin/true'
+    transcript 3000 "Working." "Testing." "Green."
+    age=1000
+    [ "$phase" != pickup ] || age=800
+    stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
+    stall_task fm-p on "done [at=$((BASE - age))]: PR $url checks green"
+    owe_input "$age"
+    kill_holder_with_anchor
+    cp "$H/state/.lock-session" "$H/lock-session.before"
+    run_wd 0 once >/dev/null 2>&1 || fail "$phase: restart pass failed"
+    assert_equals 1 "$(ledger_rows agent-gone restart pending)" "$phase: the dead holder starts one restart"
+    if [ "$phase" = pickup ]; then
+      assert_equals 0 "$(ledger_rows stall-input page pending)" "input below stall-secs does not page on restart"
+      assert_equals 0 "$(ledger_rows stall-pr page pending)" "a PR below stall-secs does not page on restart"
+      run_wd 120 once >/dev/null 2>&1 || fail "pickup pass failed"
+      assert_grep "RESTART-AWAITING-PICKUP" "$H/data/watchdog/status.md" "the restart still awaits pickup when both stalls cross the threshold"
+    fi
+    assert_equals 1 "$(ledger_rows stall-input page done)" "$phase: the input stall page is delivered"
+    assert_equals 1 "$(ledger_rows stall-pr page done)" "$phase: the PR stall page is delivered"
+    assert_grep "unhandled inputs" "$H/paged.log" "$phase: the alert channel receives the input page"
+    assert_grep "$url" "$H/paged.log" "$phase: the alert channel receives the ready PR page"
+    run_wd 180 once >/dev/null 2>&1 || fail "$phase: rate-limit pass failed"
+    assert_equals 1 "$(ledger_rows stall-input page pending)" "$phase: the input page is rate-limited during pickup"
+    assert_equals 1 "$(ledger_rows stall-pr page pending)" "$phase: the PR page is rate-limited during pickup"
+    assert_grep "stalled: 1 inputs unhandled" "$H/data/watchdog/status.md" "$phase: the input stall remains a gap between pages"
+    assert_grep "stalled: 1 ready PRs unlanded" "$H/data/watchdog/status.md" "$phase: the PR stall remains a gap between pages"
+    assert_equals 1 "$(ledger | awk -F'\t' '$6 == "restart"' | wc -l | tr -d ' ')" "$phase: stall paging adds no restart or restart outcome"
+    cmp -s "$H/state/.lock" "$H/lock.before" || fail "$phase: stall paging changed the lock"
+    cmp -s "$H/state/.lock-session" "$H/lock-session.before" || fail "$phase: stall paging changed the lock session"
+    [ ! -s "$H/typed.log" ] || fail "$phase: stall paging typed into the stopped endpoint"
+  done
+  pass "stall page: both triggers page during restart and pickup without changing restart, endpoint, or lock state"
+}
+
 test_stall_page_declared_waits_stay_quiet() {
   stall_home
   stall_task fm-a off "working [at=$((BASE - 100))]: implementing"
@@ -8535,6 +8574,7 @@ fm_test_run \
   test_memory_guard_samples_once_per_pass \
   test_manager_units \
   test_stall_page_unhandled_input_pages_once_per_window \
+  test_stall_page_runs_during_restart_and_pickup \
   test_stall_page_declared_waits_stay_quiet \
   test_stall_page_finished_tasks_are_not_in_flight \
   test_stall_page_ready_pr_unlanded \
