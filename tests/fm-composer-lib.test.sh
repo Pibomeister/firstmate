@@ -2151,25 +2151,44 @@ grok_weekly_limit_screen() {
 }
 
 test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure() {
-  local screen out rc sink
-  screen=$(grok_weekly_limit_screen)
-  out=$(fm_composer_blocking_dialog "$screen"); rc=$?
-  [ "$rc" -eq 0 ] || fail "the recorded Grok weekly-limit choice should match"
-  [ "$out" = 'Grok weekly-limit choice' ] || fail "dialog name was '$out'"
-  sink=$(mktemp)
-  FM_COMPOSER_DIALOG_SINK=$sink
-  out=$(fm_composer_classify_screen 'styled=1' "$screen")
-  [ "$out" != empty ] || fail "the weekly-limit choice must never read empty"
-  [ "$(cat "$sink")" = 'Grok weekly-limit choice' ] || fail "classify should note the choice, got '$(cat "$sink")'"
-  unset FM_COMPOSER_DIALOG_SINK
-  rm -f "$sink"
-  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" \
-    '  ╭──────────────╮' '  │ ❯            │' '  ╰──────────────╯')"); rc=$?
-  [ "$rc" -eq 1 ] || fail "the choice's text quoted above a normal composer must not match"
-  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | grep -v 'Buy more credits')"); rc=$?
-  [ "$rc" -eq 1 ] || fail "the heading and footer without the first choice row must not match"
-  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | sed 's/You hit your weekly limit\./Note: You hit your weekly limit. Retry later/')"); rc=$?
-  [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+  local screen out rc sink suffix
+  for suffix in '  │  Ctrl+e:expand thinking' ''; do
+    screen="$(grok_weekly_limit_screen)$suffix"
+    out=$(fm_composer_blocking_dialog "$screen"); rc=$?
+    [ "$rc" -eq 0 ] || fail "the recorded Grok weekly-limit choice should match"
+    [ "$out" = 'Grok weekly-limit choice' ] || fail "dialog name was '$out'"
+    sink=$(mktemp)
+    FM_COMPOSER_DIALOG_SINK=$sink
+    out=$(fm_composer_classify_screen 'styled=1' "$screen")
+    [ "$out" != empty ] || fail "the weekly-limit choice must never read empty"
+    [ "$(cat "$sink")" = 'Grok weekly-limit choice' ] || fail "classify should note the choice, got '$(cat "$sink")'"
+    unset FM_COMPOSER_DIALOG_SINK
+    rm -f "$sink"
+    out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" \
+      '  ╭──────────────╮' '  │ ❯            │' '  ╰──────────────╯')"); rc=$?
+    [ "$rc" -eq 1 ] || fail "the choice's text quoted above a normal composer must not match"
+    out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | grep -v 'Buy more credits')"); rc=$?
+    [ "$rc" -eq 1 ] || fail "the heading and footer without the first choice row must not match"
+    out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | grep -v 'Try Again')"); rc=$?
+    [ "$rc" -eq 1 ] || fail "the heading and footer without the retry choice row must not match"
+    out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | sed 's/You hit your weekly limit\./Note: You hit your weekly limit. Retry later/')"); rc=$?
+    [ "$rc" -eq 1 ] || fail "a heading buried in a sentence must not match"
+    out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$screen" | sed 's/^/+ /')"); rc=$?
+    [ "$rc" -eq 1 ] || fail "a diff quoting the choice must not match"
+    out=$(fm_composer_blocking_dialog "$screen followed by prose."); rc=$?
+    [ "$rc" -eq 1 ] || fail "prose after the footer must not match"
+    out=$(fm_composer_blocking_dialog "$screen  │  quoted prose"); rc=$?
+    [ "$rc" -eq 1 ] || fail "an extra footer segment without a shortcut must not match"
+  done
+  for suffix in '  │  Ctrl+r:retry' \
+    '  │  Ctrl+e:expand thinking  │  Ctrl+r:retry' \
+    '  │  Ctrl+e:expand thinking  │  Ctrl+e:expand thinking'; do
+    out=$(fm_composer_blocking_dialog "$(grok_weekly_limit_screen)$suffix"); rc=$?
+    [ "$rc" -eq 1 ] || fail "an unrecorded or repeated shortcut suffix must not match"
+    [ -z "$out" ] || fail "a rejected shortcut suffix must print nothing, got '$out'"
+  done
+  out=$(fm_composer_blocking_dialog "$(grok_weekly_limit_screen) followed by prose"); rc=$?
+  [ "$rc" -eq 1 ] || fail "the legacy footer must not accept prose without a shortcut separator"
   pass "the Grok weekly-limit choice is named only in its recorded structure and never reads empty"
 }
 
