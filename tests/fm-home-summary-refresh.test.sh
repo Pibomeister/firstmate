@@ -596,8 +596,9 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
 grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the lock wait was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
-[ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
-  || fail "a lock-wait timeout did not record a backoff"
+[ ! -e "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
+  || fail "a lock-wait timeout changed another owner's backoff"
+printf 'failures=2\nnext=0\n' > "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME_SUMMARY_TIMEOUT=30 "$WRITER" \
   || fail "an if-idle refresh behind a held lock did not skip cleanly"
@@ -1865,6 +1866,78 @@ PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME
 [ "$(wc -l < "$ATTEMPTS" | tr -d ' ')" -eq 2 ] || fail "the queued skip changed the retry time"
 pass "a queued refresh checks backoff after taking the lock"
 
+TIMEOUTBIN="$TMP_ROOT/timeout-backoff-bin"
+TIMEOUT_FAILBIN="$TMP_ROOT/timeout-backoff-failbin"
+mkdir -p "$TIMEOUTBIN" "$TIMEOUT_FAILBIN"
+cat > "$TIMEOUTBIN/jq" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_TIMEOUT_READY"
+sleep 60
+exit 7
+SH
+cat > "$TIMEOUTBIN/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-stage.timeout-race)
+      kill -STOP "$(cat "$FM_TEST_TIMEOUT_PARENT_FILE")"
+      : > "$FM_TEST_TIMEOUT_PARENT_STOPPED"
+      ;;
+  esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+cat > "$TIMEOUT_FAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_QUEUED_PRODUCER"
+exit 7
+SH
+chmod +x "$TIMEOUTBIN/jq" "$TIMEOUTBIN/tail" "$TIMEOUT_FAILBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+TIMEOUT_PARENT_FILE="$TMP_ROOT/timeout-parent.pid"
+TIMEOUT_PARENT_STOPPED="$TMP_ROOT/timeout-parent-stopped"
+TIMEOUT_READY="$TMP_ROOT/timeout-ready"
+QUEUED_PRODUCER="$TMP_ROOT/timeout-queued-producer"
+TIMEOUT_QUEUED_STAGE="$BACKOFF_HOME/state/.home-summary-stage.timeout-queued"
+PATH="$TIMEOUTBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_TIMEOUT_READY="$TIMEOUT_READY" FM_TEST_TIMEOUT_PARENT_FILE="$TIMEOUT_PARENT_FILE" \
+  FM_TEST_TIMEOUT_PARENT_STOPPED="$TIMEOUT_PARENT_STOPPED" FM_TEST_REAL_TAIL="$(command -v tail)" \
+  FM_HOME_SUMMARY_STAGE_PATH="$BACKOFF_HOME/state/.home-summary-stage.timeout-race" \
+  FM_HOME_SUMMARY_TIMEOUT=10 FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_WRITER_PID=$!
+printf '%s\n' "$SLOW_WRITER_PID" > "$TIMEOUT_PARENT_FILE"
+i=0
+while [ ! -e "$TIMEOUT_READY" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$TIMEOUT_READY" ] || fail "the timeout producer did not start"
+PATH="$TIMEOUT_FAILBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_QUEUED_PRODUCER="$QUEUED_PRODUCER" FM_HOME_SUMMARY_STAGE_PATH="$TIMEOUT_QUEUED_STAGE" \
+  FM_HOME_SUMMARY_TIMEOUT=60 FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_NM_PID=$!
+i=0
+until grep -q '^lock-wait' "$TIMEOUT_QUEUED_STAGE" 2>/dev/null; do
+  [ "$i" -lt 600 ] || fail "the timeout sibling did not queue for the lock"
+  sleep 0.05
+  i=$((i + 1))
+done
+i=0
+while [ ! -e "$TIMEOUT_PARENT_STOPPED" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$TIMEOUT_PARENT_STOPPED" ] || fail "the timed-out caller did not reach stage diagnostics"
+wait "$SLOW_NM_PID" || fail "the timeout sibling changed its best-effort result"
+SLOW_NM_PID=
+[ ! -e "$QUEUED_PRODUCER" ] || fail "a queued producer started before timeout backoff was recorded"
+[ "$(cat "$BACKOFF_HOME/state/.home-summary-refresh.backoff")" = "$(printf 'failures=1\nnext=1030')" ] \
+  || fail "the timeout was not recorded exactly once before the lock was released"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" "$WRITER" \
+  || fail "direct publication failed while the older caller was finishing diagnostics"
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "direct publication did not reset timeout backoff"
+kill -CONT "$SLOW_WRITER_PID"
+wait "$SLOW_WRITER_PID" || fail "the timed-out caller changed its best-effort result"
+SLOW_WRITER_PID=
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "an older timeout restored backoff after publication"
+jq -e '.schema == "fm-secondmate-home-summary.v1"' "$BACKOFF_HOME/state/home-summary.json" >/dev/null \
+  || fail "finishing an older timeout changed the newly published ledger"
+pass "timeout backoff precedes admission and cannot undo a later publication"
+
 STALLBIN="$TMP_ROOT/backoff-stall-bin"
 mkdir -p "$STALLBIN"
 REAL_MV=$(command -v mv)
@@ -1882,6 +1955,7 @@ exec "$FM_TEST_REAL_MV" "$@"
 SH
 cat > "$STALLBIN/jq" <<'SH'
 #!/usr/bin/env bash
+: > "$FM_TEST_BACKOFF_PRODUCER_STARTED"
 sleep 60
 exit 7
 SH
@@ -1889,10 +1963,12 @@ chmod +x "$STALLBIN/mv" "$STALLBIN/jq"
 rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
 PATH="$STALLBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
   FM_TEST_REAL_MV="$REAL_MV" FM_TEST_BACKOFF_STALLED="$TMP_ROOT/backoff-write-stalled" \
-  FM_HOME_SUMMARY_TIMEOUT=1 fm_run_timed 20 "$WRITER" --best-effort \
-  || fail "stalled parent-side backoff publication escaped its bound or changed best-effort status"
-[ -e "$TMP_ROOT/backoff-write-stalled" ] || fail "the parent did not attempt to record its timeout"
-pass "a stalled timeout backoff write cannot hold a lifecycle caller"
+  FM_TEST_BACKOFF_PRODUCER_STARTED="$TMP_ROOT/backoff-producer-started" \
+  FM_HOME_SUMMARY_TIMEOUT=10 fm_run_timed 30 "$WRITER" --best-effort \
+  || fail "stalled backoff publication escaped its bound or changed best-effort status"
+[ -e "$TMP_ROOT/backoff-producer-started" ] || fail "the stalled-write fixture never started its producer"
+[ -e "$TMP_ROOT/backoff-write-stalled" ] || fail "the lock owner did not attempt to record its timeout"
+pass "a stalled timeout backoff write remains bounded while holding the lock"
 
 cat > "$TMP_ROOT/stall-backoff-read.sh" <<'SH'
 read() {

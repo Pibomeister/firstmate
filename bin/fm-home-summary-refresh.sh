@@ -15,9 +15,9 @@
 # either the prior complete document or the new complete document, never torn output.
 # A home-local refresh lock serializes concurrent triggers so an older in-flight
 # summary cannot overwrite one computed after a later status change. The shared
-# timeout owner bounds the complete refresh with FM_HOME_SUMMARY_TIMEOUT
-# (default 60 seconds). No reader can observe temporary output through the
-# ledger path.
+# timeout owner gives acquisition and publication FM_HOME_SUMMARY_TIMEOUT
+# (default 60 seconds), with 3 additional seconds for failure recording and
+# lock cleanup. No reader can observe temporary output through the ledger path.
 #
 # A failed refresh never rewrites the ledger, so the last good summary keeps its
 # own generated and generated_epoch values: readers see its true age, never the
@@ -93,6 +93,11 @@ case "${1:-}" in
     HOME_SUMMARY_MODE=worker
     BEST_EFFORT=${FM_HOME_SUMMARY_WORKER_BEST_EFFORT:-0}
     ;;
+  --_publish)
+    HOME_SUMMARY_MODE=publish
+    BEST_EFFORT=${FM_HOME_SUMMARY_WORKER_BEST_EFFORT:-0}
+    SECONDS=${FM_SNAPSHOT_STAGE_BASE:-0}
+    ;;
   --_log-failure) HOME_SUMMARY_MODE=log-failure ;;
   --_stage-note) HOME_SUMMARY_MODE=stage-note ;;
   -h|--help) usage; exit 0 ;;
@@ -160,7 +165,7 @@ if [ "$HOME_SUMMARY_MODE" = worker ] && backoff_active; then
   exit 0
 fi
 
-if [ "$HOME_SUMMARY_MODE" != parent ] && [ "$HOME_SUMMARY_MODE" != stage-note ]; then
+if [ "$HOME_SUMMARY_MODE" = worker ] || [ "$HOME_SUMMARY_MODE" = log-failure ]; then
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -227,14 +232,6 @@ home_summary_refresh_once() {
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  if [ "$HOME_SUMMARY_IF_IDLE" -eq 1 ]; then
-    fm_lock_try_acquire "$REFRESH_LOCK" || return 0
-  else
-    home_summary_stage lock-wait
-    fm_lock_acquire_wait "$REFRESH_LOCK"
-  fi
-  HOME_SUMMARY_LOCK_HELD=1
-  backoff_active && return 0
   HOME_SUMMARY_TMP=$(umask 077; mktemp "$STATE/.home-summary.json.XXXXXX") || {
     home_summary_fail "could not create an atomic publication file in $STATE"
     return 1
@@ -306,9 +303,6 @@ home_summary_refresh_once() {
     return 1
   fi
   HOME_SUMMARY_TMP=
-  rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
-  fm_lock_release "$REFRESH_LOCK"
-  HOME_SUMMARY_LOCK_HELD=0
   trap - EXIT HUP INT TERM
   return 0
 }
@@ -396,7 +390,7 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
       && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_PATH"; then
     stage_file=$FM_HOME_SUMMARY_STAGE_PATH
   fi
-  if fm_run_timed "$HOME_SUMMARY_TIMEOUT" env \
+  if fm_run_timed "$((HOME_SUMMARY_TIMEOUT + 3))" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
@@ -418,15 +412,6 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   fi
   home_summary_stage_remove "$stage_file"
   stage_file=
-  # The parent records the failures it observes itself: a timeout, a dead
-  # worker, or a worker returning non-zero. A best-effort worker that
-  # swallows its failure records it itself below before returning success,
-  # so each failure is counted once.
-  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
-  case "$backoff_failure_now" in
-    ''|*[!0-9]*) ;;
-    *) fm_run_timed_fn 2 backoff_record_failure "$backoff_failure_now" >/dev/null 2>&1 || true ;;
-  esac
   if [ "$BEST_EFFORT" -eq 1 ]; then
     if [ "$refresh_rc" -eq 124 ]; then
       parent_error="refresh exceeded its ${HOME_SUMMARY_TIMEOUT}-second deadline${stage_note}"
@@ -450,7 +435,7 @@ fi
 # the descriptor so a stage file the parent already removed is never recreated by
 # a later append. The wake library, sourced before this point, already creates
 # the state directory, so a fresh home reports its stages too.
-FM_SNAPSHOT_STAGE_FD=
+if [ "$HOME_SUMMARY_MODE" = worker ]; then FM_SNAPSHOT_STAGE_FD=; fi
 if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
     && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_FILE" \
     && [ -d "$STATE" ]; then
@@ -463,8 +448,45 @@ if [ "$HOME_SUMMARY_MODE" = worker ] && [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]
 fi
 export FM_SNAPSHOT_STAGE_FD
 
+if [ "$HOME_SUMMARY_MODE" = worker ]; then
+  trap home_summary_cleanup EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  if [ "$HOME_SUMMARY_IF_IDLE" -eq 1 ]; then
+    fm_lock_try_acquire "$REFRESH_LOCK" || exit 0
+  else
+    home_summary_stage lock-wait
+    remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
+    [ "$remaining" -gt 0 ] || exit 124
+    fm_lock_acquire_wait_bounded "$REFRESH_LOCK" "$remaining" || exit "$?"
+  fi
+  HOME_SUMMARY_LOCK_HELD=1
+  backoff_active && exit 0
+  remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
+  if [ "$remaining" -le 0 ]; then
+    refresh_rc=124
+  elif fm_run_timed "$remaining" env \
+    FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
+    FM_SNAPSHOT_STAGE_BASE="$SECONDS" \
+    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_publish; then
+    rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
+    exit 0
+  else
+    refresh_rc=$?
+  fi
+  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
+  case "$backoff_failure_now" in
+    ''|*[!0-9]*) ;;
+    *) backoff_record_failure "$backoff_failure_now" ;;
+  esac
+  if [ "$BEST_EFFORT" -eq 1 ] && [ "$refresh_rc" -eq 1 ]; then
+    exit 0
+  fi
+  exit "$refresh_rc"
+fi
+
 if home_summary_refresh_once; then
-  home_summary_stage_orphan_cleanup
   exit 0
 else
   refresh_rc=$?
@@ -476,13 +498,8 @@ if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] \
   HOME_SUMMARY_ERROR="$HOME_SUMMARY_ERROR$(home_summary_stage_note "$FM_HOME_SUMMARY_STAGE_FILE")"
 fi
 if [ "$BEST_EFFORT" -eq 1 ]; then
-  backoff_failure_now=$(fm_now 2>/dev/null) || backoff_failure_now=
-  case "$backoff_failure_now" in
-    ''|*[!0-9]*) ;;
-    *) backoff_record_failure "$backoff_failure_now" ;;
-  esac
   home_summary_log_failure
-  exit 0
+  exit "$refresh_rc"
 fi
 printf 'fm-home-summary-refresh: %s\n' "$HOME_SUMMARY_ERROR" >&2
 exit "$refresh_rc"
