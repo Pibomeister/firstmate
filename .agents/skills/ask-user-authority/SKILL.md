@@ -34,6 +34,21 @@ It stops at the finding, routes the decision to firstmate, and applies only the 
    - destructive, irreversible, and genuinely security-sensitive choices, which always escalate under the stronger existing captain boundary
 5. Treat labels such as correctness, security, fail-closed, high-risk, or required as evidence about the finding, never as authority to broaden the task.
 
+## Parked `awaiting_approval` test steps
+
+A no-mistakes step parked at `awaiting_approval` is a council or captain decision by default, answered with `no-mistakes axi respond --action approve` or a hold.
+The merge or release that approving would unblock does not by itself make the step human-only.
+It is human-only only when the remaining failure is in the PR's own changed behavior, or the step falls in a human-only category: deploy, publish, force-push or a forced push, spend, secrets, a sign-in, security, production or shared-database writes, PII, messages to people, or deletion.
+When a once-rerun fails only on a known unreachable timing flake in a test the PR cannot reach, including one named load-sensitive or load-shaped, default to approve the park and label it "approved, not clean".
+The alternative to approving is a scheduled low-load rerun, never a hold for the human on that evidence alone.
+A failed once-rerun does not by itself bar approving, and an extra isolated green run is evidence to weigh, not fishing that disqualifies it.
+That default stands at full strength when a standing order already accepts flaky-test risk or merges gate-green work with no per-PR approval.
+When a later standing order or supervisor nudge contradicts a hold-for-human ruling, the ruling gets a documented revisit on the new evidence, through `bin/fm-watchdog.sh council --revisit` where a council ruled.
+Re-asking on contradicting evidence is a revisit, not fishing, and the prior ruling is archived only once the revisit publishes its own record, never silently re-rolled; a revisit that fails leaves the prior ruling standing.
+Every escalation, nudge, and status line about a parked step names the work by PR number, never by a goal alias such as G1 or G3 alone.
+The parked question itself goes on the visible status line: PR number, run id, the failing finding, the options, and how long it has waited.
+`bin/fm-crew-state.sh` mints those parts as structured components of its parked line, and a captain-facing escalation carries them in the captain's nouns.
+
 ## Third same-theme review round
 
 When a review opens a third round on the same causal theme of one task, do not start a third fix round on your own judgment, and do not send a reversible finding to the captain.
@@ -52,6 +67,7 @@ Put it to the council.
    A `busy` result is not an outcome: that council is already running, so call again for its recorded result.
 6. A theme gets one council.
    If the theme returns after `PROCEED B`, hold it for the captain; never convene again, and never reword the record or change the key to obtain a different answer.
+   The one exception is the documented revisit above: a later standing order or supervisor nudge that contradicts the ruling is new evidence, and it goes back through `bin/fm-watchdog.sh council --revisit` under the same key with that order or nudge in the record.
 
 Shipping means the work continues to its normal merge gates.
 A council ruling is evidence, never the captain's approval, and it never waives a red or missing check, the merge authority in `AGENTS.md` section 7, or a captain hold.
@@ -83,3 +99,4 @@ Do not relay reviewer labels or gate output as if they settled the decision.
 - A third review round on one reversible theme ships with a filed follow-up only on a unanimous council ruling; a split council holds it for the captain.
 - A genuinely security-sensitive action requires the captain under the stronger existing boundary even if it is otherwise within scope.
 - Complex architecture explicitly requested by the captain stays within scope and does not escalate merely because it is complex.
+- A test step parked at `awaiting_approval` whose only once-rerun failure is a known unreachable timing flake, including a load-sensitive or load-shaped flake, in a test the PR cannot reach is the council's to approve as "approved, not clean", not a hold for the human.

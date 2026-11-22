@@ -7,12 +7,19 @@
 #                                 One scan and action pass, then rewrite the status file.
 #   scan [--home <path>]          One observation pass; prints each subject and its workers' dialog reads; no action.
 #   judge <purpose> <answer-ere>  Bounded cheap-model call; prompt on stdin; prints the answer.
-#   council --task <id> --key <key> [--home <path>] [--record-file <file>]
+#   council --task <id> --key <key> [--home <path>] [--record-file <file>] [--revisit]
 #                                 One blind council on one decision, now. The record is the
 #                                 complete file, else its complete open decision; records over
-#                                 2000 characters are refused. Dry-run never returns an answer. Prints
+#                                 2000 characters are refused. --revisit (with --record-file
+#                                 carrying a later order or nudge that contradicts the recorded
+#                                 outcome) convenes once more and, only when that council
+#                                 publishes a ruling or no-ruling record, archives the prior
+#                                 outcome under data/watchdog/revisits/; any other result
+#                                 leaves the prior outcome in place. Dry-run never returns an answer. Prints
 #                                 council=<ruled|no-ruling|held|dry-run|refused|busy|failed>
 #                                 answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>.
+#                                 A qualified flake approval appends
+#                                 qualification=(approved, not clean).
 #   status                        Print the status file.
 #   ack-read                      Record that the status file was read now.
 #   pickup <token>                Run by a restarted session to prove it took over.
@@ -47,6 +54,7 @@
 #   data/watchdog/status.md      the short status file, rewritten atomically after each pass.
 #   data/watchdog/handoffs/, data/watchdog/rulings/  restart handoffs and council rulings.
 #   data/watchdog/no-rulings/    the record of each council that gave no ruling.
+#   data/watchdog/revisits/      prior council records archived by a --revisit.
 #   state/watchdog/council-locks/  one owner-identity lock per running council.
 # Council locators are Git blob IDs of NUL-separated home/task/key tuples;
 # authenticated legacy filenames remain readable. Hashing uses the code root.
@@ -346,7 +354,8 @@ wd_open_decisions() {  # <state> <now>
       [ -n "$key" ] || continue
       at=$(grep -F "[key=$key]" "$f" 2>/dev/null | tail -n 1 | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p')
       [ -n "$at" ] || at=$(wd_mtime "$f")
-      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t' ' ')"
+      summary=$(wd_decision_summary "${st%/state}" "$task" "$key" "$summary")
+      printf '%s\t%s\t%s\t%s\t%s\n' "$task" "$key" "$verb" "$((now - at))" "$(printf '%s' "$summary" | tr '\t\r\n' '   ')"
     done
   done
 }
@@ -932,13 +941,70 @@ wd_judge() {
 
 # --- council -------------------------------------------------------------------
 
+wd_decision_summary() {
+  local home=$1 task=$2 key=$3 summary=$4 resolved
+  case "$summary" in 'ask-user findings='*' file='*) ;; *) printf '%s' "$summary"; return ;; esac
+  resolved=$(
+    case "$task" in (''|*[!A-Za-z0-9._-]*) exit 1 ;; esac
+    case "$key" in (nm-*-test|nm-*-review|nm-*-document|nm-*-lint|nm-*-push|nm-*-pr|nm-*-ci|nm-*-intent|nm-*-rebase) ;; (*) exit 1 ;; esac
+    run=${key#nm-}; step=${run##*-}; run=${run%-*}
+    case "$run" in (''|*[!A-Za-z0-9_-]*) exit 1 ;; esac
+    file=${summary#* file=}
+    [ "$file" = "$home/data/$task/nm-$run-findings.txt" ] || exit 1
+    [ ! -L "$file" ] && [ -f "$file" ] || exit 1
+    [ "$(cd -P "$home/data/$task" && pwd -P)" = "$home/data/$task" ] || exit 1
+    line=$(fm_run_timed 30 env FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$SCRIPT_DIR/fm-crew-state.sh" "$task") || exit 1
+    [ "$(crew_line_parked_gate "$line")" = "$(printf 'human\t%s' "$run")" ] || exit 1
+    case "$line" in (*" · parked at $step:"*|*" · parked at $step · "*) ;; (*) exit 1 ;; esac
+    current=${line#*' · findings: '}; [ "$current" != "$line" ] || exit 1
+    current=${current%%' · '*}
+    ids=${summary#ask-user findings=}; ids=${ids%% file=*}
+    case "$ids" in (''|,*|*,|*,,*|*[!A-Za-z0-9.,_-]*) exit 1 ;; esac
+    for id in $(printf '%s' "$ids" | tr ',' ' '); do
+      case ",$current," in (*",$id,"*) ;; (*) exit 1 ;; esac
+    done
+    contents=$(cat "$file") || exit 1
+    [ -n "$contents" ] || exit 1
+    pr=$(fm_wd_pr_label "$line")
+    line=$(printf '%s\n' "$line" | FM_WD_FINDING_SNAPSHOT="$contents" awk -F ' · ' '
+      BEGIN {
+        n=split(ENVIRON["FM_WD_FINDING_SNAPSHOT"], rows, "\n")
+        for (i=1; i<=n; i++) if (rows[i] ~ /^[[:space:]]*description:[[:space:]]*/) {
+          sub(/^[[:space:]]*description:[[:space:]]*/, "", rows[i])
+          descriptions[rows[i]]=1
+        }
+      }
+      {
+        sep=""
+        for (i=1; i<=NF; i++) {
+          question=$i; sub(/^question: /, "", question)
+          if ($i ~ /^question: / && descriptions[question]) continue
+          printf "%s%s", sep, $i
+          sep=" · "
+        }
+      }')
+    printf '%sno-mistakes %s awaiting approval; %s; %s' "${pr:+$pr }" "$step" "$line" "$contents" | tr '\t\r\n' '   '
+  ) 2>/dev/null || resolved=
+  printf '%s' "${resolved:-$summary}"
+}
+
 # 0 when a decision is the owner's: never nudged, put to council, or answered.
 wd_decision_reserved() {  # <task> <key> <summary>
   # A permission-prompt hard stop is a credential, sign-in, spend, or
   # destructive prompt, so it is the owner's whatever its summary says.
   case "$2" in captain-hold-*|human-step-*|permission-prompt-hardstop) return 0 ;; esac
-  fm_wd_reserved "$1 $2 $3" || fm_secret_like "$1 $2 $3" ||
-    printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2,"
+  case "$3" in 'ask-user findings='*) return 0 ;; esac
+  fm_secret_like "$1 $2 $3" && return 0
+  printf ',%s,' "$(cfg reserved-keys '')" | grep -Fq ",$2," && return 0
+  # A no-mistakes awaiting_approval step is a council or captain decision by
+  # default: the merge or release it would unblock, which fm_wd_reserved reads
+  # as owner-reserved, does not by itself make it the owner's. It stays the
+  # owner's only when it names a human-only category (fm_wd_human_only).
+  if fm_wd_nm_awaiting_approval "$1 $2 $3"; then
+    fm_wd_human_only "$1 $2 $3" && return 0
+    return 1
+  fi
+  fm_wd_reserved "$1 $2 $3"
 }
 
 wd_council_key() {  # <task> <key>: portable locator; record metadata authenticates identity.
@@ -973,11 +1039,12 @@ wd_council_record() {
         /^- key: / { k++; if (substr($0,8) != ENVIRON["FM_WD_RECORD_KEY"]) bad=1; next }
         /^- ruling: / { r++; ruling=substr($0,11); next }
         /^- seats: / { s++; seats=substr($0,10); next }
+        /^- qualification: approved, not clean$/ { qualification++; if (ENVIRON["FM_WD_RECORD_KIND"] != "ruled") bad=1; next }
         /^- seat models: .+$/ { model_fields++; next }
         /^- at: .+$/ { at_fields++; next }
         { bad=1 }
         END {
-          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1) exit 1
+          if (bad || h != 1 || t != 1 || k != 1 || r != 1 || s != 1 || title > 1 || model_fields > 1 || at_fields > 1 || qualification > 1) exit 1
           kind=ENVIRON["FM_WD_RECORD_KIND"]
           if (kind == "ruled") {
             if (ruling !~ /^PROCEED [A-Za-z0-9]{1,3} \(unanimous, [0-9]+ blind seats\)$/) exit 1
@@ -991,10 +1058,11 @@ wd_council_record() {
             prefix=(i == 1 ? "seat" i "=" : i "=")
             if (index(votes[i], prefix) != 1) exit 1
             vote=substr(votes[i],length(prefix)+1)
-            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}|HOLD|FAILED)$/) exit 1
+            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}( (APPROVE_PARK|DEFER_PARK))?|HOLD|FAILED)$/) exit 1
             if (vote != "FAILED") answered++
             if (i == 1) first=vote; else if (vote != first) agreed=0
-            if (kind == "ruled" && vote != answer) exit 1
+            choice=vote; sub(/ (APPROVE_PARK|DEFER_PARK)$/, "", choice)
+            if (kind == "ruled" && (choice != answer || !agreed)) exit 1
           }
           if (kind == "no-ruling" && (!answered || (agreed && first ~ /^PROCEED /))) exit 1
         }
@@ -1007,7 +1075,7 @@ wd_council_record() {
   done
 }
 
-# wd_council <task> <key> <summary>: blind seats; prints
+# wd_council <task> <key> <summary> [<prior> <archive>]: blind seats; prints
 # `outcome TAB answer TAB record TAB seats`.
 #   unanimous  every seat gave the same PROCEED; a ruling file is written.
 #   no-ruling  a seat answered and the seats did not all agree; a record is written.
@@ -1015,10 +1083,12 @@ wd_council_record() {
 #   refused    the seats span fewer than two model families; no seat is called.
 #   busy       another convening of this decision is running.
 # A ruling or no-ruling record is final for its task and key: the caller checks
-# wd_council_record first, and this function never overwrites one.
+# wd_council_record first, and this function never overwrites one, except for a
+# revisit naming that record as <prior>: it is moved to <archive> under the lock
+# only when the new record publishes, and is otherwise left in place.
 wd_council() {
-  local task=$1 key=$2 summary=$3 seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator
-  local WD_CALL_MAX_USD WD_CALL_TIMEOUT
+  local task=$1 key=$2 summary=$3 prior=${4:-} archive=${5:-} cur seats seat i=0 tmp answers='' first='' unanimous=1 answered=0 record prompt a fams lock dir locator flake_note=''
+  local WD_CALL_MAX_USD WD_CALL_TIMEOUT locked_evidence='' rec='' qualification='' answer_re='(PROCEED [A-Za-z0-9]{1,3}|HOLD)' reply_format='PROCEED <label> or HOLD'
   if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
     printf 'refused\t\t\trecord exceeds %s characters\n' "$WD_COUNCIL_MAX_CHARS"
     return 0
@@ -1033,19 +1103,45 @@ wd_council() {
   lock=$WD/council-locks/$locator
   mkdir -p "$WD/council-locks"
   if ! fm_lock_try_acquire "$lock"; then printf 'busy\t\t\t\n'; return 0; fi
-  if [ -n "$(wd_council_record "$task" "$key")" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  cur=$(wd_council_record "$task" "$key" | cut -f3)
+  if [ "$cur" != "$prior" ]; then fm_lock_release "$lock"; printf 'busy\t\t\t\n'; return 0; fi
+  # A second revisit can pass the caller's evidence check before this lock,
+  # then arrive after the first publish. The record path is stable, so the
+  # path check above still matches. Same evidence is already decided: return
+  # that ruling and do not convene again.
+  if [ -n "$prior" ] && [ -n "$cur" ]; then
+    locked_evidence=$(wd_council_normalize_evidence "$(wd_council_prior_evidence "$cur")")
+    if [ -n "$locked_evidence" ] && [ "$(wd_council_normalize_evidence "$summary")" = "$locked_evidence" ]; then
+      rec=$(wd_council_record "$task" "$key")
+      fm_lock_release "$lock"
+      case "$(printf '%s' "$rec" | cut -f1)" in
+        ruled) printf 'unanimous\t%s\t%s\t%s\n' "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" "$(printf '%s' "$rec" | cut -f4)" ;;
+        no-ruling) printf 'no-ruling\t%s\t%s\t%s\n' "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" "$(printf '%s' "$rec" | cut -f4)" ;;
+        *) printf 'busy\t\t\t\n' ;;
+      esac
+      return 0
+    fi
+  fi
   tmp=$(mktemp -d "$WD/council.XXXXXX") || { fm_lock_release "$lock"; return 1; }
+  if fm_wd_known_unreachable_timing_flake "$summary"; then
+    answer_re='(PROCEED [A-Za-z0-9]{1,3} (APPROVE_PARK|DEFER_PARK)|HOLD)'
+    reply_format='PROCEED <label> APPROVE_PARK, PROCEED <label> DEFER_PARK, or HOLD'
+    flake_note='This record describes a known unreachable timing flake: default to the option that approves the park, labeled approved, not clean, whichever label that option has, unless the record also names a human-only category in the line above.
+Append APPROVE_PARK to your PROCEED answer only when the selected option approves the park now despite the flake. For a scheduled rerun, deferral, or hold option, append DEFER_PARK instead. Every PROCEED answer for this flake must include one of these markers.
+'
+  fi
   prompt="You are one blind seat on a council for an autonomous software team. The owner is away. A worker parked this decision:
 task: $task
 key: $key
 record: $summary
-If the record names a merge, release, deploy, money, credentials, security, production data, or deletion, or says the owner reserved it, answer HOLD.
-If the record offers options and one is clearly recommended or clearly safest for continuing work, answer PROCEED followed by that option's label (for example PROCEED A or PROCEED 2).
+If the record itself asks for a merge, a release, a deploy, a publish, a force-push, money, credentials, security, production data, shared-database writes, PII, messages to people, a sign-in, or deletion, or says the owner reserved it, or the failure is in the PR's own changed behavior, including code this PR modified or added, answer HOLD.
+A no-mistakes awaiting_approval step is a council decision: a merge or release the step would unblock does not by itself make it the owner's, and a failed once-rerun or an extra isolated green run is evidence to weigh, never a reason to refuse the question, unless that failure is in the PR's own changed behavior.
+${flake_note}If the record offers options and one is clearly recommended or clearly safest for continuing work, answer PROCEED followed by that option's label (for example PROCEED A or PROCEED 2).
 Otherwise answer HOLD.
-Reply with exactly one line: PROCEED <label> or HOLD."
+Reply with exactly one line: $reply_format."
   for seat in $(printf '%s' "$seats" | tr ',' ' '); do
     i=$((i + 1))
-    ( wd_judge_one "$seat" council '(PROCEED [A-Za-z0-9]{1,3}|HOLD)' "$prompt" > "$tmp/$i" 2>/dev/null || printf 'FAILED\n' > "$tmp/$i" ) &
+    ( wd_judge_one "$seat" council "$answer_re" "$prompt" > "$tmp/$i" 2>/dev/null || printf 'FAILED\n' > "$tmp/$i" ) &
   done
   wait
   [ "$i" -ge 2 ] || unanimous=0
@@ -1062,22 +1158,41 @@ Reply with exactly one line: PROCEED <label> or HOLD."
   done
   rm -rf "$tmp"
   if [ "$answered" -eq 0 ]; then fm_lock_release "$lock"; printf 'failed\t\t\t%s\n' "$answers"; return 0; fi
+  if [ "$unanimous" = 1 ]; then
+    case "$first" in
+      *' APPROVE_PARK') qualification='approved, not clean'; first=${first% APPROVE_PARK} ;;
+      *' DEFER_PARK') first=${first% DEFER_PARK} ;;
+    esac
+  fi
   if [ "$unanimous" = 1 ]; then dir=$OUT/rulings; else dir=$OUT/no-rulings; fi
   mkdir -p "$dir"
   record=$dir/$locator.md
   if {
     if [ "$unanimous" = 1 ]; then
       printf '# Watchdog council ruling\n\n' &&
-      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i"
+      printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: %s (unanimous, %s blind seats)\n' "$O_HOME" "$task" "$key" "$first" "$i" &&
+      { [ -z "$qualification" ] || printf -- '- qualification: %s\n' "$qualification"; }
     else
       printf '# Watchdog council record - no ruling\n\n' &&
       printf -- '- home: %s\n- task: %s\n- key: %s\n- ruling: none (not unanimous, %s blind seats; held for the owner)\n' "$O_HOME" "$task" "$key" "$i"
     fi &&
     printf -- '- seats:%s\n- seat models: %s\n- at: %s\n\n' "$answers" "$seats" "$(fm_wd_iso "$(wd_now)")" &&
     printf 'Record:\n\n%s\n' "$summary"
-  } > "$record.tmp" && [ ! -d "$record" ] && mv "$record.tmp" "$record"; then
+  } > "$record.tmp" && [ ! -d "$record" ] &&
+    { [ -z "$prior" ] || { mkdir -p "$(dirname "$archive")" && cp -p "$prior" "$archive"; }; } &&
+    mv "$record.tmp" "$record"; then
+    if [ -n "$prior" ] && [ "$prior" != "$record" ] && ! rm -f "$prior"; then
+      # The superseded record is still final if it cannot be removed, and
+      # wd_council_record searches rulings first, so leaving the new record
+      # beside it would replay the old outcome. Roll the publication back.
+      rm -f "$record" "$archive" 2>/dev/null
+      fm_lock_release "$lock"
+      printf 'failed\t\t\t%s\n' "$answers"
+      return 0
+    fi
     fm_lock_release "$lock"
   else
+    [ -z "$prior" ] || rm -f "$archive" 2>/dev/null
     rm -f "$record.tmp" 2>/dev/null
     fm_lock_release "$lock"
     printf 'failed\t\t\t%s\n' "$answers"
@@ -1093,7 +1208,7 @@ Reply with exactly one line: PROCEED <label> or HOLD."
 # One ledger row for a council result, closing the pending row of the same id.
 wd_council_ledger() {  # <id> <task> <key> <result>
   case "$4" in
-    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)" ;;
+    unanimous*) wd_rec "$1" "decision:$3" council "done" "$(printf '%s' "$4" | cut -f2,4)$(wd_council_qualification "$(printf '%s' "$4" | cut -f3)")" ;;
     no-ruling*) wd_rec "$1" "decision:$3" council "done" "no ruling;$(printf '%s' "$4" | cut -f4)" ;;
     refused*) wd_rec "$1" "decision:$3" council refused "$(printf '%s' "$4" | cut -f4)" ;;
     busy*) wd_rec "$1" "decision:$3" council held "another council on $2 $3 is running" ;;
@@ -1102,25 +1217,53 @@ wd_council_ledger() {  # <id> <task> <key> <result>
 }
 
 wd_council_line() {  # <outcome> <answer> <record> <prior> <seats>
-  printf 'council=%s answer=%s record=%s prior=%s seats=%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}"
+  local qualification
+  qualification=$(wd_council_qualification "$3")
+  printf 'council=%s answer=%s record=%s prior=%s seats=%s%s\n' "$1" "${2:-none}" "${3:-none}" "$4" "${5:-none}" "${qualification:+ qualification=${qualification# }}"
+}
+
+wd_council_qualification() {
+  [ -f "$1" ] || return 0
+  sed -n '/^Record:$/q;s/^- qualification: approved, not clean$/ (approved, not clean)/p' "$1"
+}
+
+wd_council_normalize_evidence() {  # <text>
+  printf '%s' "$1" | tr '\t\r\n' '   ' | tr -s ' ' | sed 's/^ //;s/ $//' |
+    awk -F ' · ' '{
+      native=0; seen=0; sep=""
+      for (i=1; i<=NF; i++) {
+        if (!seen && $i ~ /(^|; )state: parked$/ && $(i+1) == "source: run-step") { native=1; seen=1 }
+        if (native && $i ~ /^parked: [0-9][0-9A-Za-z]*$/) continue
+        if (native && $i ~ /^run: /) native=0
+        printf "%s%s", sep, $i
+        sep=" · "
+      }
+    }'
+}
+
+wd_council_prior_evidence() {  # <record-path>
+  [ -f "$1" ] || return 0
+  awk 'f { print } /^Record:$/ { f = 1 }' "$1"
 }
 
 # cmd_council: one convening on demand, for a supervisor that needs a ruling now.
-# Prints `council=<outcome> answer=<PROCEED x|none> record=<path|none> prior=<0|1> seats=<answers>`.
+# Prints the council result line documented in this script's header.
 # It types nothing and nudges nobody; the caller applies the result.
 cmd_council() {
-  local task='' key='' home='' file='' summary res id rec
+  local task='' key='' home='' file='' summary res id rec revisit=0 prior_path='' archive='' detail prior_evidence
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --task) task=${2:?--task needs a task id}; shift ;;
       --key) key=${2:?--key needs a decision key}; shift ;;
       --home) home=$(cd -P -- "${2:?--home needs a path}" && pwd -P) || die "no such home: $2" 2; shift ;;
       --record-file) file=${2:?--record-file needs a path}; shift ;;
+      --revisit) revisit=1 ;;
       *) die "unknown council option: $1" 2 ;;
     esac
     shift
   done
-  [ -n "$task" ] && [ -n "$key" ] || die "usage: council --task <id> --key <key> [--home <path>] [--record-file <file>]" 2
+  [ -n "$task" ] && [ -n "$key" ] || die "usage: council --task <id> --key <key> [--home <path>] [--record-file <file>] [--revisit]" 2
+  [ "$revisit" != 1 ] || [ -n "$file" ] || die "--revisit needs --record-file carrying the later order or nudge that contradicts the recorded outcome" 2
   case "$task$key" in *[!A-Za-z0-9._-]*) die "task and key may hold only letters, digits, dot, underscore, and dash" 2 ;; esac
   [ -n "$home" ] || home=$(cd -P -- "$OWNER_HOME" && pwd -P)
   wd_subjects | awk -F'\t' -v h="$home" '$1 == h { f = 1 } END { exit !f }' || die "not a watched home: $home" 2
@@ -1129,6 +1272,7 @@ cmd_council() {
   if [ -n "$file" ]; then
     [ -f "$file" ] || die "no such record file: $file" 2
     summary=$(cat "$file") || die "cannot read record file: $file"
+    summary=$(wd_decision_summary "$home" "$task" "$key" "$summary")
   else
     summary=$(wd_open_decisions "$home/state" "$(wd_now)" 2>/dev/null | awk -F'\t' -v t="$task" -v k="$key" '$1 == t && $2 == k { print $5; exit }')
   fi
@@ -1155,12 +1299,26 @@ cmd_council() {
     return 0
   fi
   rec=$(wd_council_record "$task" "$key")
+  detail="$task $key (on demand)"
   if [ -n "$rec" ]; then
-    wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$(printf '%s' "$rec" | cut -f3)" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
-    return 0
+    prior_path=$(printf '%s' "$rec" | cut -f3)
+    prior_evidence=$(wd_council_normalize_evidence "$(wd_council_prior_evidence "$prior_path")")
+    if [ "$revisit" != 1 ] || { [ -n "$prior_evidence" ] && [ "$(wd_council_normalize_evidence "$summary")" = "$prior_evidence" ]; }; then
+      # A repeat call, and a revisit carrying the very evidence the recorded
+      # outcome already decided, both replay that outcome; only different
+      # evidence can convene the seats again.
+      wd_council_line "$(printf '%s' "$rec" | cut -f1)" "$(printf '%s' "$rec" | cut -f2)" "$prior_path" 1 "$(printf '%s' "$rec" | cut -f4 | sed 's/^ //')"
+      return 0
+    fi
+    # A documented revisit: a later standing order or supervisor nudge in the
+    # new record file contradicts the recorded outcome. Convene once more on
+    # the new record; the prior outcome moves to data/watchdog/revisits/ only
+    # when the new council publishes, so a failed revisit erases nothing.
+    archive="$OUT/revisits/$(basename "${prior_path%.md}")-$(wd_now)-$id.md"
+    detail="$task $key (revisit of $prior_path)"
   fi
-  wd_rec "$id" "decision:$key" council pending "$task $key (on demand)"
-  res=$(wd_council "$task" "$key" "$summary")
+  wd_rec "$id" "decision:$key" council pending "$detail"
+  res=$(wd_council "$task" "$key" "$summary" "$prior_path" "$archive")
   wd_council_ledger "$id" "$task" "$key" "$res"
   case "$res" in
     unanimous*) wd_council_line ruled "$(printf '%s' "$res" | cut -f2)" "$(printf '%s' "$res" | cut -f3)" 0 "$(printf '%s' "$res" | cut -f4 | sed 's/^ //')" ;;
@@ -2185,7 +2343,7 @@ wd_handle_human_step() {  # <kind>
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
-  local st=$O_HOME/state now task key verb age summary secs res aged=0 keys='' id cap ran=0 nudged held=0 held_keys=''
+  local st=$O_HOME/state now task key verb age summary secs res aged=0 keys='' id cap ran=0 nudged held=0 held_keys='' pr_label
   local oversized=0 refused_at
   local rec split=0 split_keys='' ruled=0 ruled_keys='' WD_NUDGE_MODE
 
@@ -2200,7 +2358,8 @@ wd_handle_decisions() {
     [ "$age" -ge "$secs" ] || continue
     if wd_decision_reserved "$task" "$key" "$summary"; then
       held=$((held + 1))
-      [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key"
+      pr_label=$(fm_wd_pr_label "$summary")
+      [ "$held" -gt 3 ] || fm_secret_like "$task/$key" || held_keys="$held_keys${held_keys:+, }$task/$key${pr_label:+ ($pr_label)}"
       continue
     fi
     if [ "${#summary}" -gt "$WD_COUNCIL_MAX_CHARS" ]; then
@@ -2215,14 +2374,19 @@ wd_handle_decisions() {
     case "$rec" in
       no-ruling*)
         split=$((split + 1))
-        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key"
+        pr_label=$(fm_wd_pr_label "$summary")
+        [ "$split" -gt 3 ] || split_keys="$split_keys${split_keys:+, }$task/$key${pr_label:+ ($pr_label)}"
         continue ;;
       ruled*)
         ruled=$((ruled + 1))
-        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key" ;;
+        pr_label=$(fm_wd_pr_label "$summary")
+        [ "$ruled" -gt 3 ] || ruled_keys="$ruled_keys${ruled_keys:+, }$task/$key${pr_label:+ ($pr_label)}$(wd_council_qualification "$(printf '%s' "$rec" | cut -f3)")" ;;
     esac
     aged=$((aged + 1))
-    [ "$aged" -gt 5 ] || keys="$keys${keys:+, }$task/$key"
+    # Name work by its PR number when the record carries one, so a nudge is
+    # never readable only through a goal alias such as G1 or G3.
+    pr_label=$(fm_wd_pr_label "$summary")
+    [ "$aged" -gt 5 ] || keys="$keys${keys:+, }$task/$key${pr_label:+ ($pr_label)}"
     printf '%s\t%s\t%s\n' "$task" "$key" "$summary" >> "$WD/.decisions-aged"
   done < "$WD/.decisions"
   [ "$held" -eq 0 ] || wd_gap "$held decisions held for the owner (never touched)${held_keys:+, e.g. $held_keys}"
@@ -2253,11 +2417,18 @@ wd_handle_decisions() {
     wd_council_ledger "$id" "$task" "$key" "$res"
     case "$res" in
       unanimous*)
-        wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2) on decision $key from $task. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
-      no-ruling*) wd_gap "council gave no ruling on $task $key; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
-      refused*) wd_gap "no council on $task $key: $(printf '%s' "$res" | cut -f4); held" ;;
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_nudge "ruling:$key" "a unanimous blind council ruled $(printf '%s' "$res" | cut -f2)$(wd_council_qualification "$(printf '%s' "$res" | cut -f3)") on decision $key from $task${pr_label:+ ($pr_label)}. Ruling file: $(printf '%s' "$res" | cut -f3). Apply it with fm-send --resolve-key if it stands, or record why not." ;;
+      no-ruling*)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "council gave no ruling on $task $key${pr_label:+ ($pr_label)}; held for the owner, record $(printf '%s' "$res" | cut -f3)" ;;
+      refused*)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "no council on $task $key${pr_label:+ ($pr_label)}: $(printf '%s' "$res" | cut -f4); held" ;;
       busy*) ;;
-      *) wd_gap "council did not publish a final record on $task $key; held" ;;
+      *)
+        pr_label=$(fm_wd_pr_label "$summary")
+        wd_gap "council did not publish a final record on $task $key${pr_label:+ ($pr_label)}; held" ;;
     esac
   done < "$WD/.decisions-aged"
 }

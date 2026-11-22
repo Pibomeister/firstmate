@@ -15,6 +15,31 @@
 #       Returns 0 when the text names an owner-reserved category (merge, release,
 #       deploy, spend, money, sign-in, credential, secret, security, production
 #       data, PII, delete, destroy, force-push). Those holds stay held.
+#   fm_wd_nm_awaiting_approval <text>
+#       Returns 0 when the text names a no-mistakes `awaiting_approval` step.
+#       Such a step is a council or captain decision by default; the merge or
+#       release it would unblock does not by itself make it the owner's.
+#   fm_wd_human_only <text>
+#       Returns 0 when the text names a human-only category for an
+#       awaiting_approval decision (deploy, publish, force-push or a forced push, spend,
+#       secrets or credentials, sign-in, security, production or
+#       shared-database writes, PII, messages to people, deletion, or a
+#       failure in the PR's own changed behavior, including code this PR
+#       modified, added, or introduced). A read-only shared-database
+#       mention, a negated changed-behavior phrase, or unchanged behavior
+#       does not.
+#       Either form split across lines is read the same way.
+#       A real failure that remains after a negation still does.
+#   fm_wd_known_unreachable_timing_flake <text>
+#       Returns 0 when the text describes a known timing flake in a test the
+#       PR cannot reach as the sole remaining failure after the once-rerun.
+#   fm_wd_pr_label <text>
+#       For a native parked run-step line, prints `PR #<n>` only from its
+#       separated `pr:` field before `run:`; a missing field prints nothing,
+#       even when finding text references another PR.
+#       Otherwise uses its first `/pull/<n>` URL, else its first `PR #<n>`,
+#       else its first structured `pr: #<n>` or `pr: <n>` component, else its
+#       first bare `#<n>`; prints nothing when it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
@@ -22,8 +47,9 @@
 #       seat never counts toward the two families a ruling needs.
 #   fm_wd_text_allowed <text>
 #       Returns 0 only when the watchdog may type or file this text: it refuses
-#       merge, deploy, release, publish, and force-push words, so no typed answer
-#       or nudge can carry a merge or deploy instruction.
+#       merge, deploy, release, publish, and force-push words, including a
+#       forced push, so no typed answer or nudge can carry a merge or deploy
+#       instruction.
 #   fm_wd_draft_rows <composer-window>
 #       Prints the draft fm_wd_draft_readable proved, for the handoff note: a
 #       closed box's body from its first prompt row, or the rows from the last
@@ -198,7 +224,7 @@
 #       name the current directory, keep their places too. An empty home or a
 #       home with no such directory prints <path> unchanged.
 
-FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])force.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+FM_WD_REFUSED_TEXT_RE='(^|[^be])merg|[rd]emerg|deploy|releas|publish|(^|[^a-z])forced?.?push|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
 FM_WD_RESERVED_RE="$FM_WD_REFUSED_TEXT_RE"'|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign-?in|log-?in|login|credential|secret|password|api.?key|security|production|pii|delet|destroy|wipe)'
 FM_WD_TIMER_TOOL_RE='^(ScheduleWakeup|CronCreate|CronList|CronDelete|Monitor|TaskOutput|BashOutput|Wait)$'
 FM_WD_TIMER_BASH_RE='(^|[^a-z])(sleep|fm-watch|fm-wake|wake|timer|until)([^a-z]|$)'
@@ -300,6 +326,109 @@ _fm_wd_guard_view() {  # <text>
 
 fm_wd_reserved() {  # <text>
   _fm_wd_guard_view "$1" | LC_ALL=C grep -Eq "$FM_WD_RESERVED_RE"
+}
+
+FM_WD_HUMAN_ONLY_RE='deploy|publish|(^|[^a-z])(spend|spent|money|budget|billing|invoice|payment|sign[[:space:]_-]*in|log[[:space:]_-]*in|credential|secret|password|api.?key|security|pii|e-?mail|sms|messages? to|delet|destroy|wipe|forced?.?push)|push.*[[:space:]]["'"'"']?((--force|-[a-z]*f[a-z]*)([^a-z]|$)|\+[^[:space:]])'
+
+# Phrases that cancel a category.
+# BSD grep has no lookbehind,
+# so the category search below runs on the text after these are removed.
+_fm_wd_without_negated_categories() {
+  LC_ALL=C sed -E \
+    -e 's/(^|[^a-z])not on changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])is not changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])not changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])no changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])without changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])unchanged behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])un changed behavio[a-z]*/\1/g' \
+    -e 's/(^|[^a-z])read-only/\1/g' \
+    -e 's/(^|[^a-z])read only/\1/g' \
+    -e 's/(^|[^a-z])readonly/\1/g' \
+    -e 's/(^|[^a-z])no writes/\1/g' \
+    -e 's/(^|[^a-z])no write/\1/g' \
+    -e 's/(^|[^a-z])without writes/\1/g' \
+    -e 's/(^|[^a-z])without writing/\1/g' \
+    -e 's/(^|[^a-z])without a write/\1/g' \
+    -e 's/(^|[^a-z])not writing/\1/g' \
+    -e 's/(^|[^a-z])not a write/\1/g'
+}
+
+# The guard view's space-joined line, so a category phrase split across rows
+# is one phrase. A negation removed here does not erase a later real failure.
+_fm_wd_category_line() {  # <view>
+  printf '%s\n' "$1" | awk '{ space_joined = prev; prev = $0 } END { print space_joined }' | tr '_-' '  ' | _fm_wd_without_negated_categories
+}
+
+# A production or shared-database mutation, not a bare or read-only mention.
+_fm_wd_data_writes() {  # <view>
+  local cleaned resource mutation relation
+  cleaned=$(_fm_wd_category_line "$1")
+  resource='(prod(uction)?|shared[[:space:]]*(db|database))([[:space:]]+(db|database|data|records|rows|tables|schema))?'
+  mutation='(write|writes|writing|wrote|mutat(e|es|ed|ing|ion|ions)|updat(e|es|ed|ing)|insert(s|ed|ing)?|alter(s|ed|ing)?|truncat(e|es|ed|ing)|migrat(e|es|ed|ing|ion|ions))'
+  relation='[[:space:]]+((data|records|rows|changes)[[:space:]]+)?((to|into|against|on|in|of|for)[[:space:]]+)?((the|a|an)[[:space:]]+)?'
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "(^|[^a-z])($mutation$relation$resource|${resource}[[:space:]]+$mutation)([^a-z]|$)"
+}
+
+# A failure in the PR's own changed behavior, including code this PR modified, added, or introduced.
+FM_WD_PR_FAILURE_RE='changed[[:space:]]+behavio|modified by this pr|added in this pr|introduced by this pr|code (this|the) pr (changed|modified|added)|pr.s own changed'
+
+_fm_wd_pr_caused_failure() {  # <view>
+  local cleaned
+  cleaned=$(_fm_wd_category_line "$1" | LC_ALL=C sed -E \
+    -e "s/(^|[^a-z])not ($FM_WD_PR_FAILURE_RE)[a-z]*/ /g" \
+    -e "s/(^|[^a-z])($FM_WD_PR_FAILURE_RE)[a-z]*([[:space:]]+(behavior|behaviour|code))?([[:space:]]+(tests?|checks?))?[[:space:]]+(passed|passes|succeeded|succeeds)([^a-z]|$)/ /g")
+  printf '%s\n' "$cleaned" | LC_ALL=C grep -Eq "$FM_WD_PR_FAILURE_RE"
+}
+
+fm_wd_nm_awaiting_approval() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'awaiting_approval|awaiting approval' || return 1
+  # Bind the named step to no-mistakes itself, not to an unrelated mention
+  # elsewhere in a merge question. A typed nm-<run>-<step> key also proves it.
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])(no[-_ ]mistakes[[:space:]_:-]+(test|review|document|lint|push|pr|ci|intent|rebase)[[:space:]_:-]+(step[[:space:]_:-]+)?(parked[[:space:]]+(at[[:space:]]+)?)?awaiting[_ ]approval|nm-[^[:space:]]*-(test|review|document|lint|push|pr|ci|intent|rebase)([^a-z]|$))'
+}
+
+fm_wd_human_only() {  # <text>
+  local view
+  view=$(_fm_wd_guard_view "$1")
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
+  # Formatting alone must not change authority: shared_database and
+  # messages-to-people name the same categories as their spaced forms.
+  printf '%s\n' "$view" | tr '_-' '  ' | LC_ALL=C grep -Eq "$FM_WD_HUMAN_ONLY_RE" && return 0
+  _fm_wd_data_writes "$view" && return 0
+  _fm_wd_pr_caused_failure "$view"
+}
+
+fm_wd_known_unreachable_timing_flake() {  # <text>
+  local view
+  view=$(fm_wd_lower "$1" | tr '\t\r\n_-' '     ' | tr -s ' ')
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq '(^|[^a-z])known (unreachable |load sensitive |load shaped |load |timing )*(flake|flaky)([^a-z]|$)' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'timing|load sensitive|load shaped' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'cannot reach|can.t reach|could not reach|unreachable|not reachable' || return 1
+  printf '%s\n' "$view" | LC_ALL=C grep -Eq 'once rerun (failed|left) only|only[^.;!?]*(flake|flaky)[^.;!?]*survived (the |a )?once rerun|after (the |a )?once rerun,? (the )?only failure (left|remaining) (was|is)' || return 1
+  if printf '%s\n' "$view" | awk -F ' · ' '{ for (i=1; i<=NF; i++) if (index($i, "other findings:") > 0) print $i }' | LC_ALL=C grep -Eq '(^|[^a-z])(failed|failures?|errors?)([^a-z]|$)'; then
+    return 1
+  fi
+  ! printf '%s\n' "$view" | LC_ALL=C grep -Eq 'unknown|not (a |yet |previously )?known|new (timing |load sensitive |load shaped )?flake|no (once )?rerun|rerun (not |is |still )?(attempted|pending|planned)|if (the |a )?once rerun|not (the )?only|another (test )?(failure|error|failed)|additional (test )?(failure|error)|unrelated (failure|error)|also [^.;!?]*failed|additionally [^.;!?]*failed|failed (too|as well)|plus (a |an )?(failure|error|timeout)'
+}
+
+fm_wd_pr_label() {  # <text>
+  local hit='' n
+  case "$1" in
+    *'state: parked · source: run-step · '*)
+      hit=$(printf '%s\n' "$1" | awk -F ' · ' '{ for (i=1; i<=NF; i++) { if ($i ~ /^run: /) exit; if ($i ~ /^pr: #[0-9]+$/) { print $i; exit } } }')
+      [ -n "$hit" ] || return 0 ;;
+  esac
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '/pull/[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE 'PR #[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oiE '(^|[^A-Za-z])pr:[[:space:]]*#?[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || hit=$(printf '%s' "$1" | grep -oE '#[0-9]+' | head -n 1 || true)
+  [ -n "$hit" ] || return 0
+  n=$(printf '%s' "$hit" | grep -oE '[0-9]+$')
+  [ -n "$n" ] && printf 'PR #%s\n' "$n"
+  return 0
 }
 
 fm_wd_text_allowed() {  # <text>

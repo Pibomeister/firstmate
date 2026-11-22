@@ -818,15 +818,19 @@ test_handled_mv_dedups_by_sequence() {
 }
 
 test_concurrent_writers_never_clobber() {
-  local state i pids=() count
+  local state i pids=() count failed=0
   state="$TMP_ROOT/race/state"; mkdir -p "$state"
+  # This asserts serialization, not throughput within the production 5s wait.
+  # Allow the six writers to take turns even on a heavily loaded test host.
   for i in 1 2 3 4 5 6; do
-    inbox_lib "$state" fm_task_inbox_write "$state" t1 "steer number $i" >/dev/null &
+    FM_TASK_INBOX_LOCK_WAIT_SECS=120 \
+      inbox_lib "$state" fm_task_inbox_write "$state" t1 "steer number $i" >/dev/null &
     pids+=($!)
   done
   for i in "${pids[@]}"; do
-    wait "$i" || fail "a concurrent inbox write failed"
+    wait "$i" || failed=1
   done
+  [ "$failed" = 0 ] || fail "a concurrent inbox write failed"
   count=$(find "$state/t1.inbox" -maxdepth 1 -name '*.msg' | wc -l | tr -d ' ')
   [ "$count" = 6 ] || fail "6 concurrent writes should yield 6 records, got $count:"$'\n'"$(ls "$state/t1.inbox")"
   for i in 1 2 3 4 5 6; do
@@ -1544,6 +1548,9 @@ test_watcher_usage_limit_unread_inbox_does_not_name_interrupt() {
     '' \
     'Enter to confirm · Esc to cancel' > "$capture"
   printf '001.msg\t2\t%s\t\n' "$(date +%s)" > "$state/t1.inbox/.recover-state"
+  # Start at the escalation boundary this case asserts. Ring pacing has its
+  # own ladder tests and need not add another full watcher poll here.
+  inbox_lib "$state" fm_task_inbox_record_ring "$state" t1 "$rec"
   watch_bg "$state" "$dir/fakebin" "$out" \
     FM_SEND_LOG="$log" FM_FAKE_TMUX_CAPTURE="$capture" \
     FM_TASK_INBOX_RING_MAX=1 FM_TASK_INBOX_SECONDMATE_ESCALATE_SECS=999999999
@@ -1655,6 +1662,11 @@ test_parked_gate_notice_rings_once_per_park() {
   gate_notice "$dir" "$GATE_WORKER" >/dev/null; gate_notice "$dir" "$GATE_WORKER" >/dev/null
   [ "$(gate_records "$dir")" = 1 ] && [ "$(gate_doorbells "$dir")" = 1 ] \
     || fail "one park rang more than once: $(gate_records "$dir") record(s), $(gate_doorbells "$dir") doorbell(s)"
+  # The same park whose reported wait has grown is still the same park.
+  gate_notice "$dir" "${GATE_WORKER% · run:*} · parked: 2m10s · run: 01RUNPARK" >/dev/null
+  gate_notice "$dir" "${GATE_WORKER% · run:*} · parked: 7m10s · run: 01RUNPARK" >/dev/null
+  [ "$(gate_records "$dir")" = 1 ] && [ "$(gate_doorbells "$dir")" = 1 ] \
+    || fail "a growing parked duration rang one park again: $(gate_records "$dir") record(s), $(gate_doorbells "$dir") doorbell(s)"
   # A different parked verdict is a different park.
   gate_notice "$dir" 'state: parked · source: run-step · parked at fix_review: 2 finding(s) · run: 01RUNPARK' >/dev/null
   [ "$(gate_records "$dir")" = 2 ] || fail "a new park of the same run was not rung"

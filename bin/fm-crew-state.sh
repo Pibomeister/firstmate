@@ -21,7 +21,7 @@
 # FM_CREW_STATE_NO_FORGE=1 keeps the receipt read but skips the forge fallback.
 # An absent or unreadable PR identity yields an honest unknown, never an
 # optimistic merged claim.
-# Output is one stable, parseable, token-tight line firstmate can read every
+# Output is one parseable, token-tight current-state line firstmate can read every
 # heartbeat:
 #
 #   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>
@@ -33,6 +33,13 @@
 # `earlier run: <id>`, and a verdict taken from the ledger's own row carries no
 # run id at all, because there the id belongs to a run the verdict did not come
 # from (rule 2b).
+# A parked reading carries the parked question's structured parts before that
+# run field, each only when the run itself proves it: `pr: #<n>`, `findings:
+# <ids>`, `summary: <gate summary>`, `question: <ask-user descriptions>`,
+# `other findings: <remaining descriptions>`, and `parked:
+# <duration>`. The question retains the recorded options rather than inventing
+# them. Control characters are removed, rows are joined, and field separators
+# in the question become semicolons so prose cannot mint structured fields.
 #
 # Logic, numbered for reference; rules 2b and 3 each record that rule 3's
 # status-log reconciliation is applied before rule 2b:
@@ -701,9 +708,43 @@ nm_gate_findings_count() {
   case "$rest" in ''|*[!0-9]*) return 0 ;; esac
   printf '%s' "$rest"
 }
+nm_parked_pr_number() {
+  local url num
+  url=$(strip_quotes "$(nm_field pr)")
+  case "$url" in */pull/*|*/pulls/*|*/merge_requests/*|*/pull-requests/*) ;; *) return 0 ;; esac
+  num=${url##*/}
+  case "$num" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "$num"
+}
+nm_gate_finding_ids() {
+  local ids id out=''
+  ids=$(fm_nm_table_column "$RUN_OUT" findings id)
+  while IFS= read -r id; do
+    id=$(trim "$id")
+    case "$id" in ''|*[!A-Za-z0-9._-]*) continue ;; esac
+    out="$out${out:+,}$id"
+  done <<EOF
+$ids
+EOF
+  printf '%s' "$out"
+}
+nm_status_text() {
+  # Prefixing and joining prose can add the spaces around a delimiter, so
+  # remove its character before either operation can mint a status field.
+  LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' |
+    tr '\t\r' '  ' | sed 's/·/;/g' |
+    awk 'NF { if (n++) printf "; "; printf "%s", $0 }'
+}
+nm_parked_duration() {
+  local line dur
+  line=$(printf '%s\n' "$RUN_OUT" | grep -E "$FM_NM_AWAITING_AGENT_RE" | head -1 || true)
+  dur=$(printf '%s' "$line" | sed -n 's/.*parked[[:space:]][[:space:]]*\([0-9][0-9A-Za-z]*\).*/\1/p')
+  case "$dur" in ''|*[!0-9A-Za-z]*) return 0 ;; esac
+  printf '%s' "$dur"
+}
 # 0 when the gate's own findings table holds at least one row whose `action`
 # column is exactly `ask-user` - the pipeline's own record that this gate's
-# answer is owed by a HUMAN, not by the crewmate (the gate's shape -
+# answer is owed by the supervisor, not by the crewmate (the gate's shape -
 # awaiting_approval, fix_review, awaiting_agent - is reported parked in every
 # case and does not by itself say who owes the answer; only a findings row whose
 # `action` column is exactly `ask-user` does).
@@ -715,9 +756,9 @@ nm_gate_findings_count() {
 # trailing `description` column is free text that routinely quotes finding
 # actions, and the payload also carries the branch name and step names, so a
 # gate owed the crewmate's own answer would match just as readily as one owed a
-# human. Column order is read from the header rather than assumed, so a table
-# that grows a column keeps answering correctly. Both the header match and the
-# row scan require the BRACE, so the count, the index and the rows all come from
+# supervisor. Column order is read from the header rather than assumed, so a
+# table that grows a column keeps answering correctly. Both the header match and
+# the row scan require the BRACE, so the count, the index and the rows come from
 # the same block: an earlier unbraced `findings[N]:` line from a resolved round
 # must not supply the rows while the braced gate table supplies the index, which
 # would read the wrong block's rows at the right block's offset
@@ -1397,6 +1438,18 @@ if [ "$HAVE_RUN" = 1 ]; then
       if nm_gate_awaits_human_decision; then
         RUN_DETAIL="$RUN_DETAIL${SEP}$FM_GATE_HUMAN_DECISION"
       fi
+      parked_pr=$(nm_parked_pr_number)
+      [ -z "$parked_pr" ] || RUN_DETAIL="$RUN_DETAIL${SEP}pr: #$parked_pr"
+      parked_ids=$(nm_gate_finding_ids)
+      [ -z "$parked_ids" ] || RUN_DETAIL="$RUN_DETAIL${SEP}findings: $parked_ids"
+      parked_summary=$(strip_quotes "$(nm_field summary)" | nm_status_text)
+      [ -z "$parked_summary" ] || RUN_DETAIL="$RUN_DETAIL${SEP}summary: $parked_summary"
+      parked_question=$(fm_nm_table_column "$RUN_OUT" findings description action ask-user | nm_status_text)
+      [ -z "$parked_question" ] || RUN_DETAIL="$RUN_DETAIL${SEP}question: $parked_question"
+      parked_other=$(fm_nm_table_column "$RUN_OUT" findings description action ask-user 1 | nm_status_text)
+      [ -z "$parked_other" ] || RUN_DETAIL="$RUN_DETAIL${SEP}other findings: $parked_other"
+      parked_dur=$(nm_parked_duration)
+      [ -z "$parked_dur" ] || RUN_DETAIL="$RUN_DETAIL${SEP}parked: $parked_dur"
     else
       case "$status" in
         ci)             RUN_STATE=working; RUN_DETAIL="ci running" ;;
