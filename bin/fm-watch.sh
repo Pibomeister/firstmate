@@ -5282,8 +5282,7 @@ fi
 # The poll loop owns the liveness beacon below, and fm-guard.sh reads that
 # beacon's freshness as proof that supervision is alive. Publication is a
 # side-band nicety bounded by FM_HOME_SUMMARY_TIMEOUT, but that bound is far
-# larger than one poll and, in a home whose publication keeps failing, it is
-# paid on every poll - so running it inline puts up to a full publication
+# larger than one poll, so running it inline puts up to a full publication
 # deadline between two beacon touches and can starve the guard's grace. Nothing
 # in the poll depends on the ledger, so start it and move on: the beacon keeps
 # advancing no matter how slow the publication is.
