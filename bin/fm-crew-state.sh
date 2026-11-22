@@ -21,7 +21,7 @@
 # FM_CREW_STATE_NO_FORGE=1 keeps the receipt read but skips the forge fallback.
 # An absent or unreadable PR identity yields an honest unknown, never an
 # optimistic merged claim.
-# Output is one stable, parseable, token-tight line firstmate can read every
+# Output is one parseable, token-tight current-state line firstmate can read every
 # heartbeat:
 #
 #   state: <working|parked|done|blocked|paused|failed|unknown> · source: <run-step|pane|status-log|remote-endpoint|none> · <detail>

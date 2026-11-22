@@ -34,10 +34,12 @@
 #       Returns 0 when the text describes a known timing flake in a test the
 #       PR cannot reach as the sole remaining failure after the once-rerun.
 #   fm_wd_pr_label <text>
-#       Prints `PR #<n>` from a separated native `pr:` field, else its first `/pull/<n>` URL,
-#       else its first `PR #<n>`, else its first structured `pr: #<n>` or
-#       `pr: <n>` component, else its first bare `#<n>`; prints nothing when
-#       it names none.
+#       For a native parked run-step line, prints `PR #<n>` only from its
+#       separated `pr:` field before `run:`; a missing field prints nothing,
+#       even when finding text references another PR.
+#       Otherwise uses its first `/pull/<n>` URL, else its first `PR #<n>`,
+#       else its first structured `pr: #<n>` or `pr: <n>` component, else its
+#       first bare `#<n>`; prints nothing when it names none.
 #   fm_wd_seat_family <harness:model>
 #       Prints the model family of one council seat: anthropic, google, openai,
 #       or unknown. The model name decides; a name it does not know falls back
