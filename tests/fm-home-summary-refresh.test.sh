@@ -19,6 +19,10 @@ LARGE_HOME="$TMP_ROOT/large-home"
 STATELESS_HOME="$TMP_ROOT/stateless-home"
 LARGE_CHILD_HOME="$TMP_ROOT/large-child-home"
 LARGE_PARENT_HOME="$TMP_ROOT/large-parent-home"
+# Parent consumers reject child homes beneath their declared code root. Keep
+# that root beside the fixture homes, including when TMPDIR is in the worktree.
+PARENT_CODE_ROOT="$TMP_ROOT/parent-code-root"
+mkdir -p "$PARENT_CODE_ROOT"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT")
 WATCH_PID=
 SLOW_WRITER_PID=
@@ -154,7 +158,7 @@ test_failed_summary_refresh_waits_for_idle() {
 }
 
 test_locked_deadlines_record_backoff() {
-  local code home stalls operation attempts expected lib
+  local code home stalls operation attempts expected lib actual
   code="$TMP_ROOT/locked-deadline-code"
   stalls="$TMP_ROOT/locked-deadline-hooks.sh"
   mkdir -p "$code/bin"
@@ -182,7 +186,7 @@ fm_test_stall() {
     log:printf) [ -n "${HOME_SUMMARY_ERROR:-}" ] || return 0 ;;
     *) return 0 ;;
   esac
-  : > "$FM_TEST_STALLED"
+  builtin printf 'operation=%s worker=%s seconds=%s\n' "$1" "$$" "$SECONDS" > "$FM_TEST_STALLED"
   sleep 60
 }
 mkdir() { fm_test_stall mkdir "$@"; command mkdir "$@"; }
@@ -209,10 +213,18 @@ SH
       FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_HOME_SUMMARY_TIMEOUT=8 \
       FM_TEST_SEAM=1 FM_NOW=1000 \
       fm_run_timed 30 "$code/bin/fm-home-summary-refresh.sh" --best-effort \
-      || fail "$operation deadline escaped its bound or changed the caller result"
+      2> "$home/refresh.err" || {
+        cat "$home/refresh.err" >&2
+        fail "$operation deadline escaped its bound or changed the caller result"
+      }
     [ -e "$home/stalled" ] || fail "$operation fixture never reached its lock-held stall"
-    [ "$(cat "$home/state/.home-summary-refresh.backoff" 2>/dev/null)" = "$(printf 'failures=1\nnext=1030')" ] \
-      || fail "$operation deadline did not record exactly one failure before unlock"
+    actual=$(cat "$home/state/.home-summary-refresh.backoff" 2>/dev/null)
+    if [ "$actual" != "$(printf 'failures=1\nnext=1030')" ]; then
+      printf 'backoff after %s deadline: <%s>\n' "$operation" "$actual" >&2
+      cat "$home/stalled" "$home/refresh.err" "$home/state/.home-summary-refresh.log" >&2
+      ls -la "$home/state" >&2
+      fail "$operation deadline did not record exactly one failure before unlock"
+    fi
     expected=$(wc -l < "$attempts" | tr -d ' ')
     FM_TEST_STALL_AT=none FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
       FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=1001 \
@@ -440,7 +452,7 @@ printf '%s\n' '## In flight' '' '## Queued' '' '## Done' \
   > "$LARGE_PARENT_HOME/data/backlog.md"
 fm_write_secondmate_meta "$LARGE_PARENT_HOME/state/large-child.meta" \
   "$LARGE_CHILD_HOME" "fmtest:fm-large-child" firstmate claude
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$LARGE_PARENT_HOME" \
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$PARENT_CODE_ROOT" FM_HOME="$LARGE_PARENT_HOME" \
   FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
   "$SNAPSHOT" --json > "$TMP_ROOT/large-parent-snapshot.json" \
   || fail "parent fleet snapshot failed for a large child ledger"
@@ -530,7 +542,7 @@ EOF
 fm_write_secondmate_meta "$PARENT_HOME/state/mate.meta" "$HOME_DIR" \
   "fmtest:fm-mate" firstmate claude
 PATH="$FAKEBIN:$PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$PARENT_HOME" \
+  FM_ROOT_OVERRIDE="$PARENT_CODE_ROOT" FM_HOME="$PARENT_HOME" \
   FM_SNAPSHOT_NOW="$NOW_TWO" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_TWO" \
   "$SNAPSHOT" --json > "$TMP_ROOT/parent-snapshot.json" \
   || fail "parent fleet snapshot failed"
