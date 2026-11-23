@@ -41,10 +41,10 @@ chmod +x "$FAKE/df"
 #                                 fully old installed runtime, not allowlisted:
 #                                 kept whole and reported as kept
 #   logs/old.log                  old log entry: removed
-#   workspaces/proj/tracked.txt   old but never in scope
+#   workspaces/proj/wt/tracked.txt  old worktree file: never in scope
 WORLD="$TMP_ROOT/world"
 mkdir -p "$WORLD/cache/sub" "$WORLD/cache/ms-playwright/chromium" "$WORLD/cache/pre-commit/repo1" "$WORLD/cache/uv/a" \
-  "$WORLD/logs" "$WORLD/workspaces/proj" "$WORLD/state" "$WORLD/vol"
+  "$WORLD/logs" "$WORLD/workspaces/proj/wt" "$WORLD/state" "$WORLD/vol"
 printf 'old cache bytes\n' > "$WORLD/cache/pip"
 printf 'new cache bytes\n' > "$WORLD/cache/sub/new.bin"
 printf 'old hook env\n' > "$WORLD/cache/pre-commit/repo1/hook.py"
@@ -52,8 +52,8 @@ printf 'fresh index\n' > "$WORLD/cache/pre-commit/db.db"
 printf 'stale bytes\n' > "$WORLD/cache/uv/a/b.bin"
 printf 'browser binary\n' > "$WORLD/cache/ms-playwright/chromium/chrome"
 printf 'old log bytes\n' > "$WORLD/logs/old.log"
-printf 'project bytes\n' > "$WORLD/workspaces/proj/tracked.txt"
-touch -t 202501010000 "$WORLD/cache/pip" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/tracked.txt" \
+printf 'project bytes\n' > "$WORLD/workspaces/proj/wt/tracked.txt"
+touch -t 202501010000 "$WORLD/cache/pip" "$WORLD/logs/old.log" "$WORLD/workspaces/proj/wt/tracked.txt" \
   "$WORLD/cache/pre-commit/repo1/hook.py" "$WORLD/cache/pre-commit/repo1" \
   "$WORLD/cache/uv/a/b.bin" "$WORLD/cache/uv/a" "$WORLD/cache/uv" \
   "$WORLD/cache/ms-playwright/chromium/chrome" "$WORLD/cache/ms-playwright/chromium" \
@@ -84,7 +84,7 @@ test_report_measures_and_deletes_nothing() {
   assert_contains "$(line_for "host-cleanup logs: root=$WORLD/logs ")" "old_entries=1" "report counts the one old log entry"
   assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "entry=ms-playwright size_kib=" "report names the old runtime as kept"
   assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "reason=not-allowlisted" "report says why the runtime is kept"
-  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj" "report sizes the worktree"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj/wt size_kib=" "report sizes the worktree"
   assert_present "$WORLD/cache/pip" "report deletes nothing"
   pass "report measures free space, old files, and worktrees without deleting"
 }
@@ -113,7 +113,7 @@ test_clean_dry_run_deletes_nothing() {
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=2" "dry run leaves the old entries counted"
   assert_present "$WORLD/cache/uv/a/b.bin" "dry run keeps the fully old entry"
   assert_present "$WORLD/cache/pip" "dry run keeps the old cache file"
-  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "dry run prints the worktree size report"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj/wt size_kib=" "dry run prints the worktree size report"
   assert_present "$WORLD/logs/old.log" "dry run keeps the old log file"
   pass "clean without --apply deletes nothing"
 }
@@ -131,8 +131,8 @@ test_clean_apply_deletes_only_old_cache_and_logs() {
   assert_present "$WORLD/cache/ms-playwright/chromium/chrome" "a fully old installed runtime that is not allowlisted survives whole"
   assert_contains "$(line_for "host-cleanup kept: root=$WORLD/cache ")" "entry=ms-playwright size_kib=" "apply names the kept runtime"
   assert_contains "$(line_for "host-cleanup clean: root=$WORLD/cache ")" "remaining_old_entries=0" "apply leaves no old cache entry behind"
-  assert_present "$WORLD/workspaces/proj/tracked.txt" "an old worktree file is never in scope"
-  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj size_kib=" "the scheduled apply run prints the worktree size report"
+  assert_present "$WORLD/workspaces/proj/wt/tracked.txt" "an old worktree file is never in scope"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$WORLD/workspaces/proj/wt size_kib=" "the scheduled apply run prints the worktree size report"
   assert_grep "clean free_before_kib=209715200 free_after_kib=209715200" "$WORLD/state/cleanup.log" "apply appends the before/after line"
   pass "clean --apply removes only whole old cache and log entries and logs the run"
 }
@@ -212,9 +212,33 @@ test_npm_cacache_is_one_entry_under_default_roots() {
   pass "npm's _cacache is judged and removed as one whole entry under the default roots"
 }
 
+test_report_sizes_each_worktree_under_default_roots() {
+  local home="$TMP_ROOT/home-worktrees"
+  mkdir -p "$home/vol" "$home/orca/workspaces/proj/big" "$home/orca/workspaces/proj/small" \
+    "$home/.no-mistakes/worktrees/repo1/run1"
+  head -c 204800 /dev/zero > "$home/orca/workspaces/proj/big/blob"
+  printf 'x\n' > "$home/orca/workspaces/proj/small/file"
+  printf 'x\n' > "$home/.no-mistakes/worktrees/repo1/run1/file"
+  run_default_roots "$home" report
+  [ "$RC" = 0 ] || fail "worktree report: expected exit 0, got $RC"$'\n'"$OUT"
+  local big small proj
+  big=$(line_for "host-cleanup worktrees: root=$home/orca/workspaces/proj/big ")
+  small=$(line_for "host-cleanup worktrees: root=$home/orca/workspaces/proj/small ")
+  proj=$(line_for "host-cleanup worktrees: root=$home/orca/workspaces/proj ")
+  [ -n "$big" ] || fail "each Orca worktree gets its own size line"$'\n'"$OUT"
+  [ -n "$small" ] || fail "a sibling Orca worktree gets its own size line"$'\n'"$OUT"
+  [ -z "$proj" ] || fail "the project directory is not reported as one worktree: $proj"
+  big=${big##*size_kib=}
+  small=${small##*size_kib=}
+  [ "$big" -ge 200 ] && [ "$small" -lt 200 ] || fail "the large worktree is told apart from the small one: big=$big small=$small"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$home/.no-mistakes/worktrees/repo1/run1 size_kib=" "pipeline run worktrees are reported by default"
+  assert_present "$home/orca/workspaces/proj/big/blob" "the worktree report deletes nothing"
+  pass "report sizes each worktree two levels under the default Orca and pipeline roots"
+}
+
 test_render_launchd_runs_clean_apply_every_six_hours() {
   local plist="$TMP_ROOT/cleanup.plist" home="$TMP_ROOT/launchd-home"
-  mkdir -p "$home/vol" "$home/orca/workspaces/proj" "$home/state"
+  mkdir -p "$home/vol" "$home/orca/workspaces/proj/wt" "$home/state"
   HOME="$home" FM_CLEANUP_DIR="$home/state" PATH="$FAKE:$BASE_PATH" bash "$CLEANUP" render-launchd > "$plist" \
     || fail "render-launchd failed"
   FM_TEST_SEAM=1 FM_CLEANUP_VOLUME="$home/vol" FM_FAKE_VOLUME="$home/vol" FM_FAKE_DF_AVAIL=209715200 \
@@ -233,7 +257,7 @@ env = dict(os.environ, **p['EnvironmentVariables'])
 assert env['HOME'] == home
 out = subprocess.run(p['ProgramArguments'], env=env, cwd='/', capture_output=True, text=True, timeout=60)
 assert out.returncode == 0, out
-assert 'host-cleanup worktrees: root=%s/orca/workspaces/proj ' % home in out.stdout, out.stdout
+assert 'host-cleanup worktrees: root=%s/orca/workspaces/proj/wt ' % home in out.stdout, out.stdout
 PY
   pass "render-launchd emits a 6-hour LaunchAgent whose logged run carries the worktree report"
 }
@@ -257,5 +281,6 @@ fm_test_run \
   test_clean_apply_deletes_only_old_cache_and_logs \
   test_clean_lists_each_root_once \
   test_npm_cacache_is_one_entry_under_default_roots \
+  test_report_sizes_each_worktree_under_default_roots \
   test_render_launchd_runs_clean_apply_every_six_hours \
   test_usage_errors_exit_2

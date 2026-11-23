@@ -6,8 +6,9 @@
 # Usage:
 #   fm-host-cleanup.sh report
 #       Print free space, each cache and log root's size and whole-entry
-#       reclaim estimate, and the size of every directory directly under
-#       each worktree root. Deletes nothing.
+#       reclaim estimate, and the size of every worktree, a directory two
+#       levels under a worktree root (<root>/<project>/<worktree>). Deletes
+#       nothing.
 #   fm-host-cleanup.sh clean
 #       Dry run: print what clean --apply would delete and the same
 #       worktree size lines report prints. Deletes nothing.
@@ -49,9 +50,10 @@
 # $HOME/.npm, so npm's _cacache (content-v2 with its index-v5) is one entry.
 # Default log roots: $HOME/Library/Logs.
 # FM_CLEANUP_CACHE_ROOTS and FM_CLEANUP_LOG_ROOTS replace them (colon list).
-# Worktree roots (default $HOME/orca/workspaces, FM_CLEANUP_WORKTREE_ROOTS)
-# are measured for the report and never deleted from: project files, tracked
-# or untracked, are out of this script's reach by construction. Docker and
+# Worktree roots (default $HOME/orca/workspaces and
+# $HOME/.no-mistakes/worktrees, FM_CLEANUP_WORKTREE_ROOTS) are measured for
+# the report and never deleted from: project files, tracked or untracked, are
+# out of this script's reach by construction. Docker and
 # OrbStack volumes are never touched; pruning them stays a separate,
 # explicit step.
 #
@@ -76,7 +78,7 @@ LOG_AGE_DAYS=${FM_CLEANUP_LOG_AGE_DAYS:-14}
 TARGET_GIB=${FM_CLEANUP_TARGET_GIB:-100}
 CACHE_ROOTS=${FM_CLEANUP_CACHE_ROOTS:-$HOME/Library/Caches:$HOME/.cache:$HOME/.npm}
 LOG_ROOTS=${FM_CLEANUP_LOG_ROOTS:-$HOME/Library/Logs}
-WORKTREE_ROOTS=${FM_CLEANUP_WORKTREE_ROOTS:-$HOME/orca/workspaces}
+WORKTREE_ROOTS=${FM_CLEANUP_WORKTREE_ROOTS:-$HOME/orca/workspaces:$HOME/.no-mistakes/worktrees}
 
 if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_CLEANUP_VOLUME:-}" ]; then
   VOLUME=$FM_CLEANUP_VOLUME
@@ -173,7 +175,7 @@ worktree_report() {
   local root child
   each_root "$WORKTREE_ROOTS" | while IFS= read -r root; do
     [ -d "$root" ] || continue
-    for child in "$root"/*; do
+    for child in "$root"/*/*; do
       [ -d "$child" ] || continue
       printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$child" "$(root_size_kib "$child")"
     done
