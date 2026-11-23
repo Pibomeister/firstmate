@@ -26,6 +26,8 @@
 #   review = <label> | <local-path or ssh:<host>:<absolute-path>>
 #   interval_seconds = <n>          (install only, default 1200)
 #   stall_hours = <n>               (default 48)
+#   timezone = <IANA zone>          (default UTC; sets digest times and ETA dates)
+#   timeout_seconds = <n>           (per gh/ssh call, default 60)
 #   summarize_cmd = <command>       (optional, run only when changed)
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
@@ -86,6 +88,8 @@ interval_seconds=$INTERVAL_DEFAULT
 stall_hours=$STALL_DEFAULT
 summarize_cmd=
 output_dir=
+timezone=UTC
+timeout_seconds=60
 
 trim() {
   local s=$1
@@ -117,11 +121,27 @@ load_config() {
       stall_hours) case "$value" in ''|*[!0-9]*) ;; *) stall_hours=$value ;; esac ;;
       summarize_cmd) summarize_cmd=$value ;;
       output_dir) output_dir=$value ;;
+      timezone) [ -n "$value" ] && timezone=$value ;;
+      timeout_seconds) case "$value" in ''|*[!0-9]*) ;; *) timeout_seconds=$value ;; esac ;;
     esac
   done < "$config_file"
   if [ -z "$output_dir" ]; then
     output_dir=$fm_home/data/goal-digest
   fi
+}
+
+# timed <seconds> <cmd...>: run with a wall-clock limit so a stalled
+# network or summarizer call cannot hold the run forever.
+timed() {
+  local seconds=$1
+  shift
+  FM_GD_TIMEOUT=$seconds python3 - "$@" <<'PY'
+import os, subprocess, sys
+try:
+    raise SystemExit(subprocess.run(sys.argv[1:], timeout=int(os.environ["FM_GD_TIMEOUT"])).returncode)
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+PY
 }
 
 shell_quote() {
@@ -131,21 +151,30 @@ shell_quote() {
 }
 
 # fetch_pulls <repo> <state-query> <out-json>: paginate at 100 per page,
-# up to 10 pages, combining every page into one JSON array. 0 ok, 1 failed.
+# up to 10 pages, combining every page into one JSON array. 0 ok,
+# 1 failed (any page, so partial results are never treated as complete),
+# 2 truncated at the page cap (results usable, caller records a note).
 fetch_pulls() {
-  local repo=$1 query=$2 out=$3 page=1 page_file count
+  local repo=$1 query=$2 out=$3 page=1 page_file count truncated=0
+  rm -f "$work/fetch-truncated"
   : > "$work/pages.txt"
   while [ "$page" -le 10 ]; do
     page_file=$work/page-$page.json
-    if ! "$gh_bin" api "repos/$repo/pulls?$query&per_page=100&page=$page" > "$page_file" 2>/dev/null; then
-      [ "$page" -gt 1 ] || return 1
-      break
+    if ! timed "$timeout_seconds" "$gh_bin" api "repos/$repo/pulls?$query&per_page=100&page=$page" > "$page_file" 2>/dev/null; then
+      return 1
     fi
     printf '%s\n' "$page_file" >> "$work/pages.txt"
     count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$page_file" 2>/dev/null || printf '0')
-    [ "$count" -lt 100 ] && break
+    if [ "$count" -lt 100 ]; then
+      break
+    fi
+    if [ "$page" -eq 10 ]; then
+      truncated=1
+    fi
     page=$((page + 1))
   done
+  [ "$truncated" = 1 ] && printf '2' > "$work/fetch-truncated"
+  true
   python3 - "$out" <<'PY'
 import json, os, sys
 pages = []
@@ -173,8 +202,8 @@ read_source() {
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
       local quoted
       quoted=$(shell_quote "$path")
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" 9>&- > "$content_out" 2>/dev/null || return 1
-      ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" 9>&- > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" 9>&- > "$content_out" 2>/dev/null || return 1
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" 9>&- > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
       return 0
       ;;
     *)
@@ -225,16 +254,17 @@ except BlockingIOError:
   local now_epoch now_iso now_cst today
   now_epoch=$(date +%s)
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  now_cst=$(TZ=America/Mexico_City date +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || date +%Y-%m-%dT%H:%M:%S%z)
-  today=$(TZ=America/Mexico_City date +%Y-%m-%d 2>/dev/null || date +%F)
+  now_cst=$(TZ="$timezone" date '+%Y-%m-%dT%H:%M:%S%z %Z' 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z %Z')
+  today=$(TZ="$timezone" date +%Y-%m-%d 2>/dev/null || date +%F)
 
   local repo json_file i label loc content mtime_file age_hours
   for repo in "${repos[@]:-}"; do
     [ -n "$repo" ] || continue
     json_file=$work/prs.json
     if ! fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
-      printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed" >> "$work/unreachable.tsv"
+      printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
+      [ -f "$work/fetch-truncated" ] && printf '%s\t%s\t%s\n' "repo" "$repo" "merged list truncated at 1000" >> "$work/unreachable.tsv"
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
       FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
       python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
@@ -258,6 +288,9 @@ except OSError:
     pass
 with open(sys.argv[1]) as fh:
     pulls = json.load(fh)
+def clean(value):
+    return str(value).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+now = int(os.environ["FM_GD_NOW"])
 with open(os.environ["FM_GD_OUT"], "a") as out:
     for pr in pulls:
         if not pr.get("merged_at"):
@@ -266,16 +299,21 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
         sha = (pr.get("merge_commit_sha") or "")[:12]
         if (repo, number) in seen:
             continue
+        try:
+            merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+        except ValueError:
+            continue
         if repo in since:
-            try:
-                merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-            except ValueError:
-                continue
             if merged.timestamp() <= since[repo]:
                 continue
-        out.write("\t".join([repo, number, str(pr.get("title", "")), str(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
+        elif merged.timestamp() <= now - 86400:
+            # First fetch for this repository: seed the baseline instead
+            # of reporting every old merge in the window as new.
+            continue
+        out.write("\t".join([repo, number, clean(pr.get("title", "")), clean(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
 with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
-    fh.write(f"{repo}\t{os.environ['FM_GD_NOW']}\n")
+    # Overlap the previous window by five minutes; seen.tsv deduplicates.
+    fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after the digest is written, so an
@@ -291,8 +329,9 @@ for pr in pulls:
 PY
     fi
     if ! fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
-      printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed" >> "$work/unreachable.tsv"
+      printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
+      [ -f "$work/fetch-truncated" ] && printf '%s\t%s\t%s\n' "repo-open" "$repo" "open list truncated at 1000" >> "$work/unreachable.tsv"
       FM_GD_REPO="$repo" FM_GD_NOW="$now_epoch" python3 - "$json_file" >> "$work/waiting.tsv" <<'PY'
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
@@ -308,7 +347,8 @@ for pr in pulls:
     except ValueError:
         pass
     user = (pr.get("user") or {}).get("login", "")
-    print("\t".join([repo, str(pr.get("number", "")), str(pr.get("title", "")), str(pr.get("html_url", "")), created, age, user, "yes" if pr.get("draft") else "no"]))
+    clean = lambda v: str(v).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+    print("\t".join([repo, str(pr.get("number", "")), clean(pr.get("title", "")), clean(pr.get("html_url", "")), created, age, clean(user), "yes" if pr.get("draft") else "no"]))
 PY
     fi
   done
@@ -324,7 +364,7 @@ PY
     while IFS= read -r eta_line; do
       eta_date=$(printf '%s' "$eta_line" | grep -oiE "$eta_pattern" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
       if [ -n "$eta_date" ] && [ "$eta_date" \< "$today" ]; then
-        printf '%s\t%s\t%s\n' "$label" "$eta_date" "$(trim "$eta_line")" >> "$work/missed.tsv"
+        printf '%s\t%s\t%s\n' "$label" "$eta_date" "$(trim "$eta_line" | tr '\t' ' ')" >> "$work/missed.tsv"
       fi
     done <<EOF
 $(grep -iE "$eta_pattern" "$content" 2>/dev/null || true)
@@ -348,7 +388,7 @@ EOF
       continue
     fi
     local last_line
-    last_line=$(grep -v '^[[:space:]]*$' "$content" | tail -1 || true)
+    last_line=$(grep -v '^[[:space:]]*$' "$content" | tail -1 | tr '\t' ' ' || true)
     printf '%s\t%s\n' "$label" "$last_line" >> "$work/reviews.tsv"
   done
 
@@ -397,7 +437,7 @@ digest = {
 with open(os.environ["FM_GD_LATEST_JSON"], "w") as fh:
     json.dump(digest, fh, indent=2)
     fh.write("\n")
-lines = ["# Goal digest", "", f"Generated: {digest['generated_at_cst']} (CST) / {digest['generated_at']}", f"Changed: {'yes' if digest['changed'] else 'no'}", "", "## New merges since last run", ""]
+lines = ["# Goal digest", "", f"Generated: {digest['generated_at_cst']} / {digest['generated_at']}", f"Changed: {'yes' if digest['changed'] else 'no'}", "", "## New merges since last run", ""]
 if new_merges:
     lines += [f"- [{m['repo']} #{m['number']} {m['title']}]({m['url']}) `{m['sha']}` {m['merged_at']}" for m in new_merges]
 else:
@@ -460,8 +500,23 @@ PY
   cp "$output_dir/latest.json" "$output_dir/history/$stamp.json"
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
+    # Write to a temp file so a failed summarizer cannot overwrite the
+    # previous summary; bound the call when a timeout binary exists.
     # shellcheck disable=SC2086
-    $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt" 2>/dev/null || printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
+    local summarize_ok=0
+    if command -v timeout >/dev/null 2>&1; then
+      # shellcheck disable=SC2086
+      timeout 120 $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null && summarize_ok=1
+    else
+      # shellcheck disable=SC2086
+      $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null && summarize_ok=1
+    fi
+    if [ "$summarize_ok" = 1 ]; then
+      mv "$output_dir/summary.txt.tmp" "$output_dir/summary.txt"
+    else
+      rm -f "$output_dir/summary.txt.tmp"
+      printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
+    fi
   fi
 
   trap - EXIT

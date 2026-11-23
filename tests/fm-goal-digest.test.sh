@@ -17,6 +17,10 @@ mkdir -p "$FIXTURE"
 cat > "$FAKE/gh" <<'SH'
 #!/usr/bin/env bash
 endpoint=${2:-}
+if [ -n "${FM_GD_PAGE_FAIL:-}" ]; then
+  page_no=${endpoint##*page=}
+  [ "$page_no" != 1 ] && exit 1
+fi
 repo=${endpoint#repos/}
 repo=${repo%%/pulls*}
 safe=$(printf '%s' "$repo" | tr '/ ' '__')
@@ -185,7 +189,7 @@ print("\0".join(d["ProgramArguments"]))
   agent_path=$(printf '%s\n' "$agent" | sed -n 4p)
   # Run the agent's program the way launchd does: only its declared environment.
   env -i FM_HOME="$(printf '%s\n' "$agent" | sed -n 2p)" HOME="$home/fake-home" PATH="$agent_path" \
-    FM_GD_FIXTURE="$FIXTURE" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" \
+    FM_GD_FIXTURE="$FIXTURE" FM_GD_NOW_EPOCH="$RUN1_EPOCH" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" \
     "$SCRIPT" run >/dev/null || fail "scheduled run failed"
   assert_contains "$(cat "$home/data/goal-digest/latest.md")" "https://example.invalid/pr/1" "scheduled run finds gh and writes into the installing home"
   FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
@@ -241,4 +245,26 @@ SH
   pass "summarizer background helper does not hold the run lock"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock
+test_first_run_seeds_old_merges_and_page_failure_is_incomplete() {
+  local home
+  home=$(make_home home7)
+  cat > "$FIXTURE/merged-example-org_example-repo.json" <<'JSON'
+[{"number": 1, "title": "Ancient", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2020-01-01T00:00:00Z", "created_at": "2019-12-31T00:00:00Z"}]
+JSON
+  cat > "$FIXTURE/open-example-org_example-repo.json" <<'JSON'
+[]
+JSON
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "first-run seed run failed"
+  assert_equals "[]" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["new_merges"])' "$home/data/goal-digest/latest.json")" "first run does not flood old merges"
+  python3 - "$FIXTURE/merged-example-org_example-repo.json" <<'PY'
+import json, sys
+pulls = [{"number": i, "title": f"P{i}", "html_url": f"https://example.invalid/pr/{i}", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"} for i in range(1, 101)]
+with open(sys.argv[1], "w") as fh:
+    json.dump(pulls, fh)
+PY
+  FM_GD_PAGE_FAIL=1 run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "page-failure run failed"
+  assert_contains "$(cat "$home/data/goal-digest/latest.json")" "gh api failed or incomplete" "later page failure recorded as incomplete"
+  pass "first-run seeding and later-page failure"
+}
+
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete

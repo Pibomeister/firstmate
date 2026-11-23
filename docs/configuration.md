@@ -1399,7 +1399,7 @@ The script's header owns the report line, the published document's fields, the v
 ## Goal digest (config/goal-digest)
 
 The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
-Each line is `repo = <owner>/<name>`, `status = <label> | <local path or ssh location>`, or `review = <label> | <local path or ssh location>`, with optional `interval_seconds`, `stall_hours`, `summarize_cmd` and `output_dir` keys.
+Each line is `repo = <owner>/<name>`, `status = <label> | <local path or ssh location>`, or `review = <label> | <local path or ssh location>`, with optional `interval_seconds`, `stall_hours`, `summarize_cmd`, `output_dir`, `timezone` and `timeout_seconds` keys.
 A neutral example is:
 
 ```text
