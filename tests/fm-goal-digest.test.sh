@@ -338,9 +338,9 @@ home = pathlib.Path(home)
 env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1")
 mate = {
     "id":"mate-a", "registered":True,
-    "provenance":{"selected":"structured-home", "trust":"complete", "summary_valid":True},
+    "provenance":{"selected":"structured-home", "trust":"complete", "summary_valid":True, "summary_source":"remote-ledger"},
     "current":{"state":"captain_decision"},
-    "freshness":{"observed_at":"2026-01-01T12:00:00Z", "age_seconds":0},
+    "freshness":{"status":"fresh", "observed_at":"2026-01-01T12:00:00Z", "age_seconds":0},
     "decisions_open":[
         {"id":"route", "key":"route", "verb":"captain-hold", "summary":"Choose route", "question":"Choose route: north or south?", "hold_age_days":30},
         {"id":"worker", "key":"worker", "verb":"needs-decision", "summary":"Worker question"}
@@ -379,6 +379,27 @@ snapshot["secondmate_current"]["records"][0]["freshness"]["age_seconds"] = 3600
 assert run(snapshot)["changed"] is False
 snapshot["secondmate_current"]["records"][0]["decisions_open"][0]["question"] = "Choose route: east or west?"
 assert run(snapshot)["changed"] is True
+for marker in ("freshness", "provenance", "both"):
+    value = copy.deepcopy(snapshot)
+    row = value["secondmate_current"]["records"][0]
+    if marker in ("freshness", "both"):
+        row["freshness"]["status"] = "cached"
+    if marker in ("provenance", "both"):
+        row["provenance"]["summary_source"] = "remote-ledger-cache"
+    cached = run(value)
+    check(cached, False, {"Fleet/mate-a","Fleet/mate-b"})
+    assert cached["changed"] is True, marker
+    assert cached["waiting_on_captain_unknown_sources"] == [{"source":"Fleet/mate-a", "detail":"secondmate decisions from cached ledger"}], cached
+    assert "- Unknown: Fleet/mate-a: secondmate decisions from cached ledger" in (home / "data/goal-digest/latest.md").read_text()
+    if marker == "both":
+        row["freshness"]["age_seconds"] += 1200
+        env["FM_GD_NOW_EPOCH"] = str(int(env["FM_GD_NOW_EPOCH"]) + 1200)
+        unchanged = run(value)
+        check(unchanged, False, {"Fleet/mate-a","Fleet/mate-b"})
+        assert unchanged["changed"] is False
+    recovered = run(snapshot)
+    check(recovered, True, {"Fleet/mate-a","Fleet/mate-b"})
+    assert recovered["changed"] is True, marker
 for case in ("registry-unavailable", "registry-incomplete", "parent-truncated", "unavailable", "partial", "decision-count", "decision-omitted", "missing-parent", "missing-local"):
     value = copy.deepcopy(snapshot)
     current = value["secondmate_current"]

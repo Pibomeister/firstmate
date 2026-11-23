@@ -42,7 +42,7 @@
 # explicit captain-hold decisions from trusted, registered secondmates in
 # configured fm-fleet-snapshot.v1 status files. Wait age uses the native
 # hold_set timestamp, otherwise null. Other formats, unavailable sources,
-# and incomplete secondmate coverage leave owner-action coverage unknown.
+# and incomplete or cached secondmate coverage leave owner-action coverage unknown.
 # Open pull requests are published separately in open_pull_requests.
 # Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
@@ -289,6 +289,8 @@ else:
         if provenance.get("selected") != "structured-home" or provenance.get("trust") not in ("complete", "partial-structured"):
             unknown(source, "secondmate owner-action records unavailable")
             continue
+        if (mate.get("freshness") or {}).get("status") == "cached" or provenance.get("summary_source") == "remote-ledger-cache":
+            unknown(source, "secondmate decisions from cached ledger")
         decisions = mate.get("decisions_open")
         if not isinstance(decisions, list):
             unknown(source, "secondmate decisions unavailable")
