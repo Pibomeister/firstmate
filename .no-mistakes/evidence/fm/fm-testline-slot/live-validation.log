@@ -1,177 +1,93 @@
+ef842d98f010448d3c9d09c5f0e5e6d87e9b7219
+Source revision: ef842d98f010448d3c9d09c5f0e5e6d87e9b7219
+Host: Eduardos-MacBook-Pro-2.local
+14:51  up 7 days,  5:03, 187 users, load averages: 220.81 179.58 177.85
+SCENARIO queue: synthetic load=1000000; slots=2; ceiling=96; remote disabled
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=18749 age=2s task=- label=oldest
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=18749 age=3s task=- label=oldest
+waiting position=1 ticket=2 pid=22813 age=0s task=- label=second
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=18749 age=3s task=- label=oldest
+waiting position=1 ticket=2 pid=22813 age=0s task=- label=second
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=18749 age=4s task=- label=oldest
+waiting position=1 ticket=2 pid=22813 age=1s task=- label=second
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=2 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=18749 age=5s task=- label=oldest
+waiting position=1 ticket=2 pid=22813 age=2s task=- label=second
+waiting position=2 ticket=3 pid=24455 age=0s task=- label=third
+The second ticket took the reserved slot without load falling:
+test-queue: slots=2 load_ceiling=96 load1=1000000 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=2 pid=22813 age=1s task=- label=second
+waiting position=1 ticket=3 pid=24455 age=3s task=- label=third
+At exact ceiling=96 the additional slot still waits:
+test-queue: slots=2 load_ceiling=96 load1=96 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=2 pid=22813 age=3s task=- label=second
+waiting position=1 ticket=3 pid=24455 age=5s task=- label=third
+Below ceiling both slots serve:
+test-queue: slots=2 load_ceiling=96 load1=95.9 serving=2 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=2 pid=22813 age=10s task=- label=second
+serving ticket=3 pid=24455 age=4s task=- label=third
+test-queue: slots=1 load_ceiling=96 load1=1000000 serving=1 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=4 pid=74635 age=1s task=- label=single-oldest
+test-queue: slots=1 load_ceiling=96 load1=1000000 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=4 pid=74635 age=1s task=- label=single-oldest
+waiting position=1 ticket=5 pid=79318 age=0s task=- label=single-next
+test-queue: slots=1 load_ceiling=96 load1=1000000 serving=0 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+PASS queue: FIFO progress at overload, second-slot strict ceiling, one-slot progress, all tickets released
+SCENARIO summary backoff: real producer, empty synthetic home, invalid public FM_SNAPSHOT_BUDGET=0 causes dependency-free producer failure
+Initial real publication: {"schema": "fm-secondmate-home-summary.v1", "home": "{run-worktree}/.test-phase/live/backoff-home", "generated": "2026-11-23T20:51:37Z", "generated_epoch": 1795467097, "valid": true, "state": "no_active_work", "counts": {"active_children": 0, "decisions_open": 0, "holds": 0, "queued": 0, "landed": 0, "endpoints": 0}}
+After eligible failure: failures=1 next=1030 
+After eligible failure: failures=2 next=1090 
+After eligible failure: failures=3 next=1210 
+After eligible failure: failures=4 next=1450 
+After eligible failure: failures=5 next=1930 
+After eligible failure: failures=6 next=2890 
+After eligible failure: failures=7 next=4690 
+After eligible failure: failures=8 next=6490 
+Last-good ledger remained byte-identical; retries one second before each eligibility boundary produced no new error; cap remained 1800s
+Busy-lock if-idle skip preserved existing failure count and next eligibility epoch
+Direct recovery publication: {"schema": "fm-secondmate-home-summary.v1", "home": "{run-worktree}/.test-phase/live/backoff-home", "generated": "2026-11-23T20:40:00Z", "generated_epoch": 1795466400, "valid": true, "state": "no_active_work", "counts": {"active_children": 0, "decisions_open": 0, "holds": 0, "queued": 0, "landed": 0, "endpoints": 0}}
+Reset proved: next failure starts at failures=1 next=1031
+[2026-11-23T20:51:39Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+[2026-11-23T20:51:41Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+[2026-11-23T20:51:45Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@0)
+[2026-11-23T20:51:48Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+[2026-11-23T20:51:51Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+[2026-11-23T20:51:54Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@1)
+[2026-11-23T20:51:57Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@0)
+[2026-11-23T20:51:59Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@0)
+[2026-11-23T20:52:06Z] summary producer failed with exit 2: fm-fleet-snapshot: FM_SNAPSHOT_BUDGET must be a positive integer  in stage producer (stages: lock-wait@0 producer@0)
 
-SCENARIO Local queue at synthetic load 400 preserves FIFO progress, load gating, slot cap, and receipt status
-$ {run-worktree}/bin/fm-test-queue.sh status
-exit=0
-test-queue: slots=2 load_ceiling=96 load1=400 serving=1 waiting=2 stale=0 spool={run-worktree}/.nm-live-akkouarz/queue/spool
-serving ticket=1 pid=3237 age=14s task=- label=A
-waiting position=1 ticket=2 pid=51566 age=3s task=- label=B
-waiting position=2 ticket=3 pid=56379 age=1s task=- label=C
+PASS summary backoff: fixed exponential delays, cap, no early retry, last-good preservation, busy skip, direct bypass and reset
+SCENARIO timeout admission: real producer over 5000 synthetic orphan backlog records; queued refresh must honor lock-held failure recording
+Queued attempt stages while first owns lock: lock-wait	0
+Timeout error log: [2026-11-23T20:52:11Z] refresh exceeded its 10-second deadline in stage backlog (stages: lock-wait@0 producer@1 backlog@1)
+Backoff before next admission: failures=1 next=1030 
+Recovery after queued timeout: {"schema": "fm-secondmate-home-summary.v1", "home": "{run-worktree}/.test-phase/live/timeout-home", "generated": "2026-11-23T20:45:00Z", "generated_epoch": 1795466700, "valid": true, "state": "no_active_work", "counts": {"active_children": 0, "decisions_open": 0, "holds": 0, "queued": 0, "landed": 0, "endpoints": 0}}
+PASS timeout admission: queued trigger did not retry, timeout retained prior ledger and released lock, recovery cleared failure
+SCENARIO Bash fallback: real producer and writer with FM_TIMEOUT_MECHANISM_OVERRIDE=bash; no replacement of producer or publication logic
+bash
+Bash-timed real publication: {"schema": "fm-secondmate-home-summary.v1", "home": "{run-worktree}/.test-phase/live/bash-timer-home", "generated": "2026-11-23T20:52:29Z", "generated_epoch": 1795467149, "valid": true, "state": "no_active_work", "counts": {"active_children": 0, "decisions_open": 0, "holds": 0, "queued": 0, "landed": 0, "endpoints": 0}}
+PASS Bash fallback: valid complete summary published and lock released
+LIVE_VALIDATION_COMPLETE
+CHILD second.log:
+fm-test-queue: ticket 2, position 1: load 1000000 is not below 96
+fm-test-queue: ticket 2 served
 
-CHECKPOINT high load: one serving, B then C waiting
-child 3237 exit=0
-$ {run-worktree}/bin/fm-test-queue.sh status
-exit=0
-test-queue: slots=2 load_ceiling=96 load1=400 serving=1 waiting=1 stale=0 spool={run-worktree}/.nm-live-akkouarz/queue/spool
-serving ticket=2 pid=51566 age=5s task=- label=B
-waiting position=1 ticket=3 pid=56379 age=9s task=- label=C
+CHILD single-next.log:
+fm-test-queue: ticket 5, position 1: all 1 slot(s) busy
+fm-test-queue: ticket 5 served
 
-CHECKPOINT reserved slot makes FIFO progress at load 400
-$ {run-worktree}/bin/fm-test-queue.sh status
-exit=0
-test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=0 stale=0 spool={run-worktree}/.nm-live-akkouarz/queue/spool
-serving ticket=2 pid=51566 age=8s task=- label=B
-serving ticket=3 pid=56379 age=3s task=- label=C
+CHILD third.log:
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3, position 1: load 1000000 is not below 96
+fm-test-queue: ticket 3, position 1: load 96 is not below 96
+fm-test-queue: ticket 3 served
 
-CHECKPOINT load 95 admits second slot
-$ {run-worktree}/bin/fm-test-queue.sh status
-exit=0
-test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=1 stale=0 spool={run-worktree}/.nm-live-akkouarz/queue/spool
-serving ticket=2 pid=51566 age=11s task=- label=B
-serving ticket=3 pid=56379 age=6s task=- label=C
-waiting position=1 ticket=4 pid=2639 age=1s task=- label=D
 
-CHECKPOINT configured two-slot limit
-child 51566 exit=0
-child 56379 exit=0
-child 2639 exit=0
-$ {run-worktree}/bin/fm-test-queue.sh run --label single-slot -- sh -c echo receipt-at-load-400; exit 7
-exit=7
-receipt-at-load-400
+live_driver_exit=0
 
-$ {run-worktree}/bin/fm-test-queue.sh status
-exit=0
-test-queue: slots=1 load_ceiling=96 load1=400 serving=0 waiting=0 stale=0 spool={run-worktree}/.nm-live-akkouarz/queue/spool
-
-CHECKPOINT all receipts finished; private spool empty
-
-SCENARIO Local real-producer configuration failures back off 30–1800 seconds, preserve the ledger, and reset after direct publication
-$ {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.nm-live-akkouarz/home
-exit=0
-{run-worktree}/.nm-live-akkouarz/home
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh
-exit=0
-
-initial ledger: {"active_children": [], "contributions": {"captain": [], "captain_omitted": 0, "checked": 0, "complete": true, "counts": {"captain": 0, "fleet": 0, "maintainer": 0, "nobody": 0}, "known": 0, "missing_verdicts": 0, "proven_clear": true, "stale_verdicts": 0, "unmeasured": 0, "unreadable_records": 0, "valid_until": 900}, "counts": {"active_children": 0, "decisions_open": 0, "endpoints": 0, "holds": 0, "landed": 0, "queued": 0}, "decisions_open": [], "endpoints": [], "generated": "2026-11-22T11:45:57Z", "generated_epoch": 1795347957, "hold_classifier_schema": "fm-captain-hold-buckets.v1", "holds": [], "home": "{run-worktree}/.nm-live-akkouarz/home", "invalidity": {"ids": [], "kind": null}, "landed": [], "omitted": [], "queued": [], "reason": null, "schema": "fm-secondmate-home-summary.v1", "state": "no_active_work", "valid": true}
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=1
-next=1030
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 1030; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=2
-next=1090
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 1090; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=3
-next=1210
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 1210; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=4
-next=1450
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 1450; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=5
-next=1930
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 1930; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=6
-next=2890
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 2890; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=7
-next=4690
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 4690; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=8
-next=6490
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-retry suppressed until epoch 6490; previous complete ledger preserved
-$ {run-worktree}/bin/fm-home-summary-refresh.sh
-exit=0
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=1
-next=1031
-
-$ {run-worktree}/bin/fm-home-summary-refresh.sh
-exit=0
-
-direct diagnostic refresh bypassed active backoff, published valid JSON, and reset failure count
-
-SCENARIO Local overlapping refresh triggers preserve idle-skip state and recheck backoff after lock acquisition
-$ {run-worktree}/bin/fm-home-summary-refresh.sh --best-effort
-exit=0
-
-persisted backoff:
-failures=2
-next=900
-
-queued-A reached real lock-wait
-queued-B reached real lock-wait
-child 74496 exit=0
-child 82898 exit=0
-child 87141 exit=0
-persisted backoff:
-failures=1
-next=1030
-
-two queued triggers caused one failure; second trigger honored the locked backoff recheck; idle skip preserved prior count
-All live-driver children reaped; disposable workspace removed.
+Cleanup verified: no remaining process references to this run; .test-phase removed; worktree clean; source revision unchanged.
