@@ -1399,18 +1399,17 @@ The script's header owns the report line, the published document's fields, the v
 ## Goal digest (config/goal-digest)
 
 The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
-Each line is `repo = <owner>/<name>`, `status = <label> | <local path or ssh location>`, or `review = <label> | <local path or ssh location>`, with optional `interval_seconds`, `stall_hours`, `summarize_cmd`, `output_dir` and `timeout_seconds` keys.
+Each line is `repo = <owner>/<name>`, `status = <label> | <local path or ssh location>`, or `review = <label> | <local path or ssh location>`, with optional `stall_hours`, `summarize_cmd`, `output_dir` and `timeout_seconds` keys.
 A neutral example is:
 
 ```text
 repo = example-org/example-repo
 status = Example status | /path/to/status.txt
 review = Example review | /path/to/review.status
-interval_seconds = 1200
 ```
 
 The script header owns the exact format and output schema.
-`fm-goal-digest.sh install` installs a macOS LaunchAgent at the configured interval, which defaults to every 20 minutes.
+`fm-goal-digest.sh install` installs a macOS LaunchAgent that runs every 20 minutes.
 The agent's label carries a suffix derived from the home, and it runs with that home's `FM_HOME` and the installer's `PATH` and `HOME`.
 Each run writes `latest.md` and `latest.json` plus a timestamped copy under `history/` in the output directory, which defaults to `data/goal-digest/` under the effective home.
 The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.

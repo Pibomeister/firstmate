@@ -171,9 +171,12 @@ test_install_launchagent() {
   local home other
   home=$(make_home home4)
   other=$(make_home home5)
+  printf 'interval_seconds = 1\n' >> "$home/config/goal-digest"
   mkdir -p "$home/fake-home"
-  FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
-    FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" install >/dev/null || fail "install failed"
+  local installed
+  installed=$(FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
+    FM_HOME="$home" HOME="$home/fake-home" "$SCRIPT" install) || fail "install failed"
+  assert_contains "$installed" "interval_seconds=1200" "install reports the required fixed cadence"
   FM_GD_LAUNCH_LOG="$TMP_ROOT/launch.log" PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 \
     FM_HOME="$other" HOME="$home/fake-home" "$SCRIPT" install >/dev/null || fail "second home install failed"
   local plists plist
@@ -287,7 +290,7 @@ test_owner_actions_are_explicit_and_age_from_wait_start() {
  {"id":"decision-a","title":"Choose route","captain_actionable":true,"hold_set":"2026-01-01T10:00:00Z"},
  {"id":"decision-b","title":"Choose access","captain_actionable":true},
  {"id":"done","title":"Answered","captain_actionable":false,"hold_set":"2020-01-01T00:00:00Z"}
-]}}
+]},"secondmate_current":{"registry":{"available":true,"complete":true},"records":[],"truncated":0}}
 JSON
   cat > "$home/review.status" <<EOF
 needs-decision [key=closed] [at=$((RUN1_EPOCH - 10800))]: old question
@@ -322,6 +325,98 @@ PYUPDATE
   run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "resolution run failed"
   assert_equals "['decision-b']" "$(python3 -c 'import json,sys; print([w["id"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"]])' "$home/data/goal-digest/latest.json")" "resolved owner action leaves waiting set"
   pass "explicit owner actions, actual wait age, resolutions and unknown sources"
+}
+
+test_secondmate_owner_actions_and_coverage() {
+  local home="$TMP_ROOT/secondmate-actions"
+  mkdir -p "$home/config"
+  printf 'status = Fleet | %s/status.json\n' "$home" > "$home/config/goal-digest"
+  python3 - "$SCRIPT" "$home" "$FAKE:$BASE_PATH" "$RUN1_EPOCH" <<'PYTEST' || fail "native secondmate owner-action contract failed"
+import copy, json, os, pathlib, subprocess, sys
+script, home, path, now = sys.argv[1:]
+home = pathlib.Path(home)
+env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1")
+mate = {
+    "id":"mate-a", "registered":True,
+    "provenance":{"selected":"structured-home", "trust":"complete", "summary_valid":True},
+    "current":{"state":"captain_decision"},
+    "freshness":{"observed_at":"2026-01-01T12:00:00Z", "age_seconds":0},
+    "decisions_open":[
+        {"id":"route", "key":"route", "verb":"captain-hold", "summary":"Choose route", "question":"Choose route: north or south?", "hold_age_days":30},
+        {"id":"worker", "key":"worker", "verb":"needs-decision", "summary":"Worker question"}
+    ],
+    "counts":{"decisions_open":2}, "omitted":[]
+}
+other = copy.deepcopy(mate)
+other["id"] = "mate-b"
+unregistered = copy.deepcopy(mate)
+unregistered.update(id="unregistered", registered=False)
+snapshot = {
+    "schema":"fm-fleet-snapshot.v1", "backlog":{"present":True, "records":[]},
+    "secondmate_current":{
+        "registry":{"available":True,"complete":True,"records":[{"id":"mate-a"},{"id":"mate-b"}]},
+        "records":[mate, other, unregistered], "total":3, "shown":3, "truncated":0
+    }
+}
+def run(value):
+    (home / "status.json").write_text(json.dumps(value))
+    result = subprocess.run([script, "run"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads((home / "data/goal-digest/latest.json").read_text())
+def check(digest, known, sources):
+    assert digest["waiting_on_captain_status"] == ("known" if known else "unknown"), digest
+    waits = digest["waiting_on_captain"]
+    assert {(w["source"], w["id"]) for w in waits} == {(s,"route") for s in sources}, waits
+    assert all(w["age_hours"] is None and w["wait_started_at"] is None for w in waits), waits
+    assert bool(digest["waiting_on_captain_unknown_sources"]) != known, digest
+first = run(snapshot)
+check(first, True, {"Fleet/mate-a","Fleet/mate-b"})
+assert all(w["title"] == "Choose route: north or south?" for w in first["waiting_on_captain"])
+assert "Choose route: north or south? age_hours=unknown" in (home / "data/goal-digest/latest.md").read_text()
+env["FM_GD_NOW_EPOCH"] = str(int(now) + 3600)
+snapshot["secondmate_current"]["records"][0]["decisions_open"][0]["hold_age_days"] = 31
+snapshot["secondmate_current"]["records"][0]["freshness"]["age_seconds"] = 3600
+assert run(snapshot)["changed"] is False
+snapshot["secondmate_current"]["records"][0]["decisions_open"][0]["question"] = "Choose route: east or west?"
+assert run(snapshot)["changed"] is True
+for case in ("registry-unavailable", "registry-incomplete", "parent-truncated", "unavailable", "partial", "decision-count", "decision-omitted", "missing-parent", "missing-local"):
+    value = copy.deepcopy(snapshot)
+    current = value["secondmate_current"]
+    row = current["records"][0]
+    expected = {"Fleet/mate-a","Fleet/mate-b"}
+    if case == "registry-unavailable":
+        current["registry"].update(available=False, complete=False)
+    elif case == "registry-incomplete":
+        current["registry"].update(complete=False, input_truncated=True)
+    elif case == "parent-truncated":
+        current["truncated"] = 1
+    elif case == "unavailable":
+        row["provenance"] = {"selected":"parent-event-fallback"}
+        row["parent_event"] = {"open_decisions":row["decisions_open"]}
+        row["decisions_open"] = []
+        expected = {"Fleet/mate-b"}
+    elif case == "partial":
+        row["provenance"].update(trust="partial-structured", summary_valid=False)
+        row["current"]["state"] = "unknown"
+    elif case == "decision-count":
+        row["counts"]["decisions_open"] = 3
+    elif case == "decision-omitted":
+        row["omitted"] = [{"surface":"decisions_open", "count":1}]
+    elif case == "missing-parent":
+        del value["secondmate_current"]
+        expected = set()
+    elif case == "missing-local":
+        value["backlog"]["present"] = False
+    digest = run(value)
+    check(digest, False, expected)
+    assert "- Unknown:" in (home / "data/goal-digest/latest.md").read_text(), case
+snapshot["secondmate_current"]["records"][0]["decisions_open"] = []
+snapshot["secondmate_current"]["records"][0]["counts"]["decisions_open"] = 0
+resolved = run(snapshot)
+check(resolved, True, {"Fleet/mate-b"})
+assert resolved["changed"] is True
+PYTEST
+  pass "registered secondmate holds, change detection and incomplete coverage"
 }
 
 test_cst_calendar_and_complete_review_history() {
@@ -462,4 +557,4 @@ SH
   pass "summarizer, gh and ssh timeouts stop owned descendants"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants

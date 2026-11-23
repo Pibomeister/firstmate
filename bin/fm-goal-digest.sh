@@ -10,8 +10,8 @@
 #         goal-digest: changed=<yes|no> latest=<path> generated=<iso>
 #   fm-goal-digest.sh install
 #       Install the macOS LaunchAgent dev.firstmate.goal-digest-<cksum of
-#       FM_HOME> with the configured interval (default 1200 seconds, every
-#       20 minutes). The agent runs with this home's FM_HOME and the
+#       FM_HOME> every 1200 seconds (20 minutes).
+#       The agent runs with this home's FM_HOME and the
 #       installer's PATH and HOME.
 #   fm-goal-digest.sh uninstall
 #       Remove that LaunchAgent.
@@ -24,7 +24,6 @@
 #   repo = <owner>/<name>
 #   status = <label> | <local-path or ssh:<host>:<absolute-path>>
 #   review = <label> | <local-path or ssh:<host>:<absolute-path>>
-#   interval_seconds = <n>          (install only, default 1200)
 #   stall_hours = <n>               (default 48)
 #   timeout_seconds = <n>           (per gh/ssh call, default 60)
 #   summarize_cmd = <command>       (optional, run only when changed)
@@ -39,10 +38,11 @@
 # in the past), stalled status sources (local file
 # not modified within stall_hours) and every nonblank entry of each review
 # record. Generation and ETA dates use America/Mexico_City.
-# waiting_on_captain contains only captain_actionable backlog rows in
-# configured fm-fleet-snapshot.v1 status files. Wait age uses the
-# native hold_set timestamp, otherwise null. Other formats
-# and unavailable sources leave owner-action coverage explicitly unknown.
+# waiting_on_captain contains captain_actionable local backlog rows and
+# explicit captain-hold decisions from trusted, registered secondmates in
+# configured fm-fleet-snapshot.v1 status files. Wait age uses the native
+# hold_set timestamp, otherwise null. Other formats, unavailable sources,
+# and incomplete secondmate coverage leave owner-action coverage unknown.
 # Open pull requests are published separately in open_pull_requests.
 # Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
@@ -65,7 +65,7 @@
 # FM_TEST_SEAM=1.
 set -u
 
-INTERVAL_DEFAULT=1200
+INTERVAL_SECONDS=1200
 STALL_DEFAULT=48
 LABEL=dev.firstmate.goal-digest
 
@@ -89,7 +89,6 @@ fi
 repos=()
 status_labels=(); status_locs=()
 review_labels=(); review_locs=()
-interval_seconds=$INTERVAL_DEFAULT
 stall_hours=$STALL_DEFAULT
 summarize_cmd=
 output_dir=
@@ -121,7 +120,6 @@ load_config() {
           review_labels+=("$label"); review_locs+=("$loc")
         fi
         ;;
-      interval_seconds) case "$value" in ''|*[!0-9]*) ;; *) interval_seconds=$value ;; esac ;;
       stall_hours) case "$value" in ''|*[!0-9]*) ;; *) stall_hours=$value ;; esac ;;
       summarize_cmd) summarize_cmd=$value ;;
       output_dir) output_dir=$value ;;
@@ -243,7 +241,7 @@ read_source() {
 collect_waiting() {
   local label=$1 content=$2
   local rc=0
-  python3 - "$content" "$label" "$now_epoch" >> "$work/waiting.tsv" <<'PY' || rc=$?
+  python3 - "$content" "$label" "$now_epoch" "$work/waiting-unknown.tsv" >> "$work/waiting.tsv" <<'PY' || rc=$?
 import datetime, json, sys
 try:
     data = json.load(open(sys.argv[1]))
@@ -251,12 +249,12 @@ except (ValueError, OSError):
     sys.exit(2)
 if not isinstance(data, dict) or data.get("schema") != "fm-fleet-snapshot.v1":
     sys.exit(2)
-backlog = data.get("backlog", {})
-if backlog.get("present") is not True or not isinstance(backlog.get("records"), list):
-    sys.exit(1)
-for row in backlog["records"]:
-    if row.get("captain_actionable") is not True:
-        continue
+def clean(value):
+    return str(value).replace("\t", " ").replace("\n", " ").replace("\r", " ")
+def unknown(source, detail):
+    with open(sys.argv[4], "a") as fh:
+        fh.write(clean(source) + "\t" + clean(detail) + "\n")
+def emit(source, row, title):
     stamp = row.get("hold_set") or ""
     age = "unknown"
     try:
@@ -264,8 +262,45 @@ for row in backlog["records"]:
         age = str(max(0, int((int(sys.argv[3]) - held.timestamp()) // 3600)))
     except ValueError:
         pass
-    values = [sys.argv[2], row["id"], row.get("title", ""), row.get("pr_url") or "", stamp, age]
-    print("\t".join(str(v).replace("\t", " ").replace("\n", " ").replace("\r", " ") for v in values))
+    values = [source, row["id"], title, row.get("pr_url") or "", stamp, age]
+    print("\t".join(clean(v) for v in values))
+label = sys.argv[2]
+backlog = data.get("backlog") or {}
+if backlog.get("present") is True and isinstance(backlog.get("records"), list):
+    for row in backlog["records"]:
+        if row.get("captain_actionable") is True:
+            emit(label, row, row.get("title", ""))
+else:
+    unknown(label, "local backlog unavailable")
+secondmates = data.get("secondmate_current") or {}
+registry = secondmates.get("registry") or {}
+if registry.get("available") is not True or registry.get("complete") is not True:
+    unknown(label, "secondmate registry unavailable or incomplete")
+if secondmates.get("truncated", 0):
+    unknown(label, "secondmate records truncated")
+if not isinstance(secondmates.get("records"), list):
+    unknown(label, "secondmate records unavailable")
+else:
+    for mate in secondmates["records"]:
+        if mate.get("registered") is not True:
+            continue
+        source = label + "/" + mate["id"]
+        provenance = mate.get("provenance") or {}
+        if provenance.get("selected") != "structured-home" or provenance.get("trust") not in ("complete", "partial-structured"):
+            unknown(source, "secondmate owner-action records unavailable")
+            continue
+        decisions = mate.get("decisions_open")
+        if not isinstance(decisions, list):
+            unknown(source, "secondmate decisions unavailable")
+            continue
+        if (provenance.get("trust") != "complete"
+                or (mate.get("current") or {}).get("state") == "unknown"
+                or (mate.get("counts") or {}).get("decisions_open", len(decisions)) > len(decisions)
+                or any(r.get("surface") == "decisions_open" and r.get("count", 0) > 0 for r in mate.get("omitted", []))):
+            unknown(source, "secondmate decision coverage incomplete")
+        for row in decisions:
+            if row.get("verb") == "captain-hold":
+                emit(source, row, row.get("question") or row.get("summary", ""))
 PY
   [ "$rc" = 0 ] && return 0
   printf '%s\t%s\n' "$label" 'native owner-action records unavailable' >> "$work/waiting-unknown.tsv"
@@ -652,7 +687,7 @@ do_install() {
     <string>$(xml_escape "$HOME")</string>
   </dict>
   <key>StartInterval</key>
-  <integer>$interval_seconds</integer>
+  <integer>$INTERVAL_SECONDS</integer>
   <key>StandardOutPath</key>
   <string>$(xml_escape "$output_dir/launchd.log")</string>
   <key>StandardErrorPath</key>
@@ -667,7 +702,7 @@ EOF
       return 1
     fi
   fi
-  printf 'goal-digest: installed=%s interval_seconds=%s\n' "$plist" "$interval_seconds"
+  printf 'goal-digest: installed=%s interval_seconds=%s\n' "$plist" "$INTERVAL_SECONDS"
 }
 
 do_uninstall() {
