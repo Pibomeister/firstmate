@@ -1296,6 +1296,56 @@ test_verify_finding_timeout_and_outside_writes_give_no_evidence() {
   pass "verify-finding: a timeout or a write outside the test directory leaves no evidence"
 }
 
+test_verify_finding_reaps_background_children_before_returning() {
+  local rc status pid state leaked count
+  for status in 0 1; do
+    make_case "verify-background-$status"
+    write_repro background.sh "sleep 120 & echo \$! >> '$CASE/children'
+bash -c 'sleep 120 & echo \$!' >> '$CASE/children'
+exit $status"
+    rc=0
+    run_verify background.sh tests/repro-background.test.sh --out "$CASE/evidence" --timeout 1 || rc=$?
+    leaked=0
+    count=0
+    while IFS= read -r pid; do
+      count=$((count + 1))
+      state=$(ps -o stat= -p "$pid" 2>/dev/null || true)
+      case "$state" in
+        '' | *Z*) ;;
+        *) leaked=1; kill -KILL "$pid" 2>/dev/null || true ;;
+      esac
+    done < "$CASE/children"
+    expect_code 0 "$rc" "verify background ($(cat "$CASE/stderr"))"
+    expect_code 0 "$leaked" "verify background: a child outlived verification"
+    if [ "$status" -eq 0 ]; then
+      assert_equals 2 "$count" "verify background: the head did not launch both children"
+      expect_verify_field 'head_result=green' 'verify background green'
+      expect_verify_field 'base_result=skipped' 'verify background green'
+    else
+      assert_equals 4 "$count" "verify background: both snapshots must launch both children"
+      expect_verify_field 'head_result=red' 'verify background red'
+      expect_verify_field 'base_result=red' 'verify background red'
+    fi
+  done
+  pass "verify-finding stops background children and orphaned grandchildren on both snapshots"
+}
+
+test_verify_finding_reaps_children_before_the_final_manifest() {
+  local rc=0
+  make_case verify-background-manifest
+  write_repro writer.sh '(trap "echo changed > feature.txt; exit 0" TERM
+echo ready > tests/ready
+while :; do sleep 1; done) &
+while [ ! -f tests/ready ]; do sleep 0.01; done
+exit 0'
+  run_verify writer.sh tests/repro-background-writer.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify background manifest ($(cat "$CASE/stderr"))"
+  expect_verify_field 'head_result=wrote-outside' 'verify background manifest'
+  expect_verify_field 'base_result=skipped' 'verify background manifest'
+  assert_equals 'the feature' "$(cat "$REPO/feature.txt")" 'verify background manifest: the source repository changed'
+  pass "verify-finding records writes made while stopping children in its final manifest"
+}
+
 test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors() {
   local rc path
   make_case verify-refuse
@@ -1530,6 +1580,8 @@ fm_test_run \
   test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
   test_verify_finding_green_at_head_gives_no_evidence \
   test_verify_finding_timeout_and_outside_writes_give_no_evidence \
+  test_verify_finding_reaps_background_children_before_returning \
+  test_verify_finding_reaps_children_before_the_final_manifest \
   test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \

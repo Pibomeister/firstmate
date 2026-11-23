@@ -996,6 +996,26 @@ mr_verify_path_free() {  # <repo> <commit> <path>
   done < <(git --no-replace-objects -C "$repo" ls-tree -z --name-only "$commit:tests" 2>/dev/null)
 }
 
+mr_verify_stop_group() {
+  local scratch=$1 group pid identity pids
+  [ -s "$scratch/group" ] || return 0
+  group=$(tr -d '[:space:]' < "$scratch/group") || return 1
+  case "$group" in '' | 0 | *[!0-9]*) return 1 ;; esac
+  pids=$(ps -A -o pid= -o pgid= | awk -v group="$group" '$2 == group { print $1 }') || return 1
+  : > "$scratch/children" || return 1
+  for pid in $pids; do
+    identity=$(fm_pid_identity_line "$pid") || continue
+    printf '%s\t%s\n' "$pid" "$identity" >> "$scratch/children" || return 1
+    fm_snapshot_descendants "$pid" "$scratch/children"
+  done
+  fm_reap_ledger "$scratch/children" 1 || return 1
+  while IFS="$(printf '\t')" read -r pid identity; do
+    fm_pid_alive "$pid" || continue
+    [ "$(fm_pid_identity_line "$pid")" != "$identity" ] || return 1
+  done < "$scratch/children"
+  rm -f "$scratch/group"
+}
+
 # Run the reproduction in one snapshot and print its result word.
 mr_verify_side() {  # <scratch> <path> <log>
   local scratch=$1 path=$2 log=$3 before after rc=0
@@ -1011,8 +1031,12 @@ mr_verify_side() {  # <scratch> <path> <log>
   before=$(mr_tree_manifest "$scratch/snapshot") || return 1
   (
     cd "$scratch/snapshot" &&
-      fm_run_timed "$MR_VERIFY_TIMEOUT" "$SCRIPT_DIR/fm-env-scrub.sh" exec env -u FM_TEST_REVIEW_STUB bash "$path"
+      fm_run_timed "$MR_VERIFY_TIMEOUT" "$SCRIPT_DIR/fm-env-scrub.sh" exec env -u FM_TEST_REVIEW_STUB bash -c '
+        ps -o pgid= -p "$$" > "$1" || exit 127
+        exec bash "$2"
+      ' _ "$scratch/group" "$path"
   ) < /dev/null > "$log" 2>&1 || rc=$?
+  mr_verify_stop_group "$scratch" || return 1
   # A reproduction that leaves the tree unreadable changed it outside tests/.
   after=$(mr_tree_manifest "$scratch/snapshot") || after="unreadable after the reproduction"
   if [ "$before" != "$after" ]; then
@@ -1048,7 +1072,7 @@ mr_verify_run_side() {  # <scratch> <path> <log>
 # scratch even when the reproduction left a directory without write or search
 # permission.
 mr_verify_cleanup() {
-  local ledger
+  local ledger side
   [ -n "${MR_VERIFY_WORK:-}" ] || return 0
   if [ -n "${MR_VERIFY_SIDE_PID:-}" ] && fm_pid_alive "$MR_VERIFY_SIDE_PID"; then
     ledger="$MR_VERIFY_WORK/stop.ledger"
@@ -1058,6 +1082,9 @@ mr_verify_cleanup() {
     fi
     wait "$MR_VERIFY_SIDE_PID" 2>/dev/null || true
   fi
+  for side in head base; do
+    mr_verify_stop_group "$MR_VERIFY_WORK/$side" || true
+  done
   if [ -d "$MR_VERIFY_WORK" ] && [ ! -L "$MR_VERIFY_WORK" ]; then
     chmod -R u+rwx "$MR_VERIFY_WORK" 2>/dev/null || true
   fi
