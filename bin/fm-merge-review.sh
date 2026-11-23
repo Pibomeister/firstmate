@@ -1031,6 +1031,7 @@ mr_verify_side() {  # <scratch> <path> <log>
   cp "$MR_VERIFY_REPRO" "$scratch/snapshot/$path" || return 1
   before=$(mr_tree_manifest "$scratch/snapshot") || return 1
   (
+    # shellcheck disable=SC2016 # The child shell expands $$, $1, and $2.
     cd "$scratch/snapshot" &&
       fm_run_timed "$MR_VERIFY_TIMEOUT" "$SCRIPT_DIR/fm-env-scrub.sh" exec env -u FM_TEST_REVIEW_STUB bash -c '
         ps -o pgid= -p "$$" > "$1" || exit 127
