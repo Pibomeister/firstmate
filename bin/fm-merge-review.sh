@@ -38,24 +38,24 @@
 #         Runs one reviewer's reproduction, so "is this a regression?" is a
 #         fact rather than a label. A task worker runs it, never a supervisor
 #         session, because it executes text a reviewer wrote. The reviewer
-#         writes the reproduction; the worker passes it as <file>. It may only
-#         add one new test file directly under a committed tests/ directory
-#         (or none), named *.test.sh and absent from both the head and the
-#         merge base in any letter case, and it runs only as that project
-#         test: bash <path>, from the snapshot root, with stdin closed and
+#         writes the reproduction; the worker passes it as <file>. The command
+#         copies it to one new test file directly under tests/ (created when
+#         absent), named *.test.sh and absent from both the head and the
+#         merge base in any letter case, and runs it as that project
+#         test: bash <path>, from the snapshot root, with stdin from /dev/null and
 #         without Firstmate home, task or lifecycle variables
 #         (bin/fm-env-scrub.sh), under --timeout (1 to 3600 seconds, default
-#         600). It runs
-#         in a snapshot of <full-sha> outside every repository, then, only
-#         when it fails there, in a snapshot of the merge base with
+#         600). It runs in a snapshot of <full-sha> outside every repository,
+#         then, only when the head result is red, in a snapshot of the merge base with
 #         <commit-ish> (default origin/HEAD); a head already contained in
-#         that base is refused. This command never changes the
-#         source repository and fetches nothing; the reproduction itself is
-#         not sandboxed, which is why only a worker runs it. An interrupt or
+#         that base is refused. Snapshot preparation leaves the source
+#         repository unchanged and fetches nothing; the reproduction itself is
+#         not sandboxed and can write outside the snapshot, which is why only
+#         a worker runs it. An interrupt or
 #         termination stops the reproduction's whole process tree and removes
 #         the scratch before this command exits. One line on
 #         stdout and in
-#         <out>/result, with head.log and base.log beside it:
+#         <out>/result, with head.log beside it and base.log only if the base ran:
 #           verify-finding: <introduced|red-at-both|no-evidence>
 #             head=<full-sha> head_result=<r> base=<full-sha> base_result=<r>
 #             path=<path> repro_sha256=<sha256>
@@ -75,8 +75,9 @@
 #         The snapshot holds committed files only, so a reproduction that
 #         needs ignored dependencies or Git history fails there like any
 #         other failure. <out> must not hold a result or a log, or a link in
-#         their place; evidence is never replaced, and the logs land only
-#         with a complete result. Recording the result against a finding belongs to the
+#         their place; existing evidence is never replaced. Logs are copied
+#         before result; a publication error can leave partial evidence.
+#         Recording the result against a finding belongs to the
 #         finding ledger, not to this command.
 #
 # Verdict rule (check, and the last line run prints):
@@ -143,8 +144,8 @@
 #
 # Exit status: run and check exit 0 on approved and 1 on blocked or
 # incomplete; covers exits 0 or 1 as above; verify-finding exits 0 with any of
-# its three results; 2 is a usage, configuration, or refusal error, with
-# nothing called.
+# its three results; 2 is a usage, configuration, refusal, or operational
+# error and may occur after the reproduction has run.
 set -u
 set -o pipefail
 
@@ -1166,7 +1167,7 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
     *) result=no-evidence ;;
   esac
   line="verify-finding: $result head=$MR_HEAD head_result=$head_result base=$MR_BASE base_result=$base_result path=$path repro_sha256=$repro_sha"
-  # Logs land only beside a complete result, so a failed run leaves --out free.
+  # Publish logs before the result that marks completed evidence.
   cp "$MR_VERIFY_WORK/head.log" "$out/head.log" || mr_die "cannot record the head log in $out"
   [ "$base_result" = skipped ] || cp "$MR_VERIFY_WORK/base.log" "$out/base.log" \
     || mr_die "cannot record the merge-base log in $out"
