@@ -1,0 +1,104 @@
+REVISION bff4a632478436db35d8a66a2625cf1c36d82410
+HOST Eduardos-MacBook-Pro-2.local
+RUN queue-oldest: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'run', '--label', 'oldest', '--', 'bash', '-c', ': > "$1/start-$2"; while [ ! -e "$1/release-$2" ]; do sleep .05; done; printf "%s\\n" "$2" >> "$1/order"', '_', PosixPath('{run-worktree}/.test-phase/live'), 'oldest']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=88808
+RUN queue-second: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'run', '--label', 'second', '--', 'bash', '-c', ': > "$1/start-$2"; while [ ! -e "$1/release-$2" ]; do sleep .05; done; printf "%s\\n" "$2" >> "$1/order"', '_', PosixPath('{run-worktree}/.test-phase/live'), 'second']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=89594
+RUN queue-third: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'run', '--label', 'third', '--', 'bash', '-c', ': > "$1/start-$2"; while [ ! -e "$1/release-$2" ]; do sleep .05; done; printf "%s\\n" "$2" >> "$1/order"', '_', PosixPath('{run-worktree}/.test-phase/live'), 'third']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=90012
+RUN queue-high-status: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'status']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=90361
+EXIT queue-high-status: 0
+test-queue: slots=2 load_ceiling=96 load1=300 serving=1 waiting=2 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=88808 age=2s task=- label=oldest
+waiting position=1 ticket=2 pid=89594 age=1s task=- label=second
+waiting position=2 ticket=3 pid=90012 age=1s task=- label=third
+EXIT queue-oldest: 0
+RUN queue-high-turnover: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'status']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=92906
+EXIT queue-high-turnover: 0
+test-queue: slots=2 load_ceiling=96 load1=300 serving=1 waiting=1 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=2 pid=89594 age=0s task=- label=second
+waiting position=1 ticket=3 pid=90012 age=2s task=- label=third
+RUN queue-low-status: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'status']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=94182
+EXIT queue-low-status: 0
+test-queue: slots=2 load_ceiling=96 load1=95 serving=2 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=2 pid=89594 age=1s task=- label=second
+serving ticket=3 pid=90012 age=0s task=- label=third
+EXIT queue-second: 0
+EXIT queue-third: 0
+RUN queue-empty-status: [PosixPath('{run-worktree}/bin/fm-test-queue.sh'), 'status']; inputs={'FM_TEST_QUEUE_DIR': '{run-worktree}/.test-phase/live/queue', 'FM_TEST_QUEUE_LOAD_FILE': '{run-worktree}/.test-phase/live/load', 'FM_TEST_SEAM': '1', 'FM_TEST_QUEUE_POLL': '0.1'}; pid=95846
+EXIT queue-empty-status: 0
+test-queue: slots=2 load_ceiling=96 load1=95 serving=0 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue
+OBSERVED: synthetic load 300 admitted only oldest, FIFO turnover preserved one slot; load 95 admitted second slot; every ticket drained.
+SCENARIO PASS high-load queue admission and FIFO turnover
+RUN backoff-seed: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90'}; pid=95944
+EXIT backoff-seed: 0
+INPUT: real synthetic backlog file is unreadable (mode 000); real producer and jq remain unchanged.
+RUN backoff-fail-1: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000'}; pid=98203
+EXIT backoff-fail-1: 0
+RUN backoff-skip-1: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1029'}; pid=99943
+EXIT backoff-skip-1: 0
+OBSERVED failure=1 retry_delay=30s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=1\nnext=1030'
+RUN backoff-fail-2: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1030'}; pid=737
+EXIT backoff-fail-2: 0
+RUN backoff-skip-2: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1089'}; pid=2987
+EXIT backoff-skip-2: 0
+OBSERVED failure=2 retry_delay=60s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=2\nnext=1090'
+RUN backoff-fail-3: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1090'}; pid=3675
+EXIT backoff-fail-3: 0
+RUN backoff-skip-3: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1209'}; pid=5949
+EXIT backoff-skip-3: 0
+OBSERVED failure=3 retry_delay=120s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=3\nnext=1210'
+RUN backoff-fail-4: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1210'}; pid=6629
+EXIT backoff-fail-4: 0
+RUN backoff-skip-4: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1449'}; pid=8783
+EXIT backoff-skip-4: 0
+OBSERVED failure=4 retry_delay=240s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=4\nnext=1450'
+RUN backoff-fail-5: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1450'}; pid=9430
+EXIT backoff-fail-5: 0
+RUN backoff-skip-5: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1929'}; pid=11890
+EXIT backoff-skip-5: 0
+OBSERVED failure=5 retry_delay=480s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=5\nnext=1930'
+RUN backoff-fail-6: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1930'}; pid=12724
+EXIT backoff-fail-6: 0
+RUN backoff-skip-6: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '2889'}; pid=14740
+EXIT backoff-skip-6: 0
+OBSERVED failure=6 retry_delay=960s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=6\nnext=2890'
+RUN backoff-fail-7: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '2890'}; pid=15462
+EXIT backoff-fail-7: 0
+RUN backoff-skip-7: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '4689'}; pid=17314
+EXIT backoff-skip-7: 0
+OBSERVED failure=7 retry_delay=1800s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=7\nnext=4690'
+RUN backoff-fail-8: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '4690'}; pid=18036
+EXIT backoff-fail-8: 0
+RUN backoff-skip-8: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '6489'}; pid=19742
+EXIT backoff-skip-8: 0
+OBSERVED failure=8 retry_delay=1800s, best-effort exit=0, last-good ledger unchanged, pre-deadline retry skipped; record='failures=8\nnext=6490'
+RUN backoff-direct-recovery: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000'}; pid=20643
+EXIT backoff-direct-recovery: 0
+RUN backoff-reset-failure: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/backoff', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1001'}; pid=23144
+EXIT backoff-reset-failure: 0
+OBSERVED: direct refresh bypassed active backoff, published a complete ledger and reset next failure to 30s.
+SCENARIO PASS real producer failure backoff and recovery
+RUN contention-lock: ['bash', '-c', '. "$1/bin/fm-wake-lib.sh"; fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"; : > "$3"; while [ ! -e "$4" ]; do sleep 0.05; done; fm_lock_release "$2/state/.home-summary-refresh.lock"', '_', PosixPath('{run-worktree}'), PosixPath('{run-worktree}/.test-phase/live/contention'), PosixPath('{run-worktree}/.test-phase/live/contention-lock.ready'), PosixPath('{run-worktree}/.test-phase/live/contention-lock.release')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/contention'}; pid=24418
+RUN busy-lock-skip: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/contention', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000', 'FM_HOME_SUMMARY_IF_IDLE': '1'}; pid=24593
+EXIT busy-lock-skip: 0
+RUN queued-failure-0: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/contention', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000', 'FM_HOME_SUMMARY_STAGE_PATH': '{run-worktree}/.test-phase/live/contention/state/.home-summary-stage.live-0'}; pid=25415
+RUN queued-failure-1: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/contention', 'FM_HOME_SUMMARY_TIMEOUT': '90', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000', 'FM_HOME_SUMMARY_STAGE_PATH': '{run-worktree}/.test-phase/live/contention/state/.home-summary-stage.live-1'}; pid=25733
+EXIT contention-lock: 0
+EXIT queued-failure-0: 0
+EXIT queued-failure-1: 0
+OBSERVED: if-idle skip retained failures=2; two queued real producers resulted in one failure and one backoff skip.
+RUN deadline-seed: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/deadline', 'FM_HOME_SUMMARY_TIMEOUT': '90'}; pid=28846
+EXIT deadline-seed: 0
+RUN real-producer-deadline: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/deadline', 'FM_HOME_SUMMARY_TIMEOUT': '4', 'FM_TEST_SEAM': '1', 'FM_NOW': '1000'}; pid=30841
+EXIT real-producer-deadline: 0
+RUN deadline-immediate-retry: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/deadline', 'FM_HOME_SUMMARY_TIMEOUT': '4', 'FM_TEST_SEAM': '1', 'FM_NOW': '1001'}; pid=38640
+EXIT deadline-immediate-retry: 0
+OBSERVED: real 40,000-row producer exceeded 4s budget; best-effort returned 0, preserved ledger and recorded backoff; immediate retry skipped.
+SCENARIO PASS busy lock, queued triggers and real producer deadline
+RUN interruption-seed: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/interruption', 'FM_HOME_SUMMARY_TIMEOUT': '90'}; pid=39254
+EXIT interruption-seed: 0
+RUN interrupted-older-writer: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh'), '--best-effort']; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/interruption', 'FM_HOME_SUMMARY_TIMEOUT': '10', 'FM_HOME_SUMMARY_STAGE_PATH': '{run-worktree}/.test-phase/live/interruption/state/.home-summary-stage.interrupted'}; pid=41008
+OBSERVED: old producer started while publication lock owned by pid=41099; killing only the lock owner.
+EXIT interrupted-older-writer: 0
+RUN replacement-writer: [PosixPath('{run-worktree}/bin/fm-home-summary-refresh.sh')]; inputs={'FM_HOME': '{run-worktree}/.test-phase/live/interruption', 'FM_HOME_SUMMARY_TIMEOUT': '90'}; pid=43342
+EXIT replacement-writer: 0
+OBSERVED: killed lock owner left prior ledger intact; replacement recovered lock and remained byte-identical after old deadline plus grace.
+SCENARIO PASS interrupted owner cannot overwrite newer publication

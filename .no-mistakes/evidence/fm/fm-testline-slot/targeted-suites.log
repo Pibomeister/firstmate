@@ -1,0 +1,67 @@
+FM_TEST_BEGIN 2026-11-23T17:09:55Z tests/fm-test-queue.test.sh family=unclassified expected_gate_skip=none
+ok - fm-test-queue.sh: warm delta prepared in 2s; mismatch falls back and uncertain execution does not
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+ok - fm-test-queue.sh: help prints the header and malformed calls are usage errors
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+ok - fm-test-queue.sh: unreachable hosts preserve local admission; threshold is configurable
+ok - fm-test-queue.sh: offload is per-project opt-in; a failed upload runs locally
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+ok - fm-test-queue.sh: runs are served one at a time in ticket order
+ok - fm-test-queue.sh: no more runs are served at once than there are slots
+ok - fm-test-queue.sh: the reserved slot serves the oldest at any load and the second slot obeys the ceiling
+not ok - a command ended by INT: expected exit 130, got 0
+FM_TEST_END 2026-11-23T17:11:49Z tests/fm-test-queue.test.sh exit=1 duration_ms=114200 gate_skip=false
+FM_TEST_BEGIN 2026-11-23T17:11:49Z tests/fm-home-summary-refresh.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - summary idle jitter shortens a bounded launch gap while watcher beats continue
+ok - persistent summary refresh failures retry once per idle gap while watcher beats continue
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@0 producer@0)
+ok - every lock-held deadline records bounded backoff before admission resumes
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer interruption cannot overwrite a later atomic replacement
+ok - best-effort publication logs and continues
+ok - best-effort refresh bounds publication lock acquisition
+ok - a deadline failure names the slow stage and keeps the last good summary
+ok - a signalled parent removes its stage file
+ok - the producer never recreates a deleted stage log
+ok - stage-file open is bounded by the refresh deadline
+ok - best-effort refresh bounds validation and publication
+ok - a stage file created before a deadline kill is removed
+ok - parent-side stage-file reads and removals are bounded
+ok - an unreadable stage file is reported as unreadable
+ok - parent loss leaves no running refresh worker or stage file
+ok - a first refresh on a home without a state directory names its stage
+ok - a stray stage path override never touches an unrelated file
+Terminated: 15
+ok - a deadline names the lock-wait, validate and publish stages
+ok - a failure the worker handles itself names its stage
+ok - current-state reads refill a free slot and never change the summary
+ok - row composition overlaps behind the window and keeps every task row identical
+ok - task ids that extend another task's row file name keep separate rows
+ok - best-effort refresh bounds state initialization
+ok - best-effort refresh logs worker termination
+ok - best-effort refresh bounds failure reporting fallback
+ok - valid publication ignores an unavailable failure record
+ok - publication completes on a home carrying accumulated status history
+ok - producer skips remote per-task state probes
+ok - a stalled publication does not delay the watcher liveness beacon
+ok - publication remains single-flight across watcher restart
+ok - bootstrap scopes retained failures to the current publication
+ok - failure records preserve refresh attempt ordering
+ok - repeated publication failure is reported at session start until it clears
+ok - failed refresh backs off from 30 to 1800 seconds and resets on publication
+ok - a queued refresh checks backoff after taking the lock
+ok - timeout backoff precedes admission and cannot undo a later publication
+ok - a stalled timeout backoff write remains bounded while holding the lock
+ok - backoff eligibility and failure reads cannot hold a lifecycle caller
+FM_TEST_END 2026-11-23T17:25:09Z tests/fm-home-summary-refresh.test.sh exit=0 duration_ms=799173 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=1 skipped_gate=0 duration_ms=913565
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=1 duration_ms=799173 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=114200 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-home-summary-refresh.test.sh duration_ms=799173
+FM_TEST_SLOWEST rank=2 script=tests/fm-test-queue.test.sh duration_ms=114200
+fm-test-run: wrote timing artifact: ~/.no-mistakes/evidence/01M84MSFJVVKGQQDE4HC3SV54G/targeted-suites.json

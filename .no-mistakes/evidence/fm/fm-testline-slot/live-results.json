@@ -1,0 +1,22 @@
+[
+  {
+    "name": "high-load queue admission and FIFO turnover",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "real producer failure backoff and recovery",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "busy lock, queued triggers and real producer deadline",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "interrupted owner cannot overwrite newer publication",
+    "result": "pass",
+    "live": true
+  }
+]

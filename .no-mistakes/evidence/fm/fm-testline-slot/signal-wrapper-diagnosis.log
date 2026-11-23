@@ -1,0 +1,2 @@
+direct shell self-SIGINT exit=130
+fm_run_timed external wrapper self-SIGINT exit=0

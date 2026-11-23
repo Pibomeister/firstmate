@@ -1,0 +1,3 @@
+fm-test-queue: ticket 3, position 2: waiting behind 1 earlier ticket(s)
+fm-test-queue: ticket 3, position 1: load 300 is not below 96
+fm-test-queue: ticket 3 served

@@ -1,0 +1,4 @@
+test-queue: slots=2 load_ceiling=96 load1=300 serving=1 waiting=2 stale=0 spool={run-worktree}/.test-phase/live/queue
+serving ticket=1 pid=88808 age=2s task=- label=oldest
+waiting position=1 ticket=2 pid=89594 age=1s task=- label=second
+waiting position=2 ticket=3 pid=90012 age=1s task=- label=third

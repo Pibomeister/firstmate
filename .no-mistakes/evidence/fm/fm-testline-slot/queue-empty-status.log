@@ -1,0 +1,1 @@
+test-queue: slots=2 load_ceiling=96 load1=95 serving=0 waiting=0 stale=0 spool={run-worktree}/.test-phase/live/queue

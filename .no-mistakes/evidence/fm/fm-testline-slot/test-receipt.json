@@ -1,0 +1,77 @@
+{
+  "head": "bff4a632478436db35d8a66a2625cf1c36d82410",
+  "host": "Eduardos-MacBook-Pro-2.local",
+  "completed_at": "2026-11-23T17:33:39.031184+00:00",
+  "initial_serial_run": {
+    "exit": 1,
+    "scripts": [
+      {
+        "duration_ms": 114200,
+        "exit": 1,
+        "expected_gate_skip": "none",
+        "family": "unclassified",
+        "gate_skip": false,
+        "gate_skip_reason": "",
+        "path": "tests/fm-test-queue.test.sh"
+      },
+      {
+        "duration_ms": 799173,
+        "exit": 0,
+        "expected_gate_skip": "optional-binary",
+        "family": "snapshot-bearings",
+        "gate_skip": false,
+        "gate_skip_reason": "",
+        "path": "tests/fm-home-summary-refresh.test.sh"
+      }
+    ],
+    "log": "targeted-suites.log"
+  },
+  "setup_diagnosis": "Optional per-script timeout changes inherited SIGINT behavior: direct shell exits 130; fm_run_timed external timeout exits 0. Re-ran the unchanged queue suite with the normal runner, without this optional bound.",
+  "signal_probe": "signal-wrapper-diagnosis.log",
+  "queue_normal_runner": {
+    "exit": 0,
+    "scripts": [
+      {
+        "duration_ms": 336234,
+        "exit": 0,
+        "expected_gate_skip": "none",
+        "family": "unclassified",
+        "gate_skip": false,
+        "gate_skip_reason": "",
+        "path": "tests/fm-test-queue.test.sh"
+      }
+    ],
+    "log": "queue-suite.log"
+  },
+  "live_run": {
+    "exit": 0,
+    "scenarios": [
+      {
+        "name": "high-load queue admission and FIFO turnover",
+        "result": "pass",
+        "live": true
+      },
+      {
+        "name": "real producer failure backoff and recovery",
+        "result": "pass",
+        "live": true
+      },
+      {
+        "name": "busy lock, queued triggers and real producer deadline",
+        "result": "pass",
+        "live": true
+      },
+      {
+        "name": "interrupted owner cannot overwrite newer publication",
+        "result": "pass",
+        "live": true
+      }
+    ],
+    "transcript": "live-transcript.log",
+    "driver": "live-driver.py"
+  },
+  "process_audit": "No recorded live-scenario process remains.",
+  "source_changes": false,
+  "scratch_removed": true,
+  "final_worktree_status": ""
+}

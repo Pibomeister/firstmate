@@ -1,0 +1,31 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 336234,
+      "failed": 0,
+      "name": "unclassified"
+    }
+  ],
+  "finished_at": "2026-11-23T17:31:06Z",
+  "run_id": "fm-test-run-1795454729227-56003",
+  "scripts": [
+    {
+      "duration_ms": 336234,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "unclassified",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-test-queue.test.sh"
+    }
+  ],
+  "selection": "scripts;jobs=1",
+  "started_at": "2026-11-23T17:25:29Z",
+  "summary": {
+    "duration_ms": 337267,
+    "failed": 0,
+    "skipped_gate": 0,
+    "total": 1
+  }
+}
