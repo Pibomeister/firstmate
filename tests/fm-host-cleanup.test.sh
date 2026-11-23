@@ -215,7 +215,9 @@ test_npm_cacache_is_one_entry_under_default_roots() {
 test_report_sizes_each_worktree_under_default_roots() {
   local home="$TMP_ROOT/home-worktrees"
   mkdir -p "$home/vol" "$home/orca/workspaces/proj/big" "$home/orca/workspaces/proj/small" \
-    "$home/.no-mistakes/worktrees/repo1/run1"
+    "$home/.no-mistakes/worktrees/repo1/run1" "$home/orca/workspaces/flat/bin" "$home/orca/workspaces/flat/node_modules"
+  printf 'gitdir: elsewhere\n' > "$home/orca/workspaces/flat/.git"
+  printf 'x\n' > "$home/orca/workspaces/flat/bin/tool"
   head -c 204800 /dev/zero > "$home/orca/workspaces/proj/big/blob"
   printf 'x\n' > "$home/orca/workspaces/proj/small/file"
   printf 'x\n' > "$home/.no-mistakes/worktrees/repo1/run1/file"
@@ -232,6 +234,10 @@ test_report_sizes_each_worktree_under_default_roots() {
   small=${small##*size_kib=}
   [ "$big" -ge 200 ] && [ "$small" -lt 200 ] || fail "the large worktree is told apart from the small one: big=$big small=$small"
   assert_contains "$OUT" "host-cleanup worktrees: root=$home/.no-mistakes/worktrees/repo1/run1 size_kib=" "pipeline run worktrees are reported by default"
+  local flat
+  flat=$(printf '%s\n' "$OUT" | grep -cF "host-cleanup worktrees: root=$home/orca/workspaces/flat" || true)
+  assert_equals "1" "$flat" "a worktree directly under the root gets exactly one line"
+  assert_contains "$OUT" "host-cleanup worktrees: root=$home/orca/workspaces/flat size_kib=" "that one line names the worktree itself, not its subdirectories"
   assert_present "$home/orca/workspaces/proj/big/blob" "the worktree report deletes nothing"
   pass "report sizes each worktree two levels under the default Orca and pipeline roots"
 }

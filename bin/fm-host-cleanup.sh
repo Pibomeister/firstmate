@@ -6,8 +6,9 @@
 # Usage:
 #   fm-host-cleanup.sh report
 #       Print free space, each cache and log root's size and whole-entry
-#       reclaim estimate, and the size of every worktree, a directory two
-#       levels under a worktree root (<root>/<project>/<worktree>). Deletes
+#       reclaim estimate, and the size of every worktree: a directory
+#       directly under a worktree root that holds .git, otherwise each
+#       directory one level below it (<root>/<project>/<worktree>). Deletes
 #       nothing.
 #   fm-host-cleanup.sh clean
 #       Dry run: print what clean --apply would delete and the same
@@ -172,12 +173,19 @@ each_root() {  # <colon-list>: print one existing-or-not root per line
 }
 
 worktree_report() {
-  local root child
+  local root project child
   each_root "$WORKTREE_ROOTS" | while IFS= read -r root; do
     [ -d "$root" ] || continue
-    for child in "$root"/*/*; do
-      [ -d "$child" ] || continue
-      printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$child" "$(root_size_kib "$child")"
+    for project in "$root"/*; do
+      [ -d "$project" ] || continue
+      if [ -e "$project/.git" ]; then
+        printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$project" "$(root_size_kib "$project")"
+        continue
+      fi
+      for child in "$project"/*; do
+        [ -d "$child" ] || continue
+        printf 'host-cleanup worktrees: root=%s size_kib=%s\n' "$child" "$(root_size_kib "$child")"
+      done
     done
   done
 }
