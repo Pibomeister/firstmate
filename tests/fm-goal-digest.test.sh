@@ -38,6 +38,16 @@ if [ "$*" = "+%s" ] && [ -n "${FM_GD_NOW_EPOCH:-}" ]; then
   printf '%s\n' "$FM_GD_NOW_EPOCH"
   exit 0
 fi
+if [ -n "${FM_GD_NOW_EPOCH:-}" ]; then
+  python3 - "$@" <<'PYDATE'
+import datetime, os, sys
+from zoneinfo import ZoneInfo
+zone = datetime.timezone.utc if "-u" in sys.argv else ZoneInfo(os.environ.get("TZ", "UTC"))
+fmt = next(a[1:] for a in sys.argv[1:] if a.startswith("+"))
+print(datetime.datetime.fromtimestamp(int(os.environ["FM_GD_NOW_EPOCH"]), zone).strftime(fmt))
+PYDATE
+  exit $?
+fi
 exec /bin/date "$@"
 SH
 chmod +x "$FAKE/date"
@@ -142,8 +152,8 @@ test_missed_eta_stall_and_unreachable() {
   assert_equals "['2020-01-01']" "$(python3 -c 'import json,sys; print(sorted(m["eta"] for m in json.load(open(sys.argv[1]))["missed_etas"]))' "$json")" "beta date and a date before the eta are not missed ETAs"
   assert_contains "$(cat "$json")" '"source": "Example status"' "stalled source recorded"
   assert_contains "$(cat "$json")" "Missing status" "unreachable status recorded"
-  assert_contains "$(cat "$json")" "T1 in progress" "review convergence last line recorded"
-  assert_contains "$(cat "$json")" "Waiting work" "open pull request waiting recorded"
+  assert_contains "$(cat "$json")" "T1 in progress" "review convergence entry recorded"
+  assert_contains "$(cat "$json")" "Waiting work" "open pull request recorded"
   pass "missed ETA, stall, unreachable source and review record"
 }
 
@@ -267,4 +277,189 @@ PY
   pass "first-run seeding and later-page failure"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete
+
+test_owner_actions_are_explicit_and_age_from_wait_start() {
+  write_fixtures 0
+  local home
+  home=$(make_home owner-actions)
+  cat > "$home/status.txt" <<'JSON'
+{"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[
+ {"id":"decision-a","title":"Choose route","captain_actionable":true,"hold_set":"2026-01-01T10:00:00Z"},
+ {"id":"decision-b","title":"Choose access","captain_actionable":true},
+ {"id":"done","title":"Answered","captain_actionable":false,"hold_set":"2020-01-01T00:00:00Z"}
+]}}
+JSON
+  cat > "$home/review.status" <<EOF
+needs-decision [key=closed] [at=$((RUN1_EPOCH - 10800))]: old question
+resolved [key=closed]: answered
+needs-decision [key=live] [at=$((RUN1_EPOCH - 3600))]: choose format
+working: unrelated progress
+blocked [key=network]: network unavailable
+needs-decision [key=later] [until=2099-01-01]: revisit later
+EOF
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "owner-action run failed"
+  python3 - "$home/data/goal-digest/latest.json" <<'PYCHECK' || fail "owner-action semantics incorrect"
+import json, sys
+value = json.load(open(sys.argv[1]))
+waits = {w["id"]: w for w in value["waiting_on_captain"]}
+assert set(waits) == {"decision-a", "decision-b"}, waits
+assert waits["decision-a"]["age_hours"] == 2
+assert waits["decision-b"]["age_hours"] is None
+assert [p["number"] for p in value["open_pull_requests"]] == [7]
+assert value["waiting_on_captain_status"] == "unknown"
+assert value["waiting_on_captain_unknown_sources"] == [{"source":"Missing status", "detail":"source unreachable"}]
+PYCHECK
+  assert_contains "$(cat "$home/data/goal-digest/latest.md")" "age_hours=unknown" "unknown wait age is explicit"
+  local out
+  out=$(run_digest "$home" "$RUN2_EPOCH") || fail "owner age-only run failed"
+  assert_contains "$out" "changed=no" "owner wait ages alone do not retrigger summarization"
+  python3 - "$home/status.txt" <<'PYUPDATE'
+import json, sys
+value = json.load(open(sys.argv[1]))
+value["backlog"]["records"][0]["captain_actionable"] = False
+json.dump(value, open(sys.argv[1], "w"))
+PYUPDATE
+  run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "resolution run failed"
+  assert_equals "['decision-b']" "$(python3 -c 'import json,sys; print([w["id"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"]])' "$home/data/goal-digest/latest.json")" "resolved owner action leaves waiting set"
+  pass "explicit owner actions, actual wait age, resolutions and unknown sources"
+}
+
+test_cst_calendar_and_complete_review_history() {
+  write_fixtures 0
+  local home out
+  home=$(make_home cst-review)
+  printf 'eta: 2026-01-01 deliver today\n' > "$home/status.txt"
+  printf 'timezone = UTC\n' >> "$home/config/goal-digest"
+  printf 'T1: blocked\nT7: pending\nT5: complete\nT6b: pending\nT10: pending\nT8: complete\n' > "$home/review.status"
+  mkdir -p "$home/data/goal-digest/history"
+  local i
+  for i in $(seq 1 101); do printf 'retained\n' > "$home/data/goal-digest/history/20200101T$(printf '%06d' "$i")Z.md"; done
+  run_digest "$home" 1767315600 >/dev/null || fail "CST run failed"
+  python3 - "$home/data/goal-digest/latest.json" <<'PYCHECK' || fail "CST or review contract failed"
+import json, sys
+value = json.load(open(sys.argv[1]))
+assert value["generated_at_local"] == "2026-01-01T19:00:00-0600 CST", value
+assert value["missed_etas"] == [], value["missed_etas"]
+assert value["review_convergence"] == [{"source":"Example review", "entries":["T1: blocked", "T7: pending", "T5: complete", "T6b: pending", "T10: pending", "T8: complete"]}]
+PYCHECK
+  [ -f "$home/data/goal-digest/history/20200101T000001Z.md" ] || fail "history was pruned"
+  out=$(run_digest "$home" 1767315600) || fail "unchanged review run failed"
+  assert_contains "$out" "changed=no" "unchanged ledger does not retrigger"
+  printf 'T1: complete\nT7: pending\nT5: complete\nT6b: pending\nT10: pending\nT8: complete\n' > "$home/review.status"
+  out=$(run_digest "$home" 1767315600) || fail "early review update failed"
+  assert_contains "$out" "changed=yes" "early ledger update changes digest"
+  assert_contains "$(cat "$home/data/goal-digest/latest.md")" "T1: complete" "early review entry published in Markdown"
+  pass "CST calendar, complete review changes and retained history"
+}
+
+test_archive_failure_preserves_notification_state() {
+  write_fixtures 0
+  local home rc=0
+  home=$(make_home archive-failure)
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "initial archive run failed"
+  cp "$home/data/goal-digest/.state/seen.tsv" "$home/seen-before"
+  cp "$home/data/goal-digest/.state/since.tsv" "$home/since-before"
+  cp "$home/data/goal-digest/.state/content.hash" "$home/hash-before"
+  cp "$home/data/goal-digest/latest.json" "$home/latest-before"
+  write_fixtures 1
+  mkdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  run_digest "$home" "$RUN3_EPOCH" >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 0 ] || fail "archive failure reported success"
+  cmp "$home/seen-before" "$home/data/goal-digest/.state/seen.tsv" || fail "archive failure consumed merges"
+  cmp "$home/since-before" "$home/data/goal-digest/.state/since.tsv" || fail "archive failure advanced watermark"
+  cmp "$home/hash-before" "$home/data/goal-digest/.state/content.hash" || fail "archive failure consumed change"
+  cmp "$home/latest-before" "$home/data/goal-digest/latest.json" || fail "archive failure replaced latest JSON"
+  rmdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "archive recovery failed"
+  assert_equals "[2]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home/data/goal-digest/latest.json")" "unarchived merge remains reportable"
+  pass "archive failure does not consume notifications or report success"
+}
+
+test_pagination_uses_utc_watermark() {
+  local home
+  home=$(make_home utc-pagination)
+  python3 - "$FIXTURE/merged-example-org_example-repo.json" <<'PYFIX'
+import json, sys
+rows = [{"number":i, "updated_at":"2026-01-01T11:00:00Z", "merged_at":None} for i in range(1,101)]
+json.dump(rows, open(sys.argv[1], "w"))
+PYFIX
+  printf '[]\n' > "$FIXTURE/open-example-org_example-repo.json"
+  mkdir -p "$home/data/goal-digest/.state"
+  printf 'example-org/example-repo\t1767268800\n' > "$home/data/goal-digest/.state/since.tsv"
+  TZ=America/Mexico_City FM_GD_PAGE_FAIL=1 run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "UTC pagination run failed"
+  python3 - "$home/data/goal-digest/latest.json" <<'PYCHECK' || fail "pagination fetched an unnecessary page"
+import json, sys
+value = json.load(open(sys.argv[1]))
+assert not any(u["kind"] == "repo" for u in value["unreachable_sources"]), value["unreachable_sources"]
+PYCHECK
+  pass "UTC update times stop pagination before the watermark"
+}
+
+test_failed_serialization_keeps_published_documents() {
+  write_fixtures 0
+  local home
+  home=$(make_home atomic-publication)
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "initial publication failed"
+  cp "$home/data/goal-digest/latest.json" "$home/json-before"
+  cp "$home/data/goal-digest/latest.md" "$home/md-before"
+  local real_python rc=0
+  real_python=$(PATH="$BASE_PATH" command -v python3)
+  cat > "$FAKE/python3" <<SH
+#!/usr/bin/env bash
+if [ -n "\${FM_GD_OUTPUT:-}" ]; then
+  exec '$real_python' -c 'import json, sys
+source = sys.stdin.read()
+def fail_dump(value, fh, **kwargs):
+    fh.write("{partial")
+    raise OSError("injected serialization failure")
+json.dump = fail_dump
+exec(compile(source, "<stdin>", "exec"))'
+fi
+exec '$real_python' "\$@"
+SH
+  chmod +x "$FAKE/python3"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null 2>&1 || rc=$?
+  rm "$FAKE/python3"
+  [ "$rc" != 0 ] || fail "serialization failure reported success"
+  cmp "$home/json-before" "$home/data/goal-digest/latest.json" || fail "partial JSON became visible"
+  cmp "$home/md-before" "$home/data/goal-digest/latest.md" || fail "failed generation replaced Markdown"
+  pass "failed serialization preserves complete published documents"
+}
+
+test_timeouts_terminate_descendants() {
+  write_fixtures 0
+  local home real_python child state
+  home=$(make_home timeout-descendants "$TMP_ROOT/hanging-command")
+  real_python=$(PATH="$BASE_PATH" command -v python3)
+  cat > "$TMP_ROOT/hanging-command" <<'SH'
+#!/usr/bin/env bash
+sleep 300 &
+printf '%s\n' "$!" >> "$FM_GD_CHILDREN"
+wait
+SH
+  chmod +x "$TMP_ROOT/hanging-command"
+  cat > "$FAKE/python3" <<SH
+#!/usr/bin/env bash
+[ "\${FM_GD_TIMEOUT:-}" != 120 ] || export FM_GD_TIMEOUT=1
+exec '$real_python' "\$@"
+SH
+  chmod +x "$FAKE/python3"
+  FM_GD_CHILDREN="$home/children" run_digest "$home" "$RUN1_EPOCH" >/dev/null 2>&1 || fail "summarizer timeout failed the digest"
+  cp "$FAKE/gh" "$TMP_ROOT/gh-before"
+  cp "$FAKE/ssh" "$TMP_ROOT/ssh-before"
+  cp "$TMP_ROOT/hanging-command" "$FAKE/gh"
+  cp "$TMP_ROOT/hanging-command" "$FAKE/ssh"
+  printf 'timeout_seconds = 1\nreview = Remote | ssh:example-host:/status\n' >> "$home/config/goal-digest"
+  FM_GD_CHILDREN="$home/children" run_digest "$home" "$RUN2_EPOCH" >/dev/null 2>&1 || fail "network timeout failed the digest"
+  mv "$TMP_ROOT/gh-before" "$FAKE/gh"
+  mv "$TMP_ROOT/ssh-before" "$FAKE/ssh"
+  rm "$FAKE/python3"
+  assert_equals "5" "$(wc -l < "$home/children" | tr -d ' ')" "summarizer, both gh calls, ssh and changed summarizer were exercised"
+  while IFS= read -r child; do
+    state=$(ps -o stat= -p "$child" 2>/dev/null || true)
+    case "$state" in ''|*Z*) ;; *) kill "$child" 2>/dev/null || true; fail "timed-out descendant $child is still running" ;; esac
+  done < "$home/children"
+  pass "summarizer, gh and ssh timeouts stop owned descendants"
+}
+
+fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
