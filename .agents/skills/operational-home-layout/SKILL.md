@@ -190,7 +190,8 @@ state/               runtime records and signals; gitignored
   .watch-triage.log  watcher's absorbed-wake debug log (size-capped); never relied on, safe to delete
   lane-capacity.json  this home's published lane facts, refreshed only while config/lane-capacity exists; written only by bin/fm-capacity.sh --publish, whose header owns the document
   load-relief/       automatic load-relief state: high-since (start of the current over-ceiling stretch), paused/<id> durable pause records, .check.lock (the per-home single-flight lock of a check pass), and last-check (the latest pass's exit status and diagnostics); written only by bin/fm-load-relief.sh, whose header owns all four
-  heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher's heartbeat ticker on a relevant change and otherwise once per idle interval; written only by bin/fm-heartbeat.sh --write, whose header owns the document
+  heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher's heartbeat ticker on a relevant change and otherwise once per idle interval, stretched under high host load (bin/fm-load-lib.sh); written only by bin/fm-heartbeat.sh --write, whose header owns the document
+  .fleet-snapshot.lock  single-flight lock of a full bin/fm-fleet-snapshot.sh run in this home; that script's header owns it
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .watcher-stage .watcher-deferral.<name>   the watcher's current cycle stage and its record of work skipped behind a held lock; bin/fm-watch.sh writes both and bin/fm-guard.sh reads them; never touch
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch

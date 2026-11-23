@@ -409,6 +409,11 @@ esac
 # The primary home's open-goal predicate is shared with watcher arming.
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
+# Host-load throttling of the periodic monitoring cadences below (the
+# heartbeat ticker's launch interval and the heartbeat wake cadence); the
+# library owns the probe, threshold, and interval arithmetic.
+# shellcheck source=bin/fm-load-lib.sh
+. "$SCRIPT_DIR/fm-load-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -5386,6 +5391,11 @@ load_relief_check_detached() {
 # HEARTBEAT_LEDGER_JITTER, HEARTBEAT_LEDGER_IDLE] after each launch. The larger
 # of POLL rounded up to whole seconds and HEARTBEAT_LEDGER_IDLE is the cycle
 # period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
+# While the host load is above the bin/fm-load-lib.sh throttle threshold each
+# idle due is drawn from the throttled idle interval instead, re-read at every
+# launch so the ordinary cadence returns as soon as the load falls back; the
+# heartbeat applies the same throttled cycle to its stale bound and to its own
+# too-soon guard, which also absorbs change-driven launches under load.
 # An in-flight publication defers the next launch until a poll sees it finish.
 # Event delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
@@ -5432,7 +5442,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     RANDOM=$FM_WATCH_RANDOM_SEED
   fi
   fm_watch_now now
-  watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
+  watch_idle_due due "$now" "$(fm_load_interval "$HEARTBEAT_LEDGER_IDLE")" "$HEARTBEAT_LEDGER_JITTER"
   while :; do
     # Sleep one poll, or only until a nearer idle due, so the idle interval is
     # the launch interval rather than the next poll after it.
@@ -5453,7 +5463,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_SEEN=$token
     fleet_heartbeat_launch
-    watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
+    watch_idle_due due "$now" "$(fm_load_interval "$HEARTBEAT_LEDGER_IDLE")" "$HEARTBEAT_LEDGER_JITTER"
   done
 }
 
@@ -6506,6 +6516,11 @@ EOF
       WATCH_WAIT_BUDGET=$remaining
     fi
   fi
+  # Host-load throttle (bin/fm-load-lib.sh): above the load threshold the
+  # heartbeat wake cadence stretches by the throttle factor, open-work cap
+  # included, because the fleet scan behind this cadence is part of the
+  # churn being relieved; a calm load restores the cadence computed above.
+  hb=$(fm_load_interval "$hb")
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
