@@ -1443,6 +1443,73 @@ test_verify_finding_removes_its_scratch_on_a_signal() {
   pass "verify-finding stops the reproduction and removes its scratch on a signal"
 }
 
+test_verify_finding_stops_the_reproduction_on_a_process_group_signal() {
+  local rc=0 pid i
+  make_case verify-group-signal
+  mkdir -p "$CASE/sig"
+  write_repro slow.sh "echo \$\$ > '$CASE/repro.pid'; sleep 120; exit 1"
+  # A tool runner or a terminal hangup signals the whole process group, so
+  # run the command as its own group leader and signal that group.
+  set -m
+  FM_HOME="$HOME_DIR" FM_ROOT_OVERRIDE="$ROOT" FM_TASK_ID=review-w1 FM_TEST_REVIEW_STUB="$STUB" \
+    PATH="$FAKEBIN:$PATH" TMPDIR="$CASE/sig" \
+    "$MERGE_REVIEW" verify-finding --repo "$REPO" --head "$HEAD_SHA" --repro "$CASE/slow.sh" \
+    --path tests/repro-slow.test.sh --out "$CASE/sig-out" > "$CASE/stdout" 2> "$CASE/stderr" < /dev/null &
+  pid=$!
+  set +m
+  for i in $(seq 1 600); do
+    [ ! -s "$CASE/repro.pid" ] || break
+    sleep 0.1
+  done
+  [ -s "$CASE/repro.pid" ] || fail "verify group signal: the reproduction never started"
+  kill -TERM -- "-$pid"
+  for i in $(seq 1 200); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  rc=0
+  wait "$pid" || rc=$?
+  [ "$rc" -ne 0 ] || fail "verify group signal: a terminated run reported success"
+  for i in $(seq 1 50); do
+    kill -0 "$(cat "$CASE/repro.pid")" 2>/dev/null || break
+    sleep 0.1
+  done
+  if kill -0 "$(cat "$CASE/repro.pid")" 2>/dev/null; then
+    kill -KILL "$(cat "$CASE/repro.pid")" 2>/dev/null || true
+    fail "verify group signal: the reproduction outlived the run"
+  fi
+  assert_equals '' "$(ls "$CASE/sig")" "verify group signal: the scratch directory leaked"
+  pass "verify-finding stops the reproduction and removes its scratch when its process group is signalled"
+}
+
+test_verify_finding_refuses_a_head_already_in_the_base() {
+  local rc=0
+  make_case verify-same-base
+  write_repro same.sh 'exit 1'
+  run_verify same.sh tests/repro-same.test.sh --base "$HEAD_SHA" --out "$CASE/same" || rc=$?
+  expect_code 2 "$rc" "verify head already in base"
+  assert_absent "$CASE/same/result" "verify head already in base: no evidence is recorded"
+  pass "verify-finding refuses a head that is already contained in the base"
+}
+
+test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions() {
+  local rc=0
+  make_case verify-mode-unreadable
+  mkdir -p "$CASE/statbin"
+  cat > "$CASE/statbin/stat" <<'STAT'
+#!/bin/bash
+case "$*" in *'mode %'*) exit 1 ;; esac
+for real in /usr/bin/stat /bin/stat; do [ -x "$real" ] && exec "$real" "$@"; done
+exit 127
+STAT
+  chmod +x "$CASE/statbin/stat"
+  write_repro quiet.sh 'chmod +x feature.txt; exit 0'
+  PATH="$CASE/statbin:$PATH" run_verify quiet.sh tests/repro-quiet.test.sh --out "$CASE/quiet" || rc=$?
+  expect_code 2 "$rc" "verify unreadable permissions ($(cat "$CASE/stderr" 2>/dev/null))"
+  assert_absent "$CASE/quiet/result" "verify unreadable permissions: no evidence is recorded"
+  pass "verify-finding refuses rather than compare a manifest missing its permission bits"
+}
+
 test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope() {
   local rc=0
   make_case verify-scrub
@@ -1517,4 +1584,7 @@ fm_test_run \
   test_verify_finding_removes_a_locked_fixture_directory \
   test_verify_finding_refuses_a_dangling_evidence_link \
   test_verify_finding_removes_its_scratch_on_a_signal \
-  test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope
+  test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope \
+  test_verify_finding_stops_the_reproduction_on_a_process_group_signal \
+  test_verify_finding_refuses_a_head_already_in_the_base \
+  test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions

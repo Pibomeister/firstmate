@@ -48,7 +48,8 @@
 #         600). It runs
 #         in a snapshot of <full-sha> outside every repository, then, only
 #         when it fails there, in a snapshot of the merge base with
-#         <commit-ish> (default origin/HEAD). This command never changes the
+#         <commit-ish> (default origin/HEAD); a head already contained in
+#         that base is refused. This command never changes the
 #         source repository and fetches nothing; the reproduction itself is
 #         not sandboxed, which is why only a worker runs it. An interrupt or
 #         termination stops the reproduction's whole process tree and removes
@@ -960,14 +961,17 @@ mr_tree_manifest() {  # <dir>
   local -a sum=(sha256sum) mode=(stat -c 'mode %a %n')
   ! command -v shasum >/dev/null 2>&1 || sum=(shasum -a 256)
   stat -c '%a' "$1" >/dev/null 2>&1 || mode=(stat -f 'mode %Lp %N')
+  # Any part that cannot be read fails the manifest, so a comparison never
+  # rests on a manifest missing its links, permission bits or digests.
   (
+    set -o pipefail
     cd "$1" || exit 1
     find . -path ./tests -prune -o ! -type f -print | LC_ALL=C sort |
       while IFS= read -r entry; do
         if [ -L "$entry" ]; then printf 'link %s -> %s\n' "$entry" "$(readlink "$entry")"; else printf 'node %s\n' "$entry"; fi
-      done
-    find . -path ./tests -prune -o -print0 | xargs -0 "${mode[@]}" | LC_ALL=C sort
-    find . -path ./tests -prune -o -type f -print0 | xargs -0 "${sum[@]}" | LC_ALL=C sort
+      done &&
+      find . -path ./tests -prune -o -print0 | xargs -0 "${mode[@]}" | LC_ALL=C sort &&
+      find . -path ./tests -prune -o -type f -print0 | xargs -0 "${sum[@]}" | LC_ALL=C sort
   ) || return 1
 }
 
@@ -1025,11 +1029,16 @@ mr_verify_side() {  # <scratch> <path> <log>
 
 # Run one side in the background and wait for it, so a signal to this
 # command interrupts the wait at once instead of waiting for the reproduction.
-# The side's result word lands in <scratch>/result.
+# The side runs as its own process group, so a signal sent to this command's
+# whole group reaches only this command, whose cleanup then stops the side's
+# intact process tree. The side's result word lands in <scratch>/result.
 mr_verify_run_side() {  # <scratch> <path> <log>
-  local rc=0
-  mr_verify_side "$@" > "$1/result" &
+  local rc=0 monitor_was_on=0
+  case $- in *m*) monitor_was_on=1 ;; esac
+  set -m
+  mr_verify_side "$@" < /dev/null > "$1/result" &
   MR_VERIFY_SIDE_PID=$!
+  [ "$monitor_was_on" -eq 1 ] || set +m
   wait "$MR_VERIFY_SIDE_PID" || rc=$?
   MR_VERIFY_SIDE_PID=
   [ "$rc" -eq 0 ] && [ -s "$1/result" ]
@@ -1086,6 +1095,8 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
   fi
   MR_BASE=$(git --no-replace-objects -C "$repo" merge-base "$base_ref" "$MR_HEAD" 2>/dev/null) \
     || mr_die "cannot find a merge base between $base_ref and $MR_HEAD"
+  [ "$MR_BASE" != "$MR_HEAD" ] \
+    || mr_die "the head $MR_HEAD is already contained in $base_ref; pass --base <commit-ish> from before the change"
   for commit in "$MR_HEAD" "$MR_BASE"; do
     ! git --no-replace-objects -C "$repo" cat-file -e "$commit:$path" 2>/dev/null \
       || mr_die "--path $path already exists at $commit; a reproduction may only add a new test file"
