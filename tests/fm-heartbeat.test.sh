@@ -1108,6 +1108,7 @@ test_a_relevant_change_collects_without_waiting_for_idle() {
   before=$(launch_count watch-change)
   [ "$before" -ge 1 ] || fail "the watcher never made its first collection"
   (
+    # shellcheck disable=SC2030,SC2031
     STATE=$home/state FM_HOME=$home
     # shellcheck source=bin/fm-wake-lib.sh
     # shellcheck disable=SC1091
@@ -1160,6 +1161,7 @@ test_a_change_under_load_waits_for_the_throttled_idle_due() {
   [ "$(launch_count watch-loaded-change)" = 1 ] || fail "expected one first collection, saw $(launch_count watch-loaded-change)"
   first=$(head -n 1 "$TMP_ROOT/watch-loaded-change.runs")
   (
+    # shellcheck disable=SC2030,SC2031
     export STATE=$home/state FM_HOME=$home
     # shellcheck source=bin/fm-wake-lib.sh
     # shellcheck disable=SC1091
