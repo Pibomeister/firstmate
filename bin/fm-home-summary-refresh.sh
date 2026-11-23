@@ -406,7 +406,13 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
       && home_summary_stage_path_ok "$FM_HOME_SUMMARY_STAGE_PATH"; then
     stage_file=$FM_HOME_SUMMARY_STAGE_PATH
   fi
-  if (fm_exec_timed "$HOME_SUMMARY_TIMEOUT" 3 env \
+  # Keep the exec timer's owner guarantees where available, and the existing
+  # bounded Bash runner on hosts without an exec-capable timer.
+  home_summary_runner=(fm_exec_timed "$HOME_SUMMARY_TIMEOUT" 3)
+  if [ "$(fm_timeout_mechanism)" = bash ]; then
+    home_summary_runner=(fm_run_timed "$HOME_SUMMARY_TIMEOUT")
+  fi
+  if ("${home_summary_runner[@]}" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \

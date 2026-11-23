@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral coverage for per-home summary publication through the real
 # producer, writer, watcher-carried status trigger, and snapshot ledger consumer.
-# Optional arguments select the scheduler test functions below.
+# Optional arguments select the test functions below.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -258,6 +258,37 @@ SH
   [ "$(cat "$home/state/.home-summary-refresh.backoff")" = "$(printf 'failures=2\nnext=2090')" ] \
     || fail "a direct failure did not advance backoff exactly once"
   pass "every lock-held deadline records bounded backoff before admission resumes"
+}
+
+test_refresh_without_external_timer() {
+  local home no_timer_env
+  home="$TMP_ROOT/no-external-timer-home"
+  no_timer_env="$TMP_ROOT/no-external-timer.sh"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  home=$(cd "$home" && pwd -P)
+  printf '# Seeded Firstmate home\n' > "$home/AGENTS.md"
+  printf 'fallback\n' > "$home/.fm-secondmate-home"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  cat > "$no_timer_env" <<'SH'
+command() {
+  case "${1:-}:${2:-}" in -v:perl) return 1 ;; esac
+  builtin command "$@"
+}
+type() {
+  case "${1:-}:${2:-}" in -P:timeout|-P:gtimeout) return 1 ;; esac
+  builtin type "$@"
+}
+SH
+  BASH_ENV="$no_timer_env" PATH="$FAKEBIN:$PATH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+    || fail "refresh failed without Perl or an external timeout"
+  jq -e --arg home "$home" '
+    .schema == "fm-secondmate-home-summary.v1" and .home == $home and .valid == true
+  ' "$home/state/home-summary.json" >/dev/null \
+    || fail "the bounded Bash fallback did not publish a complete summary"
+  [ ! -d "$home/state/.home-summary-refresh.lock" ] \
+    || fail "the bounded Bash fallback retained the publication lock"
+  pass "refresh publishes through the bounded Bash fallback without an external timer"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -523,6 +554,7 @@ pass "live watcher cadence bounds publication staleness without signals"
 test_summary_jitter_shortens_idle_launches
 test_failed_summary_refresh_waits_for_idle
 test_locked_deadlines_record_backoff
+test_refresh_without_external_timer
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false
