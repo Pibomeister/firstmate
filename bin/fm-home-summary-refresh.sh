@@ -16,8 +16,9 @@
 # A home-local refresh lock serializes concurrent triggers so an older in-flight
 # summary cannot overwrite one computed after a later status change. The shared
 # timeout owner gives acquisition and publication FM_HOME_SUMMARY_TIMEOUT
-# (default 60 seconds), with 3 additional seconds for failure recording and
-# lock cleanup. No reader can observe temporary output through the ledger path.
+# (default 60 seconds), followed by a failure-recording and lock-cleanup grace
+# of 3 seconds with an exec-capable timer or 1 second with the Bash fallback.
+# No reader can observe temporary output through the ledger path.
 #
 # A failed refresh never rewrites the ledger, so the last good summary keeps its
 # own generated and generated_epoch values: readers see its true age, never the
