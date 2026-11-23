@@ -798,7 +798,7 @@ heartbeat_publish() {
   # plus one whole-run cap (see the header). With no usable cycle period
   # the bound is null. Under host-load throttling the true launch
   # interval is the throttled one, so the cycle enters the bound throttled
-  # too; the run cap already covers a launch the throttle guard skips.
+  # too.
   grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=60
   case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
   if [ -n "$cycle" ]; then

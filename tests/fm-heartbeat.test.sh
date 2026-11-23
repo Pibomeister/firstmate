@@ -1139,6 +1139,47 @@ test_a_relevant_change_collects_without_waiting_for_idle() {
   pass "an appended wake or a status line collects at once, without waiting for the idle interval"
 }
 
+# Under host-load throttling a relevant change waits for the throttled idle
+# due, so no change-driven launch inside the heartbeat's too-soon window can
+# reset that due past the previous publication's stale bound.
+test_a_change_under_load_waits_for_the_throttled_idle_due() {
+  local home stub first next
+  home=$(make_home watch-loaded-change)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  printf '300 0.00 0.00\n' > "$TMP_ROOT/watch-loaded-change.load"
+  stub=$(launch_log_stub watch-loaded-change)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_LOAD_FILE="$TMP_ROOT/watch-loaded-change.load" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-loaded-change.out" 2> "$TMP_ROOT/watch-loaded-change.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 2
+  [ "$(launch_count watch-loaded-change)" = 1 ] || fail "expected one first collection, saw $(launch_count watch-loaded-change)"
+  first=$(head -n 1 "$TMP_ROOT/watch-loaded-change.runs")
+  (
+    export STATE=$home/state FM_HOME=$home
+    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_append check hb-test-producer "an appended wake under load"
+  ) || fail "could not append a wake"
+  command -p sleep 4
+  [ "$(launch_count watch-loaded-change)" = 1 ] \
+    || fail "a change under load collected before the throttled idle due"
+  command -p sleep 10
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-loaded-change)" -ge 2 ] || fail "no collection at the throttled idle due"
+  next=$(sed -n 2p "$TMP_ROOT/watch-loaded-change.runs")
+  [ $((next - first)) -le 14 ] \
+    || fail "the next collection came $((next - first))s after the first, past the 12s throttled idle due"
+  pass "a change under load waits for the throttled idle due instead of resetting it"
+}
+
 test_status_change_collects_before_grace_without_a_wake() {
   local home stub before seq i=0 child comm
   home=$(make_home watch-status-before-grace)
@@ -1469,6 +1510,7 @@ test_unchanged_home_collects_once_per_idle_interval
 test_jittered_idle_gaps_stay_within_the_interval
 test_a_relevant_change_collects_without_waiting_for_idle
 test_a_relevant_change_collects_without_waiting_for_idle 0.2
+test_a_change_under_load_waits_for_the_throttled_idle_due
 test_status_change_collects_before_grace_without_a_wake
 test_fractional_open_work_poll_wait
 test_fractional_checkpoint_poll_wait

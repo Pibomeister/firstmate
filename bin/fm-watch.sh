@@ -5393,11 +5393,11 @@ load_relief_check_detached() {
 # period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
 # While the host load is above the bin/fm-load-lib.sh throttle threshold each
 # idle due is drawn from the throttled idle interval instead, re-read at every
-# launch so the ordinary cadence returns as soon as the load falls back. Each
+# launch so the ordinary cadence returns as soon as the load falls back, and a
+# relevant change waits for that idle due rather than launching at once. Each
 # launch reads the throttle factor once and passes it to the heartbeat as
-# FM_HEARTBEAT_LOAD_FACTOR, so its stale bound and its own too-soon guard,
-# which also absorbs change-driven launches under load, use the same factor
-# as that launch's next idle due.
+# FM_HEARTBEAT_LOAD_FACTOR, so its stale bound and its own too-soon guard use
+# the same factor as that launch's next idle due.
 # An in-flight publication defers the next launch until a poll sees it finish.
 # Event delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
@@ -5463,7 +5463,10 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     fi
     fleet_heartbeat_change_token token
     fm_watch_now now
-    [ "$token" != "$FLEET_HEARTBEAT_SEEN" ] || [ "$now" -ge "$due" ] || continue
+    if [ "$now" -lt "$due" ]; then
+      [ "$token" != "$FLEET_HEARTBEAT_SEEN" ] || continue
+      [ "$(fm_load_factor)" = 1 ] || continue
+    fi
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_SEEN=$token
     fleet_heartbeat_launch
