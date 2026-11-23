@@ -49,6 +49,10 @@ trap 'cleanup; exit 143' TERM
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
+# Resolve delegates before PATH interposition; command-cache warmth can mask self-delegation.
+REAL_JQ=$(command -v jq)
+REAL_TAIL=$(command -v tail)
+
 if [ "${1:-}" != --backoff ]; then
 
 cat > "$FAKEBIN/tmux" <<'SH'
@@ -586,7 +590,7 @@ chmod +x "$VALIDATION_BIN/jq"
 PATH="$VALIDATION_BIN:$FAKEBIN:$PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
-  FM_TEST_REAL_JQ="$(command -v jq)" FM_TEST_VALIDATOR_MARKER="$SLOW_MARKER" \
+  FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_VALIDATOR_MARKER="$SLOW_MARKER" \
   FM_TEST_VALIDATION_RELEASE="$VALIDATION_RELEASE" FM_HOME_SUMMARY_TIMEOUT=120 \
   "$WRITER" > "$TMP_ROOT/killed-writer.out" 2> "$TMP_ROOT/killed-writer.err" &
 SLOW_WRITER_PID=$!
@@ -859,7 +863,6 @@ grep -F 'refresh exceeded its 2-second deadline before its first stage' \
 pass "stage-file open is bounded by the refresh deadline"
 
 HANGBIN="$TMP_ROOT/hangbin"
-REAL_JQ=$(command -v jq)
 mkdir -p "$HANGBIN"
 cat > "$HANGBIN/jq" <<'SH'
 #!/usr/bin/env bash
@@ -956,7 +959,7 @@ exec "$FM_TEST_REAL_TAIL" "$@"
 SH
 chmod +x "$FAILTAIL/tail"
 : > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
-PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$(command -v tail)" \
+PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$REAL_TAIL" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
   "$WRITER" --best-effort \
   || fail "an unreadable stage file changed the best-effort caller result"
@@ -2050,7 +2053,7 @@ QUEUED_PRODUCER="$TMP_ROOT/timeout-queued-producer"
 TIMEOUT_QUEUED_STAGE="$BACKOFF_HOME/state/.home-summary-stage.timeout-queued"
 PATH="$TIMEOUTBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
   FM_TEST_TIMEOUT_READY="$TIMEOUT_READY" FM_TEST_TIMEOUT_PARENT_FILE="$TIMEOUT_PARENT_FILE" \
-  FM_TEST_TIMEOUT_PARENT_STOPPED="$TIMEOUT_PARENT_STOPPED" FM_TEST_REAL_TAIL="$(command -v tail)" \
+  FM_TEST_TIMEOUT_PARENT_STOPPED="$TIMEOUT_PARENT_STOPPED" FM_TEST_REAL_TAIL="$REAL_TAIL" \
   FM_HOME_SUMMARY_STAGE_PATH="$BACKOFF_HOME/state/.home-summary-stage.timeout-race" \
   FM_HOME_SUMMARY_TIMEOUT=10 FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
 SLOW_WRITER_PID=$!
