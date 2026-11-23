@@ -269,6 +269,26 @@ test_heartbeat_stale_bound_uses_throttled_cycle() {
   pass "heartbeat stale bound counts the throttled cycle"
 }
 
+test_heartbeat_bound_uses_launch_factor() {
+  local calm
+  heartbeat_fixture hb-launch-factor
+  set_load 10.00
+  run_heartbeat "$HB_HOME"
+  calm=$(jq -r .stale_after_secs "$HB_HOME/state/heartbeat.json")
+  rm -f "$HB_HOME/state/heartbeat.json"
+  FM_HEARTBEAT_LOAD_FACTOR=4 run_heartbeat "$HB_HOME"
+  assert_equals $((calm + 300)) "$(jq -r .stale_after_secs "$HB_HOME/state/heartbeat.json")" \
+    "a launch the watcher scheduled throttled published a calm bound because the load fell during the run"
+  assert_equals true "$(jq -r .throttled "$HB_HOME/state/heartbeat.json")" \
+    "a launch the watcher scheduled throttled did not record throttled:true"
+  set_load 300.00
+  rm -f "$HB_HOME/state/heartbeat.json"
+  FM_HEARTBEAT_LOAD_FACTOR=1 run_heartbeat "$HB_HOME"
+  assert_equals "$calm" "$(jq -r .stale_after_secs "$HB_HOME/state/heartbeat.json")" \
+    "a launch the watcher scheduled calm published a bound from a later hot reading"
+  pass "heartbeat stale bound follows the throttle factor its launch was scheduled with"
+}
+
 fm_test_run \
   test_interval_math \
   test_interval_threshold_override \
@@ -280,4 +300,5 @@ fm_test_run \
   test_heartbeat_skips_inside_throttled_interval \
   test_heartbeat_publishes_when_calm_or_due \
   test_heartbeat_first_hot_launch_publishes_after_calm \
-  test_heartbeat_stale_bound_uses_throttled_cycle
+  test_heartbeat_stale_bound_uses_throttled_cycle \
+  test_heartbeat_bound_uses_launch_factor

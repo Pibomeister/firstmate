@@ -139,7 +139,10 @@
 # only after such a publication, so the first launch under load still
 # publishes the extended bound and the health verdict never reads the
 # deliberate gap as a dead publisher. A calm load restores the ordinary
-# cadence on the next launch.
+# cadence on the next launch. The load is read once per launch: the watcher
+# passes the throttle factor it used for this launch's next idle due as
+# FM_HEARTBEAT_LOAD_FACTOR, and both the guard and the stale bound use that
+# factor; a direct invocation without it probes the load once at startup.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -219,6 +222,10 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-load-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-load-lib.sh"
+case "${FM_HEARTBEAT_LOAD_FACTOR:-}" in
+  '' | 0* | *[!0-9]*) HEARTBEAT_LOAD_FACTOR=$(fm_load_factor) ;;
+  *) HEARTBEAT_LOAD_FACTOR=$FM_HEARTBEAT_LOAD_FACTOR ;;
+esac
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -795,7 +802,7 @@ heartbeat_publish() {
   grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=60
   case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
   if [ -n "$cycle" ]; then
-    stretched=$(fm_load_interval "$cycle")
+    stretched=$((cycle * HEARTBEAT_LOAD_FACTOR))
     [ "$stretched" = "$cycle" ] || throttled=true
     cycle=$stretched
   fi
@@ -882,16 +889,16 @@ heartbeat_on_signal() {
 # base cycle short of the throttled interval, so a launch paced about one
 # throttled interval after the prior one publishes even when startup
 # latency shifts either stamp by a few seconds. The guard needs the
-# watcher-passed cycle and a readable prior generated_epoch; without either it never skips, and a calm load never
-# skips, so the ordinary cadence returns as soon as the load falls back.
+# watcher-passed cycle and a readable prior generated_epoch; without either
+# it never skips, and a calm load never skips, so the ordinary cadence returns as soon as the load falls back.
 heartbeat_throttle_skip() {
   local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} launched effective
   case "$cycle" in '' | 0* | *[!0-9]*) return 1 ;; esac
-  fm_load_throttled || return 1
+  [ "$HEARTBEAT_LOAD_FACTOR" -gt 1 ] || return 1
   [ -f "$LEDGER" ] || return 1
   launched=$(jq -r 'select(.throttled == true) | .generated_epoch // empty' "$LEDGER" 2>/dev/null) || return 1
   case "$launched" in ''|*[!0-9]*) return 1 ;; esac
-  effective=$(fm_load_interval "$cycle")
+  effective=$((cycle * HEARTBEAT_LOAD_FACTOR))
   [ $((HEARTBEAT_EPOCH - launched)) -lt $((effective - cycle)) ]
 }
 

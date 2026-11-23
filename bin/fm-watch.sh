@@ -5393,9 +5393,11 @@ load_relief_check_detached() {
 # period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
 # While the host load is above the bin/fm-load-lib.sh throttle threshold each
 # idle due is drawn from the throttled idle interval instead, re-read at every
-# launch so the ordinary cadence returns as soon as the load falls back; the
-# heartbeat applies the same throttled cycle to its stale bound and to its own
-# too-soon guard, which also absorbs change-driven launches under load.
+# launch so the ordinary cadence returns as soon as the load falls back. Each
+# launch reads the throttle factor once and passes it to the heartbeat as
+# FM_HEARTBEAT_LOAD_FACTOR, so its stale bound and its own too-soon guard,
+# which also absorbs change-driven launches under load, use the same factor
+# as that launch's next idle due.
 # An in-flight publication defers the next launch until a poll sees it finish.
 # Event delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
@@ -5406,12 +5408,14 @@ FLEET_HEARTBEAT_SEEN=
 FLEET_HEARTBEAT_CHANGE_FILE=$STATE/.heartbeat-ledger-change
 FLEET_HEARTBEAT_CHANGE_GEN=0
 FLEET_HEARTBEAT_CYCLE=$HEARTBEAT_LEDGER_IDLE
+FLEET_HEARTBEAT_FACTOR=1
 [ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL_CEILING" ] || FLEET_HEARTBEAT_CYCLE=$POLL_CEILING
 fleet_heartbeat_launch() {
   # Pass the cycle period defined above, never the wake heartbeat cadence
   # (bin/fm-heartbeat.sh stale_after_secs).
+  FLEET_HEARTBEAT_FACTOR=$(fm_load_factor)
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE \
+    FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE FM_HEARTBEAT_LOAD_FACTOR=$FLEET_HEARTBEAT_FACTOR \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
 }
@@ -5442,7 +5446,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     RANDOM=$FM_WATCH_RANDOM_SEED
   fi
   fm_watch_now now
-  watch_idle_due due "$now" "$(fm_load_interval "$HEARTBEAT_LEDGER_IDLE")" "$HEARTBEAT_LEDGER_JITTER"
+  watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
   while :; do
     # Sleep one poll, or only until a nearer idle due, so the idle interval is
     # the launch interval rather than the next poll after it.
@@ -5463,7 +5467,7 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_SEEN=$token
     fleet_heartbeat_launch
-    watch_idle_due due "$now" "$(fm_load_interval "$HEARTBEAT_LEDGER_IDLE")" "$HEARTBEAT_LEDGER_JITTER"
+    watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
   done
 }
 
@@ -6508,6 +6512,11 @@ EOF
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   open_work=0
   WATCH_WAIT_BUDGET=$POLL
+  # Host-load throttle (bin/fm-load-lib.sh): above the load threshold the
+  # heartbeat wake cadence stretches by the throttle factor, because the fleet
+  # scan behind this cadence is part of the churn being relieved; the attended
+  # open-work cap below still holds, and a calm load restores the cadence.
+  hb=$(fm_load_interval "$hb")
   if ! afk_present && heartbeat_open_work; then
     open_work=1
     [ "$hb" -le 885 ] || hb=885
@@ -6516,11 +6525,6 @@ EOF
       WATCH_WAIT_BUDGET=$remaining
     fi
   fi
-  # Host-load throttle (bin/fm-load-lib.sh): above the load threshold the
-  # heartbeat wake cadence stretches by the throttle factor, open-work cap
-  # included, because the fleet scan behind this cadence is part of the
-  # churn being relieved; a calm load restores the cadence computed above.
-  hb=$(fm_load_interval "$hb")
   if [ "$(age_of "$STATE/.last-heartbeat")" -ge "$hb" ]; then
     # Triage: in always-on mode a heartbeat is benign unless the cheap fleet-scan
     # turns up a captain-relevant status the per-wake path missed. Absorb the
