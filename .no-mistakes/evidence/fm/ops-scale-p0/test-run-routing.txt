@@ -1,0 +1,102 @@
+## --list --changed --base 02ddf2aa
+tests/fm-agent-kit-pin.test.sh
+tests/fm-agy-harness.test.sh
+tests/fm-arm-pretool-check.test.sh
+tests/fm-ask-user-authority.test.sh
+tests/fm-bash-compat.test.sh
+tests/fm-bearings-board.test.sh
+tests/fm-brief.test.sh
+tests/fm-calm-claude-mod.test.sh
+tests/fm-calm-pi-extension.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-ci-select.test.sh
+tests/fm-ci-workflow.test.sh
+tests/fm-classify-decision-key.test.sh
+tests/fm-commandcode-harness.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-context-reading.test.sh
+tests/fm-cortex-harness.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-devin-harness.test.sh
+tests/fm-documentation-audiences.test.sh
+tests/fm-dod-lib.test.sh
+tests/fm-droid-harness.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-forge-detect.test.sh
+tests/fm-fork-free-helpers.test.sh
+tests/fm-goal-integrity.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-harness-adapter-references.test.sh
+tests/fm-harness-precedence.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-herdr-owned-xdg.test.sh
+tests/fm-install-herdr.test.sh
+tests/fm-kimi-harness.test.sh
+tests/fm-lint-workflows.test.sh
+tests/fm-lint.test.sh
+tests/fm-merge-local.test.sh
+tests/fm-muse-harness.test.sh
+tests/fm-omp-harness.test.sh
+tests/fm-operational-input.test.sh
+tests/fm-park.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-polytoken-harness.test.sh
+tests/fm-project-mode.test.sh
+tests/fm-pstack-verify-hook.test.sh
+tests/fm-quiet-hours.test.sh
+tests/fm-read-repetition.test.sh
+tests/fm-rovo-harness.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-subagent-pretool-check.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-task-delivery.test.sh
+tests/fm-test-isolation-proof.test.sh
+tests/fm-test-run.test.sh
+tests/fm-test-tap-verify.test.sh
+tests/fm-timeout-lib.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-trace-context-lib.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-usage-limit-pane-pending.test.sh
+tests/fm-vendor-auth-probe.test.sh
+tests/fm-afk-inject-herdr-e2e.test.sh
+tests/fm-afk-launch.test.sh
+tests/fm-backend-autodetect-smoke.test.sh
+tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh
+tests/fm-backend-herdr-eventwait-smoke.test.sh
+tests/fm-backend-herdr-focus-flash-e2e.test.sh
+tests/fm-backend-herdr-launcher-workspace-e2e.test.sh
+tests/fm-backend-herdr-presentation-e2e.test.sh
+tests/fm-backend-herdr-prune-safety-e2e.test.sh
+tests/fm-backend-herdr-respawn-idem-e2e.test.sh
+tests/fm-backend-herdr-smoke.test.sh
+tests/fm-backend-herdr-stale-active-tab-e2e.test.sh
+tests/fm-backend-herdr-workspace-per-home-e2e.test.sh
+tests/fm-control-herdr-smoke.test.sh
+tests/fm-herdr-attached-viewer-live-e2e.test.sh
+tests/fm-herdr-owned-xdg-live-e2e.test.sh
+tests/fm-herdr-session-cleanup-e2e.test.sh
+tests/fm-host-cleanup.test.sh
+tests/fm-host-ledger.test.sh
+tests/fm-test-fixtures.test.sh
+exit 0
+## lane membership
+lane portable-serial:
+tests/fm-host-cleanup.test.sh
+tests/fm-host-health.test.sh
+tests/fm-host-ledger.test.sh
+tests/fm-host-mirror-live-e2e.test.sh
+tests/fm-host-mirror.test.sh
+lane portable-serial-4of25:
+tests/fm-host-mirror-live-e2e.test.sh
+lane portable-serial-7of25:
+tests/fm-host-cleanup.test.sh
+lane portable-serial-8of25:
+tests/fm-host-health.test.sh
+lane portable-serial-17of25:
+tests/fm-host-mirror.test.sh
+lane portable-serial-18of25:
+tests/fm-host-ledger.test.sh

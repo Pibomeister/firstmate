@@ -1,0 +1,59 @@
+## microbench --n 20
+host-microbench: load1=115.80 n=20 (run at a quiet time for gate numbers)
+host-microbench: cached_binary ms_per_exec=8.293 n=20
+host-microbench: cached_script ms_per_exec=23.810 n=20
+host-microbench: fresh_script_with_write ms_per_exec=274.960 n=20
+host-microbench: bash_c_true ms_per_exec=18.820 n=20
+host-microbench: builtin_true_in_one_bash ms_per_exec=0.050 n=20
+host-microbench: external_true_in_one_bash ms_per_exec=21.700 n=20
+exit 0
+## limits
+kern.maxproc: 16000
+kern.maxprocperuid: 10666
+kern.maxfiles: 491520
+kern.num_taskthreads: 16384
+launchctl 	maxproc     10666          16000          
+launchctl 	maxfiles    256            unlimited      
+ulimit -u: 10666
+ulimit -n: 1048576
+exit 0
+## ledger render-launchd
+exit 0
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.firstmate.host-ledger-4238566180</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>{run-worktree}/bin/fm-host-ledger.sh</string><string>sample</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>~</string>
+    <key>PATH</key><string>~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:~/go/bin:~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:~/.grok/bin:~/.kimi-code/bin:~/Library/pnpm:~/.bun/bin:~/Library/Python/3.9/bin:/opt/homebrew/opt/node@24/bin:~/.antigravity/antigravity/bin:~/.cargo/bin:~/bin:/opt/homebrew/sbin:/usr/local/sbin:~/.orbstack/bin:~/.lmstudio/bin:~/.orbstack/bin</string>
+    <key>FM_HOST_LEDGER_DIR</key><string>/tmp/fm-ledger-live.egqt</string>
+  </dict>
+  <key>StandardOutPath</key><string>/dev/null</string>
+  <key>StandardErrorPath</key><string>/tmp/fm-ledger-live.egqt/sample.err</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+</dict></plist>
+/tmp/fm-ledger-live.egqt/ledger.plist: OK
+## cleanup render-launchd
+exit 0
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>dev.firstmate.host-cleanup-4238566180</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>{run-worktree}/bin/fm-host-cleanup.sh</string><string>clean</string><string>--apply</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>~</string>
+    <key>PATH</key><string>~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Library/Apple/usr/bin:/Library/TeX/texbin:/opt/homebrew/bin:~/go/bin:~/.local/bin:/opt/homebrew/opt/openjdk@17/bin:~/Library/Android/sdk/platform-tools:~/Library/Android/sdk/emulator:~/.grok/bin:~/.kimi-code/bin:~/Library/pnpm:~/.bun/bin:~/Library/Python/3.9/bin:/opt/homebrew/opt/node@24/bin:~/.antigravity/antigravity/bin:~/.cargo/bin:~/bin:/opt/homebrew/sbin:/usr/local/sbin:~/.orbstack/bin:~/.lmstudio/bin:~/.orbstack/bin</string>
+    <key>FM_CLEANUP_DIR</key><string>/tmp/fm-ledger-live.egqt/cl</string>
+  </dict>
+  <key>StandardOutPath</key><string>/tmp/fm-ledger-live.egqt/cl/cleanup-run.log</string>
+  <key>StandardErrorPath</key><string>/tmp/fm-ledger-live.egqt/cl/cleanup-run.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>21600</integer>
+</dict></plist>
+/tmp/fm-ledger-live.egqt/cleanup.plist: OK

@@ -1,0 +1,34 @@
+## sample with FM_HOST_LEDGER_QUOTA_TIMEOUT=90
+bash=236,launchd=41,(bash)=31,timeout=25,codex=7
+claude/all_models=89/behind,claude/model:fable=85/behind,codex/all_models=0/ahead,cursor/all_models=0/ahead,cursor/grok_bot=0/ahead,cursor/pool:auto=21/ahead,cursor/pool:api=0/ahead,grok/all_products=0/ahead,grok/product:grok_build=0/ahead,grok/product:chat=0/mixed
+5 file=/tmp/fm-ledger-live.egqt/ledger-2026-11-23.tsv
+FM_HOST_LEDGER_QUOTA_TIMEOUT=90 bin/fm-host-ledger.sh sample  1.55s user 3.16s system 5% cpu 1:24.69 total
+tr '\t' '\n'  0.00s user 0.00s system 0% cpu 1:24.68 total
+tail -3  0.00s user 0.00s system 0% cpu 1:24.74 total
+## raw quota-axi timing
+rc=0
+( quota-axi --json --no-credential-refresh --max-age 5m > ; echo rc=$?; )  0.82s user 0.46s system 3% cpu 36.103 total
+{
+  "generatedAt": "2026-11-23T22:58:29.830Z",
+  "schemaVersion": 5,
+  "providers": [
+    {
+      "provider": "claude",
+      "windows": [
+        {
+          "id": "seven_day",
+          "label": "week",
+          "kind": "weekly",
+          "percentRemaining": 89,
+          "resetsAt": "2026-11-29T22:00:00.407601+00:00",
+          "pace": {
+            "status": "behind",
+            "reservePercentPoints": 3.866,
+            "burnMultiple": 0.7399
+          }
+        },
+        {
+          "id": "model:fable",
+          "label": "Fable week",
+          "kind": "model",
+          "percentRem

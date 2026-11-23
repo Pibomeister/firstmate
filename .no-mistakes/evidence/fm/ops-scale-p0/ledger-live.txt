@@ -1,0 +1,41 @@
+## sample 1 (real ps/df/top/quota-axi)
+host-ledger: 1795474419	136.10	1623	unknown	unknown	unknown	42.15	30.78	27.5	5764.62	51836792	codex=28:5314080,grok=5:578672,droid=5:2878832,cursor-agent=1:82576,agy=6:1029360,opencode=1:307056,claude=36:13735248	unknown	unreported	9 file=/tmp/fm-ledger-live.egqt/ledger-2026-11-23.tsv
+bin/fm-host-ledger.sh sample  0.21s user 2.00s system 11% cpu 18.787 total
+exit 0
+## sample 2
+host-ledger: 1795474443	110.90	1619	130	23	5.65	36.50	32.78	30.70	5764.62	51930500	codex=28:5363360,grok=5:579472,droid=5:2884864,cursor-agent=1:153904,agy=4:1062048,opencode=1:307712,claude=36:13835056	bash=76,(bash)=18,launchd=11,timeout=8,no-mistakes=2	unreported	9 file=/tmp/fm-ledger-live.egqt/ledger-2026-11-23.tsv
+exit 0
+## ledger file
+ts_epoch	load1	procs	new_pids	interval_s	new_per_s	cpu_user	cpu_sys	cpu_idle	swap_used_mib	disk_free_kib	cli	parents	quota_account_wide	quota_account_wide_unreported
+1795474419	136.10	1623	unknown	unknown	unknown	42.15	30.78	27.5	5764.62	51836792	codex=28:5314080,grok=5:578672,droid=5:2878832,cursor-agent=1:82576,agy=6:1029360,opencode=1:307056,claude=36:13735248	unknown	unreported	9
+1795474443	110.90	1619	130	23	5.65	36.50	32.78	30.70	5764.62	51930500	codex=28:5363360,grok=5:579472,droid=5:2884864,cursor-agent=1:153904,agy=4:1062048,opencode=1:307712,claude=36:13835056	bash=76,(bash)=18,launchd=11,timeout=8,no-mistakes=2	unreported	9
+## report --hours 1
+host-ledger report: rows=2 peak_new_per_s=5.65 peak_load1=136.10 min_disk_free_kib=51836792 last_disk_free_kib=51930500
+host-ledger cli: cursor-agent peak_count=1 peak_rss_kib=153904 local_worker_hours=0.01
+host-ledger cli: droid peak_count=5 peak_rss_kib=2884864 local_worker_hours=0.03
+host-ledger cli: opencode peak_count=1 peak_rss_kib=307712 local_worker_hours=0.01
+host-ledger cli: grok peak_count=5 peak_rss_kib=579472 local_worker_hours=0.03
+host-ledger cli: agy peak_count=6 peak_rss_kib=1062048 local_worker_hours=0.03
+host-ledger cli: codex peak_count=28 peak_rss_kib=5363360 local_worker_hours=0.18
+host-ledger cli: claude peak_count=36 peak_rss_kib=13835056 local_worker_hours=0.23
+host-ledger tokens_per_active_agent_hour: unreported: no per-host token source
+exit 0
+## gap guard: backdate prev-pids 8h, then sample
+host-ledger: 1795474467	113.83	1678	216	unknown	unknown
+## report after gap
+host-ledger report: rows=3 peak_new_per_s=5.65 peak_load1=136.10 min_disk_free_kib=51836792 last_disk_free_kib=51927212
+host-ledger cli: cursor-agent peak_count=1 peak_rss_kib=153920 local_worker_hours=0.01
+host-ledger cli: droid peak_count=5 peak_rss_kib=2884864 local_worker_hours=0.03
+host-ledger cli: opencode peak_count=1 peak_rss_kib=307712 local_worker_hours=0.01
+host-ledger cli: grok peak_count=5 peak_rss_kib=579568 local_worker_hours=0.03
+host-ledger cli: agy peak_count=6 peak_rss_kib=1062048 local_worker_hours=0.03
+host-ledger cli: codex peak_count=28 peak_rss_kib=5367776 local_worker_hours=0.18
+host-ledger cli: claude peak_count=36 peak_rss_kib=13935824 local_worker_hours=0.23
+host-ledger tokens_per_active_agent_hour: unreported: no per-host token source
+## usage errors
+usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|render-launchd|--help
+exit 2
+usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|render-launchd|--help
+exit 2
+usage: fm-host-ledger.sh sample|report [--hours N]|microbench [--n N]|limits|render-launchd|--help
+exit 2

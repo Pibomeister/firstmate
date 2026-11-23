@@ -1,11 +1,13 @@
-1..8
+1..10
 ok - report measures free space, old files, and worktrees without deleting
 ok - an under-target reading exits 3 and says why
+ok - an unreadable free-space reading exits 3 instead of looking healthy
 ok - clean without --apply deletes nothing
 ok - clean --apply removes only whole old cache and log entries and logs the run
 ok - clean walks each root once per run
 ok - npm's _cacache is judged and removed as one whole entry under the default roots
+ok - report sizes each worktree two levels under the default Orca and pipeline roots
 ok - render-launchd emits a 6-hour LaunchAgent whose logged run carries the worktree report
 ok - usage errors exit 2 and --help prints the contract
 FM_TEST_COMPLETE
-bash tests/fm-host-cleanup.test.sh  1.82s user 7.19s system 2% cpu 5:46.51 total
+cleanup exit 0
