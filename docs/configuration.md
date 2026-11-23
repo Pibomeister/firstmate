@@ -3941,6 +3941,7 @@ FM_HEARTBEAT_DEADLINE=240           # seconds after which bin/fm-heartbeat.sh st
 FM_HEARTBEAT_LEDGER_IDLE_SECS=300   # idle collection interval for state/heartbeat.json; the independent ticker checks for a new wake, status signal, or idle deadline each poll, waits for any running collection, then launches; invalid or zero values use 300
 FM_HEARTBEAT_LEDGER_JITTER=120      # seconds each idle collection may come before FM_HEARTBEAT_LEDGER_IDLE_SECS, drawn at random per launch; invalid values use 120, and values at or above the idle interval use it less one
 FM_HEARTBEAT_CYCLE_SECS=            # internal input for the stale bound; bin/fm-watch.sh owns its calculation and bin/fm-heartbeat.sh owns its use
+FM_HEARTBEAT_LOAD_FACTOR=           # internal input: the host-load throttle factor the watcher's ticker used for this launch; bin/fm-watch.sh sets it and bin/fm-heartbeat.sh owns its use
 FM_LOAD_THROTTLE_THRESHOLD=200      # 1-minute load above which periodic monitoring (the watcher's heartbeat ticker and heartbeat wake cadence, and the heartbeat publication with the fleet snapshot it starts) stretches its interval; invalid values use 200; bin/fm-load-lib.sh owns the contract
 FM_LOAD_THROTTLE_FACTOR=4           # interval multiplier while the load is above FM_LOAD_THROTTLE_THRESHOLD; invalid values use 4
 FM_INACTIVE_RECONCILE_SECS=900  # 60..1800-second watcher cadence and inactivity threshold; locked session start also requests an immediate scan in the deferred worker
