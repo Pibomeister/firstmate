@@ -5437,8 +5437,19 @@ fleet_heartbeat_mark_change() {
   printf '%s:%s\n' "$WATCHER_PID" "$FLEET_HEARTBEAT_CHANGE_GEN" > "$FLEET_HEARTBEAT_CHANGE_FILE" 2>/dev/null || true
 }
 
+# fleet_heartbeat_ledger_generated <output-variable>: the launch epoch of
+# the last publication whose stale bound counted the throttled cycle.
+fleet_heartbeat_ledger_generated() {
+  local v
+  [ -f "$STATE/heartbeat.json" ] || return 1
+  v=$(jq -r 'select(.throttled == true) | .generated_epoch // empty' \
+    "$STATE/heartbeat.json" 2>/dev/null) || return 1
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$((10#$v))"
+}
+
 fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in flight, $2 the token it saw
-  local nap now due token
+  local nap now due token generated='' launch_generated='' anchor candidate
   FLEET_HEARTBEAT_PID=$1 FLEET_HEARTBEAT_SEEN=$2
   trap - EXIT
   trap 'exit 0' HUP INT TERM
@@ -5446,7 +5457,15 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     RANDOM=$FM_WATCH_RANDOM_SEED
   fi
   fm_watch_now now
-  watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
+  # A re-armed ticker anchors its first due to the last actual publication,
+  # so an immediate launch that the heartbeat skips cannot move that due a
+  # full throttled interval past the publication's freshness bound.
+  anchor=$now
+  if fleet_heartbeat_ledger_generated generated && [ "$generated" -le "$now" ]; then
+    anchor=$generated
+    launch_generated=$generated
+  fi
+  watch_idle_due due "$anchor" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
   while :; do
     # Sleep one poll, or only until a nearer idle due, so the idle interval is
     # the launch interval rather than the next poll after it.
@@ -5461,6 +5480,22 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     if [ -n "$FLEET_HEARTBEAT_PID" ] && kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
       continue
     fi
+    if [ -n "$FLEET_HEARTBEAT_PID" ]; then
+      wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+      FLEET_HEARTBEAT_PID=
+      # A launch that published nothing leaves generated_epoch unchanged.
+      # Preserve the deadline anchored to that publication instead of the
+      # later full interval drawn when the skipped launch started.
+      if fleet_heartbeat_ledger_generated generated; then
+        if [ -n "$launch_generated" ] && [ "$generated" = "$launch_generated" ]; then
+          candidate=$((generated + HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))
+          [ "$candidate" -ge "$due" ] || due=$candidate
+        fi
+        launch_generated=$generated
+      else
+        launch_generated=
+      fi
+    fi
     fleet_heartbeat_change_token token
     fm_watch_now now
     if [ "$now" -lt "$due" ]; then
@@ -5469,6 +5504,11 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     fi
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_SEEN=$token
+    if fleet_heartbeat_ledger_generated generated; then
+      launch_generated=$generated
+    else
+      launch_generated=
+    fi
     fleet_heartbeat_launch
     watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
   done

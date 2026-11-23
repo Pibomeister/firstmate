@@ -1182,6 +1182,36 @@ test_a_change_under_load_waits_for_the_throttled_idle_due() {
   pass "a change under load waits for the throttled idle due instead of resetting it"
 }
 
+# A re-armed ticker anchors its first idle due to the last actual
+# publication, so an immediate launch the heartbeat skips cannot push the
+# next publication a full throttled interval past that publication.
+test_rearmed_ticker_anchors_due_to_last_publication() {
+  local home stub generated
+  home=$(make_home watch-rearm-anchor)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  generated=$(( $(date +%s) - 6 ))
+  jq -n --argjson g "$generated" \
+    '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true,stale_after_secs:1671}' \
+    > "$home/state/heartbeat.json"
+  printf '300 0.00 0.00\n' > "$TMP_ROOT/watch-rearm-anchor.load"
+  stub=$(launch_log_stub watch-rearm-anchor)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_LOAD_FILE="$TMP_ROOT/watch-rearm-anchor.load" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-rearm-anchor.out" 2> "$TMP_ROOT/watch-rearm-anchor.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 8
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-rearm-anchor)" -ge 2 ] \
+    || fail "a re-armed ticker reset its first due to a full throttled interval after a skipped launch"
+  pass "a re-armed ticker anchors its first due to the last publication"
+}
+
 test_status_change_collects_before_grace_without_a_wake() {
   local home stub before seq i=0 child comm
   home=$(make_home watch-status-before-grace)
@@ -1513,6 +1543,7 @@ test_jittered_idle_gaps_stay_within_the_interval
 test_a_relevant_change_collects_without_waiting_for_idle
 test_a_relevant_change_collects_without_waiting_for_idle 0.2
 test_a_change_under_load_waits_for_the_throttled_idle_due
+test_rearmed_ticker_anchors_due_to_last_publication
 test_status_change_collects_before_grace_without_a_wake
 test_fractional_open_work_poll_wait
 test_fractional_checkpoint_poll_wait
