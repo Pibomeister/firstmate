@@ -1,0 +1,6 @@
+1..3
+ok - a change under load waits for the throttled idle due instead of resetting it
+ok - an appended wake or a status line collects at once, without waiting for the idle interval
+ok - an unchanged home collects once per idle interval while the watcher beat keeps the poll period
+FM_TEST_COMPLETE
+exit=0 secs=68

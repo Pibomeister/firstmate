@@ -1,0 +1,36 @@
+## Heartbeat under real host load (load averages: 334.85 307.83 278.38)
+### run 1: first launch under load (no prior ledger) - expect publish with throttled:true
+exit=0 secs=16
+-rw-------@ 1 eduardopicazo  staff  3068 Nov 23 13:04 heartbeat.json
+ledger=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZIXRAW/state/heartbeat.json
+{
+  "generated_epoch": 1795460657,
+  "published_epoch": 1795460673,
+  "stale_after_secs": 1671,
+  "throttled": true,
+  "snapshot": true
+}
+### run 2: immediate re-launch under load - expect skip (ledger unchanged)
+exit=0 secs=1
+ledger UNCHANGED (skipped)
+### run 3: watcher-passed factor 1 (calm launch) - expect publish with throttled:false
+exit=0
+{
+  "generated_epoch": 1795460675,
+  "published_epoch": 1795460685,
+  "stale_after_secs": 771,
+  "throttled": false
+}
+### run 4: watcher-passed factor 4 right after a calm publication - expect publish (guard only skips after throttled:true)
+exit=0
+{
+  "generated_epoch": 1795460686,
+  "published_epoch": 1795460695,
+  "stale_after_secs": 1671,
+  "throttled": true
+}
+### run 5: prior throttled launch aged 899s (> 1200-300) - expect publish
+exit=0
+ledger CHANGED (published)
+### lock after normal runs:
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZIXRAW/state/.fleet-snapshot.lock: No such file or directory

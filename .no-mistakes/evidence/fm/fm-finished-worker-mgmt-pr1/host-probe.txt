@@ -1,0 +1,5 @@
+## Real host probe (no test seam)
+13:03  up 7 days,  3:16, 184 users, load averages: 329.70 304.63 276.41
+load1=329.70 factor=4 interval(300)=1200
+threshold-raised: factor=1 interval300=300
+bad-factor-knob: factor=4

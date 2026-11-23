@@ -1,0 +1,5 @@
+## Real watcher + real heartbeat, lab home, real host load; idle=10s jitter=0 (expected throttled launch spacing ~40s)
+13:15:48 load1=271.59 publication generated=1795461333 published=1795461346 stale_after=511 throttled=true
+13:16:23 load1=274.57 publication generated=1795461373 published=1795461382 stale_after=511 throttled=true
+13:17:05 load1=286.31 publication generated=1795461414 published=1795461425 stale_after=511 throttled=true
+13:17:47 load1=286.14 publication generated=1795461453 published=1795461466 stale_after=511 throttled=true

@@ -1,0 +1,8 @@
+## Same watcher, load injected calm (1.00) via FM_TEST_SEAM load file; expected ordinary ~10s spacing (bounded by heartbeat run time)
+13:18:30 publication generated=1795461501 stale_after=481 throttled=false
+13:18:40 publication generated=1795461510 stale_after=481 throttled=false
+13:18:50 publication generated=1795461521 stale_after=481 throttled=false
+13:19:00 publication generated=1795461532 stale_after=481 throttled=false
+13:19:11 publication generated=1795461541 stale_after=481 throttled=false
+13:19:20 publication generated=1795461551 stale_after=481 throttled=false
+13:19:32 publication generated=1795461561 stale_after=481 throttled=false

@@ -1,0 +1,13 @@
+## Concurrent real fleet snapshots in one lab home (load: 316.99 309.47 281.71)
+### burst of 4 at once with FM_SNAPSHOT_SINGLE_FLIGHT_WAIT=0
+run1 exit=0 stdout_bytes=2444 stderr=
+run2 exit=75 stdout_bytes=0 stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 9806); not starting a second
+run3 exit=75 stdout_bytes=0 stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 9806); not starting a second
+run4 exit=75 stdout_bytes=0 stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 9806); not starting a second
+### burst of 3 at once with default wait (30s) - expect all succeed, serialized
+run1 exit=0 start=1795460743 end=1795460745 schema=fm-fleet-snapshot.v1
+run2 exit=0 start=1795460743 end=1795460746 schema=fm-fleet-snapshot.v1
+run3 exit=0 start=1795460743 end=1795460747 schema=fm-fleet-snapshot.v1
+### lock left behind after burst?
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZIXRAW/state/.fleet-snapshot.lock: No such file or directory
+### --contribution-input is not single-flighted: holds while lock is held
