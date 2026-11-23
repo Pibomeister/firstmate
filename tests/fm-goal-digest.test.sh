@@ -247,7 +247,7 @@ SH
 
 test_first_run_seeds_old_merges_and_page_failure_is_incomplete() {
   local home
-  home=$(make_home home7)
+  home=$(make_home home8)
   cat > "$FIXTURE/merged-example-org_example-repo.json" <<'JSON'
 [{"number": 1, "title": "Ancient", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2020-01-01T00:00:00Z", "created_at": "2019-12-31T00:00:00Z"}]
 JSON
@@ -258,7 +258,7 @@ JSON
   assert_equals "[]" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["new_merges"])' "$home/data/goal-digest/latest.json")" "first run does not flood old merges"
   python3 - "$FIXTURE/merged-example-org_example-repo.json" <<'PY'
 import json, sys
-pulls = [{"number": i, "title": f"P{i}", "html_url": f"https://example.invalid/pr/{i}", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"} for i in range(1, 101)]
+pulls = [{"number": i, "title": f"P{i}", "html_url": f"https://example.invalid/pr/{i}", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z", "updated_at": "2026-01-01T11:59:00Z"} for i in range(1, 101)]
 with open(sys.argv[1], "w") as fh:
     json.dump(pulls, fh)
 PY

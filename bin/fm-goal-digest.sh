@@ -35,7 +35,7 @@
 # The digest lists new merges (URL and SHA) since the previous run (a
 # merged pull already reported, or merged before the repository's previous
 # successful fetch, is not new), open
-# pull requests waiting for review with their age, missed ETAs (a status
+# pull requests (all open pull requests, drafts included) with their age, missed ETAs (a status
 # line with the word "eta" followed by ":" or space and a YYYY-MM-DD date
 # in the past), stalled status sources (local file
 # not modified within stall_hours) and the last line of each review
@@ -168,6 +168,25 @@ fetch_pulls() {
     if [ "$count" -lt 100 ]; then
       break
     fi
+    if [ -n "${FM_GD_STOP_BEFORE:-}" ]; then
+      local oldest
+      oldest=$(FM_GD_PAGE="$page_file" python3 -c '
+import datetime, json, os
+pulls = json.load(open(os.environ["FM_GD_PAGE"]))
+stamps = []
+for pr in pulls:
+    for key in ("updated_at", "merged_at", "created_at"):
+        try:
+            stamps.append(datetime.datetime.strptime(pr[key], "%Y-%m-%dT%H:%M:%SZ").timestamp())
+            break
+        except (KeyError, ValueError):
+            continue
+print(int(min(stamps)) if stamps else 0)
+' 2>/dev/null || printf '0')
+      if [ "$oldest" != 0 ] && [ "$oldest" -le "$FM_GD_STOP_BEFORE" ]; then
+        break
+      fi
+    fi
     if [ "$page" -eq 10 ]; then
       truncated=1
     fi
@@ -261,12 +280,17 @@ except BlockingIOError:
   for repo in "${repos[@]:-}"; do
     [ -n "$repo" ] || continue
     json_file=$work/prs.json
-    if ! fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
+    local stop_before
+    stop_before=$(awk -F '\t' -v r="$repo" '$1 == r { print $2 }' "$since_file" 2>/dev/null || true)
+    if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
       [ -f "$work/fetch-truncated" ] && printf '%s\t%s\t%s\n' "repo" "$repo" "merged list truncated at 1000" >> "$work/unreachable.tsv"
+      local truncated_flag=0
+      [ -f "$work/fetch-truncated" ] && truncated_flag=1
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
       FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
+      FM_GD_TRUNCATED="$truncated_flag" \
       python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
@@ -311,9 +335,11 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             # of reporting every old merge in the window as new.
             continue
         out.write("\t".join([repo, number, clean(pr.get("title", "")), clean(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
-with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
-    # Overlap the previous window by five minutes; seen.tsv deduplicates.
-    fh.write(f"{repo}\t{now - 300}\n")
+if os.environ.get("FM_GD_TRUNCATED") != "1":
+    # Advance the watermark only on a complete fetch, overlapping the
+    # previous window by five minutes; seen.tsv deduplicates.
+    with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
+        fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after the digest is written, so an
@@ -425,7 +451,7 @@ reviews = [{"source": r[0], "last_line": r[1] if len(r) > 1 else ""} for r in ro
 unreachable = [{"kind": r[0], "source": r[1] if len(r) > 1 else "", "detail": r[2] if len(r) > 2 else ""} for r in rows("unreachable.tsv")]
 digest = {
     "generated_at": os.environ["FM_GD_NOW_ISO"],
-    "generated_at_cst": os.environ["FM_GD_NOW_CST"],
+    "generated_at_local": os.environ["FM_GD_NOW_CST"],
     "changed": os.environ["FM_GD_CHANGED"] == "yes",
     "new_merges": new_merges,
     "waiting_on_captain": waiting,
@@ -437,12 +463,12 @@ digest = {
 with open(os.environ["FM_GD_LATEST_JSON"], "w") as fh:
     json.dump(digest, fh, indent=2)
     fh.write("\n")
-lines = ["# Goal digest", "", f"Generated: {digest['generated_at_cst']} / {digest['generated_at']}", f"Changed: {'yes' if digest['changed'] else 'no'}", "", "## New merges since last run", ""]
+lines = ["# Goal digest", "", f"Generated: {digest['generated_at_local']} / {digest['generated_at']}", f"Changed: {'yes' if digest['changed'] else 'no'}", "", "## New merges since last run", ""]
 if new_merges:
     lines += [f"- [{m['repo']} #{m['number']} {m['title']}]({m['url']}) `{m['sha']}` {m['merged_at']}" for m in new_merges]
 else:
     lines.append("- None")
-lines += ["", "## Waiting on captain", ""]
+lines += ["", "## Open pull requests", ""]
 if waiting:
     lines += [f"- [{w['repo']} #{w['number']} {w['title']}]({w['url']}) age_hours={w['age_hours']} author={w['author']} draft={'yes' if w['draft'] else 'no'}" for w in waiting]
 else:
@@ -498,18 +524,28 @@ PY
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   cp "$output_dir/latest.md" "$output_dir/history/$stamp.md"
   cp "$output_dir/latest.json" "$output_dir/history/$stamp.json"
+  # Keep only the newest 100 history stamps.
+  local old_stamp
+  # shellcheck disable=SC2012 # history names are timestamps this script writes
+  for old_stamp in $(ls "$output_dir/history" | sed -E 's/\.(md|json)$//' | sort -u | sort -r | tail -n +101); do
+    rm -f "$output_dir/history/$old_stamp.md" "$output_dir/history/$old_stamp.json"
+  done
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
     # Write to a temp file so a failed summarizer cannot overwrite the
-    # previous summary; bound the call when a timeout binary exists.
-    # shellcheck disable=SC2086
+    # previous summary. The call is bounded at 120 seconds on every
+    # platform through python3, whose subprocess closes the lock fd.
     local summarize_ok=0
-    if command -v timeout >/dev/null 2>&1; then
-      # shellcheck disable=SC2086
-      timeout 120 $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null && summarize_ok=1
-    else
-      # shellcheck disable=SC2086
-      $summarize_cmd 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null && summarize_ok=1
+    if FM_GD_LATEST="$output_dir/latest.md" FM_GD_SUMTMP="$output_dir/summary.txt.tmp" \
+      python3 -c '
+import os, subprocess, sys
+try:
+    with open(os.environ["FM_GD_LATEST"]) as inp, open(os.environ["FM_GD_SUMTMP"], "w") as out:
+        raise SystemExit(subprocess.run(sys.argv[1], shell=True, stdin=inp, stdout=out, timeout=120).returncode)
+except subprocess.TimeoutExpired:
+    raise SystemExit(124)
+' "$summarize_cmd" 2>/dev/null; then
+      summarize_ok=1
     fi
     if [ "$summarize_ok" = 1 ]; then
       mv "$output_dir/summary.txt.tmp" "$output_dir/summary.txt"
