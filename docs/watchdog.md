@@ -538,7 +538,11 @@ Cross-agent handoffs (b2b notes, Hermes answers) are filed in, or mirrored into,
 A handoff filed only in the other location is a delivery failure naming the hidden item on every `fm-delegated.sh check` pass until it is mirrored, never silence.
 Each handoff names its registered delegated task.
 Firstmate receives handoffs through the existing wake queue, and its wake acknowledgement ledger proves consumption.
-Task receivers use their `state/<receiver>.inbox`; moving a numbered `.msg` to `handled/` proves consumption while its body and artifact hash verify.
+Task receivers use their `state/<receiver>.inbox`; moving a numbered `.msg` to `handled/` proves consumption.
+Both paths verify unreceipted artifacts before recording a read receipt.
+Handoffs may carry supporting artifacts distinct from the task's final deliverable, and non-read placements use the supplied directory.
+Only current delivery failures take precedence over task silence; delivered handoffs do not exempt a task from its silence window.
+Silence notifications reuse their stable key and durable inbox, queued-wake, and acknowledgement evidence across partial failures.
 Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
 Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
 Report completion does not prevent the worker from advancing or relaunching.

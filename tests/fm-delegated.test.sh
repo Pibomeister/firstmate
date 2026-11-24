@@ -345,6 +345,159 @@ test_read_receipt_survives_cleanup() {
   pass 'every consumption observer persists the path-and-hash receipt before inbox cleanup'
 }
 
+ack_primary() {
+  local h=$1 seq generation
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" FM_CONFIG_OVERRIDE="$h/config" \
+    bash "$ROOT/bin/fm-wake-drain.sh" > "$h/drained" 2> "$h/drain.err" || fail "drain failed: $(cat "$h/drain.err")"
+  seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation .*$/\1/p' "$h/drain.err")
+  generation=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--recovery-generation \([A-Za-z0-9._-]*\)$/\1/p' "$h/drain.err")
+  [ -n "$seq" ] && [ -n "$generation" ] || fail 'missing acknowledgement token'
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" FM_CONFIG_OVERRIDE="$h/config" \
+    bash "$ROOT/bin/fm-wake-drain.sh" --ack-through "$seq" --recovery-generation "$generation" >/dev/null || fail 'acknowledgement failed'
+}
+
+test_unverified_artifacts_cannot_be_read() {
+  local h hash receiver damage out
+  for receiver in firstmate worker; do
+    for damage in missing mismatch; do
+      h=$(new_home "unverified-$receiver-$damage")
+      register_task "$h" "$T0" hermes-1 || fail 'register failed'
+      hash=$(sha_of "$h/art/out.txt")
+      del "$h" "$T0" handoff --task hermes-1 --id answer --receiver "$receiver" \
+        --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'handoff failed'
+      cp "$h/art/out.txt" "$h/saved-artifact"
+      case "$damage" in
+        missing) rm "$h/art/out.txt" ;;
+        mismatch) printf 'changed before acknowledgement\n' > "$h/art/out.txt" ;;
+      esac
+      assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=delivery-failure' 'unverified queued artifacts are delivery failures for either receiver'
+      if [ "$receiver" = firstmate ]; then
+        ack_primary "$h"
+      else
+        mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+      fi
+      del "$h" "$T0" receipt --receiver "$receiver" || fail 'receipt check failed'
+      out=$(del "$h" "$T0" check) || fail 'check failed'
+      assert_contains "$out" 'delivery-failure handoff=answer' 'acknowledgement cannot receipt an unverified artifact'
+      if del "$h" "$T0" mirror --id answer >/dev/null 2>&1; then fail 'mirror accepted an unverified artifact'; fi
+      assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=delivery-failure' 'every receipt consumer rejects missing or changed bytes'
+      cp "$h/saved-artifact" "$h/art/out.txt"
+      assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=read' 'a valid acknowledged artifact still receipts normally'
+    done
+  done
+  pass 'both receiver paths verify unreceipted artifacts before every read classification'
+}
+
+test_silence_notification_replays_after_partial_failure() {
+  local h stage rc out
+  local real_mv
+  real_mv=$(command -v mv)
+  for stage in inbox wake record; do
+    h=$(new_home "notification-$stage")
+    touch "$h/state/supervisor.meta"
+    del "$h" "$T0" register --task hermes-1 --deliverable report --artifact "$h/art/out.txt" \
+      --heartbeat-secs 60 --silence-secs 300 --supervisor supervisor >/dev/null || fail 'register failed'
+    del "$h" "$T0" dispatch --task hermes-1 >/dev/null || fail 'dispatch failed'
+    case "$stage" in
+      inbox) : > "$h/state/supervisor.inbox" ;;
+      wake) mkdir "$h/state/.wake-queue" ;;
+      record)
+        mkdir "$h/fakebin"
+        cat > "$h/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for destination in "$@"; do :; done
+case "$destination" in
+  */delegated/hermes-1.record) [ "${FM_TEST_REFUSE_RECORD:-}" != 1 ] || exit 1 ;;
+esac
+exec "$REAL_MV_FOR_DELEGATED" "$@"
+SH
+        chmod +x "$h/fakebin/mv"
+        ;;
+    esac
+    rc=0
+    if [ "$stage" = record ]; then
+      PATH="$h/fakebin:$PATH" REAL_MV_FOR_DELEGATED="$real_mv" FM_TEST_REFUSE_RECORD=1 \
+        del "$h" $((T0 + 400)) check > "$h/first.out" 2> "$h/first.err" || rc=$?
+    else
+      del "$h" $((T0 + 400)) check > "$h/first.out" 2> "$h/first.err" || rc=$?
+    fi
+    assert_equals 1 "$rc" 'the injected delivery or marker failure must be observable'
+    case "$stage" in
+      inbox) rm "$h/state/supervisor.inbox" ;;
+      wake) rmdir "$h/state/.wake-queue" ;;
+      record) ack_primary "$h" ;;
+    esac
+    del "$h" $((T0 + 500)) check >/dev/null || fail 'notification replay failed'
+    del "$h" $((T0 + 600)) check >/dev/null || fail 'later check failed'
+    set -- "$h/state/supervisor.inbox/"*.msg
+    assert_equals 1 "$#" 'partial failure produces exactly one supervisor message'
+    out=$(FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '. "$1"; fm_task_inbox_body "$2"' _ \
+      "$ROOT/bin/fm-task-inbox-lib.sh" "$1")
+    assert_contains "$out" 'escalation task=hermes-1' 'the supervisor receives the escalation'
+    if [ "$stage" = record ]; then
+      [ ! -s "$h/state/.wake-queue" ] || fail 'retry recreated an acknowledged escalation wake'
+      assert_contains "$out" 'age=400' 'replay retains the original notification payload'
+    else
+      assert_equals 1 "$(awk -F '\t' '$4 == "delegated:supervisor:silence:hermes-1" { n++ } END { print n+0 }' "$h/state/.wake-queue")" 'one escalation wake is published across retries'
+    fi
+  done
+  pass 'silence notifications survive inbox, wake and marker failures without duplicate delivery'
+}
+
+test_delivered_handoff_does_not_exempt_silence() {
+  local h hash state out
+  for state in mirrored read; do
+    h=$(new_home "handoff-silence-$state")
+    register_task "$h" "$T0" hermes-1 || fail 'register failed'
+    del "$h" "$T0" dispatch --task hermes-1 >/dev/null || fail 'dispatch failed'
+    hash=$(sha_of "$h/art/out.txt")
+    del "$h" "$T0" handoff --task hermes-1 --id note --receiver worker \
+      --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'handoff failed'
+    if [ "$state" = read ]; then mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'; fi
+    del "$h" $((T0 + 100)) heartbeat --task hermes-1 >/dev/null || fail 'heartbeat failed'
+    out=$(del "$h" $((T0 + 500)) check) || fail 'silence check failed'
+    assert_contains "$out" 'escalation task=hermes-1 age=400 last_receipt=heartbeat@' 'a delivered handoff does not excuse later task silence'
+    case "$out" in *delivery-failure*) fail 'delivered handoff was classified as hidden' ;; esac
+    out=$(del "$h" $((T0 + 600)) check) || fail 'repeat check failed'
+    case "$out" in *escalation*) fail 'task escalated twice' ;; esac
+  done
+  pass 'mirrored and read handoffs preserve the task silence escalation contract'
+}
+
+test_handoff_can_carry_separate_evidence() {
+  local h hash out
+  h=$(new_home separate-evidence)
+  register_task "$h" "$T0" hermes-1 || fail 'register failed'
+  printf 'supporting evidence\n' > "$h/art/evidence.txt"
+  hash=$(sha_of "$h/art/evidence.txt")
+  del "$h" "$T0" handoff --task hermes-1 --id evidence --receiver worker \
+    --path "$h/art/evidence.txt" --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'separate evidence was refused'
+  mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+  out=$(del "$h" "$T0" view)
+  assert_contains "$out" "handoff=evidence state=read receiver=worker artifact=$h/art/evidence.txt hash=$hash" 'handoff receipts bind to their own artifact'
+  if del "$h" "$T0" deliver --task hermes-1 --path "$h/art/evidence.txt" --hash "$hash" >/dev/null 2>&1; then fail 'supporting evidence closed the final deliverable'; fi
+  assert_contains "$(del "$h" "$T0" view --task hermes-1)" 'state=registered' 'handoffs do not substitute for final delivery'
+  pass 'handoffs carry independent verified evidence while final delivery keeps its identity check'
+}
+
+test_non_read_location_uses_supplied_directory() {
+  local h hash out body
+  h=$(new_home supplied-directory)
+  register_task "$h" "$T0" hermes-1 || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" handoff --task hermes-1 --id answer --receiver worker \
+    --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted/answers" --location alt >/dev/null || fail 'ordinary directory was refused'
+  [ -f "$h/hosted/answers/001.msg" ] || fail 'handoff was not filed in the supplied directory'
+  [ ! -e "$h/hosted/answers.inbox" ] || fail 'filing invented a different directory'
+  body=$(FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '. "$1"; fm_task_inbox_body "$2"' _ \
+    "$ROOT/bin/fm-task-inbox-lib.sh" "$h/hosted/answers/001.msg")
+  assert_contains "$body" "handoff=answer task=hermes-1 receiver=worker artifact=$h/art/out.txt hash=$hash" 'the non-read placement carries the artifact receipt'
+  assert_contains "$(del "$h" "$T0" check)" 'delivery-failure handoff=answer' 'filing outside the read channel remains a delivery failure'
+  del "$h" "$T0" mirror --id answer >/dev/null || fail 'mirror failed'
+  assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=mirrored' 'the same answer mirrors into the actual read channel'
+  pass 'non-read handoffs use the exact supplied directory without a suffix convention'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -360,5 +513,10 @@ fm_test_run \
   test_named_supervisor_receives_escalation \
   test_primary_handoff_uses_wake_channel \
   test_completed_report_operations_preserve_receipt \
-  test_read_receipt_survives_cleanup
+  test_read_receipt_survives_cleanup \
+  test_unverified_artifacts_cannot_be_read \
+  test_silence_notification_replays_after_partial_failure \
+  test_delivered_handoff_does_not_exempt_silence \
+  test_handoff_can_carry_separate_evidence \
+  test_non_read_location_uses_supplied_directory
 

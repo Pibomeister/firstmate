@@ -27,7 +27,7 @@
 #                                 delivery-failure line naming the hidden
 #                                 item on every pass until it is mirrored.
 #   handoff --task <task> --id <id> --receiver <id> --path <path> --hash <sha256>
-#           [--read-dir <receiver-channel-dir>] --alt-dir <abs-dir.inbox>
+#           [--read-dir <receiver-channel-dir>] --alt-dir <abs-dir>
 #           --location read|alt
 #                                 File one cross-agent handoff carrying the
 #                                 artifact receipt (path plus hash) in the
@@ -201,6 +201,7 @@ handoff_state() {
   local pending="$H_READ_DIR/${H_MESSAGE##*/}" handled="$H_READ_DIR/handled/${H_MESSAGE##*/}" body
   H_STATE=delivery-failure
   if [ "$H_READ_RECEIPT" = "$H_PATH@$H_HASH" ]; then H_STATE=read; return; fi
+  fm_del_verify_artifact "$H_PATH" "$H_HASH" >/dev/null || return 0
   [ -n "$H_MESSAGE" ] && [ "$H_MIRRORED" = 1 ] || return 0
   if [ "$H_RECEIVER" = firstmate ]; then
     if [ -f "$FM_WAKE_QUEUE" ] && FM_DELEGATED_BODY="$(handoff_body)" awk -F '\t' -v key="$H_MESSAGE" \
@@ -213,7 +214,6 @@ handoff_state() {
       '($2 == "ack" || $2 == "consumed") && index($6, key) { found=1 } END { exit !found }' \
       "$STATE/wake-ledger.tsv" || return 0
   else
-    fm_del_verify_artifact "$H_PATH" "$H_HASH" >/dev/null || return 0
     if body=$(fm_task_inbox_body "$pending" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
       H_STATE=mirrored
       return
@@ -225,13 +225,37 @@ handoff_state() {
   H_STATE=read
 }
 
+wake_once() {
+  local key=$1 text=$2 status=0 delivered=0
+  fm_wake_queue_lock_acquire || return 1
+  if [ -f "$FM_WAKE_QUEUE" ] && awk -F '\t' -v key="$key" \
+    '$4 == key { found=1 } END { exit !found }' "$FM_WAKE_QUEUE"; then
+    delivered=1
+  elif [ -f "$STATE/wake-ledger.tsv" ] && awk -F '\t' -v key="\"$key\"" \
+    '($2 == "ack" || $2 == "consumed") && index($6, key) { found=1 } END { exit !found }' "$STATE/wake-ledger.tsv"; then
+    delivered=1
+  fi
+  [ "$delivered" = 1 ] || fm_wake_append_locked check "$key" "$text" || status=1
+  fm_lock_release "$FM_WAKE_QUEUE_LOCK" || status=1
+  return "$status"
+}
+
 write_placement() {
-  local recipient=${1##*/}
-  if [ "$1" = "$H_READ_DIR" ] && [ "$H_RECEIVER" = firstmate ]; then
-    H_MESSAGE="delegated-handoff:$H_ID:$H_HASH"
-    fm_wake_append check "$H_MESSAGE" "$(handoff_body)" || return 1
+  local lock status=0
+  if [ "$1" = "$H_READ_DIR" ]; then
+    if [ "$H_RECEIVER" = firstmate ]; then
+      H_MESSAGE="delegated-handoff:$H_ID:$H_HASH"
+      fm_wake_append check "$H_MESSAGE" "$(handoff_body)" || return 1
+    else
+      H_MESSAGE=$(fm_task_inbox_write_idempotent "$STATE" "$H_RECEIVER" "$(handoff_body)") || return 1
+    fi
   else
-    H_MESSAGE=$(fm_task_inbox_write_idempotent "${1%/*}" "${recipient%.inbox}" "$(handoff_body)") || return 1
+    mkdir -p "$1/handled" || return 1
+    lock="$1/.seq.lock"
+    fm_task_inbox_lock_acquire "$lock" || return 1
+    H_MESSAGE=$(_fm_task_inbox_write_record_locked "$1" "$(handoff_body)") || status=1
+    fm_lock_release "$lock" || status=1
+    return "$status"
   fi
 }
 
@@ -252,11 +276,23 @@ closed_receipt() {
 }
 
 notify_supervisor() {
-  local text=$1 key=$2
-  fm_wake_append check "delegated:$T_SUPERVISOR:$key" "$text" || return 1
+  local text=$1 key="delegated:$T_SUPERVISOR:$2" f body marker
+  marker="delegated-notification=$key"
   if [ -f "$STATE/$T_SUPERVISOR.meta" ]; then
-    fm_task_inbox_write_idempotent "$STATE" "$T_SUPERVISOR" "$text" >/dev/null || return 1
+    for f in "$STATE/$T_SUPERVISOR.inbox/"*.msg "$STATE/$T_SUPERVISOR.inbox/handled/"*.msg; do
+      [ -f "$f" ] || continue
+      body=$(fm_task_inbox_body "$f") || return 1
+      if [ "${body%%$'\n'*}" = "$marker" ]; then
+        text=${body#*$'\n'}
+        break
+      fi
+    done
+    fm_task_inbox_write_idempotent "$STATE" "$T_SUPERVISOR" "$marker"$'\n'"$text" >/dev/null || return 1
   fi
+  case "$2" in
+    silence:*) wake_once "$key" "$text" ;;
+    *) fm_wake_append check "$key" "$text" ;;
+  esac
 }
 
 cmd_register() {
@@ -404,14 +440,14 @@ cmd_view() {
 
 cmd_check() {
   [ "$#" -eq 0 ] || usage_die 'check takes no flags'
-  local f now age answered=' ' text
+  local f now age hidden=' ' text
   now=$(now_epoch)
   for f in "$HANDOFF_DIR"/*.record; do
     [ -f "$f" ] || continue
     load_handoff "$f"
-    answered="$answered$H_TASK "
     handoff_state
     [ "$H_STATE" = delivery-failure ] || continue
+    hidden="$hidden$H_TASK "
     load_task "$(task_file "$H_TASK")"
     text="delivery-failure handoff=$H_ID task=$H_TASK receiver=$H_RECEIVER artifact=$H_PATH hash=$H_HASH filed=$H_LOCATION read_dir=$H_READ_DIR"
     notify_supervisor "$text" "handoff:$H_ID" || die "cannot report handoff: $H_ID"
@@ -421,7 +457,7 @@ cmd_check() {
     [ -f "$f" ] || continue
     load_task "$f"
     [ "$T_CLOSED" = 1 ] && continue
-    case "$answered" in *" $T_TASK "*) continue ;; esac
+    case "$hidden" in *" $T_TASK "*) continue ;; esac
     [ -n "$T_ESCALATED" ] && continue
     if age=$(fm_del_silence_age "$now" "$(last_activity)" "$T_SILENCE"); then
       text="escalation task=$T_TASK age=$age last_receipt=$(last_receipt_label) deliverable=$T_DELIVERABLE supervisor=$T_SUPERVISOR"
@@ -449,8 +485,6 @@ cmd_handoff() {
     esac
   done
   require_task "$task"
-  load_task "$T_FILE"
-  [ "$path" = "$T_ARTIFACT" ] || die 'handoff must name the registered artifact'
   local channel="$STATE/$receiver.inbox"
   if [ "$receiver" = firstmate ]; then
     channel=$STATE
@@ -459,8 +493,8 @@ cmd_handoff() {
   fi
   [ -n "$read_dir" ] || read_dir=$channel
   [ "$read_dir" = "$channel" ] || usage_die 'read-dir must name the receiver channel'
+  single_line "$path" || usage_die 'artifact path must be one line'
   single_line "$alt_dir" || usage_die 'alt-dir must be one line'
-  case "$alt_dir" in *.inbox) ;; *) usage_die 'alt-dir must name an .inbox directory' ;; esac
   [ -n "$id" ] || usage_die 'handoff needs --id <id>'
   [ -n "$receiver" ] || usage_die 'handoff needs --receiver <id>'
   [ -n "$path" ] || usage_die 'handoff needs --path <path>'
