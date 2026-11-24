@@ -3160,6 +3160,9 @@ restart-command=$TMP_ROOT/fake-captain.sh"
   assert_equals 0 "$(ledger_rows agent-gone restart pending)" "an unrecognized scope starts nothing"
   assert_absent "$H/pickup.out" "no new captain session was launched"
   assert_grep "unrecognized restart-scope" "$H/data/watchdog/status.md" "the status header names the unrecognized scope"
+  run_wd 120 once >/dev/null 2>&1
+  run_wd 240 once >/dev/null 2>&1
+  assert_equals 1 "$(ledger_rows agent-gone restart refused)" "the refusal is rate limited, not re-recorded every pass: $(ledger | cut -f5-8)"
   pass "restart scope: an unrecognized value refuses restarts instead of failing open"
 }
 

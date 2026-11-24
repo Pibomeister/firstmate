@@ -363,38 +363,45 @@ send_enter_only() {  # <backend> <target> [session]
   esac
 }
 
-# True when the composer's pending line is exactly one of the fixed prompts
-# (ours, left unsent), so pressing Enter cannot submit anybody else's text.
-# A continue or escalate wake is typed as one line with the lane table
-# appended (`<base> Stalled lanes: <subject> <age>m, ....`), so that same
-# single-line form with the table suffix is accepted too; anything else,
-# including unrelated text after the prompt, still refuses.
-pending_is_fixed_prompt() {  # <screen>
-  local text kind marker tail line rest lanes
-  tail=$(printf '%s\n' "$1" | awk 'NF' | tail -n 8)
+# True when the composer's pending text is exactly one prompt this tool could
+# have typed (fm_nudge_send_allowed_text owns that grammar), so pressing Enter
+# cannot submit anybody else's text. The pending text is the native draft when
+# the backend reports one; otherwise it is the last marker row of the screen
+# joined with the indented rows that wrap it, up to the first blank or
+# unindented row. Any extra or missing text refuses.
+pending_is_fixed_prompt() {  # <screen> [draft]
+  local draft=${2-} line marker pending='' state=none rows=0
+  if [ -n "$draft" ] && [ "$draft" != null ]; then
+    while [ "${draft%$'\n'}" != "$draft" ]; do draft=${draft%$'\n'}; done
+    fm_nudge_send_allowed_text "$draft"
+    return
+  fi
   while IFS= read -r line; do
-    [ -n "$line" ] || continue
-    for kind in continue escalate merge; do
-      text=$(fm_nudge_text "$kind")
-      text=${text%$'\n'}
-      for marker in "› " "❯ " "> " "›  "; do
-        rest=${line#"$marker"}
-        [ "$rest" = "$line" ] && continue
-        [ "$rest" = "$text" ] && return 0
-        case "$kind" in
-          continue|escalate)
-            lanes=${rest#"$text Stalled lanes: "}
-            if [ "$lanes" != "$rest" ] && [ -n "$lanes" ] \
-               && printf '%s\n' "$lanes" | LC_ALL=C grep -Eq \
-                 -- '^[A-Za-z0-9._-]+ [0-9]+m(, [A-Za-z0-9._-]+ [0-9]+m)*( \(\+[0-9]+ more\))?\.?$'; then
-              return 0
-            fi
-            ;;
-        esac
-      done
+    line=${line%"${line##*[![:space:]]}"}
+    for marker in "› " "❯ " "> "; do
+      if [ "${line#"$marker"}" != "$line" ]; then
+        pending=${line#"$marker"}
+        pending=${pending#"${pending%%[![:space:]]*}"}
+        state=open
+        rows=0
+        continue 2
+      fi
     done
-  done <<< "$tail"
-  return 1
+    [ "$state" = open ] || continue
+    case "$line" in
+      [[:space:]]*[![:space:]]*)
+        rows=$((rows + 1))
+        if [ "$rows" -gt 8 ]; then
+          state=overflow
+        else
+          pending="$pending ${line#"${line%%[![:space:]]*}"}"
+        fi
+        ;;
+      *) state=closed ;;
+    esac
+  done <<< "$1"
+  case "$state" in open|closed) ;; *) return 1 ;; esac
+  [ -n "$pending" ] && fm_nudge_send_allowed_text "$pending"
 }
 
 # Env prefix that points a home-scoped helper at <home>, not at whatever home
@@ -712,7 +719,7 @@ process_captain() {  # <captain-json> [force]
   # Our own fixed prompt left unsent by an earlier pass: submit it (Enter only)
   # instead of reporting the composer as someone else's text.
   if [ "$composer" != empty ] && [ -z "$dialog" ] && [ "$last_nudge" -gt 0 ] \
-     && pending_is_fixed_prompt "${OBS_SCREEN:-}"; then
+     && pending_is_fixed_prompt "${OBS_SCREEN:-}" "${OBS_DRAFT:-}"; then
     extra=$(jq -nc --arg t "${OBS_TARGET:-}" --arg b "$backend" '{target:$t, backend:$b}')
     decision=$(jq -nc '{event:"nudge",severity:"info",reason:"submitted own fixed prompt left unsent in composer (Enter only)",should_send:true}')
     if cfg_mode_is_act; then

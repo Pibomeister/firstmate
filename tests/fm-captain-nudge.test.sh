@@ -825,6 +825,43 @@ test_once_submits_own_lane_table_prompt_left_unsent() {
   FM_NUDGE_NOW=$now run_once "$home"
   assert_equals skipped_input_not_empty "$(last_event "$home")" "an edited lane table is never submitted"
   [ ! -s "$home/send.log" ] || fail "an edited lane table must not receive Enter"
+
+  local wrapped
+  wrapped="❯ Continue open work: pick next item, reroute quota if exhausted, never park
+  self-servable work Stalled lanes: ship-fm-overnight-wake 25m,
+  ship-fm-quota-floor 31m, scout-fm-lane-cap 44m.
+
+  ? for shortcuts"
+  cap=$(fixture_captain 25 true "" pending "$wrapped" $((now - 25 * 60)))
+  home=$(write_home own-unsent-wrapped "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "a lane-table wake wrapped over several rows is submitted"
+  [ "$(cut -f3 "$home/send.log")" = "<Enter>" ] \
+    || fail "only Enter may be sent for a wrapped own prompt: $(cat "$home/send.log")"
+
+  cap=$(fixture_captain 25 true "" pending "${wrapped%%$'\n\n'*}
+  and also look at the flaky deploy" $((now - 25 * 60)))
+  home=$(write_home own-unsent-wrapped-extended "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals skipped_input_not_empty "$(last_event "$home")" "a wrapped prompt the captain extended is never submitted"
+  [ ! -s "$home/send.log" ] || fail "an extended wrapped prompt must not receive Enter"
+
+  cap=$(fixture_captain 25 true "" pending "› $FIXED Stalled" $((now - 25 * 60)) \
+    | jq -c --arg d "$prompt more" '.fixture.draft = $d')
+  home=$(write_home own-unsent-draft-extended "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals skipped_input_not_empty "$(last_event "$home")" "a native draft beyond the own prompt is never submitted"
+  [ ! -s "$home/send.log" ] || fail "an extended native draft must not receive Enter"
+
+  cap=$(fixture_captain 25 true "" pending "› $FIXED Stalled" $((now - 25 * 60)) \
+    | jq -c --arg d "$prompt" '.fixture.draft = $d')
+  home=$(write_home own-unsent-draft "[$cap]")
+  printf '{"last_nudge_epoch":%s,"fingerprint":"x","consecutive_no_progress":0,"escalated":false}\n' $((now - 300)) > "$home/state/captains/alpha.json"
+  FM_NUDGE_NOW=$now run_once "$home"
+  assert_equals nudge "$(last_event "$home")" "a native draft equal to the own prompt is submitted"
   pass "fm-captain-nudge: submits its own lane-table wake left unsent, Enter only"
 }
 

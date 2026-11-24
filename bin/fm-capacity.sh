@@ -221,11 +221,17 @@ fi
 # A lane frees its place only when it is both idle and dead: nothing changed
 # within LIVE_LANE_MIN to the task's record, status, busy state, steering
 # inbox, or the watcher's terminal marker, and its recorded endpoint is
-# provably gone. A failed probe is unknown, never gone: a tmux window counts
-# as gone only when the tmux server itself answers, and a herdr pane only
-# when its session's server is running (tri-state read, never auto-started)
-# yet the pane query fails - so a down or unreachable endpoint keeps the
-# lane's place instead of silently freeing it. A record a finished or
+# provably gone. A failed probe is unknown, never gone. A tmux window counts
+# as gone when the tmux server answers without it, or when tmux answers that
+# no server or session exists on the exact socket the record names; a wrong
+# socket, an unrecorded socket with no server, or any other failure is
+# unknown. A herdr pane counts as gone when its session's server is running
+# (tri-state read, never auto-started) yet the pane query fails, or when that
+# server is positively stopped, which the herdr adapter treats as absence of
+# every pane in the session; an unreadable server state is unknown. Rex,
+# t3code, tern, and hc lanes count as gone only on their adapter's
+# authoritative `missing` verdict. A down or unreachable endpoint therefore
+# keeps the lane's place instead of silently freeing it. A record a finished or
 # abandoned worker left behind must not hold a place, or a cap freezes every
 # spawn until someone archives it; a live worker idle on a decision or a
 # long validation keeps its place. Orca lanes share one trusted terminal
@@ -237,12 +243,12 @@ LIVE_LANE_MIN=120
 LIVE_LANE_PROBE_SECS=20
 
 # lane_read_meta <meta>: one fork-free pass over a task record, setting
-# LM_SECONDMATE, LM_PR, LM_BACKEND, LM_TARGET, and LM_REMOTE. The target
+# LM_SECONDMATE, LM_PR, LM_BACKEND, LM_TARGET, LM_REMOTE, and LM_SOCKET. The target
 # follows fm_backend_target_of_meta, which owns that rule; the rest keep the
 # last value of each key, as fm_meta_get does.
 lane_read_meta() {
   local line terminal='' thread='' window=''
-  LM_SECONDMATE=0; LM_PR=0; LM_BACKEND=''; LM_TARGET=''; LM_REMOTE=''
+  LM_SECONDMATE=0; LM_PR=0; LM_BACKEND=''; LM_TARGET=''; LM_REMOTE=''; LM_SOCKET=''
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       kind=secondmate) LM_SECONDMATE=1 ;;
@@ -252,6 +258,7 @@ lane_read_meta() {
       t3_thread_id=*) thread=${line#*=} ;;
       window=*) window=${line#*=} ;;
       remote_host=*) LM_REMOTE=${line#*=} ;;
+      tmux_socket=*) LM_SOCKET=${line#*=} ;;
     esac
   done < "$1" 2>/dev/null || true
   LM_BACKEND=${LM_BACKEND:-tmux}
@@ -264,39 +271,49 @@ lane_read_meta() {
 }
 
 # shellcheck disable=SC2329 # Invoked through fm_run_timed_fn.
-lane_terminal_batch() {  # <rows>: one `<id> <backend> <target>` per line
-  local id backend target orca_ids='' orca_rows='' handle verdict session
-  while read -r id backend target; do
+lane_terminal_batch() {  # <rows>: one `<id> <backend> <target> [tmux-socket]` per line
+  local id backend target socket orca_ids='' orca_rows='' handle verdict session
+  while read -r id backend target socket; do
     [ -n "$target" ] || continue
     if [ "$backend" = orca ]; then
       orca_ids="$orca_ids $target"
       orca_rows="$orca_rows$target $id
 "
     elif [ "$backend" = tmux ]; then
-      # Proven absence only: the tmux server must itself answer before a
-      # missing target counts as gone; a failed or unreachable probe emits
-      # no verdict and the lane keeps its place.
-      if fm_backend_source tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+      fm_backend_source tmux >/dev/null 2>&1 || continue
+      if [ -n "$socket" ] \
+         && [ "$(fm_backend_tmux_canonical_socket "$socket")" != "$(fm_backend_tmux_addressed_socket)" ]; then
+        continue
+      fi
+      if tmux list-sessions >/dev/null 2>&1; then
         if fm_backend_tmux_target_exists "$target" >/dev/null 2>&1; then
           echo "$id exists"
         else
           echo "$id gone"
         fi
+      elif [ -n "$socket" ]; then
+        case "$(fm_backend_tmux_window_inventory "${target%%:*}" >/dev/null 2>&1; echo "$?")" in
+          2) echo "$id gone" ;;
+        esac
       fi
     elif [ "$backend" = herdr ]; then
       session=${target%%:*}
-      # Proven absence only: a pane counts as gone when its session's server
-      # is actually running (tri-state read, never auto-starting a server)
-      # yet the pane query fails. A stopped or unreachable server is
-      # unknown, and the lane keeps its place.
-      if fm_backend_source herdr >/dev/null 2>&1 \
-         && [ "$(fm_backend_herdr_server_running_state "$session")" = running ]; then
-        if fm_backend_herdr_cli "$session" pane get "${target#*:}" >/dev/null 2>&1; then
-          echo "$id exists"
-        else
-          echo "$id gone"
-        fi
-      fi
+      fm_backend_source herdr >/dev/null 2>&1 || continue
+      case "$(fm_backend_herdr_server_running_state "$session")" in
+        running)
+          if fm_backend_herdr_cli "$session" pane get "${target#*:}" >/dev/null 2>&1; then
+            echo "$id exists"
+          else
+            echo "$id gone"
+          fi
+          ;;
+        stopped) echo "$id gone" ;;
+      esac
+    else
+      case "$backend" in rex|t3code|tern|hc) ;; *) continue ;; esac
+      case "$(fm_backend_agent_state "$backend" "$target" 2>/dev/null)" in
+        missing) echo "$id gone" ;;
+      esac
     fi
   done <<EOF_ROWS
 $1
@@ -361,7 +378,7 @@ for meta in "$STATE"/*.meta; do
   [ "$active" = 0 ] || continue
   [ -z "$LM_REMOTE" ] || continue
   case "$LM_TARGET" in ''|*[[:space:]]*) continue ;; esac
-  probe_rows="$probe_rows$id $LM_BACKEND $LM_TARGET
+  probe_rows="$probe_rows$id $LM_BACKEND $LM_TARGET${LM_SOCKET:+ $LM_SOCKET}
 "
 done
 if [ -n "$probe_rows" ]; then

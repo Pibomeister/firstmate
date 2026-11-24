@@ -730,6 +730,50 @@ test_probe_failure_is_unknown_never_gone() {
   assert_contains "$out" ' not_live=0' "a failed herdr probe must never read as gone"
   pass "a failed endpoint probe is unknown, never gone"
 }
+# Definite absence frees a lane; unreadability and a wrong identity do not.
+# Oracles: the herdr adapter's recovery contract (a positively stopped session
+# server is absence of every pane in it) and tmux's own "no server running on
+# <socket>" answer, trusted only for the exact socket the record names.
+test_definite_absence_frees_but_identity_mismatch_keeps() {
+  local home fakebin out rc sockdir sock
+  home=$(make_home absence 0 0)
+  fakebin=$(make_probes "$TMP_ROOT/p-absence" 0.50 60 8 20971520)
+  printf '1\n' > "$home/config/lane-capacity"
+
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+case " $* " in
+  *" status "*) printf '{"server":{"running":false}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/herdr"
+  write_lane "$home" ship-herdr-stopped 10800 10800 'backend=herdr' 'window=sess:pane1'
+  out=$(run_capacity_jq "$home" "$fakebin"); rc=$?
+  assert_contains "$out" ' not_live=1' "a lane whose herdr session server is positively stopped must free its place: $out"
+  rm "$home/state/ship-herdr-stopped.meta" "$home/state/ship-herdr-stopped.status"
+
+  sockdir="$TMP_ROOT/tmux-absence"
+  mkdir -p "$sockdir/tmux-$(id -u)"
+  sock="$(cd "$sockdir/tmux-$(id -u)" && pwd -P)/default"
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+printf 'no server running on %s\n' "$sock" >&2
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  write_lane "$home" ship-tmux-noserver 10800 10800 'window=fm:fm-ship-tmux-noserver' "tmux_socket=$sock"
+  out=$(TMUX='' TMUX_TMPDIR="$sockdir" run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 0 "$rc" "a tmux lane whose recorded socket has no server must free its place: $out"
+  out=$(TMUX='' TMUX_TMPDIR="$TMP_ROOT/elsewhere" run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a no-server answer from a different socket must keep the lane's place: $out"
+  rm "$home/state/ship-tmux-noserver.meta" "$home/state/ship-tmux-noserver.status"
+  write_lane "$home" ship-tmux-nosocket 10800 10800 'window=fm:fm-ship-tmux-nosocket'
+  out=$(TMUX='' TMUX_TMPDIR="$sockdir" run_capacity_jq "$home" "$fakebin" --spawn-gate); rc=$?
+  expect_code 75 "$rc" "a no-server answer for a record with no socket identity must keep its place: $out"
+  pass "definite absence frees a lane; an unreadable or mismatched endpoint keeps it"
+}
+
 test_no_target_prints_counts_only
 test_no_target_never_prints_constrained_line
 test_target_yields_open_lanes_and_full
@@ -747,6 +791,7 @@ test_pr_ready_lanes_free_their_place
 test_idle_and_gone_lanes_hold_no_place
 test_new_remote_or_unanswered_lanes_keep_their_place
 test_probe_failure_is_unknown_never_gone
+test_definite_absence_frees_but_identity_mismatch_keeps
 test_spawn_gate_uses_one_load_ceiling
 test_spawn_gate_follows_load_relief_levels
 test_publish_document

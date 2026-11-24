@@ -1193,6 +1193,7 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
   local symptom=$1 id now count last scope
   shift
   id=$(wd_id) now=$(wd_now)
+  wd_rate_open "$symptom" restart "$(cfgi restart-secs 7200)" || return 1
   scope=$(cfg restart-scope all)
   case "$scope" in
     all|second-mates) ;;
@@ -1203,7 +1204,6 @@ wd_restart_gate() {  # <symptom> <kind>...  -> 0 to proceed; records the refusal
       return 1
       ;;
   esac
-  wd_rate_open "$symptom" restart "$(cfgi restart-secs 7200)" || return 1
   if [ -f "$WD/escalated/$O_KEY" ]; then wd_gap "RESTART LOOP escalated; clear $WD/escalated/$O_KEY after review"; return 1; fi
   if wd_do_not_touch "$O_HOME" "$O_TARGET"; then wd_rec "$id" "$symptom" restart refused "endpoint is on do-not-touch"; return 1; fi
   if [ "$O_PARENT" = - ] && [ "$scope" = second-mates ]; then
