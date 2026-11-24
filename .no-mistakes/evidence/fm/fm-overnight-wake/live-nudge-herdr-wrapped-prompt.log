@@ -1,0 +1,22 @@
+Live: bin/fm-captain-nudge.sh once (mode=act) against a real Herdr lab session fm-lab-nudge-15142-26614, synthetic captain pane screens.
+== Scenario A: wrapped own lane-table prompt (screen):
+❯ Continue open work: pick next item, reroute quota if exhausted, never park
+  self-servable work Stalled lanes: ship-fm-overnight-wake 25m,
+  ship-fm-quota-floor 31m, scout-fm-lane-cap 44m.
+
+  ? for shortcuts
+== bytes the pane received:
+0000000    [   ]  \n                                                    
+0000003
+== Scenario B: same prompt extended by captain text (screen):
+❯ Continue open work: pick next item, reroute quota if exhausted, never park
+  self-servable work Stalled lanes: ship-fm-overnight-wake 25m,
+  ship-fm-quota-floor 31m, scout-fm-lane-cap 44m.
+  and also look at the flaky deploy
+
+  ? for shortcuts
+== bytes the pane received:
+(nothing)
+== nudge.jsonl events:
+{"ts":"2026-11-23T20:04:19-06:00","host":"lab","captain":"labcap","event":"nudge","severity":"info","owner":"firstmate","reason":"submitted own fixed prompt left unsent in composer (Enter only)","idle_min":0,"open_work":"pending fixed prompt","epoch":1795485859,"should_send":true,"prompt":"","dry_run":false,"target":"w1:p1","backend":"herdr"}
+{"ts":"2026-11-23T20:05:24-06:00","host":"lab","captain":"labcap","event":"blocker","severity":"medium","owner":"firstmate","reason":"composer state unknown; refusing to type","idle_min":0,"open_work":"none","epoch":1795485924,"should_send":false,"prompt":"","dry_run":false,"target":"w2:p1","backend":"herdr"}

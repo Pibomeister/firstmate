@@ -1,0 +1,17 @@
+lab=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd tmuxdir=/tmp/fml.Rh5gfD expected socket=/private/tmp/fml.Rh5gfD/tmux-501/default
+--- S1: no server yet on the recorded socket; 1 stale lane recording that socket, cap 1
+real tmux says: error connecting to /private/tmp/fml.Rh5gfD/tmux-501/default (No such file or directory)
+rc=75 deferred: lane capacity of this home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd/config/lane-capacity) does not admit another lane: load: 268.77 at or over its ceiling 16 (logical cores)
+capacity: free_lanes=0 reason=cpu lanes=1 target=1 secondmates=0 load1=265.50 cores=16 mem_free_pct=38 disk_free_mb=52488 not_live=1
+--- S2: start real server with live session fm:fm-ship-a; lane must hold its place
+rc=75 deferred: lane capacity of this home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 271.55 at or over its ceiling 16 (logical cores)
+capacity: free_lanes=0 reason=cpu lanes=1 target=1 secondmates=0 load1=272.70 cores=16 mem_free_pct=38 disk_free_mb=52490 not_live=0
+--- S3: kill that window but keep server (another session alive); lane gone
+rc=75 deferred: lane capacity of this home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd/config/lane-capacity) does not admit another lane: load: 274.97 at or over its ceiling 16 (logical cores)
+capacity: free_lanes=0 reason=cpu lanes=1 target=1 secondmates=0 load1=277.13 cores=16 mem_free_pct=38 disk_free_mb=52491 not_live=1
+--- S4 (adversarial): server down, lane records a DIFFERENT socket; must keep place
+rc=75 deferred: lane capacity of this home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 279.04 at or over its ceiling 16 (logical cores)
+capacity: free_lanes=0 reason=cpu lanes=1 target=1 secondmates=0 load1=279.04 cores=16 mem_free_pct=38 disk_free_mb=52494 not_live=0
+--- S5 (adversarial): server down, lane records no socket; must keep place
+rc=75 deferred: lane capacity of this home (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.ZevXNd/config/lane-capacity) does not admit another lane: full: 1 of 1 lanes hold a place; load: 280.24 at or over its ceiling 16 (logical cores)
+capacity: free_lanes=0 reason=cpu lanes=1 target=1 secondmates=0 load1=278.94 cores=16 mem_free_pct=38 disk_free_mb=52503 not_live=0

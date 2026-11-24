@@ -1,0 +1,6 @@
+1..3
+ok - restart scope: an unrecognized value refuses restarts instead of failing open
+ok - restart scope: second-mates restarts a second mate and never a primary
+ok - boundary: daily-max-usd=0 keeps the judge on unmetered models and spends nothing
+FM_TEST_COMPLETE
+rc=
