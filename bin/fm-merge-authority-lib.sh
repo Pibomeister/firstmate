@@ -51,6 +51,8 @@
 #   <run>                       token of the run that wrote the record
 #   <sender>                    `-`, or the process id and start time of the
 #                               process that sends the merge command
+#   <base>                      base branch the diff was checked against
+#   <base-commit>               commit the forge named as that base
 # The record is mode 0600 and atomically published. It names the one merge this
 # home may have sent for that repository, so a later run can read the pull
 # request back and settle the record without sending a second merge. The
@@ -324,9 +326,13 @@ fm_self_land_repo_dir() {  # <state> <provider> <host> <path>
 #   sent    the merge command is about to reach the forge, or reached it.
 #   queued  the forge holds the merge: the pull request waits in its merge
 #           queue, or auto-merge is armed for it.
-# The record also names its sender: `-` until a merge command is sent, then
-# the process id and the start time of the process that sends it, so a later
-# run can tell that the command is still running.
+# The record also names its sender: the process id and the start time of the
+# process that sends the merge command, so a later run can tell that the
+# command is still running. The sender is `-` while no merge command runs:
+# before one is sent, and from the state change that follows its end. The clock
+# of a sent record with sender `-` therefore started after its command ended.
+# The record names the base branch and the base commit its diff was checked
+# against, so a later run can tell that the merge landed on another base.
 # A state change is one read, compare, and write under <repo-dir>/pending.lock,
 # so two processes never both act on the state they read. The lock functions
 # come from bin/fm-wake-lib.sh, which the caller sources.
@@ -357,7 +363,7 @@ fm_self_land_sender_alive() {  # <sender>
   [ "$(fm_pid_start_time "$pid" 2>/dev/null)" = "$start" ]
 }
 
-_fm_self_land_pending_valid() {  # <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender>
+_fm_self_land_pending_valid() {  # <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender> <base> <base-commit>
   fm_pr_task_id_valid "${1-}" || return 1
   fm_pr_head_valid "${3-}" || return 1
   case "${4-}" in away | attended) ;; *) return 1 ;; esac
@@ -370,10 +376,12 @@ _fm_self_land_pending_valid() {  # <task-id> <pr-url> <head> <authority> <epoch>
   case "${6-}" in armed | sent | queued) ;; *) return 1 ;; esac
   case "${7-}" in '' | *[!A-Za-z0-9.-]*) return 1 ;; esac
   [ "${8-}" = - ] || _fm_self_land_sender_valid "${8-}" || return 1
+  [[ "${9-}" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  fm_pr_head_valid "${10-}" || return 1
   return 0
 }
 
-_fm_self_land_pending_store() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender>
+_fm_self_land_pending_store() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <epoch> <state> <run> <sender> <base> <base-commit>
   local dir=${1-} tmp
   [ -n "$dir" ] || return 1
   shift
@@ -392,10 +400,10 @@ _fm_self_land_pending_store() {  # <repo-dir> <task-id> <pr-url> <head> <authori
 
 # Write the armed record of one run. The caller holds the repository lock and
 # has settled every earlier record.
-fm_self_land_pending_write() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <run>
+fm_self_land_pending_write() {  # <repo-dir> <task-id> <pr-url> <head> <authority> <run> <base> <base-commit>
   local epoch
   epoch=$(date +%s) || return 1
-  _fm_self_land_pending_store "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "$epoch" armed "${6-}" -
+  _fm_self_land_pending_store "${1-}" "${2-}" "${3-}" "${4-}" "${5-}" "$epoch" armed "${6-}" - "${7-}" "${8-}"
 }
 
 # Read one repository's pending record into FM_SELF_LAND_PENDING_*. Returns 0
@@ -403,7 +411,7 @@ fm_self_land_pending_write() {  # <repo-dir> <task-id> <pr-url> <head> <authorit
 # that cannot be trusted.
 # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
 fm_self_land_pending_read() {  # <repo-dir>
-  local record="${1-}/pending" version id url head authority epoch state run sender extra
+  local record="${1-}/pending" version id url head authority epoch state run sender base base_sha extra
   FM_SELF_LAND_PENDING_ID=
   FM_SELF_LAND_PENDING_URL=
   FM_SELF_LAND_PENDING_HEAD=
@@ -412,6 +420,8 @@ fm_self_land_pending_read() {  # <repo-dir>
   FM_SELF_LAND_PENDING_STATE=
   FM_SELF_LAND_PENDING_RUN=
   FM_SELF_LAND_PENDING_SENDER=
+  FM_SELF_LAND_PENDING_BASE=
+  FM_SELF_LAND_PENDING_BASE_SHA=
   [ -n "${1-}" ] || return 2
   if [ ! -e "$record" ] && [ ! -L "$record" ]; then
     return 1
@@ -427,13 +437,16 @@ fm_self_land_pending_read() {  # <repo-dir>
   IFS= read -r state <&8 || { exec 8<&-; return 2; }
   IFS= read -r run <&8 || { exec 8<&-; return 2; }
   IFS= read -r sender <&8 || { exec 8<&-; return 2; }
+  IFS= read -r base <&8 || { exec 8<&-; return 2; }
+  IFS= read -r base_sha <&8 || { exec 8<&-; return 2; }
   if IFS= read -r extra <&8; then
     exec 8<&-
     return 2
   fi
   exec 8<&-
   [ "$version" = fm-self-land-pending-v1 ] || return 2
-  _fm_self_land_pending_valid "$id" "$url" "$head" "$authority" "$epoch" "$state" "$run" "$sender" || return 2
+  _fm_self_land_pending_valid "$id" "$url" "$head" "$authority" "$epoch" "$state" "$run" "$sender" \
+    "$base" "$base_sha" || return 2
   FM_SELF_LAND_PENDING_ID=$id
   FM_SELF_LAND_PENDING_URL=$url
   FM_SELF_LAND_PENDING_HEAD=$head
@@ -442,12 +455,15 @@ fm_self_land_pending_read() {  # <repo-dir>
   FM_SELF_LAND_PENDING_STATE=$state
   FM_SELF_LAND_PENDING_RUN=$run
   FM_SELF_LAND_PENDING_SENDER=$sender
+  FM_SELF_LAND_PENDING_BASE=$base
+  FM_SELF_LAND_PENDING_BASE_SHA=$base_sha
   return 0
 }
 
 # Change the record of run <run> from state <from> to state <to> and restart
-# its clock. With <to> given as `none`, remove it instead. With [sender] given,
-# the record names that sender from now on; otherwise it keeps the one it has.
+# its clock. <to> can equal <from>, which only restarts the clock. With <to>
+# given as `none`, remove the record instead. With [sender] given, the record
+# names that sender from now on; otherwise it keeps the one it has.
 # Returns 0 when the change was made, 1 when the record is absent, belongs to
 # another run, or is in another state, and 2 when it could not be locked, read,
 # or written.
@@ -465,7 +481,8 @@ fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender]
     elif epoch=$(date +%s) && _fm_self_land_pending_store "$dir" \
         "$FM_SELF_LAND_PENDING_ID" "$FM_SELF_LAND_PENDING_URL" "$FM_SELF_LAND_PENDING_HEAD" \
         "$FM_SELF_LAND_PENDING_AUTHORITY" "$epoch" "$to" "$run" \
-        "${sender:-$FM_SELF_LAND_PENDING_SENDER}"; then
+        "${sender:-$FM_SELF_LAND_PENDING_SENDER}" \
+        "$FM_SELF_LAND_PENDING_BASE" "$FM_SELF_LAND_PENDING_BASE_SHA"; then
       :
     else
       rc=2
