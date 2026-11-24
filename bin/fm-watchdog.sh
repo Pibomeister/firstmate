@@ -74,7 +74,9 @@
 # FM_WD_TEST_COMPOSER replaces the composer verdict for a plain test pane, and
 # FM_WD_TEST_CONTROL replaces bin/fm-control.sh for the trust-dialog relaunch.
 #
-# Exit status: 0 on success, 2 on a usage error, 1 on any other failure.
+# Exit status: 0 on success, 2 on a usage error, nonzero on other failures.
+# once returns failure if any progress or complete status publication fails,
+# even when a later complete publication succeeds.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
