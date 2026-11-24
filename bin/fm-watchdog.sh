@@ -87,6 +87,7 @@ OUT=$OWNER_HOME/data/watchdog
 LEDGER=$WD/actions.tsv
 CALLS=$WD/model-calls.tsv
 WD_COUNCIL_MAX_CHARS=2000
+WD_PROGRESS_ACTIVE=0
 
 # shellcheck source=bin/fm-watchdog-lib.sh
 . "$SCRIPT_DIR/fm-watchdog-lib.sh"
@@ -2868,7 +2869,7 @@ wd_worker_metas() {  # <home>
 wd_visit_worker_dialogs() {
   local mode=$1 id meta backend target harness screen dialog mismatch prompt step workers f
   local saved_pane saved_dialog_pane saved_backend saved_target saved_harness saved_dialog saved_id
-  local saved_composer saved_composer_text saved_composer_above saved_draft
+  local saved_composer saved_composer_text saved_composer_above saved_draft completed_worker=''
   saved_pane=$O_PANE
   saved_dialog_pane=${O_DIALOG_PANE:-}
   saved_backend=$O_BACKEND
@@ -2882,7 +2883,13 @@ wd_visit_worker_dialogs() {
   saved_draft=${O_DRAFT:-}
   workers=' '
   while IFS=$'\t' read -r id meta; do
+    # The preceding worker finished, including paths that continue below.
+    if [ -n "$completed_worker" ]; then
+      wd_status_progress || WD_PROGRESS_FAILED=1
+      completed_worker=''
+    fi
     [ -n "$id" ] || continue
+    completed_worker=$id
     workers="$workers$id "
     # A stop reason belongs to one worker's pass, including its page, never
     # to the next pane.
@@ -3009,6 +3016,7 @@ wd_visit_worker_dialogs() {
         ;;
     esac
   done < <(wd_worker_metas "$O_HOME")
+  [ -z "$completed_worker" ] || { wd_status_progress || WD_PROGRESS_FAILED=1; }
   # A worker no longer recorded in the home cannot show its step again: end its episode.
   if [ "$mode" != print ]; then
     for f in "$WD/human-step/$O_KEY-worker_"*; do
@@ -3149,10 +3157,31 @@ wd_health_line() {
   esac
 }
 
-wd_write_status() {  # <health-file> <gaps-file>
-  local now interval read_at host tmp spent cap models m ok
+wd_write_status() {  # <health-file> <gaps-file> [completed-worker-progress]
+  local now interval read_at host tmp spent cap models m ok progress=${3:-0} annotation='' last_complete=none
   now=$(wd_now)
   interval=$(cfgi interval-secs 120)
+  if [ "$progress" -gt 0 ]; then
+    if [ -s "$OUT/status.md" ]; then
+      last_complete=$(awk 'NR == 2 {
+        if (sub(/^.*; last complete /, "")) { print; exit }
+        sub(/^updated /, ""); sub(/,.*/, ""); print; exit
+      }' "$OUT/status.md") || return 1
+      [ -n "$last_complete" ] || last_complete=none
+    fi
+    annotation="; scan incomplete; completed worker checks $progress; last complete $last_complete"
+    if [ -s "$OUT/status.md" ]; then
+      tmp=$(mktemp "$OUT/.status.XXXXXX") || return 1
+      if awk -v header="updated $(fm_wd_iso "$now"), scan every ${interval}s, mode $(wd_mode), restart $(cfg restart off)$annotation" \
+        -v expiry="STALE IF NOT UPDATED BY $(fm_wd_iso $((now + interval * 3 + 300))) (watchdog may be down)" \
+        'NR == 2 { print header; next } NR == 3 { print expiry; next } { print }' \
+        "$OUT/status.md" > "$tmp" && mv "$tmp" "$OUT/status.md"; then
+        return 0
+      fi
+      rm -f "$tmp"
+      return 1
+    fi
+  fi
   read_at=$(head -n 1 "$WD/last-read" 2>/dev/null | tr -cd '0-9')
   [ -n "$read_at" ] || read_at=$((now - 3600))
   host=$(hostname -s 2>/dev/null || hostname)
@@ -3167,7 +3196,7 @@ wd_write_status() {  # <health-file> <gaps-file>
   tmp=$(mktemp "$OUT/.status.XXXXXX") || return 1
   {
     printf '# Firstmate watchdog - %s\n' "$host"
-    printf 'updated %s, scan every %ss, mode %s, restart %s\n' "$(fm_wd_iso "$now")" "$interval" "$(wd_mode)" "$(cfg restart off)"
+    printf 'updated %s, scan every %ss, mode %s, restart %s%s\n' "$(fm_wd_iso "$now")" "$interval" "$(wd_mode)" "$(cfg restart off)" "$annotation"
     printf 'STALE IF NOT UPDATED BY %s (watchdog may be down)\n' "$(fm_wd_iso $((now + interval * 3 + 300)))"
     printf 'models: %s; spent 24h $%s of $%s\n\n' "${models:-none}" "$spent" "$cap"
     printf '## Homes\n'
@@ -3180,6 +3209,21 @@ wd_write_status() {  # <health-file> <gaps-file>
     printf '\n## Open gaps\n'
     sort -u "$2" | head -n 8
   } | head -n 39 > "$tmp" && mv "$tmp" "$OUT/status.md"
+}
+
+# Only completed work in this pass can advance this publication.
+# Existing complete coverage stays explicitly dated until the final census.
+wd_status_progress() {
+  [ "${WD_PROGRESS_ACTIVE:-0}" = 1 ] || return 0
+  WD_PROGRESS_DONE=$((WD_PROGRESS_DONE + 1))
+  local now
+  now=$(wd_now)
+  [ $((now - WD_PROGRESS_AT)) -ge "$(cfgi interval-secs 120)" ] || return 0
+  if ! wd_write_status "$WD_PROGRESS_HEALTH" "$WD_GAPS" "$WD_PROGRESS_DONE"; then
+    printf 'fm-watchdog: progress publication failed\n' >&2
+    return 1
+  fi
+  WD_PROGRESS_AT=$now
 }
 
 # --- commands ----------------------------------------------------------------------
@@ -3228,11 +3272,14 @@ wd_memory_guard_pass() {
 }
 
 wd_once() {  # [home-filter]
-  local filter=${1:-} health
+  local filter=${1:-} health scan_rc=0 status_rc=0
   mkdir -p "$WD" "$OUT"
   rm -f "$WD/quota-snapshot.txt" "$WD/quota-snapshot.failed"
   health=$(mktemp "$WD/.health.XXXXXX") || return 1
   WD_GAPS=$(mktemp "$WD/.gaps.XXXXXX") || return 1
+  WD_PROGRESS_ACTIVE=1 WD_PROGRESS_DONE=0 WD_PROGRESS_FAILED=0
+  WD_PROGRESS_HEALTH=$health
+  WD_PROGRESS_AT=$(wd_now)
   wd_reconcile_pending
   wd_subjects | while IFS=$'\t' read -r home parent id; do
     [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
@@ -3249,11 +3296,18 @@ wd_once() {  # [home-filter]
     fi
     wd_visit_worker_dialogs page
     wd_health_line >> "$health"
-  done
+    [ "$WD_PROGRESS_FAILED" = 0 ]
+  done || scan_rc=$?
   wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
-  wd_write_status "$health" "$WD_GAPS"
+  wd_write_status "$health" "$WD_GAPS" || {
+    status_rc=$?
+    printf 'fm-watchdog: complete publication failed\n' >&2
+  }
   rm -f "$health" "$WD_GAPS" "$WD/.decisions" "$WD/.decisions-aged"
+  WD_PROGRESS_ACTIVE=0
+  [ "$status_rc" = 0 ] || return "$status_rc"
+  return "$scan_rc"
 }
 
 cmd_scan() {

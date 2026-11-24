@@ -328,6 +328,10 @@ With no model available, the watchdog still takes every deterministic action and
 ## Status file
 
 `data/watchdog/status.md` is rewritten atomically after every pass and stays under 40 lines.
+During a long worker sweep, completed worker checks also publish at the configured interval.
+Such a publication says `scan incomplete`, counts the completed checks, and dates the last complete census while preserving its observations and gaps.
+It proves collection progress, not complete current coverage.
+No independent timer advances that publication.
 It holds the update time, a `STALE IF NOT UPDATED BY` line, the model state and the spend of the last day, one health line per home, the actions since the last read, and the open gaps.
 Each health line ends with that home's captain from the [captain record](#captain-record): its lock pid, its `alive` verdict, its terminal, and its last move time.
 A reader runs `ack-read` after reading, so the next status lists only newer actions.
