@@ -30,13 +30,14 @@
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
 #
-# The digest lists new merges (URL and SHA) since the previous run (a
-# merged pull already reported, or merged before the repository's previous
-# successful fetch, is not new), open
-# pull requests (all open pull requests, drafts included) with their age, missed ETAs (a status
+# The digest lists new merges (URL and 12-character SHA). The first fetch
+# for each repository reports only merges from the preceding day. Later
+# fetches use its last successful fetch time with a five-minute overlap;
+# already reported merges are excluded. It also lists open pull requests
+# (drafts included) with their age, missed ETAs (a status
 # line with the word "eta" followed by ":" or space and a YYYY-MM-DD date
-# in the past), stalled status sources (local file
-# not modified within stall_hours) and every nonblank entry of each review
+# in the past), stalled status sources (local or remote files whose
+# modification age is at least stall_hours) and every nonblank entry of each review
 # record. Generation and ETA dates use America/Mexico_City.
 # waiting_on_captain contains captain_actionable local backlog rows and
 # explicit captain-hold decisions from trusted, registered secondmates in
@@ -47,22 +48,30 @@
 # Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
 #
-# changed is yes when the digest content other than its generated time
-# and age values differs from the previous run, including the first run.
+# changed is yes on the first run, when new merges are found, or when
+# persistent digest content changes. Generated time, age values and the
+# disappearance of previously reported merges do not count as changes.
 # A configured summarize_cmd runs only on a changed run, receives
-# latest.md on stdin and writes summary.txt in the output directory. This
-# script never merges, deploys, tags, pushes or messages anyone: its
-# only network reads are `gh api` GET requests and read-only ssh cat.
+# latest.md on stdin and replaces summary.txt only on success. It has a
+# 120-second timeout; failure leaves the digest published and the previous
+# summary intact. The configured command is outside the collector's
+# read-only guarantee. The collector never merges, deploys, tags, pushes
+# or messages anyone: its network reads use `gh api` GET requests and
+# read-only ssh cat/stat commands.
+#
+# Each latest document is published through atomic replacement after
+# both history copies succeed. Notification state advances only after
+# publication succeeds. History is retained without automatic pruning.
 #
 # State under the output directory: .state/seen.tsv holds every merged
 # pull request already reported, .state/since.tsv holds each repository's
-# previous successful fetch time, .state/content.hash holds the previous
+# merge-window watermark, .state/content.hash holds the previous
 # content hash, and .state/run.flock is the run lock: a run that finds
 # another run holding it prints a skip line and exits 1. The kernel lock
 # is released when its holder exits, so a crashed run never leaves it
 # held; children that may outlive the run close fd 9 so they cannot keep
 # it held. FM_GOAL_DIGEST_GH replaces the gh binary only when
-# FM_TEST_SEAM=1.
+# FM_TEST_SEAM is nonempty.
 set -u
 
 INTERVAL_SECONDS=1200
@@ -136,6 +145,8 @@ load_config() {
 timed() {
   local seconds=$1
   shift
+  # Close the lock on the external command, not on this shell function:
+  # Bash saves function redirections in an inheritable duplicate fd.
   FM_GD_TIMEOUT=$seconds python3 -c '
 import os, signal, subprocess, sys
 proc = subprocess.Popen(sys.argv[1:], start_new_session=True)
@@ -145,7 +156,7 @@ except subprocess.TimeoutExpired:
     os.killpg(proc.pid, signal.SIGKILL)
     proc.wait()
     raise SystemExit(124)
-' "$@"
+' "$@" 9>&-
 }
 
 shell_quote() {
@@ -155,9 +166,10 @@ shell_quote() {
 }
 
 # fetch_pulls <repo> <state-query> <out-json>: paginate at 100 per page,
-# up to 10 pages, combining every page into one JSON array. 0 ok,
-# 1 failed (any page, so partial results are never treated as complete),
-# 2 truncated at the page cap (results usable, caller records a note).
+# up to 10 pages, combining every page into one JSON array. Returns 0
+# on success, including truncation at the page cap, or nonzero on failure.
+# Truncation sets work/fetch-truncated; results remain usable with a note.
+# A failed page discards partial results.
 fetch_pulls() {
   local repo=$1 query=$2 out=$3 page=1 page_file count truncated=0
   rm -f "$work/fetch-truncated"
@@ -225,8 +237,8 @@ read_source() {
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
       local quoted
       quoted=$(shell_quote "$path")
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" 9>&- > "$content_out" 2>/dev/null || return 1
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" 9>&- > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
       return 0
       ;;
     *)
@@ -418,7 +430,7 @@ if os.environ.get("FM_GD_TRUNCATED") != "1":
         fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
-      # only committed to seen.tsv after the digest is written, so an
+      # only committed to seen.tsv after archival and publication, so an
       # interrupted run cannot lose a merge notification.
       FM_GD_REPO="$repo" python3 - "$json_file" >> "$work/seen-new.tsv" <<'PY'
 import json, os, sys
@@ -628,7 +640,7 @@ PY
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
     local summarize_ok=0
-    if timed 120 /bin/sh -c "$summarize_cmd" 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null; then
+    if timed 120 /bin/sh -c "$summarize_cmd" < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null; then
       summarize_ok=1
     fi
     if [ "$summarize_ok" = 1 ]; then

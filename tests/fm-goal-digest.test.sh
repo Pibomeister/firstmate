@@ -578,4 +578,56 @@ SH
   pass "summarizer, gh and ssh timeouts stop owned descendants"
 }
 
-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
+test_killed_digest_releases_lock_while_summarizer_lives() {
+  python3 - "$SCRIPT" "$TMP_ROOT/crashed-summary" <<'PYTEST' || fail "killed digest left its run lock held by a child"
+import os, pathlib, shlex, signal, subprocess, sys, time
+script, home = sys.argv[1], pathlib.Path(sys.argv[2])
+(home / "config").mkdir(parents=True)
+ready = home / "ready"
+helper = home / "summarize.py"
+helper.write_text('import os, pathlib, sys, time\npathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(300)\n')
+config = home / "config/goal-digest"
+config.write_text("summarize_cmd = " + shlex.join([sys.executable, str(helper), str(ready)]) + "\n")
+env = dict(os.environ, FM_HOME=str(home))
+children = set()
+with (home / "first.log").open("w") as log:
+    first = subprocess.Popen([script, "run"], env=env, stdout=log, stderr=log, start_new_session=True)
+    try:
+        deadline = time.monotonic() + 60
+        while not ready.exists() and first.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert ready.exists(), "digest did not reach the real summarizer"
+        pairs = [tuple(map(int, line.split())) for line in subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True).splitlines()]
+        parents = {first.pid}
+        while True:
+            found = {pid for pid, parent in pairs if parent in parents} - parents
+            if not found:
+                break
+            children.update(found)
+            parents.update(found)
+        child = int(ready.read_text())
+        children.add(child)
+        first.kill()
+        first.wait()
+        os.kill(child, 0)
+        config.write_text("")
+        retry = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=60)
+        assert retry.returncode == 0, retry.stderr
+        assert (home / "data/goal-digest/latest.json").is_file()
+    finally:
+        try:
+            os.killpg(first.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        for child in children:
+            try:
+                os.kill(child, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if first.poll() is None:
+            first.wait()
+PYTEST
+  pass "killed digest releases the lock while its summarizer is still alive"
+}
+
+fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
