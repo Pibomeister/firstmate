@@ -291,6 +291,70 @@ SH
   pass "refresh publishes through the bounded Bash fallback without an external timer"
 }
 
+test_worker_termination_status() {
+  local mode home marker release prior worker expected rc i
+  for mode in direct best-effort; do
+    home="$TMP_ROOT/worker-termination-$mode"
+    marker="$home/validator.pid"
+    release="$home/release"
+    prior="$home/prior.json"
+    mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$home/bin"
+    home=$(cd "$home" && pwd -P)
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+      || fail "could not seed the worker-termination ledger"
+    cp "$home/state/home-summary.json" "$prior"
+    cat > "$home/bin/jq" <<'SH'
+#!/usr/bin/env bash
+last=
+for arg in "$@"; do last=$arg; done
+case "$last" in
+  "$FM_HOME/state/.home-summary.json."*)
+    "$FM_TEST_REAL_JQ" "$@" || exit "$?"
+    printf '%s\n' "$$" > "$FM_TEST_CANCEL_MARKER"
+    while [ ! -f "$FM_TEST_CANCEL_RELEASE" ]; do sleep 0.05; done
+    exit 0 ;;
+esac
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+    chmod +x "$home/bin/jq"
+    set --
+    [ "$mode" != best-effort ] || set -- --best-effort
+    PATH="$home/bin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+      FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_TEST_REAL_JQ="$REAL_JQ" \
+      FM_TEST_CANCEL_MARKER="$marker" FM_TEST_CANCEL_RELEASE="$release" \
+      "$WRITER" "$@" > "$home/writer.out" 2> "$home/writer.err" &
+    SLOW_WRITER_PID=$!
+    i=0
+    while [ ! -s "$marker" ] && [ "$i" -lt 400 ]; do
+      kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+      sleep 0.05
+      i=$((i + 1))
+    done
+    [ -s "$marker" ] || fail "$mode worker never reached real validation"
+    SLOW_VALIDATOR_PID=$(cat "$marker")
+    worker=$(cat "$home/state/.home-summary-refresh.lock/pid")
+    kill -TERM "$worker" || fail "could not terminate the lock-owning worker"
+    : > "$release"
+    if wait "$SLOW_WRITER_PID"; then rc=0; else rc=$?; fi
+    SLOW_WRITER_PID=
+    expected=143
+    [ "$mode" != best-effort ] || expected=0
+    [ "$rc" -eq "$expected" ] || fail "$mode worker TERM returned $rc instead of $expected"
+    if [ "$mode" = best-effort ]; then
+      grep -F 'refresh worker failed with exit 143' "$home/state/.home-summary-refresh.log" >/dev/null \
+        || fail "real worker TERM was not logged at the public parent boundary"
+    fi
+    ! kill -0 "$SLOW_VALIDATOR_PID" 2>/dev/null || fail "terminated worker retained its validator"
+    SLOW_VALIDATOR_PID=
+    cmp -s "$prior" "$home/state/home-summary.json" || fail "terminated worker replaced the prior ledger"
+    [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "terminated worker retained its lock"
+    ls "$home/state"/.home-summary-stage.* >/dev/null 2>&1 \
+      && fail "terminated worker leaked its stage file"
+  done
+  pass "real Bash worker TERM preserves direct status and best-effort diagnostics"
+}
+
 test_parent_cancellation() {
   local mechanism signal home cancel_bin marker release prior expected i validator
   for mechanism in default bash; do
@@ -631,6 +695,7 @@ test_failed_summary_refresh_waits_for_idle
 test_locked_deadlines_record_backoff
 test_refresh_without_external_timer
 test_parent_cancellation
+test_worker_termination_status
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false
@@ -954,7 +1019,8 @@ pass "the producer never recreates a deleted stage log"
 # with no reader) stands in for a stalled filesystem, and only a refresh whose
 # parent never touches that path inside its own process returns in time.
 STALL_PATH="$HOME_DIR/state/.home-summary-stage.stalled"
-rm -f "$STALL_PATH"
+# Cancellation above records a failure; this case must attempt a refresh.
+rm -f "$STALL_PATH" "$HOME_DIR/state/.home-summary-refresh.backoff"
 mkfifo "$STALL_PATH"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 started=$(date +%s)

@@ -442,7 +442,9 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   if [ "$(fm_timeout_mechanism)" = bash ]; then
     home_summary_runner=(fm_run_timed "$HOME_SUMMARY_TIMEOUT")
   fi
-  home_summary_worker_start() {
+  # An explicit subshell preserves the Bash timer's result. On Bash 3.2 an
+  # async function body can exit at the timer's final cleanup command instead.
+  home_summary_worker_start() (
     trap - EXIT HUP INT TERM
     "${home_summary_runner[@]}" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
@@ -450,7 +452,7 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
     FM_HOME_SUMMARY_PARENT_PID="$$" \
       "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker
-  }
+  )
   [ -z "$home_summary_parent_signal" ] || exit "$home_summary_parent_signal"
   home_summary_runner_starting=1
   fm_timeout_background home_summary_worker_start
