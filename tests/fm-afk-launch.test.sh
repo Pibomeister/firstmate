@@ -135,7 +135,9 @@ unit_enter_carries_open_return_blockers() {
   local st out rc
   st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-carry.XXXXXX")
   mkdir -p "$st/state"
-  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nblocker\ttask-a\tkey-a\tfirst reason\nblocker\ttask-b\tkey-b\tsecond reason here\n' \
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\ncontract\t1790000000\nblocker\ttask-a\tkey-a\tfirst reason\nblocker\ttask-b\tkey-b\tsecond reason here\nevidence\tlifecycle\tsuperseded away-posture record unreadable: %s; catch-up stays gated\nsuperseded\t%s\n' \
+    "$st/state/afk-contracts/1790000000-superseded-1.afk-contract" \
+    "$st/state/afk-contracts/1790000000-superseded-1.afk-contract" \
     > "$st/state/.afk-return-catchup"
   out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'merge it' --grant fix-windows 2>&1)
   rc=$?
@@ -150,10 +152,12 @@ unit_enter_carries_open_return_blockers() {
   if [ "$rc" -eq 0 ] && [ -f "$st/state/.afk-contract" ] && [ ! -e "$st/state/.afk-return-catchup" ] \
     && [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" carried)" = "$(printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason here')" ] \
     && printf '%s' "$out" | grep -F 'task-a [key=key-a] first reason' >/dev/null \
-    && printf '%s' "$out" | grep -F 'task-b [key=key-b] second reason here' >/dev/null; then
-    pass "enter carry: entry records the posture and carries each open blocker with its key and reason"
+    && printf '%s' "$out" | grep -F 'task-b [key=key-b] second reason here' >/dev/null \
+    && grep -F "superseded away-posture record unreadable: $st/state/afk-contracts/1790000000-superseded-1.afk-contract" "$st/state/.afk-carried-retained" >/dev/null \
+    && grep -F "retained-record$(printf '\t')$st/state/afk-contracts/1790000000.afk-contract" "$st/state/.afk-carried-retained" >/dev/null; then
+    pass "enter carry: entry records the posture, carries each open blocker with its key and reason, and retains the gate's recovery evidence"
   else
-    fail "enter carry: entry with open blockers did not record and carry them (rc=$rc): $out"
+    fail "enter carry: entry with open blockers did not record, carry, and retain them (rc=$rc): $out"
   fi
   rm -rf "$st"
 }

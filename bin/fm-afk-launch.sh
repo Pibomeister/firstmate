@@ -18,7 +18,9 @@
 # An away `enter` always records the requested posture: open blockers in
 # the previous return gate (state/.afk-return-catchup) move into the new
 # record as carried items with their task, key, and reason, and the gate
-# is consumed only after that entry succeeds. Unrelated blockers never
+# is consumed only after that entry succeeds and any retained recovery
+# evidence it held is preserved in state/.afk-carried-retained for the
+# next return to re-check. Unrelated blockers never
 # refuse the posture; only the entry action itself (a usage error, a
 # quiet entry over a live away record, an unreadable standing record)
 # refuses, with its exact reason, leaving the gate untouched.
@@ -421,6 +423,35 @@ fm_afk_launch_carried_from_gate() {
   [ -s "$FM_AFK_LAUNCH_CARRIED_FILE" ] || { rm -f "$FM_AFK_LAUNCH_CARRIED_FILE"; FM_AFK_LAUNCH_CARRIED_FILE=; }
 }
 
+# Retained recovery evidence from the gate being consumed: every
+# evidence or superseded row the gate held (for example an unreadable
+# archived or superseded posture record that still owes recovery) is
+# merged, deduplicated, into state/.afk-carried-retained before the gate
+# is deleted, so the obligation survives entry and the next return
+# re-checks it (bin/fm-afk-return.sh seeds its gate from that file and
+# owns the re-check). Blocker rows are not retained here: they move
+# into the posture record itself as carried items.
+fm_afk_launch_retain_gate_evidence() {  # <gate>
+  local gate=$1 retained rows pending contract_epoch tab
+  retained="$FM_AFK_LAUNCH_STATE/.afk-carried-retained"
+  tab=$(printf '\t')
+  rows=$(grep -E "^(evidence|superseded)${tab}" "$gate" 2>/dev/null || true)
+  # The gate's contract row names the previous window's final archived
+  # record; retain it as a record the next return must re-validate, so a
+  # missing or unreadable earlier archive is never dropped with the gate.
+  contract_epoch=$(awk -F '\t' '$1 == "contract" { print $2; exit }' "$gate" 2>/dev/null || true)
+  case "$contract_epoch" in
+    ''|*[!0-9]*) ;;
+    *) rows="${rows:+$rows
+}retained-record${tab}$(fm_afk_contract_archive_dir "$FM_AFK_LAUNCH_STATE")/$contract_epoch.afk-contract" ;;
+  esac
+  [ -n "$rows" ] || return 0
+  pending=$(mktemp "$FM_AFK_LAUNCH_STATE/.afk-carried-retained.pending.XXXXXX") || return 1
+  { [ ! -f "$retained" ] || cat "$retained"; printf '%s\n' "$rows"; } \
+    | awk '!seen[$0]++' > "$pending" || { rm -f "$pending"; return 1; }
+  mv "$pending" "$retained" || { rm -f "$pending"; return 1; }
+}
+
 fm_afk_launch_record_require() {
   local record
   record=$(fm_afk_contract_path "$FM_AFK_LAUNCH_STATE")
@@ -461,8 +492,12 @@ fm_afk_launch_enter() {
       "$FM_AFK_CONTRACT_CMD" enter "$@" || rc=$?
     fi
     [ "$rc" -eq 0 ] || return "$rc"
-    # The blockers have moved into the record; the old gate is consumed.
-    [ "$had_gate" -eq 0 ] || rm -f "$gate" || return 1
+    # The blockers have moved into the record; the old gate is consumed,
+    # after its retained recovery evidence is preserved for the next return.
+    if [ "$had_gate" -eq 1 ]; then
+      fm_afk_launch_retain_gate_evidence "$gate" || return 1
+      rm -f "$gate" || return 1
+    fi
   fi
   "$FM_AFK_LAUNCH_DIR/fm-afk-preflight.sh" 2>/dev/null || true
   fm_afk_launch_host_engine_note

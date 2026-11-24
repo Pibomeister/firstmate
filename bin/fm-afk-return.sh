@@ -66,6 +66,11 @@
 # records carry the original entry boundary and superseded mandates are
 # included so the brief shows every instruction the window ran under.
 #
+# Recovery evidence from an earlier window that an intervening away entry
+# retained in state/.afk-carried-retained (bin/fm-afk-launch.sh) seeds this
+# gate through preserve_evidence, and each retained-record it names must
+# validate here before catch-up can clear.
+#
 # The durable state/.afk-return-catchup file is written BEFORE daemon shutdown,
 # so a crash between stopping, wake presentation, and blocker handling fails
 # closed. It retains the presented wake, buffered-escalation, wedge-marker,
@@ -136,8 +141,17 @@ remove_evidence_prefix() {  # <kind> <text-prefix> <file>
 
 preserve_evidence() {  # <destination>
   local destination=$1
-  [ -f "$GATE" ] || return 0
-  grep -E '^(evidence|window|contract|superseded)'"$(printf '\t')" "$GATE" >> "$destination" 2>/dev/null || true
+  if [ -f "$GATE" ]; then
+    grep -E '^(evidence|window|contract|superseded|retained-record)'"$(printf '\t')" "$GATE" >> "$destination" 2>/dev/null || true
+  fi
+  # Recovery evidence an intervening away entry retained when it consumed
+  # the old gate (bin/fm-afk-launch.sh) rejoins the gate here, so the
+  # archived and superseded records it names are re-checked at this return
+  # rather than dropped with the old entry epoch.
+  if [ -f "$STATE/.afk-carried-retained" ]; then
+    grep -E '^(evidence|window|contract|superseded|retained-record)'"$(printf '\t')" \
+      "$STATE/.afk-carried-retained" >> "$destination" 2>/dev/null || true
+  fi
 }
 
 append_superseded_record() {  # <path> <file>
@@ -150,6 +164,14 @@ remove_superseded_record() {  # <path> <file>
   local path=$1 file=$2 row pending
   row=$(printf 'superseded\t%s' "$path")
   pending=$(mktemp "$(dirname "$file")/.afk-return-superseded-filter.XXXXXX") || return 1
+  grep -Fvx "$row" "$file" > "$pending" 2>/dev/null || true
+  mv "$pending" "$file"
+}
+
+remove_retained_record() {  # <path> <file>
+  local path=$1 file=$2 row pending
+  row=$(printf 'retained-record\t%s' "$path")
+  pending=$(mktemp "$(dirname "$file")/.afk-return-retained-filter.XXXXXX") || return 1
   grep -Fvx "$row" "$file" > "$pending" 2>/dev/null || true
   mv "$pending" "$file"
 }
@@ -248,7 +270,9 @@ write_pending_seed() {  # <window-epoch> <contract-epoch>  Fail-closed marker be
     [ -z "$contract_epoch" ] || printf 'contract\t%s\n' "$contract_epoch"
     preserve_evidence /dev/stdout | grep -Ev "^(window|contract)$(printf '\t')" || true
   } > "$pending" || { rm -f "$pending"; return 1; }
-  mv "$pending" "$GATE"
+  mv "$pending" "$GATE" || return 1
+  # The seeded gate now owns any retained evidence; the sidecar is spent.
+  rm -f "$STATE/.afk-carried-retained"
 }
 
 write_gate() {  # <evidence-file> <blockers-file>
@@ -685,7 +709,7 @@ render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-
 
   # 1. health, first, always.
   printf 'Supervisor health:\n'
-  awk -F '\t' '$1 == "evidence" && ($2 == "health" || ($2 == "lifecycle" && ($3 ~ /^outcome store unreadable/ || $3 ~ /^status file unreadable:/ || $3 ~ /^away-posture record (unreadable|missing):/ || $3 ~ /^archived away-posture record/ || $3 ~ /^superseded away-posture record/))) { print "  - " $3 }' "$evidence"
+  awk -F '\t' '$1 == "evidence" && ($2 == "health" || ($2 == "lifecycle" && ($3 ~ /^outcome store unreadable/ || $3 ~ /^status file unreadable:/ || $3 ~ /^away-posture record (unreadable|missing):/ || $3 ~ /^archived away-posture record/ || $3 ~ /^superseded away-posture record/ || $3 ~ /^retained away-posture record/))) { print "  - " $3 }' "$evidence"
 
   # 2. the captain's instructions, verbatim, then the session's account.
   printf 'Your instructions:\n'
@@ -974,6 +998,27 @@ EOF
         lifecycle_ok=0
       fi
     done
+
+    # Earlier final archives an intervening entry retained: each must
+    # validate at this return, or catch-up stays gated on it.
+    while IFS="$(printf '\t')" read -r tag retained_record; do
+      [ "$tag" = retained-record ] || continue
+      if [ ! -f "$retained_record" ]; then
+        remove_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+        append_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence"
+        lifecycle_ok=0
+      elif ! fm_afk_contract_validate "$retained_record"; then
+        remove_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+        append_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence"
+        lifecycle_ok=0
+      else
+        remove_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+        remove_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+        remove_retained_record "$retained_record" "$evidence" || lifecycle_ok=0
+      fi
+    done <<EOF
+$(cat "$evidence")
+EOF
   fi
 
   if [ -s "$STATE/.subsuper-inject-wedged" ]; then

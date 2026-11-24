@@ -493,6 +493,40 @@ test_return_brief_composes_from_record_store_and_held_set() {
   pass "the return brief renders health, the words with the session account, waiting, could-not-fix, handled, and cost from durable records, and the gate shrinks to what the away session could not fix"
 }
 
+# Recovery evidence an intervening entry retained (state/.afk-carried-retained)
+# is re-checked at the next return: a missing earlier archive gates even
+# under a fresh posture, and restoring it clears catch-up.
+test_retained_record_from_entry_still_gates_until_recovered() {
+  local dir out rc gate retained missing second
+  dir="$TMP_ROOT/retained-record"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'watch the fleet' >/dev/null 2>&1 \
+    || fail "could not enter the retained fixture posture"
+  missing="$dir/home/state/afk-contracts/1790000000.afk-contract"
+  retained="$dir/home/state/.afk-carried-retained"
+  printf 'retained-record\t%s\n' "$missing" > "$retained"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  gate="$dir/home/state/.afk-return-catchup"
+  [ "$rc" -eq 3 ] || fail "a missing retained archive should still gate the return (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record missing: $missing" "the brief did not name the missing retained archive"
+  [ -e "$gate" ] || fail "the retained gate was not persisted"
+  [ ! -e "$retained" ] || fail "the seeded gate did not take ownership of the retained evidence"
+
+  # Restore the earlier archive with any valid posture record, then recheck.
+  cp "$dir/home/state/afk-contracts/"*.afk-contract "$missing" 2>/dev/null \
+    || fail "could not restore the retained archive fixture"
+  second=$(run_return "$dir" check) || fail "restoring the retained archive did not clear catch-up: $second"
+  assert_contains "$second" 'catch-up clear' "check did not clear after retained recovery"
+  [ ! -e "$gate" ] || fail "the cleared retained check left the gate behind"
+  pass "a retained earlier archive gates the next return until it is restored valid"
+}
+
 # Carried items from the previous return stay visible in the next brief, a
 # wake handled under the new posture is recorded and counted, and the
 # per-key gate mechanics are unchanged: a still-open carried blocker
@@ -1652,6 +1686,7 @@ test_check_retries_recorded_terminal_teardown
 test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
+test_retained_record_from_entry_still_gates_until_recovered
 test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
