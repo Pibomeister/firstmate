@@ -544,6 +544,9 @@ Handoffs may carry supporting artifacts distinct from the task's final deliverab
 Only current delivery failures take precedence over task silence; delivered handoffs do not exempt a task from its silence window.
 Silence notifications reuse their stable key and durable inbox, queued-wake, and acknowledgement evidence across partial failures.
 Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
+Cleanup collects all applicable acknowledgements in each affected home before removing receiver inboxes or producer artifacts.
+Task-inbox placements hold the receiver metadata lock and refuse retired receivers.
+Handoff artifact paths must be absolute so later consumers resolve the same file.
 Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
 Report completion does not prevent the worker from advancing or relaunching.
 The spawn path registers ship and scout report deliverables with a 300-second heartbeat interval and a two-hour silence window.

@@ -3591,10 +3591,16 @@ endpoint_close_refusal() {  # <subject> <backend> <target> <honors-force>
   return 1
 }
 
+teardown_receipt_handoffs() {
+  [ -d "$2/delegated" ] || return 0
+  FM_HOME="$1" FM_STATE_OVERRIDE="$2" bash "$SCRIPT_DIR/fm-delegated.sh" receipt
+}
+
 cleanup_firstmate_home_children() {
   local home=$1 archive_parent=${2:-$ID} sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_rex_home child_backend child_orca_worktree_id child_return_rc child_busy_gen child_owner_rc child_pool_slot child_remove_error
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
+  teardown_receipt_handoffs "$home" "$sub_state" || return 1
   for child_meta in "$sub_state"/*.meta; do
     [ -e "$child_meta" ] || continue
     child_id=$(basename "$child_meta" .meta)
@@ -3645,6 +3651,7 @@ cleanup_firstmate_home_children() {
           || { endpoint_close_refusal "child $child_id" "$child_backend" "$child_t" 0; return 1; }
       fi
     fi
+    teardown_receipt_handoffs "$home" "$sub_state" || return 1
     teardown_export_records "$sub_state" "$child_id" || return 1
     if [ "$child_kind" = secondmate ]; then
       child_home=$(meta_value "$child_meta" home)
@@ -3806,6 +3813,7 @@ if [ "$KIND" = secondmate ]; then
 fi
 
 if [ "$KIND" = secondmate ] && [ "$FORCE" = "--force" ]; then
+  teardown_receipt_handoffs "$FM_HOME" "$STATE" || exit 1
   cleanup_firstmate_home_children "$HOME_PATH" || exit $?
 fi
 
@@ -4022,9 +4030,7 @@ elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
 fi
 
-if [ -d "$STATE/delegated" ]; then
-  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" receipt --receiver "$ID" || exit 1
-fi
+teardown_receipt_handoffs "$FM_HOME" "$STATE" || exit 1
 
 # A worker can write after the first proof, including while its run is concluded
 # or its processes exit. Inspect the stopped copy before dropping its branch or
@@ -4257,6 +4263,7 @@ if [ "$KIND" = secondmate ]; then
     || { echo "error: receiver wake cleanup could not be staged; preserving the secondmate home and route" >&2; exit 1; }
   pending_replies_recovery_validate recheck \
     || { echo "error: local pending-reply recovery paths changed; preserving the secondmate home and route" >&2; exit 1; }
+  teardown_receipt_handoffs "$HOME_PATH" "$HOME_PATH/state" || exit 1
   if remove_firstmate_home "$HOME_PATH" "secondmate home" "$ID" "$BACKEND"; then
     :
   else

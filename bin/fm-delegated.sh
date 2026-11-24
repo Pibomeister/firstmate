@@ -35,7 +35,8 @@
 #   mirror --id <id>             Mirror a hidden handoff into the read
 #                                 location its receiver actually reads.
 #
-#   receipt --receiver <id>     Persist verified consumption before cleanup.
+#   receipt [--receiver <id>]   Persist verified consumption before cleanup.
+#                                 Without a filter, collect all acknowledgements.
 #
 # Files, all under the owner home FM_HOME:
 #   state/delegated/<task>.record       one key=value record per task.
@@ -214,7 +215,7 @@ handoff_state() {
       '($2 == "ack" || $2 == "consumed") && index($6, key) { found=1 } END { exit !found }' \
       "$STATE/wake-ledger.tsv" || return 0
   else
-    if body=$(fm_task_inbox_body "$pending" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
+    if [ -f "$STATE/$H_RECEIVER.meta" ] && body=$(fm_task_inbox_body "$pending" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
       H_STATE=mirrored
       return
     fi
@@ -240,6 +241,33 @@ wake_once() {
   return "$status"
 }
 
+receiver_inbox_write() {
+  local receiver=$1 text=$2 marker=${3:-} lock status=0 f body
+  lock=$(fm_meta_lock_path "$STATE/$receiver.meta") || return 1
+  fm_lock_try_acquire "$lock" || return 1
+  if [ ! -f "$STATE/$receiver.meta" ]; then
+    fm_lock_release "$lock"
+    return 1
+  fi
+  if [ -n "$marker" ]; then
+    for f in "$STATE/$receiver.inbox/"*.msg "$STATE/$receiver.inbox/handled/"*.msg; do
+      [ -f "$f" ] || continue
+      if ! body=$(fm_task_inbox_body "$f" 2>/dev/null); then
+        f="$STATE/$receiver.inbox/handled/${f##*/}"
+        body=$(fm_task_inbox_body "$f" 2>/dev/null) || continue
+      fi
+      if [ "${body%%$'\n'*}" = "$marker" ]; then
+        text=${body#*$'\n'}
+        break
+      fi
+    done
+    text="$marker"$'\n'"$text"
+  fi
+  fm_task_inbox_write_idempotent "$STATE" "$receiver" "$text" || status=1
+  fm_lock_release "$lock" || status=1
+  return "$status"
+}
+
 write_placement() {
   local lock status=0
   if [ "$1" = "$H_READ_DIR" ]; then
@@ -247,7 +275,7 @@ write_placement() {
       H_MESSAGE="delegated-handoff:$H_ID:$H_HASH"
       fm_wake_append check "$H_MESSAGE" "$(handoff_body)" || return 1
     else
-      H_MESSAGE=$(fm_task_inbox_write_idempotent "$STATE" "$H_RECEIVER" "$(handoff_body)") || return 1
+      H_MESSAGE=$(receiver_inbox_write "$H_RECEIVER" "$(handoff_body)") || return 1
     fi
   else
     mkdir -p "$1/handled" || return 1
@@ -260,13 +288,16 @@ write_placement() {
 }
 
 cmd_receipt() {
-  [ "$#" -eq 2 ] && [ "$1" = --receiver ] || usage_die 'receipt needs --receiver <id>'
-  fm_del_valid_id "$2" || usage_die 'invalid receiver'
-  local f
+  local f receiver=''
+  if [ "$#" -gt 0 ]; then
+    [ "$#" -eq 2 ] && [ "$1" = --receiver ] || usage_die 'receipt accepts --receiver <id>'
+    fm_del_valid_id "$2" || usage_die 'invalid receiver'
+    receiver=$2
+  fi
   for f in "$HANDOFF_DIR"/*.record; do
     [ -f "$f" ] || continue
     load_handoff "$f"
-    [ "$H_RECEIVER" = "$2" ] || continue
+    [ -z "$receiver" ] || [ "$H_RECEIVER" = "$receiver" ] || continue
     handoff_state
   done
 }
@@ -276,18 +307,9 @@ closed_receipt() {
 }
 
 notify_supervisor() {
-  local text=$1 key="delegated:$T_SUPERVISOR:$2" f body marker
-  marker="delegated-notification=$key"
+  local text=$1 key="delegated:$T_SUPERVISOR:$2"
   if [ -f "$STATE/$T_SUPERVISOR.meta" ]; then
-    for f in "$STATE/$T_SUPERVISOR.inbox/"*.msg "$STATE/$T_SUPERVISOR.inbox/handled/"*.msg; do
-      [ -f "$f" ] || continue
-      body=$(fm_task_inbox_body "$f") || return 1
-      if [ "${body%%$'\n'*}" = "$marker" ]; then
-        text=${body#*$'\n'}
-        break
-      fi
-    done
-    fm_task_inbox_write_idempotent "$STATE" "$T_SUPERVISOR" "$marker"$'\n'"$text" >/dev/null || return 1
+    receiver_inbox_write "$T_SUPERVISOR" "$text" "delegated-notification=$key" >/dev/null || return 1
   fi
   case "$2" in
     silence:*) wake_once "$key" "$text" ;;
@@ -493,6 +515,7 @@ cmd_handoff() {
   fi
   [ -n "$read_dir" ] || read_dir=$channel
   [ "$read_dir" = "$channel" ] || usage_die 'read-dir must name the receiver channel'
+  case "$path" in /*) ;; *) usage_die 'artifact path must be absolute' ;; esac
   single_line "$path" || usage_die 'artifact path must be one line'
   single_line "$alt_dir" || usage_die 'alt-dir must be one line'
   [ -n "$id" ] || usage_die 'handoff needs --id <id>'

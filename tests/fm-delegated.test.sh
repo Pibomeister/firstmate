@@ -498,6 +498,143 @@ test_non_read_location_uses_supplied_directory() {
   pass 'non-read handoffs use the exact supplied directory without a suffix convention'
 }
 
+test_owner_cleanup_collects_other_receivers() {
+  local h hash receiver
+  for receiver in firstmate worker; do
+    h=$(new_home "owner-cleanup-$receiver")
+    register_task "$h" "$T0" producer || fail 'register failed'
+    mkdir -p "$h/producer-worktree"
+    printf 'producer evidence\n' > "$h/producer-worktree/evidence.txt"
+    hash=$(sha_of "$h/producer-worktree/evidence.txt")
+    del "$h" "$T0" handoff --task producer --id evidence --receiver "$receiver" \
+      --path "$h/producer-worktree/evidence.txt" --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'handoff failed'
+    if [ "$receiver" = firstmate ]; then
+      ack_primary "$h"
+    else
+      mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+    fi
+    del "$h" "$T0" receipt || fail 'owner cleanup receipt collection failed'
+    rm -rf "$h/producer-worktree" "$h/state/worker.inbox"
+    assert_contains "$(del "$h" "$T0" view)" "handoff=evidence state=read receiver=$receiver" 'producer cleanup preserves another receiver acknowledgement without an intervening view or check'
+    case "$(del "$h" $((T0 + 400)) check)" in *delivery-failure*) fail 'owner cleanup lost a consumed handoff' ;; esac
+  done
+  pass 'unfiltered pre-cleanup receipt collection preserves primary and task acknowledgements'
+}
+
+test_retired_receivers_cannot_be_mirrored() {
+  local h hash location
+  for location in alt read; do
+    h=$(new_home "retired-$location")
+    register_task "$h" "$T0" producer || fail 'register failed'
+    hash=$(sha_of "$h/art/out.txt")
+    del "$h" "$T0" handoff --task producer --id answer --receiver worker \
+      --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted" --location "$location" >/dev/null || fail 'handoff failed'
+    rm -f "$h/state/worker.meta"
+    assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=delivery-failure' 'an orphan pending record is not delivery to a live receiver'
+    rm -rf "$h/state/worker.inbox"
+    if del "$h" "$T0" mirror --id answer >/dev/null 2>&1; then fail 'mirror accepted a retired receiver'; fi
+    [ ! -e "$h/state/worker.inbox" ] || fail 'mirror recreated the retired inbox'
+    assert_contains "$(del "$h" "$T0" check)" 'delivery-failure handoff=answer' 'failed mirroring remains visible as delivery failure'
+  done
+  pass 'retired receivers cannot accept mirrors or conceal orphan pending records'
+}
+
+test_inbox_writes_honor_lifecycle_lock() {
+  local h hash holder n=0 rc=0
+  h=$(new_home lifecycle-lock)
+  register_task "$h" "$T0" producer || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" handoff --task producer --id answer --receiver worker \
+    --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted" --location alt >/dev/null || fail 'handoff failed'
+  del "$h" "$T0" register --task silent --deliverable report --artifact "$h/art/out.txt" \
+    --heartbeat-secs 60 --silence-secs 300 --supervisor worker >/dev/null || fail 'register failed'
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '
+    . "$1"
+    lock=$(fm_meta_lock_path "$STATE/worker.meta")
+    fm_lock_try_acquire "$lock" || exit 1
+    release_meta() { fm_lock_release "$lock"; }
+    trap release_meta EXIT
+    touch "$2/locked"
+    while [ ! -f "$2/release" ]; do sleep 0.1; done
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$h" &
+  holder=$!
+  while [ ! -f "$h/locked" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n+1)); done
+  [ -f "$h/locked" ] || { kill "$holder"; wait "$holder"; fail 'metadata lock was not acquired'; }
+  del "$h" "$T0" mirror --id answer >/dev/null 2>&1 && rc=1
+  del "$h" $((T0 + 400)) check >/dev/null 2>&1 && rc=1
+  [ ! -e "$h/state/worker.inbox" ] || rc=1
+  touch "$h/release"
+  wait "$holder" || fail 'metadata lock holder failed'
+  assert_equals 0 "$rc" 'placement and notification refuse while retirement holds the metadata lock'
+  del "$h" "$T0" mirror --id answer >/dev/null || fail 'ordinary mirror failed after lifecycle lock release'
+  del "$h" $((T0 + 400)) check >/dev/null || fail 'ordinary notification failed after lifecycle lock release'
+  pass 'placements and supervisor notifications share the existing metadata lock protocol'
+}
+
+test_notification_scan_survives_ack_move() {
+  local h mode real_awk real_mv rc
+  real_awk=$(command -v awk)
+  real_mv=$(command -v mv)
+  for mode in unrelated matching; do
+    h=$(new_home "notification-ack-$mode")
+    touch "$h/state/supervisor.meta"
+    del "$h" "$T0" register --task hermes-1 --deliverable report --artifact "$h/art/out.txt" \
+      --heartbeat-secs 60 --silence-secs 300 --supervisor supervisor >/dev/null || fail 'register failed'
+    mkdir "$h/fakebin"
+    cat > "$h/fakebin/awk" <<'SH'
+#!/usr/bin/env bash
+for input in "$@"; do :; done
+if [ -n "${FM_ACK_RACE_INPUT:-}" ] && [ "$input" = "$FM_ACK_RACE_INPUT" ] && [ -f "$input" ] && [ ! -e "$FM_ACK_RACE_MARKER" ]; then
+  "$REAL_MV_FOR_DELEGATED" "$input" "${input%/*}/handled/"
+  : > "$FM_ACK_RACE_MARKER"
+fi
+exec "$REAL_AWK_FOR_DELEGATED" "$@"
+SH
+    cat > "$h/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for destination in "$@"; do :; done
+case "$destination" in */delegated/hermes-1.record) [ "${FM_TEST_REFUSE_RECORD:-}" != 1 ] || exit 1 ;; esac
+exec "$REAL_MV_FOR_DELEGATED" "$@"
+SH
+    chmod +x "$h/fakebin/awk" "$h/fakebin/mv"
+    if [ "$mode" = unrelated ]; then
+      FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '. "$1"; fm_task_inbox_write "$STATE" supervisor "unrelated instruction"' _ \
+        "$ROOT/bin/fm-task-inbox-lib.sh" >/dev/null || fail 'inbox seed failed'
+    else
+      rc=0
+      PATH="$h/fakebin:$PATH" REAL_MV_FOR_DELEGATED="$real_mv" REAL_AWK_FOR_DELEGATED="$real_awk" FM_TEST_REFUSE_RECORD=1 \
+        del "$h" $((T0 + 400)) check >/dev/null 2>&1 || rc=$?
+      assert_equals 1 "$rc" 'failed marker save leaves one delivered notification to replay'
+    fi
+    PATH="$h/fakebin:$PATH" REAL_MV_FOR_DELEGATED="$real_mv" REAL_AWK_FOR_DELEGATED="$real_awk" \
+      FM_ACK_RACE_INPUT="$h/state/supervisor.inbox/001.msg" FM_ACK_RACE_MARKER="$h/moved" \
+      del "$h" $((T0 + 500)) check >/dev/null || fail 'acknowledgement move aborted notification'
+    [ -f "$h/moved" ] && [ -f "$h/state/supervisor.inbox/handled/001.msg" ] || fail 'the test did not exercise the acknowledgement race'
+    if [ "$mode" = unrelated ]; then
+      [ -f "$h/state/supervisor.inbox/002.msg" ] || fail 'unrelated acknowledgement suppressed the escalation'
+    else
+      [ ! -e "$h/state/supervisor.inbox/002.msg" ] || fail 'moved notification was duplicated during replay'
+    fi
+  done
+  pass 'notification scans follow normal acknowledgements for unrelated and matching records'
+}
+
+test_handoff_paths_are_independent_of_cwd() {
+  local h hash rc=0
+  h=$(new_home absolute-handoff)
+  register_task "$h" "$T0" producer || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  (cd "$h/art" && del "$h" "$T0" handoff --task producer --id relative --receiver worker \
+    --path out.txt --hash "$hash" --alt-dir "$h/hosted" --location read) >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" 'relative artifact paths are rejected before persistence'
+  [ ! -f "$h/state/delegated/handoffs/relative.record" ] || fail 'relative receipt was persisted'
+  (cd "$h/art" && del "$h" "$T0" handoff --task producer --id absolute --receiver worker \
+    --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted" --location read) >/dev/null || fail 'absolute artifact path was refused'
+  mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+  assert_contains "$(cd "$h/alt" && del "$h" "$T0" view)" 'handoff=absolute state=read' 'a different working directory resolves the same artifact'
+  pass 'handoffs reject relative paths and retain absolute receipts across working directories'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -518,5 +655,10 @@ fm_test_run \
   test_silence_notification_replays_after_partial_failure \
   test_delivered_handoff_does_not_exempt_silence \
   test_handoff_can_carry_separate_evidence \
-  test_non_read_location_uses_supplied_directory
+  test_non_read_location_uses_supplied_directory \
+  test_owner_cleanup_collects_other_receivers \
+  test_retired_receivers_cannot_be_mirrored \
+  test_inbox_writes_honor_lifecycle_lock \
+  test_notification_scan_survives_ack_move \
+  test_handoff_paths_are_independent_of_cwd
 
