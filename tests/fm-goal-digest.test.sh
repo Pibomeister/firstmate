@@ -280,6 +280,26 @@ PY
   pass "first-run seeding and later-page failure"
 }
 
+test_first_run_large_repo_stops_and_saves_watermark() {
+  local home
+  home=$(make_home home9)
+  python3 - "$FIXTURE/merged-example-org_example-repo.json" <<'PY'
+import json, sys
+pulls = [{"number": i, "title": f"P{i}", "html_url": f"https://example.invalid/pr/{i}", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2020-01-01T00:00:00Z", "created_at": "2019-12-31T00:00:00Z", "updated_at": "2020-01-01T00:00:00Z"} for i in range(1, 101)]
+with open(sys.argv[1], "w") as fh:
+    json.dump(pulls, fh)
+PY
+  cat > "$FIXTURE/open-example-org_example-repo.json" <<'JSON'
+[]
+JSON
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "large first run failed"
+  assert_not_contains "$(cat "$home/data/goal-digest/latest.json")" "truncated at 1000" "first run on a large repository stops before the page cap"
+  [ -s "$home/data/goal-digest/.state/since.tsv" ] || fail "first run did not save a fetch watermark"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "large second run failed"
+  assert_not_contains "$(cat "$home/data/goal-digest/latest.json")" "truncated at 1000" "second run does not repeat a truncated fetch"
+  pass "first-run large repository stops and saves watermark"
+}
+
 
 test_owner_actions_are_explicit_and_age_from_wait_start() {
   write_fixtures 0
@@ -630,4 +650,4 @@ PYTEST
   pass "killed digest releases the lock while its summarizer is still alive"
 }
 
-fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
+fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark

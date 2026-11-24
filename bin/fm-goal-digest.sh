@@ -237,8 +237,8 @@ read_source() {
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
       local quoted
       quoted=$(shell_quote "$path")
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
+      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
       return 0
       ;;
     *)
@@ -370,6 +370,10 @@ except BlockingIOError:
     json_file=$work/prs.json
     local stop_before
     stop_before=$(awk -F '\t' -v r="$repo" '$1 == r { print $2 }' "$since_file" 2>/dev/null || true)
+    # First fetch for a repository stops at the preceding day, matching
+    # the first-run reporting window, so a large repository cannot page
+    # to the cap before any fetch time exists.
+    [ -n "$stop_before" ] || stop_before=$((now_epoch - 86400))
     if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
@@ -423,11 +427,12 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             # of reporting every old merge in the window as new.
             continue
         out.write("\t".join([repo, number, clean(pr.get("title", "")), clean(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
-if os.environ.get("FM_GD_TRUNCATED") != "1":
-    # Advance the watermark only on a complete fetch, overlapping the
-    # previous window by five minutes; seen.tsv deduplicates.
-    with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
-        fh.write(f"{repo}\t{now - 300}\n")
+# Always advance the watermark, even after a truncated fetch: the list
+# is sorted by recent update, so the cap holds the most recent window,
+# and seen.tsv deduplicates anything fetched again. Holding the
+# watermark would repeat the same truncated fetch on every run.
+with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
+    fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after archival and publication, so an
