@@ -1,0 +1,3 @@
+$ FM_HOME=<isolated-archive-corrected> bin/fm-goal-digest.sh run
+exit=1
+mkdir: {run-worktree}/.test-goal-digest/live/archive-corrected/data/goal-digest/history: File exists

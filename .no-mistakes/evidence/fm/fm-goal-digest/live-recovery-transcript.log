@@ -1,0 +1,12 @@
+05-archive-baseline exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/archive-corrected/data/goal-digest/latest.md generated=2026-11-24T02:14:58Z
+05-archive-failure exit 1 
+05-archive-retry exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/archive-corrected/data/goal-digest/latest.md generated=2026-11-24T02:15:07Z
+PASS: Archive failure preserves published documents and notification state Real filesystem refusal returns nonzero; previous files and state intact; retry reports the merge.
+06-concurrent-refused exit 1 
+06-replacement exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/locks/data/goal-digest/latest.md generated=2026-11-24T02:15:18Z
+06-atomic-refresh-0 exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/locks/data/goal-digest/latest.md generated=2026-11-24T02:15:22Z
+06-atomic-refresh-1 exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/locks/data/goal-digest/latest.md generated=2026-11-24T02:15:25Z
+06-atomic-refresh-2 exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/locks/data/goal-digest/latest.md generated=2026-11-24T02:15:28Z
+PASS: Concurrent and killed owners cannot corrupt replacement or partial JSON Active lock rejects overlap; SIGKILL releases it; orphan delayed write leaves replacement unchanged; concurrent JSON readers observe complete documents.
+07-network-timeout exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/timeout/data/goal-digest/latest.md generated=2026-11-24T02:15:32Z
+PASS: Stalled local API is bounded and publishes unavailable coverage Real gh timed out for closed and open reads; collector finished in 6.2s.

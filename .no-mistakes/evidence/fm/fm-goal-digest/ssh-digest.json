@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-11-24T02:12:56Z",
+  "generated_at_local": "2026-11-23T20:12:56-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "Local SSH status",
+      "detail": "native owner-action records unavailable"
+    }
+  ],
+  "missed_etas": [
+    {
+      "source": "Local SSH status",
+      "eta": "2020-01-01",
+      "line": "ETA: 2020-01-01 deliver"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "Local SSH status",
+      "age_hours": 72
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "Local SSH review",
+      "entries": [
+        "T1: complete",
+        "T8: pending",
+        "AgentKit: round 3"
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

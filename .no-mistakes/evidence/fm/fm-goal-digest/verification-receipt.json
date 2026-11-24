@@ -1,0 +1,13 @@
+{
+  "head": "0bf6b9b12dc8b0e30bcf1757c9d9ba68e36abc52",
+  "targeted_test_command": "TMPDIR=\"$PWD/.test-goal-digest/tmp\" bash tests/fm-goal-digest.test.sh",
+  "targeted_test_exit": 0,
+  "live_recovery_exit": 0,
+  "schedule_archive_exit": 0,
+  "localhost_ssh_exit": 0,
+  "initial_driver_fixture_correction": "Archive probe used startup-time merge older than saved watermark; corrected to time of insertion and re-driven successfully. See fixture-correction.txt.",
+  "launchd_activation": "untested: host service mutation forbidden by workspace boundary",
+  "fixture_processes_remaining": 0,
+  "fixture_directory_removed": true,
+  "worktree_clean": true
+}

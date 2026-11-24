@@ -1,0 +1,3 @@
+$ FM_HOME=<isolated-resumed> bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/resumed/data/goal-digest/latest.md generated=2026-11-24T02:10:51Z

@@ -1,0 +1,3 @@
+PASS: 1200-second generated LaunchAgent; exact declared command writes isolated digest.
+PASS: unwritable archive rejects publication and preserves both latest files and all notification state; retry publishes change.
+UNTESTED: actual launchd activation/20-minute firing; host service mutations forbidden by workspace boundary.

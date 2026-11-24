@@ -1,44 +1,26 @@
 [
   {
-    "name": "Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions",
+    "name": "Local synthetic digest publishes required fields and defaults",
     "result": "pass",
     "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+    "detail": "Real collector, gh and clock; CST, merges, owner waits, ETAs, stalls, ledgers and history inspected."
   },
   {
-    "name": "Real gh CLI against synthetic local Unix-socket API: paginate PRs, report new merge once, discard partial fetch and recover",
+    "name": "Unchanged run skips summary; new content triggers it; failed summary preserves output",
     "result": "pass",
     "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+    "detail": "Call ledger, deduplicated merges, early review entry and preserved summary checked."
   },
   {
-    "name": "Run real local summarizer only for content changes and preserve every review-ledger entry",
+    "name": "Cached or unreachable local snapshot discloses unknown owner coverage",
     "result": "pass",
     "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+    "detail": "Cached holds retained with warning; missing source reported without aborting publication."
   },
   {
-    "name": "Reject failed archival without consuming notifications and publish complete JSON to concurrent readers",
+    "name": "Real gh pagination preserves unreported merges after cap or failed page",
     "result": "pass",
     "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
-  },
-  {
-    "name": "Reject concurrent run, recover after killed owner, and terminate network and summarizer descendants at deadlines",
-    "result": "pass",
-    "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
-  },
-  {
-    "name": "Generate home-scoped 20-minute LaunchAgent configuration and execute its declared environment locally",
-    "result": "pass",
-    "live": true,
-    "evidence": "live-transcript.log",
-    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+    "detail": "Resumed and first-fetch outages retain watermark; omitted merge recovered exactly once; complete fetch advances window."
   }
 ]

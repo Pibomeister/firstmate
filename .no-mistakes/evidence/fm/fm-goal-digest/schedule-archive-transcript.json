@@ -1,0 +1,47 @@
+[
+  {
+    "command": [
+      "{run-worktree}/bin/fm-goal-digest.sh",
+      "install"
+    ],
+    "exit": 0,
+    "stdout": "goal-digest: installed={run-worktree}/.test-goal-digest/schedule-archive/home/Library/LaunchAgents/dev.firstmate.goal-digest-1944744514.plist interval_seconds=1200\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "{run-worktree}/bin/fm-goal-digest.sh",
+      "run"
+    ],
+    "exit": 0,
+    "stdout": "goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/schedule-archive/home/data/goal-digest/latest.md generated=2026-11-24T02:10:34Z\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "{run-worktree}/bin/fm-goal-digest.sh",
+      "run"
+    ],
+    "exit": 1,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 72, in <module>\nPermissionError: [Errno 13] Permission denied: '{run-worktree}/.test-goal-digest/schedule-archive/home/data/goal-digest/history/20261124T021038Z.md.tmp'\ngoal-digest: digest generation failed; state not advanced\n"
+  },
+  {
+    "command": [
+      "{run-worktree}/bin/fm-goal-digest.sh",
+      "run"
+    ],
+    "exit": 0,
+    "stdout": "goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/schedule-archive/home/data/goal-digest/latest.md generated=2026-11-24T02:10:40Z\n",
+    "stderr": ""
+  },
+  {
+    "command": [
+      "{run-worktree}/bin/fm-goal-digest.sh",
+      "uninstall"
+    ],
+    "exit": 0,
+    "stdout": "goal-digest: uninstalled={run-worktree}/.test-goal-digest/schedule-archive/home/Library/LaunchAgents/dev.firstmate.goal-digest-1944744514.plist\n",
+    "stderr": ""
+  }
+]

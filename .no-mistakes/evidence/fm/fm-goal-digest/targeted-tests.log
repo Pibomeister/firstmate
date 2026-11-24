@@ -1,4 +1,6 @@
-1..14
+1..17
+ok - killed digest releases its lock and its delayed summarizer cannot corrupt a replacement
+ok - capped and failed collection retain pending merges across outages and bootstrap
 ok - new merge detection, changed flag and changed-only summarizer
 ok - missed ETA, stall, unreachable source and review record
 ok - missing config writes an empty digest in the default directory
@@ -13,4 +15,5 @@ ok - archive failure does not consume notifications or report success
 ok - UTC update times stop pagination before the watermark
 ok - failed serialization preserves complete published documents
 ok - summarizer, gh and ssh timeouts stop owned descendants
+ok - first-run large repository stops and saves watermark
 FM_TEST_COMPLETE

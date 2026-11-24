@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Archive failure preserves published documents and notification state",
+    "result": "pass",
+    "live": true,
+    "detail": "Real filesystem refusal returns nonzero; previous files and state intact; retry reports the merge."
+  },
+  {
+    "name": "Concurrent and killed owners cannot corrupt replacement or partial JSON",
+    "result": "pass",
+    "live": true,
+    "detail": "Active lock rejects overlap; SIGKILL releases it; orphan delayed write leaves replacement unchanged; concurrent JSON readers observe complete documents."
+  },
+  {
+    "name": "Stalled local API is bounded and publishes unavailable coverage",
+    "result": "pass",
+    "live": true,
+    "detail": "Real gh timed out for closed and open reads; collector finished in 6.2s."
+  }
+]

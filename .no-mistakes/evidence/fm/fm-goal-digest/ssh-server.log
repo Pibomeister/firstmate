@@ -1,0 +1,52 @@
+Server listening on 127.0.0.1 port 51479.
+Connection from 127.0.0.1 port 51490 on 127.0.0.1 port 51479
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Postponed publickey for eduardopicazo from 127.0.0.1 port 51490 ssh2 [preauth]
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Accepted publickey for eduardopicazo from 127.0.0.1 port 51490 ssh2: ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg
+BSM audit: bsm_audit_session_setup: setaudit_addr failed: Operation not permitted
+User child is on pid 96944
+Starting session: command for eduardopicazo from 127.0.0.1 port 51490 id 0
+Received disconnect from 127.0.0.1 port 51490:11: disconnected by user
+Disconnected from user eduardopicazo 127.0.0.1 port 51490
+Connection from 127.0.0.1 port 51534 on 127.0.0.1 port 51479
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Postponed publickey for eduardopicazo from 127.0.0.1 port 51534 ssh2 [preauth]
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Accepted publickey for eduardopicazo from 127.0.0.1 port 51534 ssh2: ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg
+BSM audit: bsm_audit_session_setup: setaudit_addr failed: Operation not permitted
+User child is on pid 2047
+Starting session: command for eduardopicazo from 127.0.0.1 port 51534 id 0
+Received disconnect from 127.0.0.1 port 51534:11: disconnected by user
+Disconnected from user eduardopicazo 127.0.0.1 port 51534
+Connection from 127.0.0.1 port 51550 on 127.0.0.1 port 51479
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Postponed publickey for eduardopicazo from 127.0.0.1 port 51550 ssh2 [preauth]
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Accepted publickey for eduardopicazo from 127.0.0.1 port 51550 ssh2: ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg
+BSM audit: bsm_audit_session_setup: setaudit_addr failed: Operation not permitted
+User child is on pid 4649
+Starting session: command for eduardopicazo from 127.0.0.1 port 51550 id 0
+Received disconnect from 127.0.0.1 port 51550:11: disconnected by user
+Disconnected from user eduardopicazo 127.0.0.1 port 51550
+Connection from 127.0.0.1 port 51574 on 127.0.0.1 port 51479
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Postponed publickey for eduardopicazo from 127.0.0.1 port 51574 ssh2 [preauth]
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Accepted publickey for eduardopicazo from 127.0.0.1 port 51574 ssh2: ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg
+BSM audit: bsm_audit_session_setup: setaudit_addr failed: Operation not permitted
+User child is on pid 8343
+Starting session: command for eduardopicazo from 127.0.0.1 port 51574 id 0
+Received disconnect from 127.0.0.1 port 51574:11: disconnected by user
+Disconnected from user eduardopicazo 127.0.0.1 port 51574
+Connection from 127.0.0.1 port 51600 on 127.0.0.1 port 51479
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Postponed publickey for eduardopicazo from 127.0.0.1 port 51600 ssh2 [preauth]
+Accepted key ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg found at {run-worktree}/.test-goal-digest/ssh/authorized_keys:1
+Accepted publickey for eduardopicazo from 127.0.0.1 port 51600 ssh2: ED25519 SHA256:K3vEd+lwZBjLvCCPehOUU2L6tqPY9py5zg202ng7PVg
+BSM audit: bsm_audit_session_setup: setaudit_addr failed: Operation not permitted
+User child is on pid 9815
+Starting session: command for eduardopicazo from 127.0.0.1 port 51600 id 0
+Received disconnect from 127.0.0.1 port 51600:11: disconnected by user
+Disconnected from user eduardopicazo 127.0.0.1 port 51600
+Received signal 15; terminating.

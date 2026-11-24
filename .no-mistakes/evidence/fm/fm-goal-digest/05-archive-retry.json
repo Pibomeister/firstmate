@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-11-24T02:15:07Z",
+  "generated_at_local": "2026-11-23T20:15:07-0600 CST",
+  "changed": true,
+  "new_merges": [
+    {
+      "repo": "synthetic/demo",
+      "number": 2,
+      "title": "Synthetic merge 2",
+      "url": "https://synthetic.invalid/demo/pull/2",
+      "sha": "bbbbbbbbbbbb",
+      "merged_at": "2026-11-24T02:15:05Z"
+    }
+  ],
+  "open_pull_requests": [],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [],
+  "unreachable_sources": []
+}

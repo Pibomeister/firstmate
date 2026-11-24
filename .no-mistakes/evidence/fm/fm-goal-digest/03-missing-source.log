@@ -1,0 +1,4 @@
+$ FM_HOME=<isolated-main> bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:57Z
+goal-digest: summarize_cmd failed; digest still written

@@ -1,0 +1,3 @@
+$ FM_HOME=<isolated-locks> bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest/live/locks/data/goal-digest/.state/run.flock)

@@ -1,0 +1,15 @@
+{
+  "Label": "dev.firstmate.goal-digest-1944744514",
+  "ProgramArguments": [
+    "{run-worktree}/bin/fm-goal-digest.sh",
+    "run"
+  ],
+  "EnvironmentVariables": {
+    "FM_HOME": "{run-worktree}/.test-goal-digest/schedule-archive/home",
+    "PATH": "{run-worktree}/.test-goal-digest/schedule-archive/commands",
+    "HOME": "{run-worktree}/.test-goal-digest/schedule-archive/home"
+  },
+  "StartInterval": 1200,
+  "StandardOutPath": "{run-worktree}/.test-goal-digest/schedule-archive/home/data/goal-digest/launchd.log",
+  "StandardErrorPath": "{run-worktree}/.test-goal-digest/schedule-archive/home/data/goal-digest/launchd.log"
+}
