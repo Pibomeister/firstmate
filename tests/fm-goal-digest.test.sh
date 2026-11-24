@@ -295,28 +295,30 @@ PY
   cat > "$FIXTURE/open-example-org_example-repo.json" <<'JSON'
 []
 JSON
-  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "large first run failed"
-  assert_not_contains "$(cat "$home/data/goal-digest/latest.json")" "truncated at 1000" "first run on a large repository stops before the page cap"
+  FM_GD_PAGE_FAIL=1 run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "large first run failed"
+  assert_equals "[]" "$(python3 -c 'import json,sys; print([u for u in json.load(open(sys.argv[1]))["unreachable_sources"] if u["kind"] == "repo"])' "$home/data/goal-digest/latest.json")" "first run stops at the initial watermark before the failing second page"
   [ -s "$home/data/goal-digest/.state/since.tsv" ] || fail "first run did not save a fetch watermark"
-  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "large second run failed"
-  assert_not_contains "$(cat "$home/data/goal-digest/latest.json")" "truncated at 1000" "second run does not repeat a truncated fetch"
+  FM_GD_PAGE_FAIL=1 run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "large second run failed"
+  assert_equals "[]" "$(python3 -c 'import json,sys; print([u for u in json.load(open(sys.argv[1]))["unreachable_sources"] if u["kind"] == "repo"])' "$home/data/goal-digest/latest.json")" "second run stops at the saved watermark before the failing second page"
   pass "first-run large repository stops and saves watermark"
 }
 
-test_incomplete_collection_retains_unreported_merge_window() {
-  PATH="$FAKE:$BASE_PATH" python3 - "$SCRIPT" "$TMP_ROOT/pending-merges" "$RUN1_EPOCH" <<'PYTEST' || fail "incomplete collection consumed an unreported merge"
+test_complete_collection_recovers_unreported_merge_window() {
+  PATH="$FAKE:$BASE_PATH" python3 - "$SCRIPT" "$TMP_ROOT/pending-merges" "$RUN1_EPOCH" <<'PYTEST' || fail "collection omitted an unreported merge"
 import datetime, json, os, pathlib, subprocess, sys
 script, root, initial = sys.argv[1], pathlib.Path(sys.argv[2]), int(sys.argv[3])
 outage = initial + 172800
 retry_time = outage + 172800
 def stamp(epoch):
     return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-for scenario in ("resumed", "bootstrap-truncated", "bootstrap-failed"):
+for scenario in ("resumed", "bootstrap", "bootstrap-failed"):
     home = root / scenario
     (home / "config").mkdir(parents=True)
     (home / "config/goal-digest").write_text("repo = example-org/example-repo\n")
     fixture = home / "pulls.json"
     fixture.write_text("[]")
+    open_fixture = home / "open.json"
+    open_fixture.write_text("[]")
     requests = home / "requests.jsonl"
     gh = home / "gh"
     gh.write_text("#!" + sys.executable + "\n" + '''import json, pathlib, sys
@@ -329,7 +331,7 @@ with (home / "requests.jsonl").open("a") as fh:
     fh.write(json.dumps([state, page]) + "\\n")
 if state == "closed" and page == 2 and (home / "fail").exists():
     sys.exit(1)
-rows = json.loads((home / "pulls.json").read_text()) if state == "closed" else []
+rows = json.loads((home / ("pulls.json" if state == "closed" else "open.json")).read_text())
 print(json.dumps(rows[(page - 1) * 100:page * 100]))
 ''')
     gh.chmod(0o755)
@@ -352,33 +354,39 @@ print(json.dumps(rows[(page - 1) * 100:page * 100]))
             "merge_commit_sha": "bbbbbbbbbbbb2222", "html_url": "https://example.invalid/pr/1001"}
     rows.append(late)
     fixture.write_text(json.dumps(rows))
+    if scenario == "resumed":
+        open_fixture.write_text(json.dumps([
+            {"number": i, "created_at": stamp(initial), "html_url": f"https://example.invalid/pr/{i}"}
+            for i in range(1, 1002)
+        ]))
     if scenario == "bootstrap-failed":
         (home / "fail").touch()
-    incomplete = run(outage)
-    assert any(u["kind"] == "repo" for u in incomplete["unreachable_sources"]), incomplete
-    assert 1001 not in [m["number"] for m in incomplete["new_merges"]]
-    assert (output / ".state/since.tsv").read_bytes() == baseline, scenario
-    assert "1001" not in (output / ".state/seen.tsv").read_text()
-    pages = [page for state, page in map(json.loads, requests.read_text().splitlines()) if state == "closed"]
-    assert pages == list(range(1, 3 if scenario == "bootstrap-failed" else 11)), pages
-    if scenario == "bootstrap-failed":
+        incomplete = run(outage)
+        assert any(u["kind"] == "repo" for u in incomplete["unreachable_sources"]), incomplete
+        assert incomplete["new_merges"] == []
+        assert (output / ".state/since.tsv").read_bytes() == baseline, scenario
+        pages = [page for state, page in map(json.loads, requests.read_text().splitlines()) if state == "closed"]
+        assert pages == [1, 2], pages
         (home / "fail").unlink()
         assert (output / ".state/seen.tsv").read_text() == ""
-    late["updated_at"] = stamp(retry_time - 60)
-    fixture.write_text(json.dumps(sorted(rows, key=lambda row: row["updated_at"], reverse=True)))
-    recovered = run(retry_time)
+    collected_at = retry_time if scenario == "bootstrap-failed" else outage
+    recovered = run(collected_at)
+    assert {m["number"] for m in recovered["new_merges"]} == {1, 1001}, recovered
     merge = next(m for m in recovered["new_merges"] if m["number"] == 1001)
     assert merge["url"] == "https://example.invalid/pr/1001", merge
     assert merge["sha"] == "bbbbbbbbbbbb", merge
-    assert (output / ".state/since.tsv").read_bytes() == baseline
-    assert any(u["kind"] == "repo" for u in recovered["unreachable_sources"])
-    assert run(retry_time + 1200)["new_merges"] == []
-    fixture.write_text(json.dumps([late]))
-    complete = run(retry_time + 2400)
-    assert not any(u["kind"] == "repo" for u in complete["unreachable_sources"])
-    assert (output / ".state/since.tsv").read_text() == f"example-org/example-repo\t{retry_time + 2100}\n"
+    merge_section = (output / "latest.md").read_text().split("## Open pull requests")[0]
+    assert "https://example.invalid/pr/1001" in merge_section and "`bbbbbbbbbbbb`" in merge_section
+    assert not any(u["kind"].startswith("repo") for u in recovered["unreachable_sources"])
+    pages = [page for state, page in map(json.loads, requests.read_text().splitlines()) if state == "closed"]
+    assert pages == list(range(1, 12)), pages
+    assert (output / ".state/since.tsv").read_text() == f"example-org/example-repo\t{collected_at - 300}\n"
+    if scenario == "resumed":
+        assert [p["number"] for p in recovered["open_pull_requests"]] == list(range(1, 1002))
+        assert "https://example.invalid/pr/1001" in (output / "latest.md").read_text().split("## Open pull requests")[1]
+    assert run(collected_at + 1200)["new_merges"] == []
 PYTEST
-  pass "capped and failed collection retain pending merges across outages and bootstrap"
+  pass "complete pagination reports unchanged page-11 merges after outages and bootstrap failures"
 }
 
 
@@ -387,10 +395,10 @@ test_owner_actions_are_explicit_and_age_from_wait_start() {
   local home
   home=$(make_home owner-actions)
   cat > "$home/status.txt" <<'JSON'
-{"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[
+{"schema":"fm-fleet-snapshot.v1","generated_at":"2026-01-01T12:00:00Z","backlog":{"present":true,"records":[
  {"id":"decision-a","title":"Choose route","captain_actionable":true,"hold_set":"2026-01-01T10:00:00Z"},
  {"id":"decision-b","title":"Choose access","captain_actionable":true},
- {"id":"decision-c","title":"Choose date","captain_actionable":true,"hold_set":"2025-12-30"},
+ {"id":"decision-c","title":"Choose date","captain_actionable":true,"hold_set":"2025-12-30","hold_age_days":2},
  {"id":"done","title":"Answered","captain_actionable":false,"hold_set":"2020-01-01T00:00:00Z"}
 ]},"secondmate_current":{"registry":{"available":true,"complete":true},"records":[],"truncated":0}}
 JSON
@@ -419,6 +427,13 @@ PYCHECK
   local out
   out=$(run_digest "$home" "$RUN2_EPOCH") || fail "owner age-only run failed"
   assert_contains "$out" "changed=no" "owner wait ages alone do not retrigger summarization"
+  out=$(run_digest "$home" 1767315600) || fail "owner UTC rollover run failed"
+  assert_contains "$out" "changed=no" "UTC rollover alone does not retrigger summarization"
+  assert_equals "2" "$(python3 -c 'import json,sys; print(next(w["age_days"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"] if w["id"] == "decision-c"))' "$home/data/goal-digest/latest.json")" "day age follows the CST calendar before midnight"
+  out=$(run_digest "$home" 1767355200) || fail "owner next-day run failed"
+  assert_contains "$out" "changed=no" "day age alone does not retrigger summarization"
+  assert_equals "3" "$(python3 -c 'import json,sys; print(next(w["age_days"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"] if w["id"] == "decision-c"))' "$home/data/goal-digest/latest.json")" "unchanged snapshot hold ages advance on the next CST date"
+  assert_contains "$(cat "$home/data/goal-digest/latest.md")" "Choose date age_days=3 (day precision)" "Markdown publishes the current day age"
   python3 - "$home/status.txt" <<'PYUPDATE'
 import json, sys
 value = json.load(open(sys.argv[1]))
@@ -534,6 +549,17 @@ for case in ("registry-unavailable", "registry-incomplete", "parent-truncated", 
     digest = run(value)
     check(digest, False, expected)
     assert "- Unknown:" in (home / "data/goal-digest/latest.md").read_text(), case
+dated = copy.deepcopy(snapshot)
+for row in dated["secondmate_current"]["records"]:
+    row["decisions_open"][0].update(hold_set="2025-12-30", hold_age_days=2)
+env["FM_GD_NOW_EPOCH"] = now
+first_day = run(dated)
+assert all(w["age_days"] == 2 and w["age_hours"] is None and w["age_precision"] == "day" for w in first_day["waiting_on_captain"])
+env["FM_GD_NOW_EPOCH"] = "1767355200"
+next_day = run(dated)
+assert {(w["source"], w["age_days"]) for w in next_day["waiting_on_captain"]} == {("Fleet/mate-a", 3), ("Fleet/mate-b", 3)}, next_day
+assert next_day["changed"] is False
+assert (home / "data/goal-digest/latest.md").read_text().count("age_days=3 (day precision)") == 2
 snapshot["secondmate_current"]["records"][0]["decisions_open"] = []
 snapshot["secondmate_current"]["records"][0]["counts"]["decisions_open"] = 0
 resolved = run(snapshot)
@@ -768,4 +794,4 @@ PYTEST
   pass "killed digest releases its lock and its delayed summarizer cannot corrupt a replacement"
 }
 
-fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_incomplete_collection_retains_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
+fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark

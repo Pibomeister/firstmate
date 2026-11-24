@@ -34,7 +34,7 @@
 # The digest lists new merges (URL and 12-character SHA). The first fetch
 # for each repository reports only merges from the preceding day. Later
 # complete fetches advance its merge-window watermark with a five-minute
-# overlap. Failed or capped collection is reported as incomplete and
+# overlap. Failed collection is reported as incomplete and
 # retains the pending window, including the initial one-day baseline.
 # Already reported merges are excluded. It also lists open pull requests
 # (drafts included) with their age, missed ETAs (a status
@@ -177,15 +177,13 @@ shell_quote() {
 }
 
 # fetch_pulls <repo> <state-query> <out-json>: paginate at 100 per page,
-# up to 10 pages, combining every page into one JSON array. Returns 0
-# on success, including truncation at the page cap, or nonzero on failure.
-# Truncation sets work/fetch-truncated; results remain usable with a note.
+# combining pages through FM_GD_STOP_BEFORE or the final page into one
+# JSON array. Returns 0 on success or nonzero on failure.
 # A failed page discards partial results.
 fetch_pulls() {
-  local repo=$1 query=$2 out=$3 page=1 page_file count truncated=0
-  rm -f "$work/fetch-truncated"
+  local repo=$1 query=$2 out=$3 page=1 page_file count
   : > "$work/pages.txt"
-  while [ "$page" -le 10 ]; do
+  while true; do
     page_file=$work/page-$page.json
     if ! timed "$timeout_seconds" "$gh_bin" api "repos/$repo/pulls?$query&per_page=100&page=$page" > "$page_file" 2>/dev/null; then
       return 1
@@ -214,13 +212,8 @@ print(int(min(stamps)) if stamps else 0)
         break
       fi
     fi
-    if [ "$page" -eq 10 ]; then
-      truncated=1
-    fi
     page=$((page + 1))
   done
-  [ "$truncated" = 1 ] && printf '2' > "$work/fetch-truncated"
-  true
   python3 - "$out" <<'PY'
 import json, os, sys
 pages = []
@@ -287,23 +280,15 @@ def emit(source, row, title):
         age = str(max(0, int((int(sys.argv[3]) - held.timestamp()) // 3600)))
         precision = "hour"
     except ValueError:
-        # Native producers also emit date-only hold_set values. That
-        # precision is trustworthy only to the day: prefer the source's
-        # own day age when present, else derive whole days between the
-        # hold date and today (CST). Hours stay unknown.
         try:
             held_date = datetime.datetime.strptime(stamp, "%Y-%m-%d").date()
-            source_days = row.get("hold_age_days")
-            if isinstance(source_days, (int, float)) and not isinstance(source_days, bool):
-                age_days = str(max(0, int(source_days)))
-            else:
-                try:
-                    from zoneinfo import ZoneInfo
-                    tz = ZoneInfo("America/Mexico_City")
-                except Exception:
-                    tz = datetime.timezone(datetime.timedelta(hours=-6))
-                today = datetime.datetime.fromtimestamp(int(sys.argv[3]), tz).date()
-                age_days = str(max(0, (today - held_date).days))
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo("America/Mexico_City")
+            except Exception:
+                tz = datetime.timezone(datetime.timedelta(hours=-6))
+            today = datetime.datetime.fromtimestamp(int(sys.argv[3]), tz).date()
+            age_days = str(max(0, (today - held_date).days))
             precision = "day"
         except ValueError:
             pass
@@ -403,9 +388,6 @@ except BlockingIOError:
     json_file=$work/prs.json
     local stop_before
     stop_before=$(awk -F '\t' -v r="$repo" '$1 == r { print $2 }' "$since_file" 2>/dev/null || true)
-    # First fetch for a repository stops at the preceding day, matching
-    # the first-run reporting window, so a large repository cannot page
-    # to the cap before any fetch time exists.
     if [ -z "$stop_before" ]; then
       stop_before=$((now_epoch - 86400))
       printf '%s\t%s\n' "$repo" "$stop_before" >> "$work/since-new.tsv"
@@ -413,12 +395,8 @@ except BlockingIOError:
     if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
-      [ -f "$work/fetch-truncated" ] && printf '%s\t%s\t%s\n' "repo" "$repo" "merged list truncated at 1000" >> "$work/unreachable.tsv"
-      local truncated_flag=0
-      [ -f "$work/fetch-truncated" ] && truncated_flag=1
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
       FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
-      FM_GD_TRUNCATED="$truncated_flag" \
       python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
@@ -463,9 +441,8 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             # of reporting every old merge in the window as new.
             continue
         out.write("\t".join([repo, number, clean(pr.get("title", "")), clean(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
-if os.environ["FM_GD_TRUNCATED"] != "1":
-    with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
-        fh.write(f"{repo}\t{now - 300}\n")
+with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
+    fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after archival and publication, so an
@@ -483,7 +460,6 @@ PY
     if ! fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
-      [ -f "$work/fetch-truncated" ] && printf '%s\t%s\t%s\n' "repo-open" "$repo" "open list truncated at 1000" >> "$work/unreachable.tsv"
       FM_GD_REPO="$repo" FM_GD_NOW="$now_epoch" python3 - "$json_file" >> "$work/open.tsv" <<'PY'
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
