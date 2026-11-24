@@ -223,28 +223,17 @@ test_successful_backstop_is_idempotent_without_consuming_delayed_annotation() {
 }
 
 test_output_failure_does_not_commit_the_backstop_receipt() {
-  local dir state fakebin out retry_out real_cat
+  local dir state retry_out
   dir=$(make_case output-failure)
   state="$dir/state"
-  fakebin="$dir/fakebin"
-  out="$dir/failed.out"
   retry_out="$dir/retry.out"
-  real_cat=$(command -v cat)
-  mkdir -p "$fakebin"
 
   printf 'done: retry after the output consumer fails\n' > "$state/output-task.status"
-  cat > "$fakebin/cat" <<SH
-#!/usr/bin/env bash
-case "\${1:-}" in
-  "$state"/.status-presentation.prepared.*) exit 1 ;;
-esac
-exec "$real_cat" "\$@"
-SH
-  chmod +x "$fakebin/cat"
-
-  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" \
+  # Close the actual consumer instead of matching the scratch file's location.
+  FM_STATE_OVERRIDE="$state" "$DRAIN" >&- 2> "$dir/failed.err" \
     || fail "the top-level empty-queue drain changed its compatibility exit on an output failure"
-  [ ! -s "$out" ] || fail "the failed output consumer received unexpected bytes: $(cat "$out")"
+  [ ! -s "$state/.status-presentation-cursor" ] \
+    || fail "the failed output consumer committed a presentation receipt"
 
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$retry_out" \
     || fail "backstop retry failed after the output consumer recovered"

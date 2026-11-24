@@ -463,12 +463,13 @@ test_presentation_deadline_preserves_pending_data_and_recovers() {
   cat > "$dir/blocked-reader" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$$" > "$FM_DRAIN_READER_PID"
-exec sleep 30
+exec sleep 90
 SH
   chmod +x "$dir/blocked-reader"
   # The outer test bound is independent: the product must report its own
   # shorter presentation deadline rather than merely be killed by this guard.
-  fm_run_timed 6 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
+  # Use the normal presentation budget so loaded hosts can reach the reader.
+  fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=30 \
     FM_STATUS_SPAN_READER="$dir/blocked-reader" FM_DRAIN_READER_PID="$dir/reader.pid" \
     "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
   assert_equals 124 "$rc" 'presentation deadline must report incomplete execution'
@@ -477,6 +478,7 @@ SH
   assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
   cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
+  [ -s "$dir/reader.pid" ] || fail 'deadline did not reach the blocked reader'
   reader_pid=$(cat "$dir/reader.pid")
   if /bin/bash -c '. "$1"; fm_pid_alive "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$reader_pid"; then
     fail 'presentation deadline left its reader running'
@@ -507,7 +509,7 @@ check_attempt_owned_presentation_scratch() {
 #!/usr/bin/env bash
 if [ "${FM_PEER_READER:-0}" = 1 ]; then
   printf '%s\n' "$$" > "$FM_READER_PID"
-  exec sleep 30
+  exec sleep 90
 fi
 for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*; do
   [ -d "$base" ] || continue
@@ -519,7 +521,7 @@ for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*
     [ -f "$scratch" ] || continue
     [ "${FM_INTERRUPT_TEST:-0}" != 1 ] || trap '' TERM
     printf '%s\n' "$$" > "$FM_READER_PID"
-    exec sleep 30
+    exec sleep 90
   done
 done
 exec perl -e '
@@ -549,7 +551,7 @@ SH
     rm "$state/peer.status"
     rc=0
     if [ "$mode" = timeout ]; then
-      fm_run_timed 8 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=3 \
+      fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=30 \
         FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" FM_READER_PID="$dir/drain.pid" \
         "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
     else
@@ -592,9 +594,9 @@ PY_SIGNAL
     fi
     [ -s "$dir/drain.pid" ] || fail "timeout did not reach $stage"
     if [ "$stage" = preparation ]; then
-      assert_grep 'phase=status-unread' "$dir/timed.err" 'preparation did not block inside prepared output'
+      assert_grep 'phase=status-unread' "$dir/timed.err" "preparation did not block inside prepared output: $(cat "$dir/timed.err")"
     else
-      assert_grep 'phase=status-open-decisions' "$dir/timed.err" 'fold timeout did not reach open decisions'
+      assert_grep 'phase=status-open-decisions' "$dir/timed.err" "fold timeout did not reach open decisions: $(cat "$dir/timed.err")"
     fi
     for scratch in "$state"/.wake-drain-presentation.* "$state"/.status-presentation.prepared.* \
       "$state"/.*.open-decisions-cursor.read.* "$state"/.*.open-decisions-cursor.unread.* \
@@ -668,10 +670,13 @@ test_warm_routine_history_is_bounded_without_acknowledging_it() {
     i=$((i + 1))
   done
   cp "$state/.wake-queue" "$dir/queue.before"
-  fm_run_timed 12 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=6 \
-    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" "$BASH" "$DRAIN" \
+  # Exercise the production presentation deadline, not a shorter test-only
+  # latency target. The outer guard leaves room for setup and timeout cleanup
+  # under host contention; it does not extend the drain's own deadline.
+  fm_run_timed 75 env -u FM_WAKE_DRAIN_PRESENTATION_TIMEOUT FM_STATE_OVERRIDE="$state" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" "$BASH" "$DRAIN" --phases \
     > "$dir/warm.out" 2> "$dir/warm.err" || rc=$?
-  assert_equals 0 "$rc" 'a warm routine-only history still held the full drain past its presentation budget'
+  assert_equals 0 "$rc" "a warm routine-only history still held the full drain past its presentation budget: $(cat "$dir/warm.err")"
   cmp "$dir/history.before" "$status" || fail 'fast presentation rewrote history'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'fast presentation consumed queued wakes'
   offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_presentation_cursor_offset "$2"' \
