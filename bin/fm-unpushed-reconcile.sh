@@ -42,8 +42,9 @@
 #
 # PR lookups use gh-axi, including its authenticated API for merged heads, for
 # GitHub publication targets. Other forges, missing
-# tools, malformed responses, and failed reads are explicit unknowns. A PR
-# never hides local follow-up commits. Findings request supervisor action,
+# tools, malformed responses, failed reads, and a closed-PR page at the
+# 100-row bound are explicit unknowns. A PR never hides local follow-up
+# commits. Findings request supervisor action,
 # including escalation of a blocked pipeline start; retry authority and all
 # gate decisions stay with the supervisor. Nothing automatically retries a
 # gate-context failure or administers the shared daemon.

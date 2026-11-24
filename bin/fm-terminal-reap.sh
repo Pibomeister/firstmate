@@ -39,8 +39,10 @@
 #
 # Exit status: 0 when the inventory was read (and, with --apply, every reap
 # succeeded or was safely skipped); 1 when an inventory read failed, including
-# an unreadable home, task record, or secondmate registry, in which case
-# nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
+# an unreadable home, task record, secondmate registry, or a truncated initial
+# Orca terminal inventory, in which case nothing is closed; 2 on a usage error;
+# 3 when --apply hit a failure. A truncated title recheck skips that terminal
+# as now-unreadable.
 #
 # Owners. The script reads this home's state/*.meta records and, through each
 # home's data/secondmates.md, every local secondmate home's records, read-only.

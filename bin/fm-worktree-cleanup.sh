@@ -19,7 +19,9 @@
 # files, do not block removal. Decision lines name the worktree and the
 # reason. They never include file contents.
 # Only pull requests whose head repository owner is the base repository owner
-# count. With none open and at least one merged or closed, the highest-numbered
+# count. A lookup returning 20 pull requests reaches the query bound and is
+# reported as failed; the worktree stays in place because completeness is
+# unknown. With none open and at least one merged or closed, the highest-numbered
 # of those decides. A worktree whose HEAD is not an ancestor of that pull
 # request's head commit is reported and left in place. A head commit that is
 # missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
@@ -72,7 +74,9 @@
 # project argument also reads each lane repository's other worktrees once for
 # the nesting check, and deletes a record whose worktree is gone, or that names
 # no worktree, or whose repository and worktree are both gone, once Orca no
-# longer lists its terminal. A clone-path pass leaves every other lane record
+# longer lists its terminal. An unreadable or incomplete terminal inventory
+# is reported and preserves the lane record even when its worktree is gone.
+# A clone-path pass leaves every other lane record
 # alone.
 #
 # Usage:

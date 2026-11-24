@@ -24,7 +24,10 @@
 #   FM_CONFIG_OVERRIDE  directory holding the role file; defaults to $FM_HOME/config
 #
 # Requires gh. Exit 0 on success and prints `commented <n>` or
-# `created <n> <url>` to stdout.
+# `created <n> <url>` to stdout. Exit 1 with a diagnostic if label listing
+# fails, or a required label is not among 500 returned labels: that result
+# cannot prove absence, so the script stops before creating that label or
+# filing or commenting on an issue.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
