@@ -556,6 +556,7 @@ _fm_status_until_date() {  # <status-line> <out-var> -> 0 date, 1 absent, 2 malf
   esac
 }
 
+# With <out-var>, assign rather than print; an unknown time leaves it unchanged.
 status_line_at_epoch() {  # <status-line> [<out-var>] -> epoch; nonzero when unknown
   local __fm_slae_epoch
   _fm_status_at_epoch "$1" __fm_slae_epoch || return 1
@@ -805,9 +806,9 @@ _fm_key_at_note_head() {  # <status-line> -> raw slug
 }
 # Out-variable form of _fm_key_at_note_head, for the per-line decision fold.
 # The helpers named *_into below assign to <out-var> instead of printing, so a
-# caller reads them without forking a command substitution, and each returns
-# the bytes the $(...) form would have captured; where those could end in a
-# newline, _fm_classify_chomp drops what a command substitution strips.
+# caller reads them without forking a command substitution.
+# Each helper documents whether it preserves or strips trailing newlines;
+# _fm_classify_chomp supplies command substitution's stripping when needed.
 _fm_key_at_note_head_into() {  # <status-line> <out-var>
   local __fm_knh_rest
   case "$1" in
@@ -844,6 +845,8 @@ _fm_decision_slug_ok() {  # <slug>
 # worker-written stamp cannot move it: a readable time like [at=10:30] carries
 # colons that would otherwise end the head mid-tag and hand the caller a note
 # and a key sliced out of the timestamp. The line's own bytes are never altered.
+# status_line_note's <out-var> form strips trailing newlines as $(...) does;
+# its printing form preserves them.
 status_line_note() {  # <status-line> [<out-var>] -> text after the first colon, trimmed
   local __fm_sln_out
   _fm_status_line_note_into "$1" __fm_sln_out

@@ -578,16 +578,16 @@ fm_backend_required_tool_available() {  # <backend> <tool>
   esac
 }
 
-# fm_meta_get: the LAST value of `key=` in <meta-file>, or empty (never
-# errors) if the file or key is absent. Mirrors the ad hoc `grep '^key=' |
-# tail -1 | cut -d= -f2-` snippet every fm-*.sh script used to repeat inline.
+# Metadata readers return the LAST value of `key=` in <meta-file>, or empty
+# (never errors) if the file or key is absent.
+# fm_meta_get prints the value; fm_meta_get_into assigns it without a subshell.
 fm_meta_get() {  # <meta-file> <key>
   local __fm_mg_value
   fm_meta_get_into __fm_mg_value "$1" "$2"
   printf '%s' "$__fm_mg_value"
 }
 
-fm_meta_get_into() {
+fm_meta_get_into() {  # <out-var> <meta-file> <key>
   local __fm_mgi_line __fm_mgi_value=''
   if [ -f "$2" ]; then
     while IFS= read -r __fm_mgi_line || [ -n "$__fm_mgi_line" ]; do
