@@ -492,6 +492,75 @@ PYCHECK
   pass "each command reads every ledger and inbox input once while preserving historical verification"
 )
 
+test_acknowledgement_during_receipt_read_preserves_other_rows() (
+  local action h artifact hash machine out rc base_path
+  base_path=$PATH
+  for action in check open receipt collect; do
+    h=$(make_home "ack-$action")
+    install_clock "$h"
+    POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+    checklist "$h" start >/dev/null || fail "could not start checklist"
+    for machine in M3 Studio Hetzner local; do
+      artifact=$(seed_artifact "$h" "$machine")
+      hash=$(sha_of "$artifact")
+      [ "$machine" != Studio ] || hash=$(printf '%064d' 0)
+      inbox_receipt "$h" "$POSTMORTEM_TEST_EPOCH" "$machine" '' "$machine" "$artifact" "$hash"
+    done
+    mkdir -p "$h/state/inbox/handled"
+    export POSTMORTEM_ACK_PENDING="$h/state/inbox/$POSTMORTEM_TEST_EPOCH-M3.note"
+    export POSTMORTEM_ACK_HANDLED="$h/state/inbox/handled/$POSTMORTEM_TEST_EPOCH-M3.note"
+    export POSTMORTEM_REAL_PYTHON
+    POSTMORTEM_REAL_PYTHON=$(command -v python3)
+    cat > "$h/fakebin/python3" <<'SH'
+#!/bin/bash
+exec "$POSTMORTEM_REAL_PYTHON" -c '
+import os, sys
+pending = os.environ["POSTMORTEM_ACK_PENDING"]
+handled = os.environ["POSTMORTEM_ACK_HANDLED"]
+def acknowledge(event, args):
+    if event == "open" and args[0] == pending and args[1] == "r":
+        os.replace(pending, handled)
+sys.addaudithook(acknowledge)
+if sys.argv[1] == "-":
+    code = sys.stdin.read()
+    sys.argv = sys.argv[1:]
+else:
+    assert sys.argv[1] == "-c"
+    code = sys.argv[2]
+    sys.argv = ["-c", *sys.argv[3:]]
+exec(compile(code, "<acknowledgement-race>", "exec"))
+' "$@"
+SH
+    chmod +x "$h/fakebin/python3"
+    if [ "$action" = receipt ]; then
+      artifact="$h/artifacts/local.md"
+      hash=$(sha_of "$artifact")
+      if out=$(checklist "$h" receipt --machine local --path "$artifact" --hash "$hash" 2>&1); then rc=0; else rc=$?; fi
+    else
+      if out=$(checklist "$h" "$action" 2>&1); then rc=0; else rc=$?; fi
+    fi
+    [ ! -e "$POSTMORTEM_ACK_PENDING" ] && [ -f "$POSTMORTEM_ACK_HANDLED" ] || fail "$action did not exercise the acknowledgement race"
+    assert_not_contains "$out" Traceback "$action aborted the receipt snapshot: $out"
+    if [ "$action" = check ]; then
+      assert_equals 1 "$rc" "check should still report the bad-hash machine"
+      assert_contains "$out" $'M3\tclosed\t' "the moved receipt was lost: $out"
+      assert_contains "$out" $'Hetzner\tclosed\t' "acknowledgement invalidated another machine: $out"
+    else
+      assert_equals 0 "$rc" "$action failed during acknowledgement: $out"
+    fi
+    if [ "$action" = receipt ]; then
+      assert_contains "$out" $'local\tclosed\t' "acknowledgement invalidated the new receipt: $out"
+    else
+      assert_contains "$out" 'artifact hash mismatch' "$action hid the independent bad hash: $out"
+      assert_not_contains "$out" $'M3\topen\t' "$action reopened the acknowledged machine: $out"
+      assert_not_contains "$out" $'Hetzner\topen\t' "$action reopened an unrelated machine: $out"
+    fi
+    export PATH="$base_path"
+  done
+  pass "acknowledgement between listing and reading preserves receipt verification for every command"
+)
+
+test_acknowledgement_during_receipt_read_preserves_other_rows
 test_calendar_dates_are_validated_and_invalid_history_is_isolated
 test_receipt_inputs_are_read_once_per_command
 test_relative_receipts_survive_a_different_working_directory

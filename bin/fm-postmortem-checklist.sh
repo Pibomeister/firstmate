@@ -138,8 +138,12 @@ for directory in (inbox, inbox / "handled"):
         epoch = note.name.split("-", 1)[0]
         if not epoch.isascii() or not epoch.isdecimal():
             continue
+        try:
+            text = note.read_text(errors="surrogateescape")
+        except FileNotFoundError:
+            continue
         body = False
-        for line in note.read_text(errors="surrogateescape").splitlines():
+        for line in text.splitlines():
             if line == "--":
                 body = True
                 continue
