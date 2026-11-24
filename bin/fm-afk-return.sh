@@ -658,21 +658,9 @@ open_human_steps() {  # <human-steps.tsv>
     done
 }
 
-# Unclosed overnight-postmortem rows for the away window's night, from the
-# checklist owner (bin/fm-postmortem-checklist.sh). Prints nothing when no
-# checklist was opened for that night, so a night with no 07:45 order adds
-# no rows. The night is the away window's start date, else today.
-postmortem_open_rows() {  # <since-epoch>
-  local since=$1 night
-  [ -x "$SCRIPT_DIR/fm-postmortem-checklist.sh" ] || return 0
-  if [ -n "$since" ]; then
-    night=$(date -r "$since" +%F 2>/dev/null || date -d "@$since" +%F 2>/dev/null || printf '')
-  else
-    night=$(date +%F)
-  fi
-  [ -n "$night" ] || return 0
+postmortem_open_rows() {
   FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-    "$SCRIPT_DIR/fm-postmortem-checklist.sh" open --night "$night" 2>/dev/null || true
+    "$SCRIPT_DIR/fm-postmortem-checklist.sh" collect --since "$1"
 }
 
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
@@ -783,7 +771,9 @@ EOF
     printf '  - %s [key=%s] human-only step, other work continues: %s\n' "$task" "$key" "$summary"
   done < "$blockers"
   # Unclosed overnight postmortems: each machine is named, never silently absent.
-  rows=$(postmortem_open_rows "$since")
+  if ! rows=$(postmortem_open_rows "$since"); then
+    rows="${rows}${rows:+$'\n'}collector"$'\topen\tpostmortem collection failed; machine receipts remain unverified'
+  fi
   if [ -n "$rows" ]; then
     count=$((count + 1))
     printf '  overnight postmortems not received:\n'

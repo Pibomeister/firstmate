@@ -560,41 +560,56 @@ test_return_brief_lists_open_human_only_steps() {
   pass "the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate"
 }
 
-test_return_brief_names_unclosed_postmortem_machines() {
-  local dir out waiting night artifact hash
+test_return_brief_names_unclosed_postmortem_machines() (
+  local dir out waiting night artifact hash machine real_date
   dir="$TMP_ROOT/brief-postmortems"
   install_runner "$dir"
+  mkdir -p "$dir/fakebin"
+  real_date=$(command -v date)
+  export POSTMORTEM_REAL_DATE="$real_date"
+  cat > "$dir/fakebin/date" <<'SH'
+#!/bin/bash
+case "$*" in
+  +%s) printf '%s\n' "$POSTMORTEM_TEST_EPOCH" ;;
+  +%F) python3 -c 'import datetime, os; print(datetime.datetime.fromtimestamp(int(os.environ["POSTMORTEM_TEST_EPOCH"])).date())' ;;
+  *) exec "$POSTMORTEM_REAL_DATE" "$@" ;;
+esac
+SH
+  chmod +x "$dir/fakebin/date"
+  export PATH="$dir/fakebin:$PATH"
+  export POSTMORTEM_TEST_EPOCH
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,23,20).timestamp()))')
   contract_in "$dir" enter --words 'collect the overnight postmortems' >/dev/null 2>&1 || fail "could not confirm the away-posture record"
-  night=$(date +%F)
-  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" start --night "$night" >/dev/null \
-    || fail "could not open the postmortem checklist"
-  # M3 and the local home close with verified receipts; Studio's artifact
-  # hash does not match its receipt; Hetzner records no receipt at all.
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,7,45).timestamp()))')
+  night=2026-11-24
   for machine in M3 local; do
     artifact="$dir/home/$machine-postmortem.md"
     printf '%s postmortem\n' "$machine" > "$artifact"
     hash=$(shasum -a 256 "$artifact" | awk '{print $1}')
-    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
-      --machine "$machine" --path "$artifact" --hash "$hash" --night "$night" >/dev/null \
-      || fail "could not record the $machine receipt"
+    if [ "$machine" = M3 ]; then
+      FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
+        --machine "$machine" --path "$artifact" --hash "$hash" >/dev/null || fail "could not record default-date receipt"
+    else
+      out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/fm-inbox.sh" note \
+        "$(printf 'postmortem-receipt\t%s\t%s\t%s\t%s' "$night" "$machine" "$artifact" "$hash")") || fail "could not submit inbox receipt: $out"
+    fi
   done
   artifact="$dir/home/Studio-postmortem.md"
   printf 'Studio postmortem\n' > "$artifact"
-  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
-    --machine Studio --path "$artifact" --hash 0000000000000000000000000000000000000000000000000000000000000000 --night "$night" >/dev/null \
-    || fail "could not record the Studio receipt"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/fm-inbox.sh" note \
+    "$(printf 'postmortem-receipt\t%s\tStudio\t%s\t%064d' "$night" "$artifact" 0)") || fail "could not submit bad-hash inbox receipt: $out"
   touch "$dir/home/state/.last-watcher-beat"
   : > "$dir/home/state/.fake-drain"
   out=$(run_return "$dir" begin) || fail "the postmortem return did not complete: $out"
   waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
   assert_contains "$waiting" 'overnight postmortems not received:' "unclosed postmortems were not listed under waiting on you: $out"
-  assert_contains "$waiting" '    - Hetzner: no artifact receipt recorded' "the missing machine was not named as missing in the brief: $waiting"
-  assert_contains "$waiting" '    - Studio: artifact hash mismatch' "a bad-hash artifact was not kept open in the brief: $waiting"
-  assert_not_contains "$waiting" '    - M3:' "a verified machine was still listed as waiting: $waiting"
-  assert_not_contains "$waiting" '    - local:' "the verified local home was still listed as waiting: $waiting"
+  assert_contains "$waiting" '    - Hetzner: 2026-11-24: no artifact receipt recorded' "the missing machine was not named at 07:45: $waiting"
+  assert_contains "$waiting" '    - Studio: 2026-11-24: artifact hash mismatch' "a bad-hash artifact was not kept open in the brief: $waiting"
+  assert_not_contains "$waiting" '    - M3:' "a default-date receipt was lost across midnight: $waiting"
+  assert_not_contains "$waiting" '    - local:' "the inbox receipt did not close the local row: $waiting"
   assert_not_contains "$waiting" '(nothing)' "unclosed postmortems left waiting on you empty"
-  pass "the return brief names each unclosed postmortem machine and keeps a bad-hash receipt open"
-}
+  pass "the return collects receipts across midnight and names missing and bad-hash machines at 07:45"
+)
 
 test_return_brief_points_at_the_drain_on_a_host_home_only() {
   local dir harness fakebin out n

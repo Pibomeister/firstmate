@@ -23,23 +23,30 @@
 #       2 when no checklist exists for the night.
 #   fm-postmortem-checklist.sh open [--night <YYYY-MM-DD>]
 #       Print only the open rows, in the same shape as `check`.
-#       Exit 0 when a checklist exists for the night, 2 when none does.
+#       Exit 0; an unopened night lists every machine as missing.
+#   fm-postmortem-checklist.sh collect [--since <epoch>] [--until <epoch>]
+#       Open and report every morning due at 07:45 in the window.
+#       Nights name the morning of collection; --night defaults to today.
+#       Inbox note bodies may contain a tab-separated receipt line:
+#       postmortem-receipt<TAB>night<TAB>machine<TAB>absolute-path<TAB>sha256
+#       Pending and handled notes both count; their id supplies the epoch.
 #
 # State: an append-only tab-separated ledger at
 # state/postmortem-checklist.tsv under the home (FM_HOME, or
 # FM_STATE_OVERRIDE). Rows are
 # <night><TAB><machine><TAB><event><TAB><path><TAB><hash><TAB><epoch>
 # with event `opened` (machine `-`, from `start`) or `receipt`. The
-# latest receipt for a machine and night is the one `check` verifies.
+# newest ledger or inbox receipt for a machine and night is verified.
+# Receipt epochs order ledger rows and inbox notes; a later input wins ties.
 # A night exists once any row names it, so a receipt recorded before
 # `start` still opens the other machines' rows for that night.
 #
 # This script records and verifies receipts only. It never writes any
 # machine's postmortem content. bin/fm-afk-return.sh reads the open rows
-# through `open` and names each unclosed machine in the morning return
+# through `collect` and names each unclosed machine in the morning return
 # brief's "Waiting on you" section, so a missing machine is named at
 # 07:45 rather than silently absent.
-set -u
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -52,7 +59,7 @@ LEDGER="$STATE/postmortem-checklist.tsv"
 MACHINES="M3 Studio Hetzner local"
 
 usage() {
-  sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 die() {  # <message> [code]
@@ -82,10 +89,6 @@ valid_hash() {  # <sha256 hex>
   [ "${#1}" -eq 64 ]
 }
 
-clean_field() {
-  LC_ALL=C tr '\t\r\n' '   '
-}
-
 file_sha256() {  # <file>
   if command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
@@ -104,16 +107,38 @@ night_exists() {  # <night>
 # The latest recorded receipt for one machine and night:
 # prints <path><TAB><hash>, empty when none was recorded.
 latest_receipt() {  # <night> <machine>
-  [ -f "$LEDGER" ] || return 0
-  awk -F '\t' -v night="$1" -v machine="$2" '
-    $1 == night && $2 == machine && $3 == "receipt" { path = $4; hash = $5 }
-    END { if (path != "") printf "%s\t%s\n", path, hash }' "$LEDGER"
+  local night=$1 machine=$2 note id epoch
+  {
+    if [ -f "$LEDGER" ]; then
+      awk -F '\t' -v night="$night" -v machine="$machine" '
+        $1 == night && $2 == machine && $3 == "receipt" {
+          printf "%s\t%s\t%s\n", $6, $4, $5
+        }' "$LEDGER" || return 1
+    fi
+    for note in "$STATE/inbox/"*.note "$STATE/inbox/handled/"*.note; do
+      [ -f "$note" ] || continue
+      id=${note##*/}; epoch=${id%%-*}
+      case "$epoch" in ''|*[!0-9]*) continue ;; esac
+      awk -F '\t' -v epoch="$epoch" -v night="$night" -v machine="$machine" '
+        /^--$/ { body = 1; next }
+        body && NF == 5 && $1 == "postmortem-receipt" && $2 == night && $3 == machine {
+          printf "%s\t%s\t%s\n", epoch, $4, $5
+        }' "$note" || return 1
+    done
+  } | awk -F '\t' '
+    $1 ~ /^[0-9]+$/ && $1 + 0 >= latest {
+      latest = $1 + 0; path = $2; hash = $3
+    }
+    END { if (path != "") printf "%s\t%s\n", path, hash }'
 }
 
 # One machine's verified row: <machine><TAB>closed|open<TAB><detail>.
 machine_row() {  # <night> <machine>
   local night=$1 machine=$2 receipt path hash actual
-  receipt=$(latest_receipt "$night" "$machine")
+  if ! receipt=$(latest_receipt "$night" "$machine"); then
+    printf '%s\topen\tartifact receipt could not be read\n' "$machine"
+    return 0
+  fi
   if [ -z "$receipt" ]; then
     printf '%s\topen\tno artifact receipt recorded\n' "$machine"
     return 0
@@ -121,11 +146,18 @@ machine_row() {  # <night> <machine>
   path=$(printf '%s' "$receipt" | cut -f1)
   hash=$(printf '%s' "$receipt" | cut -f2)
   hash=$(printf '%s' "$hash" | tr 'A-F' 'a-f')
+  if [[ "$path" != /* ]] || ! valid_hash "$hash"; then
+    printf '%s\topen\tinvalid artifact receipt\n' "$machine"
+    return 0
+  fi
   if [ ! -f "$path" ] || [ ! -r "$path" ]; then
     printf '%s\topen\tartifact missing at recorded path: %s\n' "$machine" "$path"
     return 0
   fi
-  actual=$(file_sha256 "$path") || die "no sha256 tool available (need shasum or sha256sum)"
+  if ! actual=$(file_sha256 "$path") || ! valid_hash "$actual"; then
+    printf '%s\topen\tartifact hash verification failed for %s\n' "$machine" "$path"
+    return 0
+  fi
   actual=$(printf '%s' "$actual" | tr 'A-F' 'a-f')
   if [ "$actual" != "$hash" ]; then
     printf '%s\topen\tartifact hash mismatch for %s\n' "$machine" "$path"
@@ -137,7 +169,7 @@ machine_row() {  # <night> <machine>
 print_rows() {  # <night> <all|open>
   local night=$1 mode=$2 machine row state open_count=0
   for machine in $MACHINES; do
-    row=$(machine_row "$night" "$machine")
+    row=$(machine_row "$night" "$machine") || row="$machine"$'\topen\tartifact verification failed'
     state=$(printf '%s' "$row" | cut -f2)
     [ "$state" = open ] && open_count=$((open_count + 1))
     if [ "$mode" = all ] || [ "$state" = open ]; then
@@ -191,7 +223,11 @@ cmd_receipt() {
   [ -n "$machine" ] || die "receipt needs --machine <name>" 2
   valid_machine "$machine" || die "unknown machine: $machine (expected one of: $MACHINES)" 2
   [ -n "$path" ] || die "receipt needs --path <path>" 2
-  path=$(printf '%s' "$path" | clean_field)
+  case "$path" in
+    *$'\t'*|*$'\r'*|*$'\n'*) die "artifact path contains a ledger delimiter" 2 ;;
+    /*) ;;
+    *) path="$PWD/$path" ;;
+  esac
   [ -n "$hash" ] || die "receipt needs --hash <sha256>" 2
   valid_hash "$hash" || die "hash must be 64 hex sha256 characters" 2
   hash=$(printf '%s' "$hash" | tr 'A-F' 'a-f')
@@ -206,7 +242,9 @@ cmd_check() {  # <all|open> [args...]
   shift
   local night open_count
   night=$(parse_night "$@") || exit $?
-  night_exists "$night" || die "no postmortem checklist for night $night" 2
+  if [ "$mode" = all ]; then
+    night_exists "$night" || die "no postmortem checklist for night $night" 2
+  fi
   print_rows "$night" "$mode"
   open_count=$?
   if [ "$mode" = all ]; then
@@ -216,11 +254,51 @@ cmd_check() {  # <all|open> [args...]
   return 0
 }
 
+cmd_collect() {
+  local since="" until nights night machine state detail rc=0
+  until=$(date +%s) || return 1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --since) [ $# -ge 2 ] || die "--since needs an epoch" 2; since=$2; shift 2 ;;
+      --until) [ $# -ge 2 ] || die "--until needs an epoch" 2; until=$2; shift 2 ;;
+      *) die "unknown argument: $1" 2 ;;
+    esac
+  done
+  nights=$(python3 - "$since" "$until" <<'PYDATES'
+import datetime as dt
+import sys
+
+end = dt.datetime.fromtimestamp(int(sys.argv[2]))
+start = dt.datetime.fromtimestamp(int(sys.argv[1])) if sys.argv[1] else end.replace(hour=0, minute=0, second=0, microsecond=0)
+day = start.date()
+while day <= end.date():
+    due = dt.datetime.combine(day, dt.time(7, 45))
+    if start <= due <= end:
+        print(day.isoformat())
+    day += dt.timedelta(days=1)
+PYDATES
+  ) || {
+    for machine in $MACHINES; do
+      printf '%s\topen\tpostmortem collection failed; receipts unverified\n' "$machine"
+    done
+    return 1
+  }
+  while IFS= read -r night; do
+    [ -n "$night" ] || continue
+    (cmd_start --night "$night") >/dev/null || rc=1
+    cmd_check open --night "$night" | while IFS=$'\t' read -r machine state detail; do
+      printf '%s\t%s\t%s: %s\n' "$machine" "$state" "$night" "$detail"
+    done || rc=1
+  done <<< "$nights"
+  return "$rc"
+}
+
 case "${1:-}" in
+  collect) shift; cmd_collect "$@" ;;
   start) shift; cmd_start "$@" ;;
   receipt) shift; cmd_receipt "$@" ;;
   check) shift; cmd_check all "$@" ;;
   open) shift; cmd_check open "$@" ;;
   --help|-h|help|"") usage ;;
-  *) die "unknown command: $1 (expected start, receipt, check, or open)" 2 ;;
+  *) die "unknown command: $1 (expected start, receipt, check, open, or collect)" 2 ;;
 esac

@@ -111,7 +111,7 @@ test_all_closed_check_passes_and_missing_artifact_stays_open() {
 }
 
 test_unknown_night_and_bad_input_are_refused() {
-  local h out rc artifact
+  local h out rc artifact machine
   h=$(make_home refused)
   set +e
   out=$(checklist "$h" check --night "$NIGHT" 2>&1)
@@ -123,7 +123,10 @@ test_unknown_night_and_bad_input_are_refused() {
   out=$(checklist "$h" open --night "$NIGHT" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "open on an unopened night should exit 2 (rc=$rc): $out"
+  [ "$rc" -eq 0 ] || fail "open on an unopened night should name missing machines (rc=$rc): $out"
+  for machine in M3 Studio Hetzner local; do
+    assert_contains "$out" "$machine" "unopened checklist hid $machine"
+  done
 
   checklist "$h" start --night "$NIGHT" >/dev/null || fail "start failed"
   artifact=$(seed_artifact "$h" M3)
@@ -160,6 +163,81 @@ test_receipt_before_start_still_opens_the_night() {
   pass "a receipt recorded before start still opens the night with the other machines named open"
 }
 
+test_relative_receipts_survive_a_different_working_directory() {
+  local h artifact hash out
+  h=$(make_home relative)
+  artifact=$(seed_artifact "$h" M3)
+  hash=$(sha_of "$artifact")
+  (cd "$h" && checklist "$h" receipt --machine M3 --path artifacts/M3.md --hash "$hash" --night "$NIGHT") >/dev/null \
+    || fail "relative receipt failed"
+  out=$(cd "$TMP_ROOT" && checklist "$h" check --night "$NIGHT") || :
+  assert_contains "$out" $'M3\tclosed\t' "changing directories reopened the artifact: $out"
+  pass "relative receipts identify the same artifact from another directory"
+}
+
+test_unavailable_or_failed_hashing_keeps_every_machine_open() {
+  local h machine artifact fakebin tool out rc
+  h=$(make_home no-hash)
+  for machine in M3 Studio Hetzner local; do
+    artifact=$(seed_artifact "$h" "$machine")
+    checklist "$h" receipt --machine "$machine" --path "$artifact" --hash "$(sha_of "$artifact")" --night "$NIGHT" >/dev/null \
+      || fail "could not record $machine"
+  done
+  fakebin="$h/fakebin"
+  mkdir -p "$fakebin"
+  for tool in bash dirname awk cut tr date mkdir sed python3; do
+    ln -s "$(command -v "$tool")" "$fakebin/$tool"
+  done
+  if out=$(PATH="$fakebin" checklist "$h" check --night "$NIGHT"); then
+    rc=0
+  else
+    rc=$?
+  fi
+  assert_equals 1 "$rc" "missing SHA tools reported a complete checklist"
+  for machine in M3 Studio Hetzner local; do
+    assert_contains "$out" "$machine"$'\topen\tartifact hash verification failed' "hash failure hid $machine: $out"
+  done
+  out=$(PATH="$fakebin" checklist "$h" open --night "$NIGHT") || fail "open failed without SHA tools"
+  for machine in M3 Studio Hetzner local; do
+    assert_contains "$out" "$machine" "open hid unverified $machine"
+  done
+  cat > "$fakebin/shasum" <<'SH'
+#!/bin/bash
+printf '%064d  artifact\n' 0
+exit 1
+SH
+  chmod +x "$fakebin/shasum"
+  out=$(PATH="$fakebin" checklist "$h" receipt --machine M3 --path "$h/artifacts/M3.md" \
+    --hash 0000000000000000000000000000000000000000000000000000000000000000 --night "$NIGHT") || fail "receipt failed"
+  assert_contains "$out" $'M3\topen\tartifact hash verification failed' "a failed SHA command closed the row"
+  pass "missing or failing SHA tools keep every affected machine named and open"
+}
+
+test_collection_creates_each_due_morning_and_reads_inbox_receipts() {
+  local h out machine artifact hash since until
+  h=$(make_home collection)
+  since=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,22,20).timestamp()))')
+  until=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,7,45).timestamp()))')
+  mkdir -p "$h/state/inbox/handled"
+  artifact=$(seed_artifact "$h" M3)
+  hash=$(sha_of "$artifact")
+  printf 'id=%s-m3\n--\npostmortem-receipt\t2026-11-24\tM3\t%s\t%s\n' "$until" "$artifact" "$hash" > "$h/state/inbox/handled/$until-m3.note"
+  out=$(checklist "$h" collect --since "$since" --until "$until") || fail "collection failed: $out"
+  for machine in M3 Studio Hetzner local; do
+    assert_contains "$out" "$machine"$'\topen\t2026-11-23: no artifact receipt recorded' "first morning hid $machine"
+  done
+  assert_contains "$out" $'Hetzner\topen\t2026-11-24: no artifact receipt recorded' "07:45 hid a missing machine"
+  assert_not_contains "$out" $'M3\topen\t2026-11-24:' "handled inbox receipt was ignored"
+  out=$(checklist "$h" open --night 2026-11-24) || fail "open failed"
+  assert_not_contains "$out" $'M3\topen' "open disagreed with collection about receipt"
+  out=$(checklist "$h" collect --since "$since" --until "$((until - 1))") || fail "early collection failed"
+  assert_not_contains "$out" '2026-11-24:' "collection opened a morning before 07:45"
+  pass "collection creates every due morning and consumes durable inbox receipts"
+}
+
+test_relative_receipts_survive_a_different_working_directory
+test_unavailable_or_failed_hashing_keeps_every_machine_open
+test_collection_creates_each_due_morning_and_reads_inbox_receipts
 test_missing_machine_is_named_open_and_bad_hash_stays_open
 test_all_closed_check_passes_and_missing_artifact_stays_open
 test_unknown_night_and_bad_input_are_refused
