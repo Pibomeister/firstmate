@@ -70,6 +70,8 @@ chmod +x "$FAKE/ssh"
 
 cat > "$TMP_ROOT/summarize.sh" <<'SH'
 #!/usr/bin/env bash
+[ -n "${FM_GD_CLAUDE_ARGS:-}" ] && printf '%s\n' "$*" > "$FM_GD_CLAUDE_ARGS"
+[ -n "${FM_GD_CLAUDE_EMPTY:-}" ] && exit 0
 cat >> "$FM_GD_SUMMARY_MARKER"
 printf 'summary\n'
 SH
@@ -813,4 +815,23 @@ PYTEST
   pass "killed digest releases its lock and its delayed summarizer cannot corrupt a replacement"
 }
 
-fm_test_run test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
+test_fixed_runner_argv_rejection_and_empty_output() {
+  write_fixtures 0
+  local home out
+  home=$(make_home runner-argv)
+  FM_GD_CLAUDE_ARGS="$TMP_ROOT/claude-args" run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "runner argv run failed"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--no-session-persistence" "runner uses isolated fixed argv"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--model haiku" "runner uses the cheap default model"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "summary written by fixed runner"
+  printf 'summarize_model = best\n' >> "$home/config/goal-digest"
+  write_fixtures 1
+  out=$(run_digest "$home" "$RUN2_EPOCH" 2>&1) || fail "rejected model run failed"
+  assert_contains "$out" "summary unavailable: summarize_model 'best'" "opus alias model rejected"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "rejected model keeps prior summary"
+  printf 'summarize_model = haiku\n' >> "$home/config/goal-digest"
+  FM_GD_CLAUDE_EMPTY=1 run_digest "$home" "$RUN3_EPOCH" >/dev/null 2>&1 || fail "empty runner run failed"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "empty runner output keeps prior summary"
+  pass "fixed runner argv, model rejection and empty output"
+}
+
+fm_test_run test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark

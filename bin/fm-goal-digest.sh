@@ -213,7 +213,7 @@ for pr in pulls:
         try:
             stamps.append(datetime.datetime.strptime(pr[key], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc).timestamp())
             break
-        except (KeyError, ValueError):
+        except (KeyError, TypeError, ValueError):
             continue
 print(int(min(stamps)) if stamps else 0)
 ' 2>/dev/null || printf '0')
@@ -372,8 +372,8 @@ except BlockingIOError:
   [ -f "$since_file" ] || : > "$since_file"
   local work
   work=$(mktemp -d "$output_dir/.state/run.XXXXXX") || return 1
-  # shellcheck disable=SC2064
-  trap "rm -rf '$work'" EXIT
+  GD_CLEANUP_WORK=$work
+  trap 'rm -rf "$GD_CLEANUP_WORK"' EXIT
   : > "$work/new_merges.tsv"
   : > "$work/seen-new.tsv"
   : > "$work/since-new.tsv"
@@ -406,7 +406,7 @@ except BlockingIOError:
     else
       FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
       FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
-      python3 - "$json_file" <<'PY' || printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
+      python3 - "$json_file" <<'PY'
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
 since_path = os.environ["FM_GD_SINCE"]
@@ -440,7 +440,7 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             continue
         try:
             merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
-        except ValueError:
+        except (TypeError, ValueError):
             continue
         if repo in since:
             if merged.timestamp() <= since[repo]:
@@ -453,6 +453,10 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
 with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
     fh.write(f"{repo}\t{now - 300}\n")
 PY
+      local parse_rc=$?
+      if [ "$parse_rc" -ne 0 ]; then
+        printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
+      else
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after archival and publication, so an
       # interrupted run cannot lose a merge notification.
@@ -465,6 +469,7 @@ for pr in pulls:
     if pr.get("merged_at"):
         print("\t".join([repo, str(pr.get("number", "")), (pr.get("merge_commit_sha") or "")[:12]]))
 PY
+      fi
     fi
     if ! fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
@@ -668,20 +673,21 @@ PY
     # Poll Claude's optional file watchers: native FSEvents registration
     # can stall startup long enough to exhaust the model-call deadline.
     case "$summarize_model" in
-      ''|*[!A-Za-z0-9._-]*|*[Oo][Pp][Uu][Ss]*)
-        printf '%s\n' "goal-digest: summary unavailable: summarize_model '$summarize_model' is not a supported cheap model" >&2
-        ;;
-      *)
+      haiku|sonnet|claude-haiku-*|claude-sonnet-*)
         if ! command -v "$claude_bin" >/dev/null 2>&1; then
           printf '%s\n' "goal-digest: summary unavailable: claude runner not found" >&2
         elif { printf '%s\n' "Summarize this goal digest for its owner in at most 12 short lines: new merges, items waiting, missed ETAs, stalls and anything blocked. Use only the input below."; cat "$output_dir/latest.md"; } > "$work/summary-prompt.txt" &&
            CHOKIDAR_USEPOLLING=1 timed 120 "$claude_bin" -p --model "$summarize_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null &&
+           [ -s "$work/summary.txt" ] &&
            mv "$work/summary.txt" "$output_dir/summary.txt"; then
           :
         else
           rm -f "$work/summary.txt"
           printf '%s\n' "goal-digest: summary unavailable: model runner failed; digest still written" >&2
         fi
+        ;;
+      *)
+        printf '%s\n' "goal-digest: summary unavailable: summarize_model '$summarize_model' is not a supported cheap model" >&2
         ;;
     esac
   fi
