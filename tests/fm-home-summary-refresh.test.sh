@@ -356,7 +356,8 @@ SH
 }
 
 test_parent_cancellation() {
-  local mechanism signal home cancel_bin marker release prior expected i validator
+  local mechanism signal home cancel_bin marker release prior expected i validator real_ps
+  real_ps=$(command -v ps)
   for mechanism in default bash; do
     for signal in TERM HUP; do
       home="$TMP_ROOT/cancel-$mechanism-$signal"
@@ -383,10 +384,17 @@ case "$last" in
 esac
 exec "$FM_TEST_REAL_JQ" "$@"
 SH
-      chmod +x "$cancel_bin/jq"
+      # A slow descendant snapshot must not leave independently timed work
+      # alive after the parent's bounded cleanup helper expires.
+      cat > "$cancel_bin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -A ] && [ -s "$FM_TEST_CANCEL_MARKER" ]; then sleep 5; fi
+exec "$FM_TEST_REAL_PS" "$@"
+SH
+      chmod +x "$cancel_bin/jq" "$cancel_bin/ps"
       PATH="$cancel_bin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
         FM_SNAPSHOT_NOW_EPOCH=2000 FM_TIMEOUT_MECHANISM_OVERRIDE="$mechanism" \
-        FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_CANCEL_MARKER="$marker" \
+        FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_PS="$real_ps" FM_TEST_CANCEL_MARKER="$marker" \
         FM_TEST_CANCEL_RELEASE="$release" "$WRITER" --best-effort >/dev/null 2>&1 &
       SLOW_WRITER_PID=$!
       i=0
@@ -428,6 +436,51 @@ SH
     done
   done
   pass "TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers"
+}
+
+test_unreadable_stage_diagnostic() {
+  local home="$TMP_ROOT/unreadable-stage" dep_bin real_mkdir
+  dep_bin="$home/bin"
+  real_mkdir=$(command -v mkdir)
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$dep_bin"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+    || fail "could not seed the unreadable-stage ledger"
+  cp "$home/state/home-summary.json" "$home/prior.json"
+  cat > "$dep_bin/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in */.home-summary.json.*) sleep 120 ;; esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+  cat > "$dep_bin/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in */.home-summary-stage.*) echo 'tail: read error' >&2; exit 1 ;; esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+  # The existing state directory can be written even when redundant directory
+  # initialization stalls. Logging must reach its append within its own bound.
+  cat > "$dep_bin/mkdir" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_HOME_SUMMARY_PARENT_ERROR:-}" ] || sleep 5
+exec "$FM_TEST_REAL_MKDIR" "$@"
+SH
+  chmod +x "$dep_bin/jq" "$dep_bin/tail" "$dep_bin/mkdir"
+  PATH="$dep_bin:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$REAL_TAIL" \
+    FM_TEST_REAL_MKDIR="$real_mkdir" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+    || fail "an unreadable stage file changed the best-effort caller result"
+  grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$home/state/.home-summary-refresh.log" >/dev/null \
+    || fail "an immediately failing stage read was not reported as unreadable"
+  if grep -F 'before its first stage' "$home/state/.home-summary-refresh.log" >/dev/null; then
+    fail "an immediately failing stage read was reported as a deadline before the first stage"
+  fi
+  cmp -s "$home/prior.json" "$home/state/home-summary.json" \
+    || fail "an unreadable-stage failure replaced the prior ledger"
+  pass "an unreadable stage file is reported as unreadable"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -778,29 +831,31 @@ SLOW_VALIDATOR_PID=$(cat "$SLOW_MARKER")
 writer_pgid=$(ps -o pgid= -p "$SLOW_WRITER_PID" 2>/dev/null | tr -d '[:space:]')
 ancestor=$SLOW_VALIDATOR_PID
 slow_ancestors=
-child_pgid=
+# The lock owner is the process whose death this regression exercises. Async
+# runner subshells can share the caller's group, so do not infer the bounded
+# group from a fixed number of layers above the validator.
+lock_owner=$(cat "$HOME_DIR/state/.home-summary-refresh.lock/pid")
+lock_owner_seen=0
+worker_pgid=$(ps -o pgid= -p "$lock_owner" 2>/dev/null | tr -d '[:space:]')
 i=0
 while [ "$i" -lt 20 ]; do
   slow_ancestors="${slow_ancestors:+$slow_ancestors,}$ancestor"
-  ancestor_pgid=$(ps -o pgid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
+  [ "$ancestor" != "$lock_owner" ] || lock_owner_seen=1
   parent=$(ps -o ppid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
   if [ "$parent" = "$SLOW_WRITER_PID" ]; then
-    if [ "$ancestor_pgid" != "$writer_pgid" ]; then
-      SLOW_WORKER_PGID=$ancestor_pgid
-    else
-      SLOW_WORKER_PGID=$child_pgid
-    fi
     break
   fi
-  child_pgid=$ancestor_pgid
   ancestor=$parent
   i=$((i + 1))
 done
-case "$SLOW_WORKER_PGID" in
+[ "$parent" = "$SLOW_WRITER_PID" ] && [ "$lock_owner_seen" -eq 1 ] \
+  || fail "the lock owner was not in the public writer's validator ancestry"
+case "$worker_pgid" in
   ''|*[!0-9]*) fail "the bounded writer did not expose its worker process group" ;;
 esac
-[ "$SLOW_WORKER_PGID" != "$writer_pgid" ] \
+[ "$worker_pgid" != "$writer_pgid" ] \
   || fail "the bounded worker did not have an isolated process group"
+SLOW_WORKER_PGID=$worker_pgid
 kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 \
   || fail "the bounded writer process group could not be terminated"
 wait "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
@@ -1118,31 +1173,8 @@ fi
 "$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
 pass "parent-side stage-file reads and removals are bounded"
 
-# A stage file that cannot be read at all (not stalled, failing at once) is
-# reported as unreadable, never as a worker that recorded no stage.
-FAILTAIL="$TMP_ROOT/fail-tail-bin"
-mkdir -p "$FAILTAIL"
-cat > "$FAILTAIL/tail" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    */.home-summary-stage.*) echo "tail: read error" >&2; exit 1 ;;
-  esac
-done
-exec "$FM_TEST_REAL_TAIL" "$@"
-SH
-chmod +x "$FAILTAIL/tail"
-: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
-PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$REAL_TAIL" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
-  "$WRITER" --best-effort \
-  || fail "an unreadable stage file changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
-  || fail "an immediately failing stage read was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
-if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
-  fail "an immediately failing stage read was reported as a deadline before the first stage"
-fi
-pass "an unreadable stage file is reported as unreadable"
+# A failed read must still be diagnosed when unrelated setup would stall.
+test_unreadable_stage_diagnostic
 
 # Kill the parent before the worker opens its stage file. The timeout runner may
 # cancel the worker before that open, or the worker may finish and clean up its

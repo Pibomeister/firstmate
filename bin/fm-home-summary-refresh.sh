@@ -164,7 +164,7 @@ if [ "$HOME_SUMMARY_MODE" = worker ] && backoff_active; then
   exit 0
 fi
 
-if [ "$HOME_SUMMARY_MODE" = worker ] || [ "$HOME_SUMMARY_MODE" = log-failure ]; then
+if [ "$HOME_SUMMARY_MODE" = worker ]; then
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -250,7 +250,10 @@ home_summary_refresh_once() {
   home_summary_stage producer
   remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
   [ "$remaining" -gt 0 ] || return 124
-  if fm_run_timed "$remaining" env \
+  # Nested work must also stop when this lock owner dies, even if the parent's
+  # bounded descendant snapshot stalls. The Bash watchdog tracks its caller;
+  # an independent external timer otherwise keeps running until its deadline.
+  if fm_run_timed_fn "$remaining" env \
     FM_SNAPSHOT_STAGE_BASE="$SECONDS" \
     FM_ROOT_OVERRIDE="$FM_ROOT" \
     FM_HOME="$FM_HOME" \
@@ -281,7 +284,7 @@ home_summary_refresh_once() {
   remaining=$((HOME_SUMMARY_TIMEOUT - SECONDS))
   [ "$remaining" -gt 0 ] || return 124
   # shellcheck disable=SC2016 # jq, not the shell, expands $home.
-  if fm_run_timed "$remaining" jq -e --arg home "$FM_HOME" '
+  if fm_run_timed_fn "$remaining" jq -e --arg home "$FM_HOME" '
     .schema == "fm-secondmate-home-summary.v1"
     and .hold_classifier_schema == "fm-captain-hold-buckets.v1"
     and .home == $home
@@ -442,9 +445,9 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   if [ "$(fm_timeout_mechanism)" = bash ]; then
     home_summary_runner=(fm_run_timed "$HOME_SUMMARY_TIMEOUT")
   fi
-  # An explicit subshell preserves the Bash timer's result. On Bash 3.2 an
-  # async function body can exit at the timer's final cleanup command instead.
-  home_summary_worker_start() (
+  # Run synchronously inside the explicit background subshell below. Bash 3.2
+  # can lose a timer's status in an implicitly backgrounded function body.
+  home_summary_worker_start() {
     trap - EXIT HUP INT TERM
     "${home_summary_runner[@]}" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
@@ -452,10 +455,16 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
     FM_HOME_SUMMARY_PARENT_PID="$$" \
       "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker
-  )
+  }
   [ -z "$home_summary_parent_signal" ] || exit "$home_summary_parent_signal"
   home_summary_runner_starting=1
-  fm_timeout_background home_summary_worker_start
+  # Background the subshell itself, so $! names the timer's lifetime owner
+  # rather than a function wrapper that can die while that owner stays alive.
+  if fm_timeout_stdin_is_redirected; then
+    { (home_summary_worker_start) 0<&3 3<&- & } 3<&0
+  else
+    (home_summary_worker_start) </dev/null &
+  fi
   home_summary_runner_pid=$!
   home_summary_runner_starting=0
   [ -z "$home_summary_parent_signal" ] || exit "$home_summary_parent_signal"
