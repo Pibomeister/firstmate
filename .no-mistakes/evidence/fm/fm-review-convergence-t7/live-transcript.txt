@@ -1,69 +1,160 @@
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out out1 
-verify-finding: introduced head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=green path=tests/add.test.sh repro_sha256=c2f962d96e1a3dd9a186550ceda8c0f0ade8e436a770618c2057d20631d52626
-exit=0
 
+CASE wrong-path-introduced
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/wrong-path-introduced.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-wrong-path-introduced', '--timeout', '5']
+exit=0
+verify-finding: introduced head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=green path=tests/review-live.test.sh repro_sha256=d16088b1d6483a2f4723b11b204e13ac9ac8615be2d5e012b69f1dc8f2162760
 head.log:
-add 2 3 gave -1
-result file:
-verify-finding: introduced head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=green path=tests/add.test.sh repro_sha256=c2f962d96e1a3dd9a186550ceda8c0f0ade8e436a770618c2057d20631d52626
+bin/tool.sh: line 1: bin/helpers.sh: No such file or directory
+base.log:
+hello
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro redboth.sh --path tests/rb.test.sh --out out2 
-verify-finding: red-at-both head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=red path=tests/rb.test.sh repro_sha256=09644f7f95037d90754012963154aec5f7705d4012fc55925aba937f04fb1601
+CASE red-at-both
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/red-at-both.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-red-at-both', '--timeout', '5']
 exit=0
+verify-finding: red-at-both head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=red path=tests/review-live.test.sh repro_sha256=6f3af2b1faa7d46bd3f8667e1b6c9876e070ddcb82d59082402763dee65e3239
+head.log:
+same-observed-failure
+base.log:
+same-observed-failure
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro green.sh --path tests/g.test.sh --out out3 
-verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=green base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/g.test.sh repro_sha256=fb99eae951f1adc14d1a4a9a186c21930db2786b3208c94c7d9af382bd1048e5
+CASE new-file
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/new-file.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-new-file', '--timeout', '5']
 exit=0
+verify-finding: red-at-both head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=red path=tests/review-live.test.sh repro_sha256=5e496dbc52fef5ed4c76670a32ad3111172b345da5a73e996d00d22756b63e2e
+head.log:
+broken-new-tool
+base.log:
+bash: bin/new-tool.sh: No such file or directory
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro err.sh --path tests/e.test.sh --out out4 
-verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=error base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/e.test.sh repro_sha256=e65e0b91d5a4d56d7cd33040ef937231227f21c6da6dd0a1f1bd2abb260c18c6
+CASE new-function
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/new-function.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-new-function', '--timeout', '5']
 exit=0
+verify-finding: red-at-both head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=red path=tests/review-live.test.sh repro_sha256=119420fac216ae472d738d9b61839be979784b0b2c2687f8b4b8cf2db4722dc7
+head.log:
+base.log:
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro slow.sh --path tests/s.test.sh --out out5 --timeout 2
-verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=timeout base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/s.test.sh repro_sha256=d952a3216ea63d254e3d5b24e156bbccf264c892bf822cd857315b4d87c6aac4
+CASE missing-git-history
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/missing-git-history.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-missing-git-history', '--timeout', '5']
 exit=0
+verify-finding: red-at-both head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=red path=tests/review-live.test.sh repro_sha256=f7a24d99ea60caa813b185e59548ebca52a1e354b5f71c8a9233b1fa443ad458
+head.log:
+fatal: not a git repository (or any of the parent directories): .git
+base.log:
+fatal: not a git repository (or any of the parent directories): .git
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro outside.sh --path tests/o.test.sh --out out6 
-verify-finding: no-evidence head=4ed0bdeaa4b48b373af99ac3011647084ed6e7ea head_result=wrote-outside base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=skipped path=tests/o.test.sh repro_sha256=f1c8ef04cc9aac326fe8478cdaaba9c543f93afe35969229aefdba465f8b129b
+CASE green
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/green.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-green', '--timeout', '5']
 exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=green base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=68fbdaa336a7313bf483408a976da37312b275dc8733d6d0a61aa6a174e2b0e9
+head.log:
+assertion-passed
 
-## refusals
-$ FM_TASK_ID= verify-finding --repro introduced.sh --path tests/add.test.sh --out outA 
+CASE cannot-run
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/cannot-run.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-cannot-run', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=error base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=5cc5906d9e94f33bdff3b0b107ee802ecc0b707fd1d1b43b698409101053b349
+head.log:
+
+CASE timeout
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/timeout.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-timeout', '--timeout', '5', '--timeout', '1']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=timeout base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=b1eeeb463a1b928fe753ed7959eefa5eb025fba64f8ffde35d83917137a5ed45
+head.log:
+waiting
+
+CASE write-outside
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/write-outside.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-write-outside', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=wrote-outside base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=7e8e4791780ad5b71c19dcc07cbd31f0a89a94cbfc11ec033cf8b25c9d7be0d9
+head.log:
+
+CASE chmod-outside
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/chmod-outside.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-chmod-outside', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=wrote-outside base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=62ae2b190e969e97e78f0eda9130b036c016f0e7a29af14f0fa7c00d0c221ad2
+head.log:
+
+CASE tests-write
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/tests-write.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-tests-write', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=green base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=10f3a02f5f9750520d8a1d49d8e4bc9741077f178fe3965e5a2d4095ef49bd6b
+head.log:
+
+CASE scope-isolation
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/scope-isolation.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-scope-isolation', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=green base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=8ac94c57145b47b7c48e00b3aa4892910e074298a9eacd929c41193693fa1bf4
+head.log:
+isolated-scope-closed-stdin-committed-helper-present
+
+CASE path-traversal
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/path-traversal.sh', '--path', 'tests/../bin/live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-path-traversal', '--timeout', '5']
+exit=2
+error: --path tests/../bin/live.test.sh must name one file directly under tests/
+
+CASE existing-path
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/existing-path.sh', '--path', 'tests/kept.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-existing-path', '--timeout', '5']
+exit=2
+error: --path tests/kept.test.sh already exists at 741a847fd5b3c6e94a45ccb130f68bc41d21133e; a reproduction may only add a new test file
+
+CASE case-collision
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/case-collision.sh', '--path', 'tests/Kept.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-case-collision', '--timeout', '5']
+exit=2
+error: --path tests/Kept.test.sh names the committed tests/kept.test.sh at 741a847fd5b3c6e94a45ccb130f68bc41d21133e apart from letter case; a reproduction may only add a new test file
+
+CASE supervisor
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/supervisor.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-supervisor', '--timeout', '5']
+exit=2
 error: verify-finding belongs in a background worker: it runs a reviewer-written reproduction, and FM_TASK_ID is not set
-exit=2
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path bin/add.test.sh --out outB 
-error: --path bin/add.test.sh is outside tests/; a reproduction may only add a test file there
+CASE contained-head
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/contained-head.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-contained-head', '--timeout', '5', '--base', '741a847fd5b3c6e94a45ccb130f68bc41d21133e']
 exit=2
+error: the head 741a847fd5b3c6e94a45ccb130f68bc41d21133e is already contained in 741a847fd5b3c6e94a45ccb130f68bc41d21133e; pass --base <commit-ish> from before the change
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/sub/add.test.sh --out outC 
-error: --path tests/sub/add.test.sh must name one file directly under tests/
+CASE evidence-reuse
 exit=2
+error: --out ~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-green already holds a reproduction result; evidence is never replaced
 
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.sh --out outD 
-error: --path tests/add.sh must be a tests/<name>.test.sh file the project test command runs
-exit=2
-
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out out1 
-error: --out /tmp/fm-vf-live.n8l9cv/out1 already holds a reproduction result; evidence is never replaced
-exit=2
-
-$ FM_TASK_ID=fm-live-1 verify-finding --repro introduced.sh --path tests/add.test.sh --out outE --timeout 0
-error: --timeout must be 1 to 3600 seconds
-exit=2
-
-## source repo status after all runs (expect empty):
-4ed0bdeaa4b48b373af99ac3011647084ed6e7ea
-## adversarial
-$ --path tests/exists.test.sh (already committed at head)
-error: --path tests/exists.test.sh already exists at 38e3427e46471c54c4c26d13d1e71184e48b7107; a reproduction may only add a new test file
-exit=2
-$ reproduction probes for an enclosing git repository
-verify-finding: red-at-both head=38e3427e46471c54c4c26d13d1e71184e48b7107 head_result=red base=18d0fc40a9206016d63f4e16f8804001006feb5c base_result=red path=tests/probe.test.sh repro_sha256=87814a7980d1e595bdf4943490d22e1942ee1d6f9e8105dc0d018bb92dbe8756
+CASE background-0
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/background-0.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-background-0', '--timeout', '5', '--timeout', '1']
 exit=0
-head.log: no repository visible from snapshot
-$ TMPDIR inside a git repository
-error: temporary directory is inside a repository; use a TMPDIR outside repositories
-exit=2
-## source repo status after adversarial runs (expect empty):
-0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=green base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=ac6138aaf932673b18bac7def578be6f8dc519e0f3bd0cc606462474b63b9dc7
+head.log:
+child 35054 stopped before return
+child 35382 stopped before return
+
+CASE background-1
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/background-1.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-background-1', '--timeout', '5', '--timeout', '1']
+exit=0
+verify-finding: red-at-both head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=red base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=red path=tests/review-live.test.sh repro_sha256=99777a6f1e96859a9acb1d29cce04ecfd57239054a332a38037f88d53a9bb5cd
+head.log:
+base.log:
+child 35054 stopped before return
+child 35382 stopped before return
+child 52043 stopped before return
+child 52058 stopped before return
+child 57312 stopped before return
+child 57329 stopped before return
+
+CASE termination-write
+COMMAND ['{run-worktree}/bin/fm-merge-review.sh', 'verify-finding', '--repo', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/repo', '--head', '741a847fd5b3c6e94a45ccb130f68bc41d21133e', '--repro', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-fixtures/termination-write.sh', '--path', 'tests/review-live.test.sh', '--out', '~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-termination-write', '--timeout', '5']
+exit=0
+verify-finding: no-evidence head=741a847fd5b3c6e94a45ccb130f68bc41d21133e head_result=wrote-outside base=07de887cba05f860b2fd2f6d6332e825e3e918d3 base_result=skipped path=tests/review-live.test.sh repro_sha256=485dda468ddf21a3577bfb8f5d5b10e63afb090266bd5076a0002c2d89912e14
+head.log:
+
+CASE interrupt-pid
+real CLI exit=143; reproduction pid=81887 stopped; scratch removed; no partial result published
+
+CASE interrupt-group
+real CLI exit=143; reproduction pid=93810 stopped; scratch removed; no partial result published
+child 35054 stopped before return
+child 35382 stopped before return
+child 52043 stopped before return
+child 52058 stopped before return
+child 57312 stopped before return
+child 57329 stopped before return
+child 81887 stopped before return
+child 93810 stopped before return
+
+Source repository is unchanged. All owned child PIDs are stopped. Scratch is empty.

@@ -1,0 +1,27 @@
+{
+  "target": "5c1dba7a1d1b1386d3d6ef1984a6c8b7c9fbfac2",
+  "baseline_attempt": {
+    "command": "bash tests/fm-merge-review.test.sh",
+    "exit": 137,
+    "reason": "Stopped before tests while shared test helper scanned global orphan fixtures; restarted using private TMPDIR and FM_TEST_SKIP_ORPHAN_REAP=1."
+  },
+  "targeted_suite": {
+    "command": "FM_TEST_SKIP_ORPHAN_REAP=1 TMPDIR=~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/suite-tmp bash tests/fm-merge-review.test.sh",
+    "exit": 0,
+    "log": "~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/fm-merge-review-isolated-tests.log"
+  },
+  "direct_cli": {
+    "command": "python3 ~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-verify.py",
+    "exit": 0,
+    "transcript": "~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-transcript.txt",
+    "receipts": "~/.no-mistakes/evidence/01M852Q02C839WMBGSST6MQG1V/live-results.json",
+    "oracle": "Public verify-finding contract and recorded decisions: introduced requires red at head and green at base; red-at-both never declares pre-existing; invalid evidence cannot certify a finding. The checks reject false introduced/pre-existing labels, overwritten evidence, source mutation, and surviving owned children."
+  },
+  "cleanup": {
+    "disposable_repo_removed": true,
+    "scratch_empty": true,
+    "owned_test_commands_exited": true,
+    "worktree_clean": true
+  },
+  "verdict": "go"
+}
