@@ -1445,7 +1445,12 @@ _fm_status_file_mtime() {  # <status-file>
 # (the watcher and the away-mode daemon both classify the same stream) never
 # truncate each other's chunk.
 _fm_status_span_scratch() {  # <status-file>
-  printf '%s.span.%s' "$(_fm_open_decisions_cursor_path "$1")" "$$"
+  _fm_status_scratch_path "$(_fm_open_decisions_cursor_path "$1").span.$$"
+}
+
+_fm_status_scratch_path() {
+  local path=$1
+  printf '%s/%s' "${_FM_STATUS_SCRATCH_DIR:-${path%/*}}" "${path##*/}"
 }
 
 _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
@@ -1555,7 +1560,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   fi
 
   if [ "$offset" -lt "$size" ]; then
-    chunk_file="$cf.read.$$"
+    chunk_file=$(_fm_status_scratch_path "$cf.read.$$")
     _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$read_rc"; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
@@ -1580,7 +1585,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     cursor_dirty=1
   fi
   if [ "$cursor_dirty" -eq 1 ]; then
-    target_cursor="$cf.tmp.$$"
+    target_cursor=$(_fm_status_scratch_path "$cf.tmp.$$")
     {
       printf 'version=%s\n' "$fold_version"
       printf 'offset=%s\n' "$offset"
@@ -2057,7 +2062,7 @@ EOF
 
 status_commit_presentation_snapshot() {  # <state> <snapshot>
   local state=$1 snapshot=$2 task endpoint ident f cur_ident size tmp backstop acknowledged_task acknowledged_endpoint
-  tmp="$state/.status-presentation-cursor.tmp.$$"
+  tmp=$(_fm_status_scratch_path "$state/.status-presentation-cursor.tmp.$$")
   : > "$tmp" || return 1
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
@@ -2202,7 +2207,7 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
   local f=$1 captured_end=${2:-} cf offset size actual_size chunk_file line rc=0
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   cf=$(_fm_open_decisions_cursor_path "$f")
-  chunk_file="$cf.unread.$$"
+  chunk_file=$(_fm_status_scratch_path "$cf.unread.$$")
   offset=$(status_presentation_cursor_offset "$f") || return 1
   case "$offset" in ''|*[!0-9]*) return 1 ;; esac
   actual_size=$(_fm_status_file_size "$f") || return 1

@@ -1000,7 +1000,6 @@ EOF
     append_evidence lifecycle 'durable wake drain failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
     drain_ok=0
-    drained=""
   fi
   grep -v '^WAKE_ACK_REQUIRED:' "$drain_err" >&2 || true
   wake_ack_line=$(grep '^WAKE_ACK_REQUIRED:' "$drain_err" | tail -1)

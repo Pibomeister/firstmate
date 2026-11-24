@@ -836,7 +836,7 @@ print_status_sections() {
   [ -n "$snapshot" ] || return 0
   drain_phase status-classify
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
-  prepared=$(mktemp "$STATE/.status-presentation.prepared.XXXXXX") || return 1
+  prepared=$(mktemp "$_FM_STATUS_SCRATCH_DIR/.status-presentation.prepared.XXXXXX") || return 1
   if ! {
     drain_phase status-unread && print_unread_status_section "$snapshot" \
       && drain_phase status-outcome-backstop && print_status_outcome_backstop_section "$snapshot" \
@@ -912,13 +912,15 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
 }
 
 run_drain_presentation() {  # [<deduped-raw-rows>]
-  local rc=0 phase=optional-presentation phase_line
+  local rc=0 phase=optional-presentation phase_line _FM_STATUS_SCRATCH_DIR
   drain_phase presentation-setup
+  _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.XXXXXX") || return 1
   DRAIN_PHASE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-wake-drain-phase.XXXXXX" 2>/dev/null) || DRAIN_PHASE_FILE=
   if [ -n "$DRAIN_PHASE_FILE" ] && { exec 18>> "$DRAIN_PHASE_FILE"; } 2>/dev/null; then
     DRAIN_PHASE_FD_OPEN=1
   fi
   fm_run_timed_fn "$DRAIN_PRESENTATION_TIMEOUT" drain_presentation_worker "${1:-}" || rc=$?
+  rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
   if fm_timed_out "$rc"; then
     if [ -n "$DRAIN_PHASE_FILE" ] && [ -r "$DRAIN_PHASE_FILE" ]; then
       while IFS= read -r phase_line; do phase=$phase_line; done < "$DRAIN_PHASE_FILE"

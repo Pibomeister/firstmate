@@ -489,6 +489,86 @@ SH
   pass 'a bounded presentation names its phase, preserves pending data, reaps readers and recovers'
 }
 
+test_timeout_cleans_only_attempt_owned_presentation_scratch() {
+  local dir state stage rc scratch peer_pid peer_shell i peer_scratch
+  for stage in preparation fold; do
+    dir=$(make_case "scratch-$stage")
+    state="$dir/state"
+    printf 'note: retained note\nneeds-decision [key=held]: retained decision\n' > "$state/task.status"
+    cp "$state/task.status" "$dir/status.before"
+    cat > "$dir/reader" <<'SH'
+#!/usr/bin/env bash
+if [ "${FM_PEER_READER:-0}" = 1 ]; then
+  printf '%s\n' "$$" > "$FM_READER_PID"
+  exec sleep 30
+fi
+for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*; do
+  [ -d "$base" ] || continue
+  case "$FM_BLOCK_STAGE" in
+    preparation) pattern="$base/.status-presentation.prepared." ;;
+    fold) pattern="$base/.task.open-decisions-cursor.read." ;;
+  esac
+  for scratch in "$pattern"*; do
+    [ -f "$scratch" ] || continue
+    printf '%s\n' "$$" > "$FM_READER_PID"
+    exec sleep 30
+  done
+done
+exec perl -e '
+  my ($path, $start, $length) = @ARGV;
+  open my $f, "<", $path or die $!;
+  binmode $f;
+  seek $f, $start, 0 or die $!;
+  read($f, my $bytes, $length) == $length or die "short read";
+  print $bytes;
+' "$@"
+SH
+    chmod +x "$dir/reader"
+    cp "$state/task.status" "$state/peer.status"
+    FM_STATE_OVERRIDE="$state" FM_PEER_READER=1 FM_READER_PID="$dir/peer.pid" \
+      FM_STATUS_SPAN_READER="$dir/reader" /bin/bash -c '
+        . "$1/bin/fm-classify-lib.sh"
+        status_open_decisions_incremental "$2"
+      ' _ "$ROOT" "$state/peer.status" > "$dir/peer.out" &
+    peer_shell=$!
+    i=0
+    while [ ! -s "$dir/peer.pid" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+    [ -s "$dir/peer.pid" ] || fail 'concurrent reader did not start'
+    peer_pid=$(cat "$dir/peer.pid")
+    peer_scratch="$state/.peer.open-decisions-cursor.read.$peer_shell"
+    [ -f "$peer_scratch" ] || fail 'concurrent reader did not create its scratch'
+    cp "$peer_scratch" "$dir/peer.before"
+    rm "$state/peer.status"
+    rc=0
+    fm_run_timed 8 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=3 \
+      FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" FM_READER_PID="$dir/drain.pid" \
+      "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+    kill -0 "$peer_pid" || fail 'drain stopped a concurrent reader'
+    cmp "$dir/peer.before" "$peer_scratch" || fail 'drain removed or changed concurrent scratch'
+    kill "$peer_pid" 2>/dev/null || true
+    wait "$peer_shell" 2>/dev/null || true
+    rm -f "$peer_scratch"
+    assert_equals 124 "$rc" 'presentation timeout must remain incomplete'
+    [ -s "$dir/drain.pid" ] || fail "timeout did not reach $stage"
+    if [ "$stage" = preparation ]; then
+      assert_grep 'phase=status-unread' "$dir/timed.err" 'preparation did not block inside prepared output'
+    else
+      assert_grep 'phase=status-open-decisions' "$dir/timed.err" 'fold timeout did not reach open decisions'
+    fi
+    for scratch in "$state"/.wake-drain-presentation.* "$state"/.status-presentation.prepared.* \
+      "$state"/.*.open-decisions-cursor.read.* "$state"/.*.open-decisions-cursor.unread.* \
+      "$state"/.*.open-decisions-cursor.span.* "$state"/.*.open-decisions-cursor.tmp.* \
+      "$state"/.status-presentation-cursor.tmp.*; do
+      [ ! -e "$scratch" ] || fail "timed-out drain leaked scratch: $scratch"
+    done
+    cmp "$dir/status.before" "$state/task.status" || fail 'scratch cleanup changed durable status'
+    FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" || fail 'retry failed after scratch cleanup'
+    assert_grep 'retained note' "$dir/retry.out" 'scratch cleanup lost unread status'
+    assert_grep '[key=held]' "$dir/retry.out" 'scratch cleanup lost an open decision'
+  done
+  pass 'preparation and fold timeouts clean owned scratch and preserve a concurrent reader'
+}
+
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
   local dir state
   dir=$(make_case explicit-phase-trace)
@@ -569,5 +649,6 @@ test_open_decisions_fold_is_unchanged
 test_empty_queue_does_not_swallow_later_signal_annotation
 test_routine_working_and_covered_done_stay_silent_on_the_empty_queue
 test_presentation_deadline_preserves_pending_data_and_recovers
+test_timeout_cleans_only_attempt_owned_presentation_scratch
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout
 test_warm_routine_history_is_bounded_without_acknowledging_it
