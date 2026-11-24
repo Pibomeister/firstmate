@@ -13,6 +13,8 @@
 #       FM_HOME> every 1200 seconds (20 minutes).
 #       The agent runs with this home's FM_HOME and the
 #       installer's PATH and HOME.
+#       Without launchctl, only the plist is written; no job is scheduled.
+#       A failed launchctl bootstrap returns nonzero and leaves the plist.
 #   fm-goal-digest.sh uninstall
 #       Remove that LaunchAgent.
 #   fm-goal-digest.sh --help
@@ -27,7 +29,7 @@
 #   stall_hours = <n>               (default 48)
 #   timeout_seconds = <n>           (per gh/ssh call, default 60)
 #   summarize = <on|off>            (default on, run only when changed)
-#   summarize_model = <model>       (cheap non-Opus model, default haiku)
+#   summarize_model = <model>       (default haiku; supported models below)
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
 #
@@ -63,9 +65,11 @@
 # disappearance of previously reported merges do not count as changes.
 # On a changed run the summary is attempted by one fixed text-only model
 # runner: claude -p with no tools, the current native account and the
-# configured cheap non-Opus model (default haiku). It replaces
-# summary.txt only on success and has a 120-second timeout.
-# A missing or failed runner reports summary unavailable on stderr;
+# configured model: haiku, sonnet, claude-haiku-* or claude-sonnet-*.
+# It replaces summary.txt only on successful, nonempty output and has a
+# 120-second timeout.
+# An unsupported model or a missing, failed or empty-output runner
+# reports summary unavailable on stderr;
 # the digest remains published, the run still succeeds, and any previous
 # summary.txt is retained. Unchanged runs do not retry a failed summary.
 # No shell command from config is ever executed. The
