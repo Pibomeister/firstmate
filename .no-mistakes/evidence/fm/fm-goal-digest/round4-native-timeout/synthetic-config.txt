@@ -1,0 +1,2 @@
+review = Synthetic | {run-worktree}/.test-goal-digest-fix/native/review.txt
+summarize_model = haiku

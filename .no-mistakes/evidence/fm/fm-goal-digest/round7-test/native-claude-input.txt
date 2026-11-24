@@ -1,0 +1,34 @@
+Summarize this goal digest for its owner in at most 12 short lines: new merges, items waiting, missed ETAs, stalls and anything blocked. Use only the input below.
+# Goal digest
+
+Generated: 2026-11-24T03:09:49-0600 CST / 2026-11-24T09:09:49Z
+Changed: yes
+
+## New merges since last run
+
+- None
+
+## Open pull requests
+
+- None
+
+## Waiting on owner
+
+- None known
+- Unknown: owner actions: no sources configured
+
+## Missed ETAs
+
+- None
+
+## Stalls
+
+- None
+
+## Review convergence
+
+- Synthetic: Synthetic project: T1 complete; one owner decision: choose north or south. ETA: 2099-01-01.
+
+## Unreachable sources
+
+- None

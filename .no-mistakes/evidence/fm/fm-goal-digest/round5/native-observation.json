@@ -1,0 +1,20 @@
+{
+  "actual_argv": [
+    "~/.local/bin/claude",
+    "-p",
+    "--model",
+    "haiku",
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--no-session-persistence"
+  ],
+  "digest_exit": 0,
+  "summary_exists": false,
+  "native_child_result": "Not emitted; timeout killed the owned process group before the forwarding wrapper could write a result.",
+  "elapsed_seconds_between_native_start_record_and_product_return": 119.76,
+  "product_report": "goal-digest: changed=yes latest=~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round5/native-synthetic/data/goal-digest/latest.md generated=2026-11-24T08:18:56Z\ngoal-digest: summary unavailable: model runner failed; digest still written\nexit=0\n",
+  "classification": "Native runner completion failure; no safe source repair established. No account, tool configuration, provider, model, or timeout changes made."
+}

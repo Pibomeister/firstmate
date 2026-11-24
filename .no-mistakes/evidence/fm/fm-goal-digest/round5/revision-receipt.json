@@ -1,0 +1,6 @@
+{
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "product_sha256": "fdca2ef5572b557b3f155ce7fb444376160ce4f71f9620b80e0f22de616f1f2b",
+  "tests_sha256": "b9a32e6851024104f0bf965c90ed089a0b49513fa95eba46a88f2180d0adfbd1",
+  "fixture": "Real product and real gh against localhost emulator; isolated FM_HOME; synthetic content; native Claude uses existing account."
+}

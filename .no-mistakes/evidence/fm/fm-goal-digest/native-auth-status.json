@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "loggedIn": true,
+  "authMethod": "claude.ai",
+  "apiProvider": "firstParty",
+  "subscriptionType": "max"
+}

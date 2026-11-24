@@ -1,0 +1,5 @@
+HTTP server stopped; completed scenarios: 0
+Traceback (most recent call last):
+  File "{run-worktree}/.test-goal-digest/live.py", line 106, in <module>
+    d=run('page-recovery'); assert [m['number'] for m in d['new_merges']] == [1002]
+AssertionError

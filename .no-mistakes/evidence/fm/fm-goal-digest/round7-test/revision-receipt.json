@@ -1,0 +1,9 @@
+{
+  "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "base": "d3d97c97d7bcd7dac112f0167186502a11373152",
+  "source_sha256": "0e6d4a02d45d20153a331c48fcba8d337a1febd592cfbc8c7221875bbefc79c4",
+  "test_sha256": "2c4710ba4b4a6d3436306121b9ba3cc6ab42dc7219b42e619900d28d79366c35",
+  "driver_sha256": "782bdede6a8f53c8a26ea3b0d2d2e6cde508f989f3a9811e450c41ee8a21593e",
+  "fixture_root": "{run-worktree}/.test-goal-digest-phase",
+  "evidence_dir": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test"
+}

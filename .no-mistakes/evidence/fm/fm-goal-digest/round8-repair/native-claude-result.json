@@ -1,0 +1,9 @@
+{
+  "exit": 0,
+  "stdout": "# Goal digest summary (2026-11-24)\n\n- **New merges:** None.\n- **Open PRs:** None.\n- **Waiting on owner:** None known. Owner actions are unknown because no sources are configured.\n- **Missed ETAs:** None.\n- **Stalls:** None.\n- **Blocked:** None reported.\n- **Review convergence:** Synthetic project has T1 complete. Owner must choose a route; ETA listed as 2099-01-01.\n- **Unreachable sources:** None.\n",
+  "stderr": "",
+  "elapsed_seconds": 79.502,
+  "prompt_bytes": 599,
+  "CHOKIDAR_USEPOLLING": "1",
+  "served_model_metadata": "not exposed by text mode"
+}

@@ -1,0 +1,21 @@
+1..18
+ok - summarizer bypasses native file-watch startup
+ok - killed digest releases its lock and its delayed summarizer cannot corrupt a replacement
+ok - complete pagination reports unchanged page-11 merges after outages and bootstrap failures
+ok - new merge detection, changed flag and changed-only summarizer
+ok - missed ETA, stall, unreachable source and review record
+ok - missing config writes an empty digest in the default directory
+goal-digest: summary unavailable: claude runner not found
+ok - launchagent install and uninstall
+ok - ssh quoting, concurrent-run lock, crashed-run lock release and install failure
+ok - summarizer background helper does not hold the run lock
+ok - first-run seeding and later-page failure
+ok - explicit owner actions, actual wait age, resolutions and unknown sources
+ok - registered secondmate holds, change detection and incomplete coverage
+ok - CST calendar, complete review changes and retained history
+ok - archive failure does not consume notifications or report success
+ok - UTC update times stop pagination before the watermark
+ok - failed serialization preserves complete published documents
+ok - summarizer, gh and ssh timeouts stop owned descendants
+ok - first-run large repository stops and saves watermark
+FM_TEST_COMPLETE

@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Local GitHub CLI collects incremental merges through page 11 and recovers a failed page without losing or repeating merges",
+    "result": "pass",
+    "live": true,
+    "evidence": "page-eleven-recovery.json; live-transcript.log; github-http-requests.json",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "Local native snapshots distinguish owner holds from drafts, age delayed date-only holds today, disclose cached decisions, and remove resolved holds",
+    "result": "pass",
+    "live": true,
+    "evidence": "owner-actions-cached.json; live-transcript.log",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "Local status files publish CST time, missed ETAs, stalls, unreachable sources, all review tracks, and retained digest history",
+    "result": "pass",
+    "live": true,
+    "evidence": "status-and-reviews.md; status-and-reviews.json",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "A local archive failure preserves the published digest and notification state; the next run recovers",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log; archive-recovery.json",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "A competing local digest is refused while the kernel lock is held and succeeds after release",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "The local digest rejects an Opus summary model and ignores a shell-command config entry while collection remains read-only",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log; github-http-requests.json",
+    "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator."
+  },
+  {
+    "name": "Generated workspace-local LaunchAgent command executes the digest with its declared environment and output; cadence is 1200 seconds",
+    "result": "pass",
+    "live": true,
+    "evidence": "rendered-launchagent.plist; rendered-agent-invocation.log; install-recorder.log",
+    "reason": "Real install/uninstall interfaces produced and removed a workspace-local plist through a launchctl recorder; plistlib checked its 1200-second schedule. The real declared product command ran successfully with synthetic inputs. This proves local rendering and execution only; native scheduling is the separate untested criterion."
+  },
+  {
+    "name": "A synthetic changed digest receives a summary from the actual fixed text-only native Claude haiku runner",
+    "result": "fail",
+    "live": true,
+    "evidence": "native-claude-argv.json; native-claude-input.txt; native-digest-run.log; native-latest.json; owned-processes-running.json; owned-processes-after.json; native-auth-status.json",
+    "reason": "The actual installed Claude CLI ran through an argv-preserving recorder with the fixed Haiku/no-tools arguments and synthetic text. No result or summary was published before the product 120-second process-group timeout. Digest output reported summary unavailable. Prior same-revision success did not reproduce in this run; root cause remains unresolved. No tools, account/model settings, paid fallback, or credentials were changed. A subsequent read-only auth probe confirms an existing first-party Claude Max login."
+  },
+  {
+    "name": "Native macOS launchd registers the owned recurring job, fires the digest, and removes the temporary registration",
+    "result": "untested",
+    "live": false,
+    "evidence": "native-launchd-boundary.txt; rendered-launchagent.plist",
+    "reason": "The current workspace boundary prohibits changing system state outside the worktree. Local rendering and executing the generated command were driven, but neither can prove launchd registration or firing. The recorded fix instruction requires no-go under this exact restriction. Provide phase-specific authority for temporary native launchd registration, execution, and cleanup."
+  }
+]

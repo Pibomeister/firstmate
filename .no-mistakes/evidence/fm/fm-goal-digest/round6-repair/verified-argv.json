@@ -1,0 +1,1 @@
+{"argv": ["~/.local/bin/claude", "-p", "--model", "haiku", "--tools", "", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence"], "CHOKIDAR_USEPOLLING": "1", "pid": 63614}

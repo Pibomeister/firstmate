@@ -1,0 +1,8 @@
+2026-11-24T07:08:36.991Z [DEBUG] [auto-mode] verifyAutoModeGateAccess: enabledState=enabled disabledBySettings=false model=claude-haiku-5-5 modelSupported=true disableFastModeBreakerFires=false carouselAvailable=true canEnterAuto=true
+2026-11-24T07:09:21.010Z [ERROR] [Bootstrap] fetch failed: Error: socket hang up
+2026-11-24T07:09:21.013Z [DEBUG] Failed to fetch Grove notice config: Error: socket hang up
+2026-11-24T07:09:21.018Z [ERROR] Failed to fetch Grove settings: Error: socket hang up
+2026-11-24T07:09:21.101Z [ERROR] Failed to fetch org fast mode status, standing on enabled (cached): Error: socket hang up
+2026-11-24T07:09:44.451Z [DEBUG] [API:timing] dispatching to firstParty model=claude-haiku-5-5
+2026-11-24T07:09:44.453Z [DEBUG] [API REQUEST] /v1/messages x-client-request-id=4735755f-a7af-4827-b9d9-05ac206cebb5 source=sdk
+2026-11-24T07:09:45.266Z [DEBUG] [API:timing] first byte after 815ms

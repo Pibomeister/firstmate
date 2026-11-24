@@ -1,26 +1,65 @@
 [
   {
-    "name": "Local synthetic digest publishes required fields and defaults",
+    "name": "Local full digest collects all 1,001 open PRs and page-eleven merge with URL/SHA",
     "result": "pass",
     "live": true,
-    "detail": "Real collector, gh and clock; CST, merges, owner waits, ETAs, stalls, ledgers and history inspected."
+    "evidence": "live-transcript.log; 01-first-digest.md/json; api-requests.json",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
   },
   {
-    "name": "Unchanged run skips summary; new content triggers it; failed summary preserves output",
+    "name": "Local stale snapshot reports current CST owner ages, explicit holds, missed ETAs, stalls and full review ledger",
     "result": "pass",
     "live": true,
-    "detail": "Call ledger, deduplicated merges, early review entry and preserved summary checked."
+    "evidence": "live-transcript.log; 02-owner-and-status.md/json",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
   },
   {
-    "name": "Cached or unreachable local snapshot discloses unknown owner coverage",
+    "name": "Local review edits, cached secondmate data, resolved holds and unreachable sources update digest coverage",
     "result": "pass",
     "live": true,
-    "detail": "Cached holds retained with warning; missing source reported without aborting publication."
+    "evidence": "live-transcript.log; 03-review-update.md; 03-cached-coverage.json; 03-resolved-owner.json; 03-unreachable.md",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
   },
   {
-    "name": "Real gh pagination preserves unreported merges after cap or failed page",
+    "name": "Local API outage preserves the pending window and recovers an unchanged page-eleven merge exactly once",
     "result": "pass",
     "live": true,
-    "detail": "Resumed and first-fetch outages retain watermark; omitted merge recovered exactly once; complete fetch advances window."
+    "evidence": "live-transcript.log; 04-failed-page.md/json; 04-recovered-page.md/json; 04-no-duplicate.json",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
+  },
+  {
+    "name": "Local archive failure preserves documents/state; concurrent runs refuse; crashed locks recover and readers see complete JSON",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log; 05-archive-failure.json; 05-archive-recovery.md; 05-concurrent-refused/05-after-crash transcript; complete JSON readers",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
+  },
+  {
+    "name": "Generated local schedule fixes cadence at 20 minutes and its declared command writes the digest",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log; schedule.plist; schedule-execution.log (local declared command only; launchd deliberately refused)",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
+  },
+  {
+    "name": "Changed digest uses the real cheap text-only model runner",
+    "result": "untested",
+    "live": false,
+    "evidence": "07-model-summary.json; live-transcript.log; summary-retry.log; claude-runner.stderr",
+    "reason": "Tried the real installed Claude Code 2.1.331 runner twice: once with the synthetic local digest, then with a minimal synthetic review-only home. Both exhausted the product's 120-second model budget without a summary; captured runner stderr was empty. No credentials were changed. Successful model output remains unverified because the native Claude haiku service did not respond within the required budget. Provide a responsive existing native Claude login/service and rerun; credential repair is outside this phase."
+  },
+  {
+    "name": "Unchanged local digest skips the model and configuration cannot invoke shell commands or Opus",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log; 07-unchanged-no-model.json; 07-policy-guards transcript; real model invocation count",
+    "reason": "Real digest CLI and real gh executed against localhost API with synthetic PRs and isolated local files."
+  },
+  {
+    "name": "Register the recurring job with the real macOS LaunchAgent service",
+    "result": "untested",
+    "live": false,
+    "evidence": "schedule.plist; schedule-execution.log",
+    "reason": "Generated the actual plist, parsed its 1200-second schedule and executed its declared program in an isolated worktree home. Real launchctl registration/bootout changes host system state outside the worktree and is explicitly forbidden in this phase. An authorized install-phase run is needed for launchd registration and timed firing."
   }
 ]

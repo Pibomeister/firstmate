@@ -1,0 +1,4 @@
+2026-11-24T08:07:32.688Z [ERROR] NON-FATAL: Lock acquisition failed for ~/.local/share/claude/versions/2.1.331 (expected in multi-process scenarios): Lock already held by another process
+2026-11-24T08:07:32.707Z [DEBUG] [Bootstrap] Skipped: Nonessential traffic disabled
+2026-11-24T08:07:32.987Z [DEBUG] Failed to fetch Grove notice config: Error: Failed to fetch Grove notice config: essential-traffic-only
+2026-11-24T08:07:32.988Z [DEBUG] Failed to fetch Grove notice config: Error: Failed to fetch Grove notice config: essential-traffic-only

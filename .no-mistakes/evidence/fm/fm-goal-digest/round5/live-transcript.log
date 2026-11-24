@@ -1,0 +1,57 @@
+
+[first] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:58Z
+
+[unchanged] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:01Z
+
+[page-failure] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:03Z
+
+[page-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:06Z
+
+[deduplicated] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:15Z
+
+[cached-mate] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:20Z
+
+[resolved-hold] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:25Z
+
+[eta-stall-reviews] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:29Z
+
+[early-review-change] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:34Z
+
+[archive-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+mkdir: {run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/history: File exists
+
+[archive-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:39Z
+
+[concurrent-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/.state/run.flock)
+
+[lock-release] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:44Z
+
+[cheap-model-guard] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-live-r5/live/home/data/goal-digest/latest.md generated=2026-11-24T08:18:48Z
+goal-digest: summary unavailable: summarize_model 'opus' is not a supported cheap model

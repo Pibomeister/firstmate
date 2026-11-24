@@ -1,0 +1,22 @@
+{
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "tree": "f2a8198d8036599c9ae42b3c4fe261518c47d63d",
+  "base": "d3d97c97d7bcd7dac112f0167186502a11373152",
+  "source_sha256": {
+    "bin/fm-goal-digest.sh": "fdca2ef5572b557b3f155ce7fb444376160ce4f71f9620b80e0f22de616f1f2b",
+    "tests/fm-goal-digest.test.sh": "b9a32e6851024104f0bf965c90ed089a0b49513fa95eba46a88f2180d0adfbd1"
+  },
+  "commands": [
+    "TMPDIR=\"$PWD/.test-goal-digest/tmp\" bash tests/fm-goal-digest.test.sh",
+    "python3 .test-goal-digest/live.py"
+  ],
+  "baseline_exit": 0,
+  "live_external_boundary": "real gh CLI to localhost HTTP emulator with synthetic records; actual digest executable",
+  "claude_version": "2.1.331 (Claude Code)",
+  "gh_version": "gh version 2.83.2 (2025-12-10)",
+  "live_driver_exit": 0,
+  "auth_status_exit": 0,
+  "source_edits": false,
+  "scenario_evidence": "final-scenarios.json",
+  "cleanup": "All owned processes exited; transient worktree fixture removed."
+}

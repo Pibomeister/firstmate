@@ -1,0 +1,32 @@
+[
+  {
+    "pid": 18921,
+    "ppid": 18687,
+    "pgid": 18687,
+    "executable": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+  },
+  {
+    "pid": 63493,
+    "ppid": 18921,
+    "pgid": 18687,
+    "executable": "bash"
+  },
+  {
+    "pid": 64505,
+    "ppid": 63493,
+    "pgid": 18687,
+    "executable": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+  },
+  {
+    "pid": 64776,
+    "ppid": 64505,
+    "pgid": 64776,
+    "executable": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python"
+  },
+  {
+    "pid": 66117,
+    "ppid": 64776,
+    "pgid": 64776,
+    "executable": "~/.local/bin/claude"
+  }
+]

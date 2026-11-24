@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-11-24T08:16:44Z",
+  "generated_at_local": "2026-11-24T02:16:44-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [
+    {
+      "repo": "synthetic/one",
+      "number": 7,
+      "title": "Contributor draft",
+      "url": "https://example.invalid/pr/7",
+      "created_at": "2026-11-23T08:16:21Z",
+      "age_hours": 24,
+      "author": "synthetic",
+      "draft": true
+    }
+  ],
+  "waiting_on_captain": [
+    {
+      "source": "Fleet",
+      "id": "dated",
+      "title": "Choose route",
+      "url": "",
+      "wait_started_at": "2020-01-01",
+      "age_hours": null,
+      "age_days": 2519,
+      "age_precision": "day"
+    },
+    {
+      "source": "Fleet",
+      "id": "hour",
+      "title": "Choose date",
+      "url": "",
+      "wait_started_at": "2026-11-24T05:16:21Z",
+      "age_hours": 3,
+      "age_days": null,
+      "age_precision": "hour"
+    },
+    {
+      "source": "Fleet/mate",
+      "id": "route",
+      "title": "Choose branch",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    }
+  ],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "Fleet/mate",
+      "detail": "secondmate decisions from cached ledger"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [
+    {
+      "source": "Tracks",
+      "entries": [
+        "T1: blocked",
+        "T7: pending",
+        "T5: complete",
+        "T6b: pending",
+        "T10: pending",
+        "T8: complete",
+        "AgentKit: review pending"
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

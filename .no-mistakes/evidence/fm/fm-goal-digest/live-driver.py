@@ -1,268 +1,212 @@
-import copy, datetime as dt, fcntl, http.server, json, os, pathlib, plistlib, shutil, signal, socket, socketserver, ssl, subprocess, sys, threading, time, urllib.parse
-ROOT=pathlib.Path.cwd()
-LAB=ROOT/'.test-goal-digest-tmp/live'
-EVID=pathlib.Path('~/.no-mistakes/evidence/01M855C215WA26T6GGYS0503Y6')
-LAB.mkdir(parents=True,exist_ok=True)
-SCRIPT=ROOT/'bin/fm-goal-digest.sh'
-BASE_ENV={k:v for k,v in os.environ.items() if not k.startswith(('FM_', 'GH_', 'GITHUB_'))}
-BASE_ENV.update(HOME=str(LAB/'user'), TMPDIR=str(LAB), GH_CONFIG_DIR=str(LAB/'gh'), GH_ENTERPRISE_TOKEN='synthetic-local-only', GH_TOKEN='synthetic-local-only', GH_PROMPT_DISABLED='1', GH_NO_UPDATE_NOTIFIER='1', GH_NO_EXTENSION_UPDATE_NOTIFIER='1')
-for folder in ('user','gh'): (LAB/folder).mkdir(exist_ok=True)
-results=[]
-log=open(EVID/'live-transcript.log','w',buffering=1)
-def say(msg):
-    print(msg,flush=True); print(msg,file=log,flush=True)
-def run(args, env=None, timeout=90):
-    res=subprocess.run([str(a) for a in args],env=env or BASE_ENV,cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
-    say(f'$ {" ".join(str(a) for a in args)}\nexit={res.returncode}\n{res.stdout}{res.stderr}')
-    return res
-def home(name,extra=''):
-    h=LAB/name; (h/'config').mkdir(parents=True,exist_ok=True)
-    (h/'config/goal-digest').write_text(extra)
-    return h
-def digest(h,extra=None,timeout=90):
-    env=dict(BASE_ENV,FM_HOME=str(h)); env.update(extra or {})
-    return run([SCRIPT,'run'],env,timeout)
-def data(h): return json.loads((h/'data/goal-digest/latest.json').read_text())
-def keep(h,name):
-    for suffix in ('json','md'):
-        shutil.copyfile(h/f'data/goal-digest/latest.{suffix}',EVID/f'{name}.{suffix}')
-def scenario(name,fn):
-    try:
-        fn(); results.append(dict(name=name,result='pass',live=True,evidence='live-transcript.log',reason='Executed the real digest CLI in a disposable home with synthetic inputs.'))
-        say('PASS '+name)
-    except Exception as e:
-        results.append(dict(name=name,result='fail',live=True,evidence='live-transcript.log',reason=str(e)))
-        say('FAIL '+name+': '+repr(e))
-        raise
+import contextlib
+import datetime as dt
+import fcntl
+import http.server
+import json
+import os
+from pathlib import Path
+import plistlib
+import shutil
+import subprocess as sp
+import sys
+import threading
+import time
+from urllib.parse import parse_qs, urlsplit
 
-# Real gh uses a workspace-local Unix-socket GitHub API emulator. All service data
-# is synthetic; GET is the only method accepted. This is not GitHub validation.
-now=lambda:dt.datetime.now(dt.timezone.utc)
-stamp=lambda d:d.strftime('%Y-%m-%dT%H:%M:%SZ')
-api={'closed':[], 'open':[], 'fail_page':None, 'delay':0}
-requests=[]
+ROOT = Path.cwd()
+E = Path('~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K')
+W = ROOT / '.test-goal-digest/live'
+W.mkdir(parents=True, exist_ok=True)
+SCRIPT = ROOT / 'bin/fm-goal-digest.sh'
+GH = shutil.which('gh')
+CLAUDE = shutil.which('claude')
+now = int(time.time())
+stamp = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+results = []
+requests = []
+closed = []
+opened = []
+fail_page = None
+
 class API(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        p=urllib.parse.urlsplit(self.path); q=urllib.parse.parse_qs(p.query)
-        state=q.get('state',[''])[0]; page=int(q.get('page',['1'])[0]); requests.append({'method':'GET','path':self.path})
-        if api['delay']: time.sleep(api['delay'])
-        if api['fail_page']==(state,page):
-            self.send_error(503); return
-        rows=api.get(state,[])[(page-1)*100:page*100]
-        encoded=json.dumps(rows).encode()
-        try:
-            self.send_response(200); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(encoded))); self.end_headers(); self.wfile.write(encoded)
-        except (BrokenPipeError,ssl.SSLEOFError): pass
-    def log_message(self,*args): pass
-class LocalServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
-    daemon_threads=True
-socket_path='.test-goal-digest-tmp/local-api.sock'
-server=LocalServer(socket_path,API)
-thread=threading.Thread(target=server.serve_forever);thread.start()
-BASE_ENV.update(GH_HOST='synthetic.example.invalid')
-(LAB/'gh/config.yml').write_text('http_unix_socket: '+socket_path+'\n')
+        q = parse_qs(urlsplit(self.path).query)
+        state, page = q['state'][0], int(q['page'][0])
+        requests.append({'method': 'GET', 'path': self.path, 'state': state, 'page': page})
+        if state == 'closed' and page == fail_page:
+            self.send_response(503); self.end_headers(); self.wfile.write(b'{}'); return
+        rows = closed if state == 'closed' else opened
+        data = json.dumps(rows[(page-1)*100:page*100]).encode()
+        self.send_response(200); self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data)
+    def log_message(self, *args): pass
 
-def local_owner():
-    h=home('owner')
-    snap={'schema':'fm-fleet-snapshot.v1','backlog':{'present':True,'records':[{'id':'ask','title':'Choose release window','captain_actionable':True,'hold_set':stamp(now()-dt.timedelta(hours=3,minutes=5))},{'id':'work','title':'Worker task','captain_actionable':False}]},'secondmate_current':{'registry':{'available':True,'complete':True},'records':[{'id':'mate','registered':True,'provenance':{'selected':'structured-home','trust':'complete','summary_source':'home-ledger'},'freshness':{'status':'fresh'},'decisions_open':[{'id':'route','verb':'captain-hold','question':'Choose route'},{'id':'other','verb':'working','question':'No action'}],'counts':{'decisions_open':2},'current':{'state':'ready'}}],'truncated':0}}
-    (h/'fleet.json').write_text(json.dumps(snap))
-    (h/'status.txt').write_text('eta: 2020-01-01 overdue\nbeta 2020-01-01 not an ETA\nshipped 2020-01-01 (eta: 2099-01-01)\n')
-    os.utime(h/'status.txt',(time.time()-72*3600,)*2)
-    ledger=['T1: blocked','T7: pending','T5: done','T6b: pending','T10: pending','T8: done','AgentKit: 2 unresolved']
-    (h/'review.txt').write_text('\n'.join(ledger)+'\n')
-    (h/'config/goal-digest').write_text(f'status = Fleet | {h}/fleet.json\nstatus = M4 | {h}/status.txt\nstatus = Offline | {h}/missing\nreview = Reviews | {h}/review.txt\n')
-    assert digest(h).returncode==0
-    d=data(h)
-    assert [(w['id'],w['age_hours']) for w in d['waiting_on_captain']]==[('ask',3),('route',None)],d
-    assert d['waiting_on_captain_status']=='unknown'
-    assert [e['eta'] for e in d['missed_etas']]==['2020-01-01']
-    assert d['stalls']==[{'source':'M4','age_hours':72}]
-    assert d['review_convergence']==[{'source':'Reviews','entries':ledger}]
-    assert d['generated_at_local'].endswith('-0600 CST')
-    keep(h,'owner-first')
-    assert digest(h).returncode==0 and data(h)['changed'] is False
-    snap['secondmate_current']['records'][0]['freshness']['status']='cached'
-    (h/'fleet.json').write_text(json.dumps(snap))
-    assert digest(h).returncode==0
-    d=data(h); assert d['changed'] and len(d['waiting_on_captain'])==2
-    assert any('cached' in s['detail'] for s in d['waiting_on_captain_unknown_sources'])
-    keep(h,'owner-cached')
-    assert digest(h).returncode==0 and data(h)['changed'] is False
-    snap['secondmate_current']['records'][0]['freshness']['status']='fresh'
-    (h/'fleet.json').write_text(json.dumps(snap))
-    assert digest(h).returncode==0 and data(h)['changed']
-    snap['backlog']['records'][0]['captain_actionable']=False
-    snap['secondmate_current']['records'][0]['decisions_open']=[]
-    (h/'fleet.json').write_text(json.dumps(snap))
-    assert digest(h).returncode==0 and data(h)['waiting_on_captain']==[] and data(h)['changed']
-    keep(h,'owner-resolved')
+server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), API)
+thread = threading.Thread(target=server.serve_forever)
+thread.start()
+adapter = W / 'gh-local'
+adapter.write_text('#!/usr/bin/env python3\nimport os,sys\nassert sys.argv[1] == "api" and len(sys.argv) == 3\nos.execv(' + repr(GH) + ', [' + repr(GH) + ', "api", ' + repr('http://127.0.0.1:%s/' % server.server_port) + ' + sys.argv[2]])\n')
+adapter.chmod(0o755)
+env = dict(os.environ, FM_TEST_SEAM='1', FM_GOAL_DIGEST_GH=str(adapter), GH_TOKEN='synthetic-local-only', GH_CONFIG_DIR=str(W/'gh-config'))
+for key in ('FM_GOAL_DIGEST_CLAUDE', 'GH_HOST', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN'):
+    env.pop(key, None)
+home = W / 'home'
+(home/'config').mkdir(parents=True)
+out = home/'data/goal-digest'
+status = home/'snapshot.json'
+review = home/'review.txt'
+eta = home/'eta.txt'
+snapshot = {'schema':'fm-fleet-snapshot.v1', 'generated_at':stamp(now-86400),
+    'backlog':{'present':True,'records':[
+        {'id':'dated','title':'Choose route','captain_actionable':True,'hold_set':'2020-01-01','hold_age_days':2},
+        {'id':'hour','title':'Choose date','captain_actionable':True,'hold_set':stamp(now-3*3600)},
+        {'id':'done','title':'Answered','captain_actionable':False}]},
+    'secondmate_current':{'registry':{'available':True,'complete':True},'truncated':0,'records':[
+        {'id':'mate','registered':True,'provenance':{'selected':'structured-home','trust':'complete','summary_source':'remote-ledger'},
+         'freshness':{'status':'fresh'},'current':{'state':'captain_decision'},'counts':{'decisions_open':1},'omitted':[],
+         'decisions_open':[{'id':'route','verb':'captain-hold','question':'Choose branch'}]}]}}
+status.write_text(json.dumps(snapshot))
+review.write_text('T1: blocked\nT7: pending\nT5: complete\nT6b: pending\nT10: pending\nT8: complete\nAgentKit: review pending\n')
+eta.write_text('eta: 2000-01-01 overdue\nbeta 2000-01-02 irrelevant\neta: 2099-01-01 future\n')
+os.utime(eta,(now-72*3600,now-72*3600))
+config = home/'config/goal-digest'
+config.write_text(f'repo = synthetic/one\nstatus = Fleet | {status}\nreview = Tracks | {review}\nsummarize = off\n')
 
-def pr(number,merged=None,title=None):
-    return dict(number=number,title=title or f'PR {number}',html_url=f'https://synthetic.invalid/pulls/{number}',merge_commit_sha=f'{number:040x}',merged_at=stamp(merged) if merged else None,created_at=stamp(now()-dt.timedelta(days=2)),updated_at=stamp(now()),user={'login':'synthetic-user'},draft=number==7)
+def save(name, d=None):
+    (E/(name+'.json')).write_text(json.dumps(d if d is not None else json.loads((out/'latest.json').read_text()), indent=2)+'\n')
+    if (out/'latest.md').exists(): shutil.copyfile(out/'latest.md', E/(name+'.md'))
 
-def network_prs():
-    h=home('prs','repo = synthetic/project\n')
-    api.update(closed=[pr(1,now()-dt.timedelta(minutes=10)),pr(2,now()-dt.timedelta(days=100))],open=[pr(7)])
-    probe=run(['gh','api','repos/synthetic/project/pulls?state=open'])
-    assert probe.returncode==0,probe.stderr
-    assert digest(h).returncode==0
-    d=data(h); assert [x['number'] for x in d['new_merges']]==[1] and d['new_merges'][0]['sha']=='000000000000'
-    assert d['new_merges'][0]['url']=='https://synthetic.invalid/pulls/1'
-    assert d['waiting_on_captain']==[] and d['open_pull_requests'][0]['draft']
-    keep(h,'prs-first')
-    assert digest(h).returncode==0 and data(h)['changed'] is False and data(h)['new_merges']==[]
-    api['closed'].insert(0,pr(3,now()))
-    api['closed'].append(pr(4,now()-dt.timedelta(days=300)))
-    assert digest(h).returncode==0 and [x['number'] for x in data(h)['new_merges']]==[3]
-    keep(h,'prs-new-merge')
-    api['closed']=[pr(i,now()) for i in range(1000,1101)]
-    start=len(requests)
-    assert digest(h).returncode==0 and len(data(h)['new_merges'])==101
-    assert any('page=2' in x['path'] for x in requests[start:])
-    keep(h,'prs-paginated')
-    old=(h/'data/goal-digest/.state/since.tsv').read_bytes()
-    api['closed']=[pr(i,now()) for i in range(2000,2101)];api['fail_page']=('closed',2)
-    assert digest(h).returncode==0
-    d=data(h);assert d['new_merges']==[] and any(u['kind']=='repo' for u in d['unreachable_sources'])
-    assert (h/'data/goal-digest/.state/since.tsv').read_bytes()==old
-    keep(h,'prs-partial-unavailable')
-    api['fail_page']=None
-    assert digest(h).returncode==0 and len(data(h)['new_merges'])==101
-    keep(h,'prs-recovered')
-    assert all(x['method']=='GET' for x in requests)
+def run(name, expected=0, extra=None, cwd=W):
+    v = dict(env, FM_HOME=str(home))
+    if extra: v.update(extra)
+    r = sp.run([str(SCRIPT),'run'],env=v,cwd=cwd,text=True,capture_output=True,timeout=180)
+    with (E/'live-transcript.log').open('a') as log:
+        log.write(f'\n[{name}] {SCRIPT} run\nexit={r.returncode}\n{r.stdout}{r.stderr}')
+    assert (r.returncode == 0) == (expected == 0), (name,r)
+    return json.loads((out/'latest.json').read_text()) if r.returncode == 0 else r
 
-# Real changed-only summarizer: this local command records invocations.
-def changed_summary():
-    h=home('summary')
-    summary=h/'summarize.py';summary.write_text('import pathlib,sys\np=pathlib.Path(sys.argv[1]);p.write_text(p.read_text()+"call\\n" if p.exists() else "call\\n");print(sys.stdin.read())\n')
-    (h/'review').write_text('T1: blocked\nT8: complete\n')
-    (h/'config/goal-digest').write_text(f'review = Ledger | {h}/review\nsummarize_cmd = /usr/bin/python3 {summary} {h}/calls\n')
-    assert digest(h).returncode==0
-    assert (h/'calls').read_text()=='call\n'
-    assert digest(h).returncode==0 and data(h)['changed'] is False
-    assert (h/'calls').read_text()=='call\n'
-    (h/'review').write_text('T1: complete\nT8: complete\n')
-    assert digest(h).returncode==0 and data(h)['changed']
-    assert (h/'calls').read_text()=='call\ncall\n'
-    keep(h,'summary-ledger-change')
-    shutil.copyfile(h/'data/goal-digest/summary.txt',EVID/'summary.txt')
-    assert len(list((h/'data/goal-digest/history').glob('*.json')))>=1
-
-def publication():
-    h=home('publication','repo = synthetic/project\n')
-    api.update(closed=[pr(9001,now()-dt.timedelta(minutes=3))],open=[],fail_page=None)
-    assert digest(h).returncode==0
-    saved={n:(h/f'data/goal-digest/{n}').read_bytes() for n in ('latest.json','latest.md','.state/seen.tsv','.state/since.tsv','.state/content.hash')}
-    api['closed'].insert(0,pr(9002,now()))
-    # A directory at every possible next archive's .tmp path forces an actual
-    # filesystem failure with no fake Python or patched product.
-    paths=[]
-    for i in range(180):
-        s=(now()+dt.timedelta(seconds=i)).strftime('%Y%m%dT%H%M%SZ')
-        p=h/f'data/goal-digest/history/{s}.json.tmp';p.mkdir(exist_ok=True);paths.append(p)
-    assert digest(h).returncode!=0
-    assert all((h/f'data/goal-digest/{n}').read_bytes()==v for n,v in saved.items())
-    for p in paths:p.rmdir()
-    failures=[];reads=[0];stop=threading.Event()
-    def reader():
-        while not stop.is_set():
-            try: json.loads((h/'data/goal-digest/latest.json').read_text());reads[0]+=1
-            except Exception as e:failures.append(repr(e))
-    t=threading.Thread(target=reader);t.start()
-    try: assert digest(h).returncode==0
-    finally:stop.set();t.join()
-    assert not failures and reads[0]>0,(reads,failures)
-    assert [m['number'] for m in data(h)['new_merges']]==[9002]
-    keep(h,'publication-recovery')
-    say(f'Concurrent reader parsed {reads[0]} complete latest.json documents; no partial publication observed.')
-    say('Archive failure left latest JSON/Markdown, seen set, watermark and changed hash byte-identical; recovered merge 9002 remained reportable.')
-
-owned=[]
-extra_groups=set()
-def concurrency_timeout():
-    h=home('locks')
-    helper=h/'blocking.py';helper.write_text('import os,pathlib,sys,time\npathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(300)\n')
-    (h/'config/goal-digest').write_text(f'summarize_cmd = /usr/bin/python3 {helper} {h}/ready\n')
-    env=dict(BASE_ENV,FM_HOME=str(h))
-    p=subprocess.Popen([str(SCRIPT),'run'],env=env,cwd=ROOT,stdout=open(h/'first.log','w'),stderr=subprocess.STDOUT,start_new_session=True);owned.append(p)
-    deadline=time.time()+60
-    while not (h/'ready').exists() and time.time()<deadline and p.poll() is None:time.sleep(.1)
-    assert (h/'ready').exists(),'first run never reached summarizer'
-    extra_groups.add(os.getpgid(int((h/'ready').read_text())))
-    r=digest(h);assert r.returncode!=0 and 'another run is in progress' in r.stderr
-    os.kill(p.pid,signal.SIGKILL);p.wait()
-    # A live summarizer descendant must not retain the parent digest's lock.
-    (h/'config/goal-digest').write_text('')
-    assert digest(h).returncode==0
-    os.killpg(p.pid,signal.SIGKILL)
-    for group in extra_groups:
-        try:os.killpg(group,signal.SIGKILL)
-        except ProcessLookupError:pass
-    say('Killed digest parent; subsequent run acquired its lock while the old summarizer process group still existed.')
-    # Per-call network deadline, using the real gh CLI against a slow API.
-    api.update(closed=[],open=[],delay=3)
-    net=home('network-timeout','repo = synthetic/project\ntimeout_seconds = 1\n')
-    started=time.monotonic(); assert digest(net).returncode==0
-    elapsed=time.monotonic()-started
-    assert len(data(net)['unreachable_sources'])==2 and elapsed<30
-    api['delay']=0;keep(net,'network-timeout')
-    say(f'Slow localhost API was bounded by 1-second per-call deadlines; digest returned after {elapsed:.1f}s with explicit unavailable sources.')
-    # Real summarizer deadline is 120 seconds: do not shorten production logic.
-    timedhome=home('summarizer-timeout')
-    sleeper=timedhome/'sleep.py';sleeper.write_text('import os,pathlib,subprocess,sys\np=subprocess.Popen(["/bin/sleep","300"]);pathlib.Path(sys.argv[1]).write_text(str(p.pid));p.wait()\n')
-    (timedhome/'config/goal-digest').write_text(f'summarize_cmd = /usr/bin/python3 {sleeper} {timedhome}/child\n')
-    started=time.monotonic();r=digest(timedhome,timeout=180);elapsed=time.monotonic()-started
-    assert r.returncode==0 and 'summarize_cmd failed' in r.stderr and elapsed>=120
-    pid=int((timedhome/'child').read_text());ps=run(['ps','-o','stat=','-p',str(pid)])
-    assert not ps.stdout.strip() or 'Z' in ps.stdout,ps.stdout
-    assert not (timedhome/'data/goal-digest/summary.txt.tmp').exists()
-    assert digest(timedhome).returncode==0
-    keep(timedhome,'summarizer-timeout')
-    say(f'Production 120-second summarizer deadline elapsed after {elapsed:.1f}s; descendant {pid} exited and next run succeeded.')
-
-# Schedule generation omits launchctl from PATH to avoid system mutations.
-# Its saved ProgramArguments/EnvironmentVariables are then executed for real.
-def schedule():
-    shim=LAB/'schedule-bin';shim.mkdir()
-    for name in ('bash','dirname','sed','cksum','mkdir','cat','id','python3','date','mktemp','rm','cut','shasum','awk','sort','mv'):
-        target=shutil.which(name);assert target,name;(shim/name).symlink_to(target)
-    # No launchctl on PATH: installation emits a plist without registration.
-    h=home('scheduled & home','interval_seconds = 1\n')
-    other=home('scheduled-other')
-    env=dict(BASE_ENV,FM_HOME=str(h),PATH=str(shim),HOME=str(LAB/'schedule-user'))
-    assert run([SCRIPT,'install'],env).returncode==0
-    assert run([SCRIPT,'install'],dict(env,FM_HOME=str(other))).returncode==0
-    files=list((LAB/'schedule-user/Library/LaunchAgents').glob('*.plist'));assert len(files)==2
-    plists=[plistlib.loads(p.read_bytes()) for p in files]
-    spec=next(d for d in plists if d['EnvironmentVariables']['FM_HOME']==str(h))
-    assert spec['StartInterval']==1200 and spec['EnvironmentVariables']['HOME']==env['HOME']
-    assert len({d['Label'] for d in plists})==2
-    scheduled_env=spec['EnvironmentVariables']
-    assert run(spec['ProgramArguments'],scheduled_env).returncode==0
-    assert (h/'data/goal-digest/latest.json').is_file()
-    keep(h,'scheduled-first-digest')
-    for p in files:shutil.copyfile(p,EVID/p.name)
-    say('Generated plist parsed; fixed StartInterval=1200, two home-scoped labels, escaped home path, and declared clean environment executed the real digest successfully. No LaunchAgent registered.')
-    assert run([SCRIPT,'uninstall'],env).returncode==0
-    assert run([SCRIPT,'uninstall'],dict(env,FM_HOME=str(other))).returncode==0
-    assert not list((LAB/'schedule-user/Library/LaunchAgents').glob('*.plist'))
+def passed(name, evidence):
+    results.append({'name':name,'result':'pass','live':True,'evidence':evidence,'reason':'Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.'})
+    print('PASS:',name,flush=True)
 
 try:
-    scenario('Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions',local_owner)
-    scenario('Real gh CLI against synthetic local Unix-socket API: paginate PRs, report new merge once, discard partial fetch and recover',network_prs)
-    scenario('Run real local summarizer only for content changes and preserve every review-ledger entry',changed_summary)
-    scenario('Reject failed archival without consuming notifications and publish complete JSON to concurrent readers',publication)
-    scenario('Reject concurrent run, recover after killed owner, and terminate network and summarizer descendants at deadlines',concurrency_timeout)
-    scenario('Generate home-scoped 20-minute LaunchAgent configuration and execute its declared environment locally',schedule)
+    # Oracle: each new merge appears exactly once, including a record after page 10.
+    opened[:] = [{'number':7,'title':'Contributor draft','created_at':stamp(now-24*3600),'draft':True,'html_url':'https://example.invalid/pr/7','user':{'login':'synthetic'}}]
+    closed[:] = [{'number':1,'title':'First merge','merged_at':stamp(now-3600),'updated_at':stamp(now-3600),'html_url':'https://example.invalid/pr/1','merge_commit_sha':'a'*40}]
+    d=run('first'); assert [m['number'] for m in d['new_merges']] == [1] and d['changed']
+    save('first-digest',d)
+    d=run('unchanged'); assert not d['new_merges'] and not d['changed']
+    closed[:] = [{'number':i,'updated_at':stamp(now-i),'merged_at':None} for i in range(2,1002)]
+    closed.append({'number':1002,'title':'Page eleven merge','updated_at':stamp(now-1500),'merged_at':stamp(now-1600),'html_url':'https://example.invalid/pr/1002','merge_commit_sha':'b'*40})
+    # Simulate an outage: the durable last-complete window is two hours old.
+    (out/'.state/since.tsv').write_text(f'synthetic/one\t{now-7200}\n')
+    fail_page=2
+    before=(out/'.state/since.tsv').read_bytes()
+    d=run('page-failure'); assert not d['new_merges'] and d['unreachable_sources']
+    assert (out/'.state/since.tsv').read_bytes() == before
+    fail_page=None; requests.clear()
+    d=run('page-recovery'); assert [m['number'] for m in d['new_merges']] == [1002]
+    assert [r['page'] for r in requests if r['state']=='closed'] == list(range(1,12))
+    save('page-eleven-recovery',d)
+    assert not run('deduplicated')['new_merges']
+    passed('Local GitHub CLI collects incremental merges through page 11 and recovers a failed page without losing or repeating merges','page-eleven-recovery.json; live-transcript.log; github-http-requests.json')
+
+    # Independent calendar oracle from the current Mexico City date, not the snapshot age.
+    from zoneinfo import ZoneInfo
+    expected_days=(dt.datetime.now(ZoneInfo('America/Mexico_City')).date()-dt.date(2020,1,1)).days
+    waiting=d['waiting_on_captain']; assert {w['id'] for w in waiting} == {'dated','hour','route'}
+    assert next(w for w in waiting if w['id']=='dated')['age_days']==expected_days
+    assert next(w for w in waiting if w['id']=='hour')['age_hours']==3
+    assert next(w for w in waiting if w['id']=='route')['age_hours'] is None
+    assert d['waiting_on_captain_status']=='known' and len(d['open_pull_requests'])==1
+    snapshot['secondmate_current']['records'][0]['freshness']['status']='cached'
+    status.write_text(json.dumps(snapshot)); d=run('cached-mate')
+    assert d['waiting_on_captain_status']=='unknown' and d['changed']
+    save('owner-actions-cached',d)
+    snapshot['secondmate_current']['records'][0]['freshness']['status']='fresh'
+    snapshot['backlog']['records'][0]['captain_actionable']=False
+    status.write_text(json.dumps(snapshot)); d=run('resolved-hold')
+    assert 'dated' not in {w['id'] for w in d['waiting_on_captain']} and d['waiting_on_captain_status']=='known'
+    passed('Local native snapshots distinguish owner holds from drafts, age delayed date-only holds today, disclose cached decisions, and remove resolved holds','owner-actions-cached.json; live-transcript.log')
+
+    config.write_text(config.read_text()+f'status = ETA | {eta}\nstatus = Unreachable | {home}/absent\n')
+    d=run('eta-stall-reviews'); assert '-0600 CST' in d['generated_at_local']
+    assert [m['eta'] for m in d['missed_etas']]==['2000-01-01']
+    assert {s['source'] for s in d['stalls']}=={'ETA'}
+    assert len(d['review_convergence'][0]['entries'])==7
+    review.write_text(review.read_text().replace('T1: blocked','T1: complete'))
+    d=run('early-review-change'); assert d['changed'] and d['review_convergence'][0]['entries'][0]=='T1: complete'
+    save('status-and-reviews',d)
+    assert list((out/'history').glob('*.md')) and list((out/'history').glob('*.json'))
+    passed('Local status files publish CST time, missed ETAs, stalls, unreachable sources, all review tracks, and retained digest history','status-and-reviews.md; status-and-reviews.json')
+
+    # Force the real filesystem archive consumer to fail, without mocks.
+    old=(out/'latest.json').read_bytes()
+    states={p.name:p.read_bytes() for p in (out/'.state').iterdir() if p.name in ('seen.tsv','since.tsv','content.hash')}
+    shutil.rmtree(out/'history'); (out/'history').write_text('blocked history path')
+    review.write_text('T1: archive pending\n')
+    run('archive-refusal',expected=1)
+    assert (out/'latest.json').read_bytes()==old
+    assert all((out/'.state'/k).read_bytes()==v for k,v in states.items())
+    (out/'history').unlink(); (out/'history').mkdir()
+    d=run('archive-recovery'); assert d['changed'] and d['review_convergence'][0]['entries']==['T1: archive pending']
+    save('archive-recovery',d)
+    passed('A local archive failure preserves the published digest and notification state; the next run recovers','live-transcript.log; archive-recovery.json')
+
+    with (out/'.state/run.flock').open('a') as lock:
+        fcntl.flock(lock,fcntl.LOCK_EX)
+        r=run('concurrent-refusal',expected=1); assert 'another run is in progress' in r.stderr
+    d=run('lock-release'); assert not d['changed']
+    passed('A competing local digest is refused while the kernel lock is held and succeeds after release','live-transcript.log')
+
+    config.write_text(config.read_text().replace('summarize = off','summarize = on')+f'summarize_model = opus\nsummarize_cmd = touch {home}/should-not-exist\n')
+    review.write_text('T1: model guard\n'); d=run('cheap-model-guard')
+    assert not (home/'should-not-exist').exists() and not (out/'summary.txt').exists()
+    assert all(r['method']=='GET' for r in requests)
+    passed('The local digest rejects an Opus summary model and ignores a shell-command config entry while collection remains read-only','live-transcript.log; github-http-requests.json')
+
+    # Render install through a local launchctl recorder. This does not claim native launchd execution.
+    fake=W/'install-bin'; fake.mkdir()
+    recorder=fake/'launchctl'
+    recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$FM_INSTALL_RECORD"\n')
+    recorder.chmod(0o755)
+    private_home=W/'install-home'; private_home.mkdir()
+    install_env=dict(env,FM_HOME=str(home),HOME=str(private_home),PATH=str(fake)+os.pathsep+os.environ['PATH'],FM_INSTALL_RECORD=str(W/'install.log'))
+    r=sp.run([str(SCRIPT),'install'],env=install_env,text=True,capture_output=True); assert r.returncode==0,r
+    plist=next((private_home/'Library/LaunchAgents').glob('*.plist'))
+    spec=plistlib.loads(plist.read_bytes()); assert spec['StartInterval']==1200 and spec['EnvironmentVariables']['FM_HOME']==str(home)
+    shutil.copyfile(plist,E/'rendered-launchagent.plist')
+    config.write_text('\n'.join(line for line in config.read_text().replace('summarize = on','summarize = off').splitlines() if not line.startswith('repo ='))+'\n')
+    r=sp.run(spec['ProgramArguments'],env=spec['EnvironmentVariables'],text=True,capture_output=True); assert r.returncode==0,r
+    (E/'rendered-agent-invocation.log').write_text(r.stdout+r.stderr+'exit='+str(r.returncode)+'\n')
+    r=sp.run([str(SCRIPT),'uninstall'],env=install_env,text=True,capture_output=True); assert r.returncode==0 and not plist.exists()
+    shutil.copyfile(W/'install.log',E/'install-recorder.log')
+    passed('The generated local LaunchAgent has a 1200-second cadence and its declared command/environment executes the digest','rendered-launchagent.plist; rendered-agent-invocation.log; install-recorder.log')
+
+    # Actual fixed native Claude invocation. The recorder forwards argv unchanged.
+    native=E/'native-synthetic'; native.mkdir(exist_ok=True)
+    (native/'config').mkdir(exist_ok=True)
+    (native/'review.txt').write_text('Synthetic project: T1 complete; one owner decision: choose north or south. ETA: 2099-01-01.\n')
+    (native/'config/goal-digest').write_text(f'review = Synthetic | {native}/review.txt\nsummarize_model = haiku\n')
+    wrapper=W/'native-claude'
+    wrapper.write_text('#!/usr/bin/env python3\nimport json,pathlib,subprocess,sys\ne=pathlib.Path('+repr(str(E))+')\n(e/"native-claude-argv.json").write_text(json.dumps(['+repr(CLAUDE)+']+sys.argv[1:]))\nprompt=sys.stdin.read()\n(e/"native-claude-input.txt").write_text(prompt)\nr=subprocess.run(['+repr(CLAUDE)+']+sys.argv[1:],input=prompt,text=True,capture_output=True)\n(e/"native-claude-result.json").write_text(json.dumps({"exit":r.returncode,"stdout":r.stdout,"stderr":r.stderr},indent=2))\nsys.stdout.write(r.stdout);sys.stderr.write(r.stderr);sys.exit(r.returncode)\n')
+    wrapper.chmod(0o755)
+    r=sp.run([str(SCRIPT),'run'],cwd=native,env=dict(os.environ,FM_HOME=str(native),FM_TEST_SEAM='1',FM_GOAL_DIGEST_CLAUDE=str(wrapper)),text=True,capture_output=True,timeout=150)
+    (E/'native-digest-run.log').write_text(r.stdout+r.stderr+'exit='+str(r.returncode)+'\n')
+    result=json.loads((E/'native-claude-result.json').read_text()) if (E/'native-claude-result.json').exists() else None
+    summary=native/'data/goal-digest/summary.txt'
+    if r.returncode==0 and result and result['exit']==0 and summary.exists() and summary.read_text().strip():
+        shutil.copyfile(summary,E/'native-summary.txt')
+        results.append({'name':'A synthetic changed digest receives a nonempty summary from the actual fixed text-only native Claude haiku runner','result':'pass','live':True,'evidence':'native-claude-argv.json; native-claude-result.json; native-digest-run.log; native-summary.txt','reason':'Actual installed Claude CLI and existing account; argv forwarded unchanged, no tools or settings enabled. Text mode does not expose served-model metadata.'})
+    else:
+        results.append({'name':'A synthetic changed digest receives a summary from the actual fixed text-only native Claude haiku runner','result':'untested','live':False,'evidence':'native-claude-argv.json; native-claude-result.json; native-digest-run.log','reason':'Actual fixed runner attempted with the normal native account; see retained exact exit/refusal. No account changes, model substitutions, or contract weakening were attempted.'})
+    print('NATIVE:',json.dumps(results[-1]),flush=True)
+
+    rule='Do not modify system state outside the worktree. In particular, do not install or upgrade system packages ... and do not change global or user-level tool configuration.'
+    (E/'native-launchd-boundary.txt').write_text('Native registration not executed.\nWorkspace boundary: '+rule+'\nRecorded test fix instruction: If native phase rules prohibit registration, preserve the exact rule/refusal and return no-go without a policy bypass or another run.\nA workspace-local plist and recorder prove rendering and command execution only. Actual launchctl bootstrap changes the per-user launchd domain outside this worktree. A phase-specific authorization permitting an owned temporary launchd job, its execution, and cleanup is required to perform this criterion.\n')
+    results.append({'name':'Native macOS launchd registers the owned recurring job, fires the digest, and removes the temporary registration','result':'untested','live':False,'evidence':'native-launchd-boundary.txt; rendered-launchagent.plist','reason':'The current workspace boundary prohibits changing system state outside the worktree. Local rendering and executing the generated command were driven, but neither can prove launchd registration or firing. The recorded fix instruction requires no-go under this exact restriction. Provide phase-specific authority for temporary native launchd registration, execution, and cleanup.'})
 finally:
-    for group in extra_groups:
-        try:os.killpg(group,signal.SIGKILL)
-        except ProcessLookupError:pass
-    for p in owned:
-        try:os.killpg(p.pid,signal.SIGKILL)
-        except ProcessLookupError:pass
-        if p.poll() is None:p.wait()
-    server.shutdown();server.server_close();thread.join();pathlib.Path(socket_path).unlink(missing_ok=True)
-    (EVID/'api-requests.json').write_text(json.dumps(requests,indent=2))
-    (EVID/'live-results.json').write_text(json.dumps(results,indent=2))
-    log.close()
+    server.shutdown(); server.server_close(); thread.join()
+    (E/'github-http-requests.json').write_text(json.dumps(requests,indent=2)+'\n')
+    (E/'live-scenarios.json').write_text(json.dumps(results,indent=2)+'\n')
+    print('HTTP server stopped; completed scenarios:',len(results),flush=True)

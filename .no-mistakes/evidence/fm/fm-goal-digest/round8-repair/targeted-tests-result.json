@@ -1,0 +1,7 @@
+{
+  "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "command": "TMPDIR=\"$PWD/.test-goal-digest-repair/tmp\" bash tests/fm-goal-digest.test.sh",
+  "exit": 0,
+  "completed_checks": 18,
+  "log": "targeted-tests.log"
+}

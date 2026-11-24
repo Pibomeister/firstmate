@@ -1,0 +1,7 @@
+{
+  "exit": 0,
+  "elapsed": 120.530271583,
+  "stdout": "goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-repair/home/data/goal-digest/latest.md generated=2026-11-24T08:42:44Z\n",
+  "stderr": "goal-digest: summary unavailable: model runner failed; digest still written\n",
+  "summary_exists": false
+}

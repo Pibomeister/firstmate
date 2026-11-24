@@ -1,18 +1,817 @@
 [
   {
     "method": "GET",
-    "path": "/api/v3/repos/synthetic/demo/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1"
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:23Z"
   },
   {
     "method": "GET",
-    "path": "/api/v3/repos/synthetic/demo/pulls?state=open&sort=created&direction=asc&per_page=100&page=1"
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:23Z"
   },
   {
     "method": "GET",
-    "path": "/api/v3/repos/synthetic/demo/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1"
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:24Z"
   },
   {
     "method": "GET",
-    "path": "/api/v3/repos/synthetic/demo/pulls?state=open&sort=created&direction=asc&per_page=100&page=1"
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:24Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:24Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:25Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:25Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:26Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:26Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:27Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:27Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:28Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:30Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:30Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:31Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:31Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:31Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:31Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:32Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:33Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:33Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:34Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:34Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:35Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:35Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:36Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:36Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:36Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:37Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:37Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:37Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:38Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:38Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:40Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:40Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:40Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:41Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:41Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:42Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:42Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:42Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:43Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:43Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:43Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:44Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:44Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:44Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:46Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:47Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:47Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:48Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:48Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:49Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:49Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:49Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:50Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:50Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:50Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:50Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:51Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:51Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:53Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:53Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:54Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:50:55Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:50:55Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:50:55Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:50:56Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:50:56Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:50:56Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:50:57Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:50:57Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:50:58Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:50:58Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:50:59Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:01Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:02Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:02Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:03Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:04Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:04Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:51:04Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:51:05Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:51:05Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:51:05Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:51:06Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:51:06Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:51:07Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:51:07Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:08Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:09Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:09Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:09Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:10Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:51:10Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:51:10Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:51:11Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:51:11Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:51:11Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:51:12Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:51:12Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:51:13Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:14Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:15Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:15Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=4",
+    "time": "2026-11-24T05:51:15Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=5",
+    "time": "2026-11-24T05:51:16Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=6",
+    "time": "2026-11-24T05:51:17Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=7",
+    "time": "2026-11-24T05:51:17Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=8",
+    "time": "2026-11-24T05:51:17Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=9",
+    "time": "2026-11-24T05:51:18Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=10",
+    "time": "2026-11-24T05:51:18Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=11",
+    "time": "2026-11-24T05:51:19Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:19Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:20Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:20Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:51:20Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:51:21Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:51:21Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:51:21Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:51:22Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:51:22Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:51:23Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:51:23Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:25Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:26Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:27Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=2",
+    "time": "2026-11-24T05:51:27Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=3",
+    "time": "2026-11-24T05:51:27Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=4",
+    "time": "2026-11-24T05:51:28Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=5",
+    "time": "2026-11-24T05:51:28Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=6",
+    "time": "2026-11-24T05:51:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=7",
+    "time": "2026-11-24T05:51:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=8",
+    "time": "2026-11-24T05:51:29Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=9",
+    "time": "2026-11-24T05:51:30Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=10",
+    "time": "2026-11-24T05:51:30Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=11",
+    "time": "2026-11-24T05:51:30Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:32Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:33Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:34Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:35Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:36Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:36Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:38Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:38Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:39Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:41Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:41Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:43Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:44Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:45Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:46Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:49Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:50Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:52Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:51:53Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:53:56Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:53:58Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "time": "2026-11-24T05:54:01Z"
+  },
+  {
+    "method": "GET",
+    "path": "/repos/local/fixture/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "time": "2026-11-24T05:54:02Z"
   }
 ]

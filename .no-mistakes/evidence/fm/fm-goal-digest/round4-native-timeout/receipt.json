@@ -1,0 +1,29 @@
+{
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "source_sha256": "fdca2ef5572b557b3f155ce7fb444376160ce4f71f9620b80e0f22de616f1f2b",
+  "changes": "No source or test edits; no repair established.",
+  "reproduction": {
+    "interface": "bin/fm-goal-digest.sh run",
+    "fixture": "Synthetic review, fresh output, no repository or SSH sources. Native account, fixed Haiku/no-tools argv forwarded unchanged.",
+    "digest_exit": 0,
+    "summary_published": false,
+    "result": "Same summary-unavailable failure after the native runner wall limit."
+  },
+  "diagnostic": {
+    "change": "Only --debug-file added to native argv.",
+    "exit": 124,
+    "nonempty_stdout": true,
+    "observations": "Background startup network requests failed; Haiku model request dispatched and returned text, but the native CLI did not exit within 120 seconds. This does not prove background requests caused the timeout."
+  },
+  "counterfactual": {
+    "change": "Same diagnostic command and input, with process-scoped CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1.",
+    "exit": 124,
+    "nonempty_stdout": false,
+    "observations": "Bootstrap fetch skipped, but native CLI still timed out without model dispatch in debug log. Main-thread sample shows a native lock wait with unsymbolized frames, insufficient to identify the underlying cause. This falsifies disabling optional traffic as a sufficient fix."
+  },
+  "conclusion": "Native CLI completion remains unreliable. No safe source repair justified. Do not claim acceptance or weaken timeout/model/no-tools contract.",
+  "native_launchd": "Untested; explicitly prohibited out-of-worktree system-state mutation. No registration attempted.",
+  "other_checks": "No deterministic-suite repeat: no source changes and reported native failing case was reproduced directly. No linters, formatters, static analysis, pipeline controls, or publication run.",
+  "cleanup": "All three owned native process groups absent before fixture cleanup.",
+  "reference": "https://code.claude.com/docs/en/env-vars"
+}

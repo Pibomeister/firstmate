@@ -1,0 +1,5 @@
+{
+  "exit": 0,
+  "stdout": "- **New merges:** None\n- **Open PRs:** None\n- **Waiting on owner:** None known\n- **Owner actions unknown:** No sources configured\n- **Missed ETAs:** None\n- **Stalls:** None\n- **Blocked:** None known\n- **Review convergence:** Synthetic project T1 is complete. One owner decision is pending: choose north or south (ETA 2099-01-01)\n- **Unreachable sources:** None\n",
+  "stderr": ""
+}

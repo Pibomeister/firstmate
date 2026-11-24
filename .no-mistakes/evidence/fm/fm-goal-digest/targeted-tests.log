@@ -1,9 +1,10 @@
 1..17
 ok - killed digest releases its lock and its delayed summarizer cannot corrupt a replacement
-ok - capped and failed collection retain pending merges across outages and bootstrap
+ok - complete pagination reports unchanged page-11 merges after outages and bootstrap failures
 ok - new merge detection, changed flag and changed-only summarizer
 ok - missed ETA, stall, unreachable source and review record
 ok - missing config writes an empty digest in the default directory
+goal-digest: summary unavailable: claude runner not found
 ok - launchagent install and uninstall
 ok - ssh quoting, concurrent-run lock, crashed-run lock release and install failure
 ok - summarizer background helper does not hold the run lock

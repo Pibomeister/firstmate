@@ -1,0 +1,80 @@
+[
+  {
+    "pid": 21129,
+    "ppid": 2276,
+    "pgid": 21129,
+    "command": "/bin/zsh -lc python3 .test-goal-digest-r3/live.py > ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/live-driver.log 2>&1\\012check_rc=$?\\012printf \"%s\\n\" \"$check_rc\" > ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/live-driver.exit\\012cat ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/live-driver.log\\012exit \"$check_rc\""
+  },
+  {
+    "pid": 21228,
+    "ppid": 2276,
+    "pgid": 21228,
+    "command": "/bin/zsh -lc TMPDIR=\"$PWD/.test-goal-digest-r3/tmp\" bash tests/fm-goal-digest.test.sh > ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/targeted-tests.log 2>&1\\012check_rc=$?\\012printf \"%s\\n\" \"$check_rc\" > ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/targeted-tests.exit\\012cat ~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round3/targeted-tests.log\\012exit \"$check_rc\""
+  },
+  {
+    "pid": 21339,
+    "ppid": 21129,
+    "pgid": 21129,
+    "command": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python .test-goal-digest-r3/live.py"
+  },
+  {
+    "pid": 21458,
+    "ppid": 21228,
+    "pgid": 21228,
+    "command": "bash tests/fm-goal-digest.test.sh"
+  },
+  {
+    "pid": 22103,
+    "ppid": 21339,
+    "pgid": 21129,
+    "command": "bash {run-worktree}/bin/fm-goal-digest.sh run"
+  },
+  {
+    "pid": 23222,
+    "ppid": 22103,
+    "pgid": 21129,
+    "command": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python -c \\012import os, signal, subprocess, sys\\012proc = subprocess.Popen(sys.argv[1:], start_new_session=True)\\012try:\\012    raise SystemExit(proc.wait(timeout=int(os.environ[\"FM_GD_TIMEOUT\"])))\\012except subprocess.TimeoutExpired:\\012    os.killpg(proc.pid, signal.SIGKILL)\\012    proc.wait()\\012    raise SystemExit(124)\\012 {run-worktree}/.test-goal-digest-r3/live/native-claude -p --model haiku --tools  --setting-sources  --strict-mcp-config --no-session-persistence"
+  },
+  {
+    "pid": 23318,
+    "ppid": 23222,
+    "pgid": 23318,
+    "command": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python {run-worktree}/.test-goal-digest-r3/live/native-claude -p --model haiku --tools  --setting-sources  --strict-mcp-config --no-session-persistence"
+  },
+  {
+    "pid": 23813,
+    "ppid": 23318,
+    "pgid": 23318,
+    "command": "~/.local/bin/claude -p --model haiku --tools  --setting-sources  --strict-mcp-config --no-session-persistence"
+  },
+  {
+    "pid": 42966,
+    "ppid": 21458,
+    "pgid": 21228,
+    "command": "bash {run-worktree}/bin/fm-goal-digest.sh run"
+  },
+  {
+    "pid": 44262,
+    "ppid": 42966,
+    "pgid": 21228,
+    "command": "(Python)"
+  },
+  {
+    "pid": 44326,
+    "ppid": 44262,
+    "pgid": 44326,
+    "command": "(bash)"
+  },
+  {
+    "pid": 44332,
+    "ppid": 44326,
+    "pgid": 44326,
+    "command": "(bash)"
+  },
+  {
+    "pid": 44336,
+    "ppid": 44332,
+    "pgid": 44326,
+    "command": "(tr)"
+  }
+]

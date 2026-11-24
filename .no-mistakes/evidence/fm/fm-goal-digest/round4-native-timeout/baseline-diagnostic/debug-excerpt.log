@@ -1,0 +1,9 @@
+2026-11-24T08:00:22.448Z [ERROR] NON-FATAL: Lock acquisition failed for ~/.local/share/claude/versions/2.1.331 (expected in multi-process scenarios): Lock already held by another process
+2026-11-24T08:00:22.504Z [DEBUG] [Bootstrap] Fetching
+2026-11-24T08:00:52.499Z [ERROR] Failed to fetch org fast mode status, standing on enabled (cached): Error: socket hang up
+2026-11-24T08:00:52.504Z [DEBUG] [Bootstrap] Fetch failed: ECONNRESET
+2026-11-24T08:00:52.504Z [ERROR] [Bootstrap] fetch failed: Error: socket hang up
+2026-11-24T08:00:52.507Z [ERROR] Failed to fetch Grove settings: AxiosError: timeout of 3000ms exceeded
+2026-11-24T08:01:47.832Z [ERROR] Failed to flush logs to Datadog: AxiosError: timeout of 5000ms exceeded
+2026-11-24T08:01:47.861Z [DEBUG] [API:timing] dispatching to firstParty model=claude-haiku-5-5
+2026-11-24T08:01:48.751Z [DEBUG] [API:timing] first byte after 893ms

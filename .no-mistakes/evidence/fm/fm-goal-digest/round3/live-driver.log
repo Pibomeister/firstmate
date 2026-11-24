@@ -1,0 +1,9 @@
+PASS: Local GitHub CLI collects incremental merges through page 11 and recovers a failed page without losing or repeating merges
+PASS: Local native snapshots distinguish owner holds from drafts, age delayed date-only holds today, disclose cached decisions, and remove resolved holds
+PASS: Local status files publish CST time, missed ETAs, stalls, unreachable sources, all review tracks, and retained digest history
+PASS: A local archive failure preserves the published digest and notification state; the next run recovers
+PASS: A competing local digest is refused while the kernel lock is held and succeeds after release
+PASS: The local digest rejects an Opus summary model and ignores a shell-command config entry while collection remains read-only
+PASS: The generated local LaunchAgent has a 1200-second cadence and its declared command/environment executes the digest
+NATIVE: {"name": "A synthetic changed digest receives a summary from the actual fixed text-only native Claude haiku runner", "result": "fail", "live": true, "evidence": "native-claude-argv.json; native-claude-result.json; native-digest-run.log", "reason": "Actual fixed runner attempted with the normal native account; see retained exact exit/refusal. No account changes, model substitutions, or contract weakening were attempted."}
+HTTP server stopped; completed scenarios: 9

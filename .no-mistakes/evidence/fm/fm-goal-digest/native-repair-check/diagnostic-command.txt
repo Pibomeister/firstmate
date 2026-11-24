@@ -1,0 +1,1 @@
+['claude', '-p', '--model', 'haiku', '--tools', '', '--setting-sources', '', '--strict-mcp-config', '--no-session-persistence', '--debug-file', '{run-worktree}/.test-goal-digest/native/debug.log']

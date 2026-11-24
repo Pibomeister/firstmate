@@ -1,0 +1,85 @@
+{
+  "generated_at": "2026-11-24T10:31:40Z",
+  "generated_at_local": "2026-11-24T04:31:40-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [
+    {
+      "repo": "synthetic/one",
+      "number": 7,
+      "title": "Contributor draft",
+      "url": "https://example.invalid/pr/7",
+      "created_at": "2026-11-23T10:30:31Z",
+      "age_hours": 24,
+      "author": "synthetic",
+      "draft": true
+    }
+  ],
+  "waiting_on_captain": [
+    {
+      "source": "Fleet",
+      "id": "hour",
+      "title": "Choose date",
+      "url": "",
+      "wait_started_at": "2026-11-24T07:30:31Z",
+      "age_hours": 3,
+      "age_days": null,
+      "age_precision": "hour"
+    },
+    {
+      "source": "Fleet/mate",
+      "id": "route",
+      "title": "Choose branch",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    }
+  ],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "ETA",
+      "detail": "native owner-action records unavailable"
+    },
+    {
+      "source": "Unreachable",
+      "detail": "source unreachable"
+    }
+  ],
+  "missed_etas": [
+    {
+      "source": "ETA",
+      "eta": "2000-01-01",
+      "line": "eta: 2000-01-01 overdue"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "ETA",
+      "age_hours": 72
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "Tracks",
+      "entries": [
+        "T1: complete",
+        "T7: pending",
+        "T5: complete",
+        "T6b: pending",
+        "T10: pending",
+        "T8: complete",
+        "AgentKit: review pending"
+      ]
+    }
+  ],
+  "unreachable_sources": [
+    {
+      "kind": "status",
+      "source": "Unreachable",
+      "detail": "{run-worktree}/.test-goal-digest-current/live/home/absent"
+    }
+  ]
+}

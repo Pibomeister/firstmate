@@ -1,0 +1,266 @@
+[
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=4",
+    "state": "closed",
+    "page": 4
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=5",
+    "state": "closed",
+    "page": 5
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=6",
+    "state": "closed",
+    "page": 6
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=7",
+    "state": "closed",
+    "page": 7
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=8",
+    "state": "closed",
+    "page": 8
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=9",
+    "state": "closed",
+    "page": 9
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=10",
+    "state": "closed",
+    "page": 10
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=11",
+    "state": "closed",
+    "page": 11
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=1",
+    "state": "closed",
+    "page": 1
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=2",
+    "state": "closed",
+    "page": 2
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=3",
+    "state": "closed",
+    "page": 3
+  },
+  {
+    "method": "GET",
+    "path": "/repos/synthetic/one/pulls?state=open&sort=created&direction=asc&per_page=100&page=1",
+    "state": "open",
+    "page": 1
+  }
+]

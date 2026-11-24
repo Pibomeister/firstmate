@@ -1,0 +1,4 @@
+Native registration not executed.
+Workspace boundary: Do not modify system state outside the worktree. In particular, do not install or upgrade system packages ... and do not change global or user-level tool configuration.
+Recorded test fix instruction: If native phase rules prohibit registration, preserve the exact rule/refusal and return no-go without a policy bypass or another run.
+A workspace-local plist and recorder prove rendering and command execution only. Actual launchctl bootstrap changes the per-user launchd domain outside this worktree. A phase-specific authorization permitting an owned temporary launchd job, its execution, and cleanup is required to perform this criterion.

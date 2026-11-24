@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "~/.local/bin/claude",
+    "-p",
+    "--model",
+    "haiku",
+    "--tools",
+    "",
+    "--setting-sources",
+    "",
+    "--strict-mcp-config",
+    "--no-session-persistence"
+  ],
+  "safe_mode": "1",
+  "started": 1795501476.830406
+}

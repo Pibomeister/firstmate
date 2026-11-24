@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-11-24T05:51:38Z",
+  "generated_at_local": "2026-11-23T23:51:38-0600 CST",
+  "changed": false,
+  "new_merges": [],
+  "open_pull_requests": [],
+  "waiting_on_captain": [
+    {
+      "source": "Fleet",
+      "id": "dated",
+      "title": "Choose date",
+      "url": "",
+      "wait_started_at": "2025-12-30",
+      "age_hours": null,
+      "age_days": 328,
+      "age_precision": "day"
+    },
+    {
+      "source": "Fleet/mate-a",
+      "id": "second-route",
+      "title": "Choose a second route",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    }
+  ],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "Fleet/mate-a",
+      "detail": "secondmate decisions from cached ledger"
+    },
+    {
+      "source": "Progress",
+      "detail": "native owner-action records unavailable"
+    }
+  ],
+  "missed_etas": [
+    {
+      "source": "Progress",
+      "eta": "2020-01-01",
+      "line": "eta: 2020-01-01 missed"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "Progress",
+      "age_hours": 72
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "Convergence",
+      "entries": [
+        "T1: complete",
+        "T7: pending",
+        "T5: complete",
+        "T6b: pending",
+        "T10: pending",
+        "T8: complete",
+        "AgentKit review ledger: 2 unresolved"
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

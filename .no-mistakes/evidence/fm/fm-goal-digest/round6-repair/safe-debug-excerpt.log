@@ -1,0 +1,14 @@
+2026-11-24T08:44:16.058Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-11-24T08:44:16.088Z [DEBUG] [STARTUP] Running setup()...
+2026-11-24T08:44:16.123Z [DEBUG] [STARTUP] setup() completed in 35ms
+2026-11-24T08:44:16.140Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-11-24T08:44:16.147Z [DEBUG] [STARTUP] Commands and agents loaded in 6ms
+2026-11-24T08:44:16.202Z [DEBUG] [STARTUP] MCP configs resolved in 3ms (awaited at +144ms)
+2026-11-24T08:44:16.315Z [DEBUG] [event-loop-stall] detector started (interval=200ms, at rest 1000ms, threshold=500ms)
+2026-11-24T08:45:33.247Z [WARN] [event-loop-stall] blocked for 52921ms monotonic (wall drift 52920ms, clock jump -1ms, expected 200ms). Total stalls: 1, cumulative: 52921ms monotonic / 52920ms wall [likely sleep/wake] blocked_write=false sigcont=n/a timer_slack=n/a cpu=160ms majflt=0 rss=155MB heap=63MB ext=4MB
+2026-11-24T08:45:33.332Z [DEBUG] [API:timing] dispatching to firstParty model=claude-haiku-5-5
+2026-11-24T08:45:33.336Z [WARN] [event-loop-stall] blocked for 23633ms monotonic (wall drift 23633ms, clock jump 0ms, expected 200ms). Total stalls: 2, cumulative: 76554ms monotonic / 76553ms wall [likely sleep/wake] blocked_write=false sigcont=n/a timer_slack=n/a cpu=186ms majflt=0 rss=163MB heap=44MB ext=21MB
+2026-11-24T08:45:34.249Z [DEBUG] [API:timing] first byte after 919ms
+2026-11-24T08:46:05.632Z [DEBUG] [fs.watch probe] verdict: silent
+2026-11-24T08:46:05.647Z [DEBUG] [engine] turn 1 end (turns=1 usage in=2 out=302 cost=$0.0008 api=32315ms stop=end_turn resultLen=372)
+2026-11-24T08:46:05.657Z [WARN] [settings] native file watching is not delivering events on this host (fs_watch_silent); polling settings files every 2000ms instead

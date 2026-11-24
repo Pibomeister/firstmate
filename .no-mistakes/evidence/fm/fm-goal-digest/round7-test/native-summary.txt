@@ -1,0 +1,9 @@
+- **New merges:** None
+- **Open PRs:** None
+- **Waiting on owner:** None known
+- **Owner actions unknown:** No sources configured
+- **Missed ETAs:** None
+- **Stalls:** None
+- **Blocked:** None known
+- **Review convergence:** Synthetic project T1 is complete. One owner decision is pending: choose north or south (ETA 2099-01-01)
+- **Unreachable sources:** None

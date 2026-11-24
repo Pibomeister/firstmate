@@ -1,0 +1,10 @@
+{
+  "exit": 0,
+  "elapsed": 74.24030216700001,
+  "stdout": "goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-repair/verified-home/data/goal-digest/latest.md generated=2026-11-24T08:49:22Z\n",
+  "stderr": "",
+  "summary_exists": true,
+  "summary": "- **New merges:** None.\n- **Open PRs:** None.\n- **Waiting on owner:** None known. Owner actions are unknown because no sources are configured.\n- **Missed ETAs:** None.\n- **Stalls:** None.\n- **Blocked:** Nothing blocked. No unreachable sources.\n- **Review convergence:** Synthetic project T1 is complete. One owner decision is needed: choose north or south. ETA 2099-01-01.\n",
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "source_sha256": "0e6d4a02d45d20153a331c48fcba8d337a1febd592cfbc8c7221875bbefc79c4"
+}

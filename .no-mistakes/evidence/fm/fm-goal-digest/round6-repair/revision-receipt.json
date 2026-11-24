@@ -1,0 +1,27 @@
+{
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "claude_version": "2.1.331 (Claude Code)",
+  "source_sha256": "0e6d4a02d45d20153a331c48fcba8d337a1febd592cfbc8c7221875bbefc79c4",
+  "test_sha256": "2c4710ba4b4a6d3436306121b9ba3cc6ab42dc7219b42e619900d28d79366c35",
+  "test_contract": "Public digest execution passes CHOKIDAR_USEPOLLING=1 to the fixed native summarizer and publishes returned text. Oracle: Chokidar documented environment override, confirmed in installed CLI 2.1.331. Rejects missing override or inherited CHOKIDAR_USEPOLLING=0.",
+  "native_reproduction": "Unmodified product timed out at 120 seconds; native sample blocked in FSEventStreamStart/register_with_server; no summary.",
+  "counterfactuals": "Safe mode still timed out; polling call returned a summary at 66 seconds. Native polling sample still observed another direct file watcher, so this is a scoped mitigation for Chokidar initialization, not a repair to the host FSEvents service.",
+  "native_verification": "Modified product returned 0 and published nonempty summary in 74.24 seconds. Native diagnostic reports dispatch to firstParty model=claude-haiku-5-5; served-model metadata is not exposed in fixed text mode.",
+  "native_launchd": "Not attempted: phase prohibits system-state changes outside worktree. Existing acceptance remains untested.",
+  "scope": "Only Test phase. No linter, formatter, static analysis, full repository suite, pipeline control, delivery, auth modification or launchd registration.",
+  "focused_verification": {
+    "command": "TMPDIR=\"$PWD/.test-goal-digest-repair/tmp\" bash tests/fm-goal-digest.test.sh",
+    "exit": 0,
+    "cases_passed": 18,
+    "completion": "FM_TEST_COMPLETE"
+  },
+  "regression": {
+    "command": "TMPDIR=\"$PWD/.test-goal-digest-repair/tmp\" bash -c '. tests/lib.sh; fm_test_run() { test_summarizer_avoids_native_file_watching; }; . tests/fm-goal-digest.test.sh'",
+    "before_exit": 1,
+    "after_exit": 0,
+    "before_failure": "expected '1', got '0'"
+  },
+  "discarded_verification": "Earlier concurrent targeted run exited 1 after source edits changed bytes while Bash was reading the script; invalidated rather than treated as product evidence. Stable-source rerun passed all 18 cases.",
+  "documentation": "https://raw.githubusercontent.com/paulmillr/chokidar/4.0.3/README.md#performance documents CHOKIDAR_USEPOLLING=1; installed Claude 2.1.331 also reads that exact env variable in its embedded watcher implementation.",
+  "final_source_sha256": "0e6d4a02d45d20153a331c48fcba8d337a1febd592cfbc8c7221875bbefc79c4"
+}

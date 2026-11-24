@@ -1,0 +1,1 @@
+All owned native process groups contain no live process. Targeted tests completed with exit 0. Worktree fixture .test-goal-digest-repair removed after evidence capture. Native launchd registration was never attempted.

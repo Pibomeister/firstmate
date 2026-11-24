@@ -1,0 +1,16 @@
+{
+  "head": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "tree": "f2a8198d8036599c9ae42b3c4fe261518c47d63d",
+  "source_sha256": "fdca2ef5572b557b3f155ce7fb444376160ce4f71f9620b80e0f22de616f1f2b",
+  "command": [
+    "bin/fm-goal-digest.sh",
+    "run"
+  ],
+  "claude_version": "2.1.331 (Claude Code)",
+  "elapsed_seconds": 121.19,
+  "exit": 0,
+  "stdout": "goal-digest: changed=yes latest={run-worktree}/.goal-digest-recheck/fixture/data/goal-digest/latest.md generated=2026-11-24T06:24:35Z\n",
+  "stderr": "goal-digest: summary unavailable: model runner failed; digest still written\n",
+  "summary_present": false,
+  "launchd": "not executed: Workspace boundary forbids modifying system state outside the worktree; previous test finding explicitly says to preserve this refusal without a bypass."
+}

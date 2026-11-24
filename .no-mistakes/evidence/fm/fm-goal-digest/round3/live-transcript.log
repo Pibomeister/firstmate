@@ -1,0 +1,114 @@
+
+[first] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:26:39Z
+
+[unchanged] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:26:44Z
+
+[page-failure] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:26:47Z
+
+[page-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:26:50Z
+
+[deduplicated] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:04Z
+
+[cached-mate] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:08Z
+
+[resolved-hold] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:13Z
+
+[eta-stall-reviews] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:18Z
+
+[early-review-change] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:23Z
+
+[archive-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+mkdir: {run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/history: File exists
+
+[archive-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:27Z
+
+[concurrent-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/.state/run.flock)
+
+[lock-release] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:32Z
+
+[cheap-model-guard] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T07:27:39Z
+goal-digest: summary unavailable: summarize_model 'opus' is not a supported cheap model
+
+[first] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:21Z
+
+[unchanged] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:24Z
+
+[page-failure] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:26Z
+
+[page-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:30Z
+
+[deduplicated] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:40Z
+
+[cached-mate] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:44Z
+
+[resolved-hold] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:16:48Z
+
+[eta-stall-reviews] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:01Z
+
+[early-review-change] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:08Z
+
+[archive-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+mkdir: {run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/history: File exists
+
+[archive-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:12Z
+
+[concurrent-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/.state/run.flock)
+
+[lock-release] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:19Z
+
+[cheap-model-guard] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-r3/live/home/data/goal-digest/latest.md generated=2026-11-24T08:17:24Z
+goal-digest: summary unavailable: summarize_model 'opus' is not a supported cheap model

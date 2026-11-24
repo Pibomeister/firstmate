@@ -1,0 +1,11 @@
+2026-11-24T08:42:45.444Z [DEBUG] [STARTUP] Loading MCP configs...
+2026-11-24T08:42:45.447Z [DEBUG] [STARTUP] Running setup()...
+2026-11-24T08:42:45.586Z [DEBUG] [STARTUP] setup() completed in 139ms
+2026-11-24T08:42:45.621Z [DEBUG] [STARTUP] Loading commands and agents...
+2026-11-24T08:42:45.640Z [DEBUG] [STARTUP] Commands and agents loaded in 19ms
+2026-11-24T08:42:45.703Z [DEBUG] [STARTUP] MCP configs resolved in 3ms (awaited at +259ms)
+2026-11-24T08:42:45.737Z [DEBUG] [event-loop-stall] detector started (interval=200ms, at rest 1000ms, threshold=500ms)
+2026-11-24T08:44:22.923Z [WARN] [event-loop-stall] blocked for 28347ms monotonic (wall drift 28347ms, clock jump 0ms, expected 200ms). Total stalls: 1, cumulative: 28347ms monotonic / 28347ms wall [likely sleep/wake] blocked_write=false sigcont=n/a timer_slack=n/a cpu=169ms majflt=0 rss=156MB heap=64MB ext=4MB
+2026-11-24T08:44:23.037Z [WARN] [event-loop-stall] blocked for 68488ms monotonic (wall drift 68487ms, clock jump -1ms, expected 200ms). Total stalls: 2, cumulative: 96835ms monotonic / 96834ms wall [likely sleep/wake] blocked_write=false sigcont=n/a timer_slack=n/a cpu=255ms majflt=0 rss=168MB heap=59MB ext=0MB
+2026-11-24T08:44:23.076Z [DEBUG] [API:timing] dispatching to firstParty model=claude-haiku-5-5
+2026-11-24T08:44:24.005Z [DEBUG] [API:timing] first byte after 930ms

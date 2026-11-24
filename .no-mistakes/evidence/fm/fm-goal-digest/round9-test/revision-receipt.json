@@ -1,0 +1,16 @@
+{
+  "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "base": "d3d97c97d7bcd7dac112f0167186502a11373152",
+  "scope": "fresh execution of targeted tests, seven local scenarios, actual native summary, and one owned natural 1200-second launchd invocation",
+  "sha256": {
+    "bin/fm-goal-digest.sh": "0e6d4a02d45d20153a331c48fcba8d337a1febd592cfbc8c7221875bbefc79c4",
+    "tests/fm-goal-digest.test.sh": "2c4710ba4b4a6d3436306121b9ba3cc6ab42dc7219b42e619900d28d79366c35",
+    "docs/configuration.md": "44232a2cc4a285ac3cf02f79b79bc8883daf4adfe34514f5becebbb313878849",
+    "docs/scripts.md": "ed7cda3d07538214f0acf494d0e0cf60306ae1b16fabc225b05c354a6616d645"
+  },
+  "driver_sha256": {
+    "native-launchd.py": "24b9793b4ed9cd22e62c78bdf6b34c90dc7ecb44ba6d3e011af8883e04c63eca",
+    "live-driver.py": "8b9b8711edadc99ce640408020a51b3ba4fbef20a5106fcba83035331ad78d48",
+    "native-summary.py": "cbb8fffb46280c240571f5aec7d04881f6e7892f64304fa6346d693a685e9d27"
+  }
+}

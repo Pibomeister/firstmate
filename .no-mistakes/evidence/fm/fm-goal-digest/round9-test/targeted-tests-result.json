@@ -1,0 +1,6 @@
+{
+  "command": "TMPDIR=\"$PWD/.test-goal-digest-current/tmp\" FM_TEST_BASE_PATH=\"/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin\" bash tests/fm-goal-digest.test.sh",
+  "exit": 0,
+  "completion": "FM_TEST_COMPLETE",
+  "scope": "colocated changed-script tests only"
+}

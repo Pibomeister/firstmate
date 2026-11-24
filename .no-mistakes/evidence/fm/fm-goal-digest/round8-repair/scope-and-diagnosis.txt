@@ -1,0 +1,4 @@
+Test-phase repair only. No source changes.
+The prior native scheduling failure was an untested criterion: the evidence driver treated launchd registration as prohibited after a recorded user decision explicitly authorized one temporary per-user job.
+This turn uses the real product install interface with a private worktree-local HOME and FM_HOME, the unchanged 1200-second cadence, and no kickstart or manual product invocation. It removes only the uniquely derived fixture job through the product uninstall interface.
+The native summary timeout did not reproduce at target 78028a518b820ad3e496947ab2e4c44bf4e5f4cb: its existing CHOKIDAR_USEPOLLING=1 correction returned a nonempty summary, exit 0, empty stderr; exact argv, prompt and elapsed time are retained.

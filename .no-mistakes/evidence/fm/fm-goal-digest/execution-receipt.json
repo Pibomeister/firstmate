@@ -1,0 +1,15 @@
+{
+  "revision": "7e48f6291acb1e9b54670ccf525ba69c4944601b",
+  "targeted_tests": {
+    "command": "TMPDIR=\"$PWD/.goal-digest-live/test-tmp\" FM_TEST_SKIP_ORPHAN_REAP=1 bash tests/fm-goal-digest.test.sh",
+    "exit_code": 0,
+    "completion_marker": "FM_TEST_COMPLETE"
+  },
+  "initial_attempts": "Two runs stopped with exit 137 in the shared orphan-directory scan before tests began; isolated rerun completed.",
+  "live_driver_exit_code": 0,
+  "summary_retry_exit_code": 0,
+  "model_summary": "Both real runner attempts reached the 120-second timeout; digest fallback succeeded.",
+  "host_launchd_registration": "Not attempted: explicitly forbidden host system mutation.",
+  "api_safety": "All recorded HTTP requests were GET reads of the synthetic local repository pull-request endpoint.",
+  "cleanup": "All launched check sessions completed or were stopped and awaited; no test, model or server children remained in the agent process tree before fixture deletion."
+}

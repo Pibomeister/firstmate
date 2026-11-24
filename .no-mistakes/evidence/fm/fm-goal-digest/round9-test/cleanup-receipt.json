@@ -1,0 +1,16 @@
+{
+  "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "checked_at": "2026-11-24T10:51:04.542818+00:00",
+  "all_required_child_exits": {
+    "targeted_tests_exit": 0,
+    "local_driver_exit": 0,
+    "native_summary_driver_exit": 0,
+    "native_launchd_driver": 0
+  },
+  "owned_processes_remaining": [],
+  "temporary_label_absent": true,
+  "temporary_plist_absent": true,
+  "workspace_fixture_absent": true,
+  "git_status_porcelain": "",
+  "source_and_test_hashes_unchanged": true
+}

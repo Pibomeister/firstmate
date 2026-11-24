@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-11-24T06:24:35Z",
+  "generated_at_local": "2026-11-24T00:24:35-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [
+    {
+      "source": "Synthetic review",
+      "entries": [
+        "Synthetic validation only: T1 complete; T8 waiting for a synthetic review."
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

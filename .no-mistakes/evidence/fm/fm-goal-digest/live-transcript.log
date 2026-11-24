@@ -1,28 +1,57 @@
-01-first-digest exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:09Z
-01-no-config exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/no-config/data/goal-digest/latest.md generated=2026-11-24T02:09:19Z
-PASS: Local synthetic digest publishes required fields and defaults Real collector, gh and clock; CST, merges, owner waits, ETAs, stalls, ledgers and history inspected.
-02-unchanged exit 0 goal-digest: changed=no latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:20Z
-02-new-merge-review exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:27Z
-02-failed-summary exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:34Z
-PASS: Unchanged run skips summary; new content triggers it; failed summary preserves output Call ledger, deduplicated merges, early review entry and preserved summary checked.
-03-cached-coverage exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:47Z
-03-missing-source exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/main/data/goal-digest/latest.md generated=2026-11-24T02:09:57Z
-PASS: Cached or unreachable local snapshot discloses unknown owner coverage Cached holds retained with warning; missing source reported without aborting publication.
-04-resumed-baseline exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/resumed/data/goal-digest/latest.md generated=2026-11-24T02:10:04Z
-04-resumed-incomplete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/resumed/data/goal-digest/latest.md generated=2026-11-24T02:10:09Z
-04-resumed-retry exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/resumed/data/goal-digest/latest.md generated=2026-11-24T02:10:30Z
-04-resumed-complete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/resumed/data/goal-digest/latest.md generated=2026-11-24T02:10:51Z
-04-bootstrap-truncated-incomplete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-truncated/data/goal-digest/latest.md generated=2026-11-24T02:11:06Z
-04-bootstrap-truncated-retry exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-truncated/data/goal-digest/latest.md generated=2026-11-24T02:11:54Z
-04-bootstrap-truncated-complete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-truncated/data/goal-digest/latest.md generated=2026-11-24T02:12:27Z
-04-bootstrap-failed-incomplete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-failed/data/goal-digest/latest.md generated=2026-11-24T02:12:36Z
-04-bootstrap-failed-retry exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-failed/data/goal-digest/latest.md generated=2026-11-24T02:12:48Z
-04-bootstrap-failed-complete exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/bootstrap-failed/data/goal-digest/latest.md generated=2026-11-24T02:13:21Z
-PASS: Real gh pagination preserves unreported merges after cap or failed page Resumed and first-fetch outages retain watermark; omitted merge recovered exactly once; complete fetch advances window.
-05-archive-baseline exit 0 goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/archive/data/goal-digest/latest.md generated=2026-11-24T02:13:29Z
-05-archive-failure exit 1 
-05-archive-retry exit 0 goal-digest: changed=no latest={run-worktree}/.test-goal-digest/live/archive/data/goal-digest/latest.md generated=2026-11-24T02:13:38Z
-Traceback (most recent call last):
-  File "~/.no-mistakes/evidence/01M85GHDMGS1D8Q1N3NRGW9FRA/live_goal_digest.py", line 244, in <module>
-    assert [m['number'] for m in recovered['new_merges']]==[2]
-AssertionError
+
+[first] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:37Z
+
+[unchanged] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:40Z
+
+[page-failure] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:42Z
+
+[page-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:44Z
+
+[deduplicated] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:53Z
+
+[cached-mate] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:45:57Z
+
+[resolved-hold] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:10Z
+
+[eta-stall-reviews] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:16Z
+
+[early-review-change] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:24Z
+
+[archive-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+mkdir: {run-worktree}/.test-goal-digest/live/home/data/goal-digest/history: File exists
+
+[archive-recovery] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:44Z
+
+[concurrent-refusal] {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest/live/home/data/goal-digest/.state/run.flock)
+
+[lock-release] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:50Z
+
+[cheap-model-guard] {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest/live/home/data/goal-digest/latest.md generated=2026-11-24T06:46:54Z
+goal-digest: summary unavailable: summarize_model 'opus' is not a supported cheap model

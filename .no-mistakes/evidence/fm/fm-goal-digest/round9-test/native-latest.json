@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-11-24T10:30:30Z",
+  "generated_at_local": "2026-11-24T04:30:30-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [
+    {
+      "source": "Synthetic",
+      "entries": [
+        "Synthetic project: T1 complete. Owner decision: choose a route. ETA: 2099-01-01."
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

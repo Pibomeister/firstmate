@@ -1,0 +1,9 @@
+Goal digest, generated 2026-11-24 04:30 CST (changed since last run):
+
+- **New merges:** None.
+- **Open PRs:** None.
+- **Waiting on owner:** None known. Owner actions are unknown because no sources are configured.
+- **Missed ETAs:** None.
+- **Stalls:** None.
+- **Blocked:** Synthetic project T1 is complete and needs an owner decision to choose a route (ETA 2099-01-01).
+- **Unreachable sources:** None.

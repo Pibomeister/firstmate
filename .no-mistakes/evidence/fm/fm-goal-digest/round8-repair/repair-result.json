@@ -1,0 +1,118 @@
+{
+  "verdict": "go",
+  "tested_head_sha": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "source_changes": false,
+  "findings": [],
+  "diagnosis": "The old native scheduling refusal did not apply after the recorded scoped authorization. Actual product install, timer firing, digest publication, successful exit and cleanup now pass. The historical native summary timeout did not reproduce at this revision; the existing polling fix succeeds. No additional source repair is needed.",
+  "targeted_tests": {
+    "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+    "command": "TMPDIR=\"$PWD/.test-goal-digest-repair/tmp\" bash tests/fm-goal-digest.test.sh",
+    "exit": 0,
+    "completed_checks": 18,
+    "log": "targeted-tests.log"
+  },
+  "native_summary": {
+    "result": "pass",
+    "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+    "runner_exit": 0,
+    "elapsed_seconds": 79.502,
+    "unchanged_skipped_model": true
+  },
+  "native_recurrence": {
+    "result": "pass",
+    "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+    "oracle": "The installed 1200-second LaunchAgent must fire without kickstart or a manual product invocation, publish the synthetic review, exit 0, and be fully removed.",
+    "label": "dev.firstmate.goal-digest-1219420679",
+    "elapsed_seconds": 1201.765,
+    "cadence_seconds": 1200,
+    "manual_start": false,
+    "cleanup": {
+      "uninstall_exit": 0,
+      "absent_exit": 113,
+      "plist_absent": true
+    }
+  },
+  "scenarios": [
+    {
+      "name": "Local GitHub CLI collects incremental merges through page 11 and recovers a failed page without losing or repeating merges",
+      "result": "pass",
+      "live": true,
+      "evidence": "page-eleven-recovery.json; live-transcript.log; github-http-requests.json",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "Local native snapshots distinguish owner holds from drafts, age delayed date-only holds today, disclose cached decisions, and remove resolved holds",
+      "result": "pass",
+      "live": true,
+      "evidence": "owner-actions-cached.json; live-transcript.log",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "Local status files publish CST time, missed ETAs, stalls, unreachable sources, all review tracks, and retained digest history",
+      "result": "pass",
+      "live": true,
+      "evidence": "status-and-reviews.md; status-and-reviews.json",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "A local archive failure preserves the published digest and notification state; the next run recovers",
+      "result": "pass",
+      "live": true,
+      "evidence": "live-transcript.log; archive-recovery.json",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "A competing local digest is refused while the kernel lock is held and succeeds after release",
+      "result": "pass",
+      "live": true,
+      "evidence": "live-transcript.log",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "The local digest rejects an Opus summary model and ignores a shell-command config entry while collection remains read-only",
+      "result": "pass",
+      "live": true,
+      "evidence": "live-transcript.log; github-http-requests.json",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "The generated local LaunchAgent has a 1200-second cadence and its declared command/environment executes the digest",
+      "result": "pass",
+      "live": true,
+      "evidence": "rendered-launchagent.plist; rendered-agent-invocation.log; install-recorder.log",
+      "reason": "Real digest executable in a private home; synthetic inputs only. GitHub traffic uses the real gh CLI against a localhost HTTP API emulator.",
+      "retained_evidence_root": "~/.no-mistakes/evidence/01M85WPJHSW42PYT79RQP58A6K/round7-test",
+      "retained_same_head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb"
+    },
+    {
+      "name": "Actual fixed native Haiku summary and unchanged-run skip",
+      "result": "pass",
+      "live": true,
+      "evidence": "native-summary-result.json; native-claude-result.json; native-claude-argv.json; native-digest-run.log"
+    },
+    {
+      "name": "Natural native launchd firing at the required 1200-second interval, followed by removal",
+      "result": "pass",
+      "live": true,
+      "evidence": "native-launchd-result.json; native-launchd-fired.txt; scheduled-latest.json; scheduled-launchd.log; native-launchd-removed.txt"
+    }
+  ],
+  "cleanup": {
+    "fixture_removed": true,
+    "owned_processes_remaining": [],
+    "git_status": ""
+  },
+  "scope": "Assigned Test repair only; no other pipeline phases executed."
+}

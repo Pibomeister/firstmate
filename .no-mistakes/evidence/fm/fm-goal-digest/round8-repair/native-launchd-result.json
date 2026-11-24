@@ -1,0 +1,14 @@
+{
+  "result": "pass",
+  "head": "78028a518b820ad3e496947ab2e4c44bf4e5f4cb",
+  "oracle": "The installed 1200-second LaunchAgent must fire without kickstart or a manual product invocation, publish the synthetic review, exit 0, and be fully removed.",
+  "label": "dev.firstmate.goal-digest-1219420679",
+  "elapsed_seconds": 1201.765,
+  "cadence_seconds": 1200,
+  "manual_start": false,
+  "cleanup": {
+    "uninstall_exit": 0,
+    "absent_exit": 113,
+    "plist_absent": true
+  }
+}
