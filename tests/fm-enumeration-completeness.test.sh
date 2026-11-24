@@ -10,7 +10,10 @@
 #   fm_backend_target_exists for orca): --limit 5000,
 #   truncated !== false exits 2 (unknown, never absent). Refuses.
 # - bin/fm-worktree-cleanup.sh orca_path_list: --limit 100000,
-#   requires truncated == false. Refuses. Its pr_rows (gh pr list
+#   requires truncated == false. Refuses. lane_terminal_closed reports
+#   unreadable/incomplete terminal inventories for both record-cleanup
+#   paths, including lanes with no remaining worktree. Fixed.
+#   Its pr_rows (gh pr list
 #   --head <branch> --limit 20) now refuses at the bound. Fixed.
 # - bin/fm-captain-nudge.sh orca_pick_terminal: --limit 5000 with no
 #   truncation check concluded captain pane missing. Fixed: truncated
@@ -18,7 +21,7 @@
 #   visible skip_enumeration_incomplete event, never pane-missing.
 # - bin/fm-terminal-reap.sh: orca terminal list had no --limit and only
 #   warned on truncated while judging listed terminals. Fixed: both
-#   lists use --limit 100000 and truncated is a hard error (exit 1,
+#   lists retain the default limit and truncated is a hard error (exit 1,
 #   nothing closed); current_title also refuses a truncated re-list.
 # - bin/fm-nm-run-lib.sh (fm-crew-state.sh, fm-teardown.sh runs
 #   --limit): structurally truncated overview reports unknown /
@@ -30,10 +33,18 @@
 #   and surfaces capped secondmates/PR rows (limit+1 probe). Refuses.
 # - bin/fm-pr-check-watch.sh: check-runs total_count above returned
 #   length reports incomplete (exit 2), never missing. Refuses.
-# - bin/fm-unpushed-reconcile.sh: requires truncated: false. Refuses.
+# - bin/fm-unpushed-reconcile.sh merged_evidence: refuses closed-PR
+#   pages at the 100-row bound before filtering merged heads and
+#   requires response-text truncated: false. Unknown is visible in
+#   the branch finding. Fixed.
+# - bin/fm-self-heal-issue.sh fm_self_heal_ensure_label: both labels
+#   use the same probe, which refuses visibly at the 500-label bound
+#   when the requested name is not listed, or when listing fails.
+#   Fixed.
 # - bin/fm-pr-lib.sh gh-axi pr list --head --limit 1 and
 #   bin/fm-captain-nudge-lib.sh gh pr list --limit 20 open-work probe
-#   and bin/fm-self-heal-issue.sh label/issue probes: the filter runs
+#   and bin/fm-self-heal-issue.sh issue probe and
+#   bin/fm-unpushed-reconcile.sh pr_evidence: the filter runs
 #   server-side before the limit, so zero rows proves the filtered
 #   total is zero and any row proves existence. Safe for absence.
 # - Herdr/cmux/paseo/zellij/tern workspace and pane lists carry no

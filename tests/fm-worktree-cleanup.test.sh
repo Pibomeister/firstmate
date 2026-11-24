@@ -1056,6 +1056,48 @@ test_spent_lane_record_is_forgotten() {
   pass "a lane whose worktree and terminal are both gone is forgotten"
 }
 
+test_incomplete_lane_terminal_inventory_is_reported() {
+  local shape mode record
+  for shape in missing-worktree missing-repository no-worktree; do
+    begin_lane_case "lane-incomplete-$shape"
+    printf '[]\n' > "$CASE_DIR/pr.json"
+    git -C "$CASE_REPO" worktree remove "$CASE_WT"
+    case "$shape" in
+      missing-repository) rm -rf "$CASE_REPO" ;;
+      no-worktree)
+        rm "$LANE_RECORD"
+        FM_HOME="$CASE_DIR" "$ROOT/bin/fm-lane-register.sh" "$LANE_ID" --repo "$CASE_REPO" \
+          --terminal term-lane >/dev/null || fail "could not register a terminal-only lane"
+        ;;
+    esac
+    jq -n '{ok: true, result: {worktrees: [],
+      terminals: [range(0; 200) | {handle: ("term-" + tostring)}],
+      truncated: true, totalCount: 211}}' > "$CASE_DIR/orca.json"
+    record=$(cat "$LANE_RECORD")
+    for mode in direct scan; do
+      if [ "$mode" = scan ]; then
+        : > "$CASE_DIR/state/worktree-cleanup.log"
+        capture_pass "$CASE_DIR" scan
+        assert_equals '' "$CAP_OUT" "a watcher scan must keep its output in the log"
+        CAP_OUT=$(cat "$CASE_DIR/state/worktree-cleanup.log")
+      else
+        capture_pass "$CASE_DIR"
+      fi
+      assert_out 'lane terminal term-lane inventory is unreadable or incomplete'
+      assert_equals "$record" "$(cat "$LANE_RECORD")" "an incomplete inventory must preserve the lane record"
+      assert_not_contains "$CAP_OUT" 'forget lane' "an incomplete inventory must not forget the lane"
+    done
+    lane_orca_json term-lane
+    capture_pass "$CASE_DIR"
+    [ -f "$LANE_RECORD" ] || fail "a live terminal lost its lane record"
+    lane_orca_json ''
+    capture_pass "$CASE_DIR"
+    assert_out "forget lane $LANE_ID"
+    [ ! -e "$LANE_RECORD" ] || fail "a complete absent-terminal proof did not retire the lane"
+  done
+  pass "every lane-record cleanup path visibly refuses an incomplete terminal inventory"
+}
+
 test_registered_lane_cache_files_are_kept() {
   begin_lane_case lane-cache
   publish_pr MERGED
@@ -1220,6 +1262,7 @@ fm_test_run \
   test_targeted_pass_keeps_a_registered_lane_until_its_terminal_closes \
   test_registered_lane_dry_run_changes_nothing \
   test_spent_lane_record_is_forgotten \
+  test_incomplete_lane_terminal_inventory_is_reported \
   test_registered_lane_cache_files_are_kept \
   test_registered_lane_orca_does_not_list_is_removed_by_git \
   test_lane_record_is_kept_when_orca_is_absent \

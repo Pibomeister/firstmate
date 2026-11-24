@@ -174,7 +174,7 @@ merged_evidence() { # <project> <branch> <head> <forge>
   case "$2" in *[!A-Za-z0-9._/-]*) printf 'unknown (branch name not queryable)'; return ;; esac
   command -v gh-axi >/dev/null 2>&1 || { printf 'unknown (gh-axi absent)'; return; }
   out=$(gh-axi api --hostname "$HOST" "/repos/$REPO/pulls?state=closed&head=$owner:$2&per_page=100" \
-    --jq '[.[] | select(.merged_at != null) | .head.sha] | join(" ")' --full 2>/dev/null) || {
+    --jq 'if length >= 100 then error("pull request enumeration incomplete") else [.[] | select(.merged_at != null) | .head.sha] | join(" ") end' --full 2>/dev/null) || {
     printf 'unknown (forge read failed)'; return
   }
   printf '%s\n' "$out" | grep -qx '  truncated: false' || { printf 'unknown (invalid forge response)'; return; }

@@ -332,7 +332,7 @@ JS
 }
 
 read_inventory() {
-  orca terminal list --json --limit 100000 > "$WORK/terminals.json" 2>/dev/null || {
+  orca terminal list --json > "$WORK/terminals.json" 2>/dev/null || {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
   collect_owners > "$WORK/owners.tsv" || {
     echo "error: a home, task record, or secondmate registry could not be read; nothing was closed" >&2; return 1; }
@@ -630,7 +630,7 @@ lane_now() {
 # current_title <handle>: the terminal's title from a fresh Orca listing; exit 1
 # when the listing is unreadable or no longer holds the terminal.
 current_title() {  # <handle>
-  orca terminal list --json --limit 100000 2>/dev/null | node -e '
+  orca terminal list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
 if (d && d.result && d.result.truncated) process.exit(1);
 const ts = d && d.ok !== false && d.result && Array.isArray(d.result.terminals) ? d.result.terminals : null;

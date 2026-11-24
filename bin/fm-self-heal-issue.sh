@@ -135,11 +135,14 @@ fm_self_heal_build_body() {
 }
 
 fm_self_heal_ensure_label() {
-  local gh_repo=$1 name=$2 color=$3
-  if gh label list --repo "$gh_repo" --limit 500 --json name --jq '.[].name' 2>/dev/null \
-    | grep -Fxq -- "$name"; then
+  local gh_repo=$1 name=$2 color=$3 labels
+  labels=$(gh label list --repo "$gh_repo" --limit 500 --json name --jq '.[].name' 2>/dev/null) \
+    || die 'could not list repository labels'
+  if printf '%s\n' "$labels" | grep -Fxq -- "$name"; then
     return 0
   fi
+  [ "$(printf '%s\n' "$labels" | wc -l | tr -d '[:space:]')" -lt 500 ] \
+    || die "label enumeration incomplete; presence of $name is unknown"
   gh label create "$name" --repo "$gh_repo" --color "$color" --force >/dev/null \
     || die "could not create label $name"
 }

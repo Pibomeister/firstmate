@@ -888,6 +888,9 @@ lane_terminal_closed() {
   local rc=0
   [ -n "$1" ] || return 0
   orca_lists_handle "$1" || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    emit "worktree-cleanup: report lane terminal $1 inventory is unreadable or incomplete"
+  fi
   [ "$rc" -eq 1 ]
 }
 

@@ -18,6 +18,18 @@ printf '%s\n' "$*" >> "$FM_GH_LOG"
 if [ "$1" = api ]; then
   # GitHub's head filter selects PRs whose head branch lives in that owner.
   [ "${FM_GH_API_FAIL:-0}" = 0 ] || exit 1
+  if [ -n "${FM_GH_PULLS_FILE:-}" ]; then
+    query=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --jq) query=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    body=$(jq '.[0:100]' "$FM_GH_PULLS_FILE" | jq -r "$query") || exit 1
+    printf 'api_response:\n  body: "%s"\n  truncated: false\n' "$body"
+    exit 0
+  fi
   case "$*" in
     *"head=${FM_GH_MERGED_OWNER:-example}:"*) shas=${FM_GH_MERGED_HEAD:-} ;;
     *) shas='' ;;
@@ -204,6 +216,20 @@ assert_contains "$(scan)" 'merged=none' 'a conflicting content proof without a m
 assert_equals '' "$(FM_GH_MERGED_HEAD="$(git -C "$PROJECT" rev-parse HEAD)" scan)" \
   'a merged PR at the exact local head was flagged after main edited the same hunk'
 pass 'a merged PR at the exact local head proves landing when the content proof conflicts'
+
+new_world merged-head-past-bound
+squash_then_edit_same_hunk
+jq -n --arg head "$(git -C "$PROJECT" rev-parse HEAD)" \
+  '[range(0; 101) | {merged_at: "2026-11-24T00:00:00Z", head: {
+    sha: (if . == 100 then $head else "0000000000000000000000000000000000000001" end)}}]' \
+  > "$FM_HOME/pulls.json"
+out=$(FM_GH_PULLS_FILE="$FM_HOME/pulls.json" scan)
+assert_contains "$out" 'branch=fm/task' 'an incomplete merged proof hid the local branch'
+assert_contains "$out" 'merged=unknown' 'a merged head beyond the 100-row bound was declared absent'
+jq '.[100:]' "$FM_HOME/pulls.json" > "$FM_HOME/complete-pulls.json"
+assert_equals '' "$(FM_GH_PULLS_FILE="$FM_HOME/complete-pulls.json" scan)" \
+  'a complete merged proof at the exact local head was not accepted'
+pass 'a merged head past the closed-PR bound is unknown, while a complete matching page proves landing'
 
 new_world merged-older-head
 squash_then_edit_same_hunk
