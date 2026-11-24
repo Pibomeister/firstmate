@@ -291,6 +291,81 @@ SH
   pass "refresh publishes through the bounded Bash fallback without an external timer"
 }
 
+test_parent_cancellation() {
+  local mechanism signal home cancel_bin marker release prior expected i validator
+  for mechanism in default bash; do
+    for signal in TERM HUP; do
+      home="$TMP_ROOT/cancel-$mechanism-$signal"
+      cancel_bin="$home/bin"
+      marker="$home/validator.pid"
+      release="$home/release"
+      prior="$home/prior.json"
+      mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$cancel_bin"
+      home=$(cd "$home" && pwd -P)
+      printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+      FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH=1000 \
+        "$WRITER" || fail "could not seed the cancellation ledger"
+      cp "$home/state/home-summary.json" "$prior"
+      cat > "$cancel_bin/jq" <<'SH'
+#!/usr/bin/env bash
+last=
+for arg in "$@"; do last=$arg; done
+case "$last" in
+  "$FM_HOME/state/.home-summary.json."*)
+    "$FM_TEST_REAL_JQ" "$@" || exit "$?"
+    printf '%s\n' "$$" > "$FM_TEST_CANCEL_MARKER"
+    while [ ! -f "$FM_TEST_CANCEL_RELEASE" ]; do sleep 0.05; done
+    exit 0 ;;
+esac
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+      chmod +x "$cancel_bin/jq"
+      PATH="$cancel_bin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+        FM_SNAPSHOT_NOW_EPOCH=2000 FM_TIMEOUT_MECHANISM_OVERRIDE="$mechanism" \
+        FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_CANCEL_MARKER="$marker" \
+        FM_TEST_CANCEL_RELEASE="$release" "$WRITER" --best-effort >/dev/null 2>&1 &
+      SLOW_WRITER_PID=$!
+      i=0
+      while [ ! -s "$marker" ] && [ "$i" -lt 400 ]; do
+        kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+        sleep 0.05
+        i=$((i + 1))
+      done
+      [ -s "$marker" ] || fail "$mechanism cancellation did not reach real validation"
+      validator=$(cat "$marker")
+      SLOW_VALIDATOR_PID=$validator
+      kill -"$signal" "$SLOW_WRITER_PID" || fail "could not cancel the public refresh"
+      i=0
+      while kill -0 "$SLOW_WRITER_PID" 2>/dev/null && [ "$i" -lt 100 ]; do
+        sleep 0.05
+        i=$((i + 1))
+      done
+      ! kill -0 "$SLOW_WRITER_PID" 2>/dev/null \
+        || fail "$mechanism $signal cancellation waited for the refresh deadline"
+      expected=143
+      [ "$signal" != HUP ] || expected=129
+      if wait "$SLOW_WRITER_PID"; then i=0; else i=$?; fi
+      SLOW_WRITER_PID=
+      [ "$i" -eq "$expected" ] || fail "$signal cancellation returned $i instead of $expected"
+      i=0
+      while { kill -0 "$validator" 2>/dev/null || [ -d "$home/state/.home-summary-refresh.lock" ]; } \
+          && [ "$i" -lt 100 ]; do
+        sleep 0.05
+        i=$((i + 1))
+      done
+      ! kill -0 "$validator" 2>/dev/null || fail "$mechanism cancellation retained its validator"
+      SLOW_VALIDATOR_PID=
+      [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "cancellation retained the publication lock"
+      : > "$release"
+      sleep 0.2
+      cmp -s "$prior" "$home/state/home-summary.json" || fail "a cancelled refresh published late"
+      ls "$home/state"/.home-summary-stage.* >/dev/null 2>&1 \
+        && fail "cancellation leaked the attempt stage file"
+    done
+  done
+  pass "TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -555,6 +630,7 @@ test_summary_jitter_shortens_idle_launches
 test_failed_summary_refresh_waits_for_idle
 test_locked_deadlines_record_backoff
 test_refresh_without_external_timer
+test_parent_cancellation
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false

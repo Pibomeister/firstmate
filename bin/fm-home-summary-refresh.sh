@@ -385,16 +385,45 @@ home_summary_stage_remove() {  # <path>
 if [ "$HOME_SUMMARY_MODE" = parent ]; then
   attempt_stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || attempt_stamp=
   stage_file=
+  home_summary_runner_pid=
+  home_summary_runner_starting=0
+  home_summary_parent_signal=
   # A signalled parent must not leave its stage file behind in state/, so the
   # traps are registered before the file can exist.
   # shellcheck disable=SC2329 # Invoked by the signal and EXIT traps below.
   home_summary_parent_cleanup() {
+    # Catch repeats without exporting ignored signals into cleanup helpers.
+    trap ':' HUP INT TERM
+    if [ -n "$home_summary_runner_pid" ]; then
+      # This is our unreaped child. Snapshot before signalling so helpers in
+      # their own process groups are also stopped under their exact identities.
+      # The parent deliberately does not source the state-initializing wake
+      # library. Load it inside a bounded helper, including that initialization.
+      # shellcheck disable=SC2016 # Helper arguments expand in the child shell.
+      fm_run_timed 4 bash -c '
+        . "$1/fm-wake-lib.sh"
+        identity=$(fm_pid_identity "$2") || exit 0
+        fm_watcher_stop_tree "$2" "$identity" 3
+      ' _ "$SCRIPT_DIR" "$home_summary_runner_pid" >/dev/null 2>&1 || true
+      kill -TERM "$home_summary_runner_pid" 2>/dev/null || true
+      wait "$home_summary_runner_pid" 2>/dev/null || true
+    fi
     home_summary_stage_remove "$stage_file"
   }
+  # A signal can arrive between starting the child and assigning $!. Retain it
+  # until that assignment, then exit through the same owned-child cleanup.
+  # shellcheck disable=SC2329 # Invoked by the signal traps below.
+  home_summary_parent_cancel() {
+    home_summary_parent_signal=$1
+    if [ "$home_summary_runner_starting" -eq 1 ] && [ -z "$home_summary_runner_pid" ]; then
+      return
+    fi
+    exit "$home_summary_parent_signal"
+  }
   trap home_summary_parent_cleanup EXIT
-  trap 'exit 129' HUP
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
+  trap 'home_summary_parent_cancel 129' HUP
+  trap 'home_summary_parent_cancel 130' INT
+  trap 'home_summary_parent_cancel 143' TERM
   # The parent only names the stage file; the worker creates and opens it inside
   # the deadline. Every later parent-side touch of that path (reading the stage,
   # removing the file) runs under its own short limit, so a stalled state
@@ -413,18 +442,32 @@ if [ "$HOME_SUMMARY_MODE" = parent ]; then
   if [ "$(fm_timeout_mechanism)" = bash ]; then
     home_summary_runner=(fm_run_timed "$HOME_SUMMARY_TIMEOUT")
   fi
-  if ("${home_summary_runner[@]}" env \
+  home_summary_worker_start() {
+    trap - EXIT HUP INT TERM
+    "${home_summary_runner[@]}" env \
     FM_HOME_SUMMARY_WORKER_BEST_EFFORT="$BEST_EFFORT" \
     FM_HOME_SUMMARY_IF_IDLE="$HOME_SUMMARY_IF_IDLE" \
     FM_HOME_SUMMARY_STAGE_FILE="$stage_file" \
     FM_HOME_SUMMARY_PARENT_PID="$$" \
-    "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker); then
+      "$SCRIPT_DIR/fm-home-summary-refresh.sh" --_worker
+  }
+  [ -z "$home_summary_parent_signal" ] || exit "$home_summary_parent_signal"
+  home_summary_runner_starting=1
+  fm_timeout_background home_summary_worker_start
+  home_summary_runner_pid=$!
+  home_summary_runner_starting=0
+  [ -z "$home_summary_parent_signal" ] || exit "$home_summary_parent_signal"
+  # The wait builtin handles process-directed signals immediately; a foreground
+  # runner would defer the public parent's cancellation traps until its deadline.
+  if wait "$home_summary_runner_pid"; then
+    home_summary_runner_pid=
     home_summary_stage_remove "$stage_file"
     stage_file=
     exit 0
   else
     refresh_rc=$?
   fi
+  home_summary_runner_pid=
   if stage_note=$(fm_run_timed 2 "$SCRIPT_DIR/fm-home-summary-refresh.sh" \
       --_stage-note "$stage_file" 2>/dev/null); then
     if [ -z "$stage_note" ] && [ "$refresh_rc" -eq 124 ]; then
