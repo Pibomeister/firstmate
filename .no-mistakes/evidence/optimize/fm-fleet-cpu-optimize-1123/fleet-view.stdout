@@ -1,0 +1,23 @@
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: {run-worktree}/.nm-validation/live-home
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| alpha | unknown / none | scout | synthetic=project | tmux | unknown | https://example.invalid/pull/42 | {run-worktree}/.nm-validation/live-home/projects/local | bin/fm-peek.sh fm-alpha |
+| missing | unknown / none | scout | - | tmux | unknown | - | {run-worktree}/.nm-validation/live-home/projects/absent (absent) | bin/fm-peek.sh fm-missing |
+| remote | unknown / none | ship | - | tmux | unknown | - | /synthetic/remote-home (absent) | bin/fm-peek.sh fm-remote |
+
+## Queued
+No queued backlog records found.
+
+## Done
+No done backlog records found.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+## Ready PRs awaiting a decision

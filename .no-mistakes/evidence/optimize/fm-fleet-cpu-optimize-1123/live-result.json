@@ -1,0 +1,6 @@
+{
+  "snapshot": "pass",
+  "decision_lifecycle": "pass",
+  "inputs": "synthetic metadata, report, and append/truncate status histories; no live fleet or endpoint contacted",
+  "assertions": "independent documented snapshot schema, key isolation, reserved-key guard, 100-second event age, terminal close"
+}

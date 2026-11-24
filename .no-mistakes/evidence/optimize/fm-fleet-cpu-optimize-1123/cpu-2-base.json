@@ -1,0 +1,741 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-11-24T12:00:00Z",
+  "fm_home": "{run-worktree}/.nm-validation/cpu-home",
+  "session": {
+    "endpoint": {
+      "backend": "unknown",
+      "target": "unknown"
+    }
+  },
+  "roots": {
+    "fm_root": "{run-worktree}/.nm-validation/base",
+    "state": "{run-worktree}/.nm-validation/cpu-home/state",
+    "data": "{run-worktree}/.nm-validation/cpu-home/data",
+    "config": "{run-worktree}/.nm-validation/cpu-home/config",
+    "projects": "{run-worktree}/.nm-validation/cpu-home/projects"
+  },
+  "backlog": {
+    "records": [],
+    "path": "{run-worktree}/.nm-validation/cpu-home/data/backlog.md",
+    "present": true
+  },
+  "tasks": [
+    {
+      "id": "task-00",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-00.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-00.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-00/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-00",
+        "steer": "bin/fm-send.sh fm-task-00 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-01",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-01.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-01.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-01/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-01",
+        "steer": "bin/fm-send.sh fm-task-01 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-02",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-02.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-02.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-02/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-02",
+        "steer": "bin/fm-send.sh fm-task-02 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-03",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-03.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-03.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-03/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-03",
+        "steer": "bin/fm-send.sh fm-task-03 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-04",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-04.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-04.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-04/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-04",
+        "steer": "bin/fm-send.sh fm-task-04 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-05",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-05.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-05.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-05/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-05",
+        "steer": "bin/fm-send.sh fm-task-05 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-06",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-06.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-06.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-06/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-06",
+        "steer": "bin/fm-send.sh fm-task-06 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "task-07",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-07.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/state/task-07.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "blocked",
+            "note": "needs token",
+            "raw": "blocked [key=remaining] [at=1795521500]: needs token",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/cpu-home/data/task-07/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": true,
+        "open_decisions": [
+          {
+            "key": "remaining",
+            "verb": "blocked",
+            "summary": "needs token"
+          }
+        ],
+        "scout_report_present": false,
+        "last_event_text": "blocked [key=remaining] [at=1795521500]: needs token"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-task-07",
+        "steer": "bin/fm-send.sh fm-task-07 '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "{run-worktree}/.nm-validation/cpu-home/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-11-24T12:00:00Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

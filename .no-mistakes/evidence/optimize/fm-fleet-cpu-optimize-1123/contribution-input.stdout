@@ -1,0 +1,36 @@
+{
+  "backlog": {
+    "path": "{run-worktree}/.nm-validation/live-home/data/backlog.md",
+    "records": [],
+    "present": true
+  },
+  "tasks": [
+    {
+      "id": "alpha",
+      "kind": "scout",
+      "pr": {
+        "url": "https://example.invalid/pull/42",
+        "head": "synthetic-head"
+      },
+      "merge_authority": "attended"
+    },
+    {
+      "id": "missing",
+      "kind": "scout",
+      "pr": {
+        "url": "",
+        "head": ""
+      },
+      "merge_authority": "attended"
+    },
+    {
+      "id": "remote",
+      "kind": "ship",
+      "pr": {
+        "url": "",
+        "head": ""
+      },
+      "merge_authority": "attended"
+    }
+  ]
+}

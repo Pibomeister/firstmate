@@ -1,0 +1,44 @@
+{
+  "cpu-1-base.stages": [
+    "backlog\t0",
+    "task-observation\t0",
+    "task-rows\t8",
+    "contributions\t17",
+    "summary\t19"
+  ],
+  "cpu-1-target.stages": [
+    "backlog\t0",
+    "task-observation\t1",
+    "task-rows\t6",
+    "contributions\t7",
+    "summary\t8"
+  ],
+  "cpu-2-base.stages": [
+    "backlog\t0",
+    "task-observation\t1",
+    "task-rows\t17",
+    "contributions\t23",
+    "summary\t28"
+  ],
+  "cpu-2-target.stages": [
+    "backlog\t0",
+    "task-observation\t0",
+    "task-rows\t4",
+    "contributions\t5",
+    "summary\t6"
+  ],
+  "cpu-3-base.stages": [
+    "backlog\t0",
+    "task-observation\t1",
+    "task-rows\t15",
+    "contributions\t19",
+    "summary\t21"
+  ],
+  "cpu-3-target.stages": [
+    "backlog\t0",
+    "task-observation\t0",
+    "task-rows\t4",
+    "contributions\t5",
+    "summary\t5"
+  ]
+}

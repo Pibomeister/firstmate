@@ -1,0 +1,21 @@
+{
+  "base_median_cpu": 6.800758999999999,
+  "target_median_cpu": 3.373774,
+  "base_range": [
+    6.455952,
+    7.681528999999999
+  ],
+  "target_range": [
+    3.124543,
+    3.420332
+  ],
+  "median_cpu_improvement": 0.5039121368658998,
+  "paired_improvements": [
+    0.5547329184072598,
+    0.5039121368658998,
+    0.5160213396877795
+  ],
+  "decision": "local CPU reduction established",
+  "scope": "synthetic local snapshot; not fleet supervision or host-load attribution",
+  "outputs": "all six complete JSON outputs identical after normalizing only the extracted baseline code-root prefix"
+}

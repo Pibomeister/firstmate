@@ -1,0 +1,328 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-11-24T12:00:00Z",
+  "fm_home": "{run-worktree}/.nm-validation/live-home",
+  "session": {
+    "endpoint": {
+      "backend": "unknown",
+      "target": "unknown"
+    }
+  },
+  "roots": {
+    "fm_root": "{run-worktree}",
+    "state": "{run-worktree}/.nm-validation/live-home/state",
+    "data": "{run-worktree}/.nm-validation/live-home/data",
+    "config": "{run-worktree}/.nm-validation/live-home/config",
+    "projects": "{run-worktree}/.nm-validation/live-home/projects"
+  },
+  "backlog": {
+    "records": [],
+    "present": true,
+    "path": "{run-worktree}/.nm-validation/live-home/data/backlog.md"
+  },
+  "tasks": [
+    {
+      "id": "alpha",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "scout",
+      "yolo": "off",
+      "branch": null,
+      "project": "synthetic=project",
+      "spawn_gen": "live-one",
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/alpha.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/alpha.status",
+          "present": true,
+          "kind": "event_history",
+          "last_event": {
+            "state": "needs-decision",
+            "note": "new question",
+            "raw": "needs-decision [key=new] [at=1795521500]: new question",
+            "age_seconds": 100
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/live-home/projects/local",
+          "present": true
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/live-home/data/alpha/report.md",
+          "present": true
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "no backend target recorded",
+        "raw": "state: unknown · source: none · no backend target recorded",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": "https://example.invalid/pull/42",
+        "source": "meta",
+        "head": "synthetic-head"
+      },
+      "hints": {
+        "pending_decision": true,
+        "blocked_event": false,
+        "open_decisions": [
+          {
+            "key": "new",
+            "verb": "needs-decision",
+            "summary": "new question"
+          }
+        ],
+        "scout_report_present": true,
+        "last_event_text": "needs-decision [key=new] [at=1795521500]: new question"
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-alpha",
+        "steer": "bin/fm-send.sh fm-alpha '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "missing",
+      "kind": "scout",
+      "harness": "codex",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": null,
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/missing.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/missing.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "{run-worktree}/.nm-validation/live-home/projects/absent",
+          "present": false
+        },
+        "home": {
+          "path": null,
+          "present": false
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/live-home/data/missing/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "worktree gone (torn down?)",
+        "raw": "state: unknown · source: none · worktree gone (torn down?)",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": null,
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-missing",
+        "steer": "bin/fm-send.sh fm-missing '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    },
+    {
+      "id": "remote",
+      "kind": "ship",
+      "harness": "codex",
+      "mode": "",
+      "yolo": "",
+      "branch": null,
+      "project": "",
+      "spawn_gen": null,
+      "backend": "tmux",
+      "remote": {
+        "host": "synthetic.invalid",
+        "root": ""
+      },
+      "paths": {
+        "meta": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/remote.meta",
+          "present": true
+        },
+        "status_log": {
+          "path": "{run-worktree}/.nm-validation/live-home/state/remote.status",
+          "present": false,
+          "kind": "event_history",
+          "last_event": {
+            "state": "",
+            "note": "",
+            "raw": "",
+            "age_seconds": null
+          }
+        },
+        "worktree": {
+          "path": "/synthetic/remote-worktree",
+          "present": false
+        },
+        "home": {
+          "path": "/synthetic/remote-home",
+          "present": null
+        },
+        "report": {
+          "path": "{run-worktree}/.nm-validation/live-home/data/remote/report.md",
+          "present": false
+        }
+      },
+      "secondmate_projects": [],
+      "current_state": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "remote endpoint liveness not collected by fleet snapshot",
+        "raw": "",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "endpoint": {
+        "target": "fm-lab:unused",
+        "exists": null,
+        "agent_alive": "unknown",
+        "status": "unknown",
+        "observed_at": "2026-11-24T12:00:00Z",
+        "freshness": "fresh"
+      },
+      "pr": {
+        "url": null,
+        "source": "absent",
+        "head": null
+      },
+      "hints": {
+        "pending_decision": false,
+        "blocked_event": false,
+        "open_decisions": [],
+        "scout_report_present": false,
+        "last_event_text": ""
+      },
+      "actions": {
+        "watch": "bin/fm-peek.sh fm-remote",
+        "steer": "bin/fm-send.sh fm-remote '<instruction>'",
+        "return_channel_note": null
+      },
+      "backlog": null
+    }
+  ],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "scout_reports": [
+    {
+      "id": "alpha",
+      "path": "{run-worktree}/.nm-validation/live-home/data/alpha/report.md",
+      "kind": "scout"
+    }
+  ],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "{run-worktree}/.nm-validation/live-home/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-11-24T12:00:00Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

@@ -1,0 +1,97 @@
+[
+  {
+    "label": "lab-create",
+    "command": [
+      "/bin/bash",
+      "bin/fm-lab-home.sh",
+      "create",
+      "{run-worktree}/.nm-validation/live-home"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "snapshot-open",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-snapshot.sh",
+      "--json"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "fleet-view",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-view.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "contribution-input",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-snapshot.sh",
+      "--contribution-input"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "drain-open",
+    "command": [
+      "/bin/bash",
+      "bin/fm-wake-drain.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "drain-resolved-api",
+    "command": [
+      "/bin/bash",
+      "bin/fm-wake-drain.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "snapshot-resolved-api",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-snapshot.sh",
+      "--json"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "drain-truncated",
+    "command": [
+      "/bin/bash",
+      "bin/fm-wake-drain.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "snapshot-truncated",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-snapshot.sh",
+      "--json"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "drain-terminal",
+    "command": [
+      "/bin/bash",
+      "bin/fm-wake-drain.sh"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "snapshot-terminal",
+    "command": [
+      "/bin/bash",
+      "bin/fm-fleet-snapshot.sh",
+      "--json"
+    ],
+    "exit": 0
+  }
+]

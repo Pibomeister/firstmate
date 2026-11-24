@@ -1,0 +1,10 @@
+1..8
+ok - stale needs-decision over active run is superseded
+ok - stale blocked over active run is superseded
+ok - a busy secondmate keeps its open blocker until that exact key closes
+ok - the most recently opened decision supplies the reported state and detail
+ok - ship and scout terminal declarations supersede stale decisions
+ok - latest status retains legacy completion events and shared captain matching
+ok - latest status subprocess work stays bounded and still reads past a long prose tail
+ok - genuine parked run is not flagged superseded
+FM_TEST_COMPLETE

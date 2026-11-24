@@ -1,0 +1,57 @@
+[
+  {
+    "label": "fork-free",
+    "command": "/bin/bash tests/fm-fork-free-helpers.test.sh",
+    "exit": 0,
+    "seconds": 24.7
+  },
+  {
+    "label": "backend-metadata",
+    "command": "FM_TEST_ONLY=test_meta_get_and_backend_of_meta /bin/bash tests/fm-backend.test.sh",
+    "exit": 0,
+    "seconds": 1.23
+  },
+  {
+    "label": "classify-decisions",
+    "command": "/bin/bash tests/fm-classify-decision-key.test.sh",
+    "exit": 0,
+    "seconds": 18.73
+  },
+  {
+    "label": "classify-correlations",
+    "command": "/bin/bash tests/fm-classify-corr-token.test.sh",
+    "exit": 0,
+    "seconds": 247.02
+  },
+  {
+    "label": "fleet-snapshot",
+    "command": "/bin/bash tests/fm-fleet-snapshot-view.test.sh",
+    "exit": 0,
+    "seconds": 189.82
+  },
+  {
+    "label": "contribution-input",
+    "command": "/bin/bash tests/fm-fleet-snapshot-contribution-input.test.sh",
+    "exit": 0,
+    "seconds": 1.55
+  },
+  {
+    "label": "cursor-drain",
+    "command": "/bin/bash tests/fm-wake-drain-open-decisions-cursor.test.sh",
+    "exit": 0,
+    "seconds": 524.14
+  },
+  {
+    "label": "crew-state",
+    "command": "/bin/bash tests/fm-crew-state.test.sh",
+    "exit": 143,
+    "seconds": 182.42,
+    "disposition": "Intentionally stopped default unrelated backend/delivery coverage; superseded by existing named-case interface below. Not a product failure or a pass."
+  },
+  {
+    "label": "crew-state-selected",
+    "command": "/bin/bash tests/fm-crew-state.test.sh test_stale_needs_decision_superseded test_stale_blocked_superseded test_secondmate_open_block_survives_unrelated_append test_newest_open_decision_supplies_the_reported_detail test_single_owner_terminal_declaration_supersedes_stale_decision test_latest_status_preserves_legacy_completions test_latest_status_subshell_work_does_not_grow_with_history test_genuine_parked_not_superseded",
+    "exit": 0,
+    "seconds": 166.90040637500002
+  }
+]

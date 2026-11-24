@@ -1,0 +1,13 @@
+{
+  "reason": "Default crew-state suite includes unrelated delivery/backend contracts; use existing positional named-case interface for changed classification behavior. Default run intentionally stopped, not a product failure or pass.",
+  "root_pid": 49804,
+  "owned_pids": [
+    13705,
+    17029,
+    17033,
+    22229,
+    22230,
+    49804,
+    92502
+  ]
+}

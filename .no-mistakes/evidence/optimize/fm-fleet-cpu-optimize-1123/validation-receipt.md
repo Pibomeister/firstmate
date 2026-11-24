@@ -1,0 +1,15 @@
+The changed snapshot preserves its local output and lowers CPU in an isolated synthetic workload. The test verdict is inconclusive for the author's actual-fleet acceptance criterion because its required measurement receipts were not supplied and this phase prohibits real fleet data and session access.
+
+Revision: 001ce7b5a46043e0b917426400a41180fffb77be. Baseline: d3d97c97d7bcd7dac112f0167186502a11373152.
+
+Live behavior: real snapshot, text view, contribution-input, and wake-drain commands ran on a disposable stock-layout home without endpoint mocks. Synthetic inputs exercised repeated metadata keys, embedded equals, existing/missing paths and logs, remote-home unknown presence, report pointers, independent open keys, keyed resolution, reserved-key rejection, truncation, 100-second event age, and terminal close. See live-commands.json and retained stdout files.
+
+CPU: three alternating baseline/target pairs, each producing all eight expected task rows. Every normalized complete JSON output matched; normalization changes only the extracted baseline code-root prefix. wait4 user+system CPU includes the executable and its waited-for descendants. Baseline CPU range 6.456–7.682s, target range 3.125–3.420s. Medians 6.801s and 3.374s, a 50.4% reduction. All three paired reductions were positive, exceeded the declared 10% floor, and the ranges did not overlap. No targeted tests ran during these six measurements. Host load1 varied from 246.8 to 299.6; it is uncontrolled context, not an attributed improvement or proof that other host tests were idle.
+
+Limiter evidence: real snapshot stage records show time spent in task-observation and task-rows rather than a skipped or empty snapshot. Raw stages and separate user/system CPU counters are retained. These counters do not identify the exact remaining CPU subsystem, count all process starts, or establish operating-fleet tick behavior. No broader performance claim is made.
+
+Targeted tests: fork-free helpers, backend metadata selector, decision-key classifier, correlation classifier, snapshot/view, contribution assembly-error propagation, incremental cursor, and eight named crew-state classification cases all exited 0. The initial default crew-state run was intentionally terminated with exit 143 after finding its existing named-case interface; it covered unrelated backend/delivery behavior and is explicitly not reported as a complete pass. The selected replacement passed.
+
+Missing acceptance evidence: actual monitoring/supervision processes started per minute, aggregate CPU seconds per supervision tick, and load1 during comparable no-test baseline/post-change fleet windows. Synthetic execution cannot substitute for the requested real-fleet loop. Supply the original measured-loop receipt, or run that observation outside this phase with explicit authority to access the real fleet.
+
+No product or test source was changed. All test children have exited or were stopped and reaped. No owned process still names the disposable workspace. The disposable baseline extraction and homes were removed; evidence remains here.

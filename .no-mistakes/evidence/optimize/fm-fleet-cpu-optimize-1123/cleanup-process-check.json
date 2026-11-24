@@ -1,0 +1,4 @@
+{
+  "owned_scratch_processes_remaining": [],
+  "rule": "Full current-worktree disposable-path match, excluding this verifier and its ancestors; no operator processes stopped."
+}
