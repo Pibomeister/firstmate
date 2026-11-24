@@ -1,0 +1,4 @@
+fm-test-queue: preparing compressed snapshot for hetzner-test
+fm-test-queue: offloading to hetzner-test (snapshot of {run-worktree})
+1..0 # SKIP tasks-axi is not installed
+exit=0

@@ -1,0 +1,21 @@
+$ fm-ledger.sh intake v12-a / v12-b (approved proposal source)
+filed v12-a project=alpha source=proposal:V12
+filed v12-b project=alpha source=proposal:V12b
+$ fm-ledger.sh claim --project alpha   (no claim-project grant)
+fm-ledger: claims are not enabled for project alpha in this home
+exit=1
+$ two concurrent claimants: fm-ledger.sh claim --project alpha & fm-ledger.sh claim --project alpha
+claimant1 exit=0: CLAIM v12-b project=alpha phase=reserved token=e5539118e7cf7a5ebf8bd6e0c0def715
+claimant2 exit=0: CLAIM v12-a project=alpha phase=reserved token=32e73caa6e6c5b24696704a95342e9f9
+$ third claimant (queue exhausted)
+claim: nothing claimable for project alpha
+exit=3
+$ resume v12-a (lost reply)
+CLAIM v12-a project=alpha phase=reserved token=32e73caa6e6c5b24696704a95342e9f9
+exit=0
+$ captain hold on v12-a, then resume
+fm-ledger: claim v12-a is no longer queued and ready in project alpha
+exit=1
+$ receipts
+v12-a.json
+v12-b.json
