@@ -1,0 +1,5 @@
+{"case": "cumulative", "reads": 42, "expired_reads": 4, "progress_observed": false, "distinct_targets": 21}
+Traceback (most recent call last):
+  File "<stdin>", line 9, in <module>
+AssertionError: completed reads continued past the actual published expiry
+not ok - cumulative completed reads starved publication or hid incomplete coverage

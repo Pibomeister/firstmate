@@ -1,0 +1,2 @@
+filtered-progress-failure workers=1 public_exit=0 final_replaced=true
+not ok - skipped subject hid an earlier progress publication failure

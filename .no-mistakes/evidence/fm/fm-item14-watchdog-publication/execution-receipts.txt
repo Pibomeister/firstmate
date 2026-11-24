@@ -1,0 +1,5 @@
+capture-publication.sh: exit 0; FM_TEST_COMPLETE
+fm-watchdog.test.sh (eight selected watchdog guards): exit 0; FM_TEST_COMPLETE
+base cumulative-publication regression: expected exit 1
+base final-replacement regression: expected exit 1
+pre-R1 filtered-publication regression: expected exit 1

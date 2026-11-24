@@ -1,0 +1,10 @@
+1..8
+ok - status file stays under 40 lines with timestamp, health, actions since last read, gaps, and a staleness line
+ok - dialog key rate window is per pane: a worker's key does not block the home pane's key
+ok - orca: a draft holds the nudge and is never submitted
+ok - worker permission dialog: ship and scout panes page on their own windows, a plain pane and a question do not, and a gone endpoint is not read
+ok - human-only step: a worker step is escalated on its own episode while other workers and the home keep being handled
+ok - human-only step: a worker no longer recorded in the home closes its morning-handoff row
+ok - permission prompt: a Codex approval naming an OTP command on a worker is a hard stop, not a human-only step
+ok - human-only step: replacing a tool approval resolves its permission blocker without typing into the worker
+FM_TEST_COMPLETE

@@ -1,0 +1,2 @@
+write-failure public_exit=0 last_good_preserved=true
+not ok - public once swallowed the status replacement failure

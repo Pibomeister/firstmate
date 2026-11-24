@@ -1,0 +1,12 @@
+1..5
+{"case": "control", "reads": 2, "expired_reads": 0}
+ok - fast complete watchdog publication remains valid
+{"case": "cumulative", "reads": 42, "expired_reads": 0, "progress_observed": true, "distinct_targets": 21}
+ok - completed bounded reads publish honest progress and eventually finish all workers
+ok - a blocked reader cannot advance publication from a timer alone
+write-failure public_exit=73 last_good_preserved=true
+ok - failed status replacement preserves prior bytes and returns failure
+filtered-progress-failure workers=1 public_exit=1 final_replaced=true
+filtered-progress-failure workers=2 public_exit=1 final_replaced=true
+ok - filtered scans retain progress failures after skipped subjects and final success
+FM_TEST_COMPLETE
