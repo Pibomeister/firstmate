@@ -585,6 +585,12 @@ if [ -e "$CONFIG/wait-no-turns" ]; then
   INBOX_SECTION+="Do not poll or list the inbox while waiting; a waiting instruction rings."$'\n'
 fi
 INBOX_SECTION=${INBOX_SECTION%$'\n'}
+if [ "$KIND" != secondmate ]; then
+  INBOX_SECTION+="
+Your delegated deliverable is $(shell_quote "$DATA/$ID/report.md"). Record actual progress at least every 300 seconds during active work with FM_HOME=$(shell_quote "$FM_HOME") FM_STATE_OVERRIDE=$(shell_quote "$STATE") bash $(shell_quote "$FM_ROOT/bin/fm-delegated.sh") heartbeat --task $(shell_quote "$ID"). A dispatch receipt alone is not progress. Before reporting completion, write the outcome and evidence to that artifact, compute its SHA-256, and run the same command with deliver --task $(shell_quote "$ID") --path $(shell_quote "$DATA/$ID/report.md") --hash <sha256>. A blocked or paused task reports that state through its ordinary status path; do not invent heartbeats while waiting.
+"
+fi
+
 
 # How a crewmate or scout waits. Every model turn resends the whole context, so
 # a wait must cost no turns: a decision wait ends the turn, an external PR

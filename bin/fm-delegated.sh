@@ -26,22 +26,20 @@
 #                                 receiver's read location produces a
 #                                 delivery-failure line naming the hidden
 #                                 item on every pass until it is mirrored.
-#   handoff --id <id> --receiver <id> --path <path> --hash <sha256>
-#           --read-dir <abs-dir> --alt-dir <abs-dir> --location read|alt
+#   handoff --task <task> --id <id> --receiver <id> --path <path> --hash <sha256>
+#           --read-dir <state/receiver.inbox> --alt-dir <abs-dir.inbox>
+#           --location read|alt
 #                                 File one cross-agent handoff carrying the
 #                                 artifact receipt (path plus hash) in the
 #                                 chosen location.
 #   mirror --id <id>             Mirror a hidden handoff into the read
 #                                 location its receiver actually reads.
-#   read --id <id>               Receipt the receiver's read of a mirrored
-#                                 handoff. Refused while the handoff is
-#                                 hidden or its artifact hash mismatches.
 #
 # Files, all under the owner home FM_HOME:
 #   state/delegated/<task>.record       one key=value record per task.
 #   state/delegated/handoffs/<id>.record one key=value record per handoff.
-#   <read-dir>/<id>.handoff and <alt-dir>/<id>.handoff
-#                                 the filed handoff receipts themselves.
+#   <read-dir>/NNN.msg and handled/NNN.msg use the existing task inbox.
+#   <alt-dir>/NNN.msg holds a non-read placement until mirrored.
 #
 # This command never instructs, pushes, restarts, or stops any external
 # agent. Escalation and delivery failure are reports to the delegating
@@ -62,6 +60,8 @@ HANDOFF_DIR="$DELEGATED_DIR/handoffs"
 
 # shellcheck source=bin/fm-delegated-lib.sh
 . "$SCRIPT_DIR/fm-delegated-lib.sh"
+# shellcheck source=bin/fm-task-inbox-lib.sh
+. "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 
 usage() {
   awk 'NR == 1 { next } /^#/ { sub(/^# ?/, ""); print; next } { exit }' "$0"
@@ -85,9 +85,6 @@ tab=$(printf '\t')
 
 task_file() { printf '%s/%s.record' "$DELEGATED_DIR" "$1"; }
 handoff_file() { printf '%s/%s.record' "$HANDOFF_DIR" "$1"; }
-handoff_placement() {  # <dir> <id>
-  printf '%s/%s.handoff' "$1" "$2"
-}
 
 require_task() {  # <id>: fills T_FILE or dies
   fm_del_valid_id "$1" || die "invalid task id: $1"
@@ -160,6 +157,8 @@ last_receipt_label() {
 }
 
 load_handoff() {  # <file>
+  H_TASK=$(fm_del_record_get "$1" task)
+  H_MESSAGE=$(fm_del_record_get "$1" message)
   H_ID=$(fm_del_record_get "$1" id)
   H_RECEIVER=$(fm_del_record_get "$1" receiver)
   H_PATH=$(fm_del_record_get "$1" artifact_path)
@@ -168,7 +167,6 @@ load_handoff() {  # <file>
   H_ALT_DIR=$(fm_del_record_get "$1" alt_dir)
   H_LOCATION=$(fm_del_record_get "$1" location)
   H_MIRRORED=$(fm_del_record_get "$1" mirrored)
-  H_READ_AT=$(fm_del_record_get "$1" read_at)
   [ -n "$H_MIRRORED" ] || H_MIRRORED=0
 }
 
@@ -176,6 +174,8 @@ save_handoff() {  # <file>
   local tmp
   tmp=$(mktemp "${1%/*}/.record.XXXXXX") || return 1
   {
+    printf 'task=%s\n' "$H_TASK"
+    printf 'message=%s\n' "$H_MESSAGE"
     printf 'id=%s\n' "$H_ID"
     printf 'receiver=%s\n' "$H_RECEIVER"
     printf 'artifact_path=%s\n' "$H_PATH"
@@ -184,29 +184,43 @@ save_handoff() {  # <file>
     printf 'alt_dir=%s\n' "$H_ALT_DIR"
     printf 'location=%s\n' "$H_LOCATION"
     printf 'mirrored=%s\n' "$H_MIRRORED"
-    printf 'read_at=%s\n' "$H_READ_AT"
   } > "$tmp" || { rm -f "$tmp"; return 1; }
   mv "$tmp" "$1" || { rm -f "$tmp"; return 1; }
 }
 
-handoff_state() {  # fills from H_* and the filesystem
-  if [ -n "$H_READ_AT" ]; then printf 'read\n'; return 0; fi
-  if [ -f "$(handoff_placement "$H_READ_DIR" "$H_ID")" ]; then printf 'mirrored\n'; return 0; fi
+handoff_body() {
+  printf 'handoff=%s task=%s receiver=%s artifact=%s hash=%s' "$H_ID" "$H_TASK" "$H_RECEIVER" "$H_PATH" "$H_HASH"
+}
+
+handoff_state() {
+  local pending="$H_READ_DIR/${H_MESSAGE##*/}" handled="$H_READ_DIR/handled/${H_MESSAGE##*/}" body
+  fm_del_verify_artifact "$H_PATH" "$H_HASH" >/dev/null || { printf 'delivery-failure\n'; return; }
+  if [ -n "$H_MESSAGE" ] && [ "$H_MIRRORED" = 1 ]; then
+    if body=$(fm_task_inbox_body "$pending" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
+      printf 'mirrored\n'; return
+    fi
+    if body=$(fm_task_inbox_body "$handled" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
+      printf 'read\n'; return
+    fi
+  fi
   printf 'delivery-failure\n'
 }
 
-write_placement() {  # <dir> <id> <receiver> <path> <hash>
-  mkdir -p "$1" || return 1
-  {
-    printf 'id=%s\n' "$2"
-    printf 'receiver=%s\n' "$3"
-    printf 'artifact_path=%s\n' "$4"
-    printf 'artifact_hash=%s\n' "$5"
-  } > "$(handoff_placement "$1" "$2")"
+write_placement() {
+  local recipient=${1##*/}
+  H_MESSAGE=$(fm_task_inbox_write_idempotent "${1%/*}" "${recipient%.inbox}" "$(handoff_body)") || return 1
+}
+
+notify_supervisor() {
+  local text=$1 key=$2
+  fm_wake_append check "delegated:$T_SUPERVISOR:$key" "$text" || return 1
+  if [ -f "$STATE/$T_SUPERVISOR.meta" ]; then
+    fm_task_inbox_write_idempotent "$STATE" "$T_SUPERVISOR" "$text" >/dev/null || return 1
+  fi
 }
 
 cmd_register() {
-  local task='' deliverable='' artifact='' heartbeat='' silence='' supervisor=''
+  local task='' deliverable='' artifact='' heartbeat='' silence='' supervisor='firstmate'
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --task) [ "$#" -ge 2 ] || usage_die '--task needs a value'; task=$2; shift 2 ;;
@@ -223,11 +237,12 @@ cmd_register() {
   [ -n "$artifact" ] || usage_die 'register needs --artifact <path>'
   fm_del_valid_id "$task" || usage_die "invalid task id: $task"
   fm_del_valid_id "$deliverable" || usage_die "invalid deliverable name (one token of A-Za-z0-9._-): $deliverable"
+  case "$artifact" in /*) ;; *) usage_die 'artifact path must be absolute' ;; esac
   single_line "$artifact" || usage_die 'artifact path must be one line'
   valid_secs "$heartbeat" || usage_die '--heartbeat-secs must be a positive integer'
   valid_secs "$silence" || usage_die '--silence-secs must be a positive integer'
   [ "$silence" -gt "$heartbeat" ] || usage_die '--silence-secs must exceed --heartbeat-secs'
-  [ -z "$supervisor" ] || fm_del_valid_id "$supervisor" || usage_die "invalid supervisor name: $supervisor"
+  fm_del_valid_id "$supervisor" || usage_die "invalid supervisor name: $supervisor"
   mkdir -p "$DELEGATED_DIR" || die "cannot create $DELEGATED_DIR"
   T_FILE=$(task_file "$task")
   [ ! -f "$T_FILE" ] || die "delegated task already recorded: $task"
@@ -292,7 +307,11 @@ cmd_deliver() {
   load_task "$T_FILE"
   [ "$T_CLOSED" = 1 ] && die "task already closed: $task"
   lower=$(printf '%s' "$hash" | tr '[:upper:]' '[:lower:]')
-  verdict=$(fm_del_verify_artifact "$path" "$lower") || true
+  if [ "$path" = "$T_ARTIFACT" ]; then
+    verdict=$(fm_del_verify_artifact "$path" "$lower") || true
+  else
+    verdict=wrong-artifact
+  fi
   T_ATTEMPT="deliverable:$verdict@$(now_epoch)"
   if [ "$verdict" = ok ]; then
     T_LAST_KIND=deliverable T_LAST_AT=$(now_epoch) T_LAST_PATH=$path T_LAST_HASH=$lower
@@ -344,33 +363,39 @@ cmd_view() {
 
 cmd_check() {
   [ "$#" -eq 0 ] || usage_die 'check takes no flags'
-  local f now age
+  local f now age answered=' ' text
   now=$(now_epoch)
+  for f in "$HANDOFF_DIR"/*.record; do
+    [ -f "$f" ] || continue
+    load_handoff "$f"
+    answered="$answered$H_TASK "
+    [ "$(handoff_state)" = delivery-failure ] || continue
+    load_task "$(task_file "$H_TASK")"
+    text="delivery-failure handoff=$H_ID task=$H_TASK receiver=$H_RECEIVER artifact=$H_PATH hash=$H_HASH filed=$H_LOCATION read_dir=$H_READ_DIR"
+    notify_supervisor "$text" "handoff:$H_ID" || die "cannot report handoff: $H_ID"
+    printf '%s\n' "$text"
+  done
   for f in "$DELEGATED_DIR"/*.record; do
     [ -f "$f" ] || continue
     load_task "$f"
     [ "$T_CLOSED" = 1 ] && continue
+    case "$answered" in *" $T_TASK "*) continue ;; esac
     [ -n "$T_ESCALATED" ] && continue
     if age=$(fm_del_silence_age "$now" "$(last_activity)" "$T_SILENCE"); then
+      text="escalation task=$T_TASK age=$age last_receipt=$(last_receipt_label) deliverable=$T_DELIVERABLE supervisor=$T_SUPERVISOR"
+      notify_supervisor "$text" "silence:$T_TASK" || die "cannot report escalation: $T_TASK"
       T_ESCALATED=$now
       save_task "$f" || die "cannot record escalation: $T_TASK"
-      printf 'escalation task=%s age=%s last_receipt=%s deliverable=%s\n' \
-        "$T_TASK" "$age" "$(last_receipt_label)" "$T_DELIVERABLE"
+      printf '%s\n' "$text"
     fi
-  done
-  for f in "$HANDOFF_DIR"/*.record; do
-    [ -f "$f" ] || continue
-    load_handoff "$f"
-    [ "$(handoff_state)" = delivery-failure ] || continue
-    printf 'delivery-failure handoff=%s receiver=%s artifact=%s hash=%s filed=%s read_dir=%s\n' \
-      "$H_ID" "$H_RECEIVER" "$H_PATH" "$H_HASH" "$H_LOCATION" "$H_READ_DIR"
   done
 }
 
 cmd_handoff() {
-  local id='' receiver='' path='' hash='' read_dir='' alt_dir='' location='' lower verdict
+  local task='' id='' receiver='' path='' hash='' read_dir='' alt_dir='' location='' lower verdict
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      --task) [ "$#" -ge 2 ] || usage_die '--task needs a value'; task=$2; shift 2 ;;
       --id) [ "$#" -ge 2 ] || usage_die '--id needs a value'; id=$2; shift 2 ;;
       --receiver) [ "$#" -ge 2 ] || usage_die '--receiver needs a value'; receiver=$2; shift 2 ;;
       --path) [ "$#" -ge 2 ] || usage_die '--path needs a value'; path=$2; shift 2 ;;
@@ -381,6 +406,12 @@ cmd_handoff() {
       *) usage_die "unknown flag: $1" ;;
     esac
   done
+  require_task "$task"
+  load_task "$T_FILE"
+  [ "$path" = "$T_ARTIFACT" ] || die 'handoff must name the registered artifact'
+  [ "$read_dir" = "$STATE/$receiver.inbox" ] || usage_die 'read-dir must be the receiver task inbox'
+  single_line "$alt_dir" || usage_die 'alt-dir must be one line'
+  case "$alt_dir" in *.inbox) ;; *) usage_die 'alt-dir must name an .inbox directory' ;; esac
   [ -n "$id" ] || usage_die 'handoff needs --id <id>'
   [ -n "$receiver" ] || usage_die 'handoff needs --receiver <id>'
   [ -n "$path" ] || usage_die 'handoff needs --path <path>'
@@ -397,14 +428,14 @@ cmd_handoff() {
   mkdir -p "$HANDOFF_DIR" || die "cannot create $HANDOFF_DIR"
   H_FILE=$(handoff_file "$id")
   [ ! -f "$H_FILE" ] || die "handoff already recorded: $id"
+  H_TASK=$task H_ID=$id H_RECEIVER=$receiver H_PATH=$path H_HASH=$lower
+  H_READ_DIR=$read_dir H_ALT_DIR=$alt_dir H_LOCATION=$location H_MIRRORED=0
   if [ "$location" = read ]; then
-    write_placement "$read_dir" "$id" "$receiver" "$path" "$lower" || die "cannot file handoff: $id"
+    write_placement "$read_dir" || die "cannot file handoff: $id"
+    H_MIRRORED=1
   else
-    write_placement "$alt_dir" "$id" "$receiver" "$path" "$lower" || die "cannot file handoff: $id"
+    write_placement "$alt_dir" || die "cannot file handoff: $id"
   fi
-  H_ID=$id H_RECEIVER=$receiver H_PATH=$path H_HASH=$lower
-  H_READ_DIR=$read_dir H_ALT_DIR=$alt_dir H_LOCATION=$location H_MIRRORED=0 H_READ_AT=''
-  [ "$location" = read ] && H_MIRRORED=1
   save_handoff "$H_FILE" || die "cannot record handoff: $id"
   if [ "$location" = read ]; then
     printf 'handoff=%s state=mirrored receiver=%s\n' "$id" "$receiver"
@@ -430,35 +461,24 @@ cmd_mirror() {
   [ -n "$id" ] || usage_die 'mirror needs --id <id>'
   require_handoff "$id"
   load_handoff "$H_FILE"
-  if [ ! -f "$(handoff_placement "$H_READ_DIR" "$H_ID")" ]; then
-    [ -f "$(handoff_placement "$H_ALT_DIR" "$H_ID")" ] || die "handoff placement missing in both locations: $id"
-    write_placement "$H_READ_DIR" "$H_ID" "$H_RECEIVER" "$H_PATH" "$H_HASH" || die "cannot mirror handoff: $id"
+  fm_del_verify_artifact "$H_PATH" "$H_HASH" >/dev/null || die "handoff artifact no longer verifies: $id"
+  if [ "$(handoff_state)" = delivery-failure ]; then
+    write_placement "$H_READ_DIR" || die "cannot mirror handoff: $id"
   fi
   H_MIRRORED=1 H_LOCATION=read
   save_handoff "$H_FILE" || die "cannot record mirror: $id"
   printf 'handoff=%s state=mirrored receiver=%s\n' "$id" "$H_RECEIVER"
 }
 
-cmd_read() {
-  local id='' verdict
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --id) [ "$#" -ge 2 ] || usage_die '--id needs a value'; id=$2; shift 2 ;;
-      *) usage_die "unknown flag: $1" ;;
-    esac
-  done
-  [ -n "$id" ] || usage_die 'read needs --id <id>'
-  require_handoff "$id"
-  load_handoff "$H_FILE"
-  [ -f "$(handoff_placement "$H_READ_DIR" "$H_ID")" ] \
-    || die "delivery failure: handoff $id is not in the read location ${H_READ_DIR}"
-  verdict=$(fm_del_verify_artifact "$H_PATH" "$H_HASH") || true
-  [ "$verdict" = ok ] || die "read receipt does not verify: $verdict artifact=$H_PATH"
-  H_READ_AT=$(now_epoch)
-  save_handoff "$H_FILE" || die "cannot record read: $id"
-  printf 'read-receipt handoff=%s receiver=%s artifact=%s hash=%s at=%s\n' \
-    "$H_ID" "$H_RECEIVER" "$H_PATH" "$H_HASH" "$H_READ_AT"
-}
+case "${1:-}" in
+  -h|--help|'') usage; exit 0 ;;
+esac
+mkdir -p "$DELEGATED_DIR" || die 'cannot create delegated state'
+DELEGATED_LOCK="$DELEGATED_DIR/.transaction.lock"
+fm_lock_acquire_wait_max "$DELEGATED_LOCK" 60 || die 'delegated state is busy'
+trap 'fm_lock_release "$DELEGATED_LOCK"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 case "${1:-}" in
   register) shift; cmd_register "$@" ;;
@@ -469,7 +489,5 @@ case "${1:-}" in
   check) shift; cmd_check "$@" ;;
   handoff) shift; cmd_handoff "$@" ;;
   mirror) shift; cmd_mirror "$@" ;;
-  read) shift; cmd_read "$@" ;;
-  -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac

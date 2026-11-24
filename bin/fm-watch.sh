@@ -5729,6 +5729,10 @@ while :; do
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
   touch "$STATE/.last-watcher-beat"
 
+  if [ -d "$STATE/delegated" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" check >/dev/null || exit 1
+  fi
+
   captain_provider_failover_check || true
 
   fleet_heartbeat_publish_detached
