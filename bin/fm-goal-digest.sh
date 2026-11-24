@@ -34,7 +34,9 @@
 # The digest lists new merges (URL and 12-character SHA). The first fetch
 # for each repository reports only merges from the preceding day. Later
 # complete fetches advance its merge-window watermark with a five-minute
-# overlap. Failed collection is reported as incomplete and
+# overlap. Closed-pull collection follows every page through the
+# watermark or the final page, with no page-count cap.
+# Failed collection is reported as incomplete and
 # retains the pending window, including the initial one-day baseline.
 # Already reported merges are excluded. It also lists open pull requests
 # (drafts included) with their age, missed ETAs (a status
@@ -44,8 +46,13 @@
 # record. Generation and ETA dates use America/Mexico_City.
 # waiting_on_captain contains captain_actionable local backlog rows and
 # explicit captain-hold decisions from trusted, registered secondmates in
-# configured fm-fleet-snapshot.v1 status files. Wait age uses the native
-# hold_set timestamp, otherwise null. Other formats, unavailable sources,
+# configured fm-fleet-snapshot.v1 status files. A UTC hold_set timestamp
+# produces age_hours with age_precision=hour. A YYYY-MM-DD hold_set
+# produces age_days with age_precision=day, recalculated against the
+# current America/Mexico_City date even when the snapshot is unchanged.
+# The unused age field is null; missing or invalid hold_set values leave
+# both age fields null and age_precision=unknown.
+# Other formats, unavailable sources,
 # and incomplete or cached secondmate coverage leave owner-action coverage unknown.
 # Open pull requests are published separately in open_pull_requests.
 # Unreachable or unreadable sources are recorded in the digest
@@ -54,12 +61,14 @@
 # changed is yes on the first run, when new merges are found, or when
 # persistent digest content changes. Generated time, age values and the
 # disappearance of previously reported merges do not count as changes.
-# On a changed run the summary is produced by one fixed text-only model
+# On a changed run the summary is attempted by one fixed text-only model
 # runner: claude -p with no tools, the current native account and the
 # configured cheap non-Opus model (default haiku). It replaces
-# summary.txt only on success, has a 120-second timeout, and reports
-# summary unavailable instead of succeeding silently when the runner is
-# missing or fails. No shell command from config is ever executed. The
+# summary.txt only on success and has a 120-second timeout.
+# A missing or failed runner reports summary unavailable on stderr;
+# the digest remains published, the run still succeeds, and any previous
+# summary.txt is retained. Unchanged runs do not retry a failed summary.
+# No shell command from config is ever executed. The
 # collector never merges, deploys, tags, pushes or messages anyone: its
 # network reads use `gh api` GET requests and read-only ssh cat/stat
 # commands.

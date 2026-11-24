@@ -1399,7 +1399,7 @@ The script's header owns the report line, the published document's fields, the v
 ## Goal digest (config/goal-digest)
 
 The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
-The script header owns the configuration format, supported keys, source locations and output schema.
+The script header and `--help` own the configuration format, supported keys, source locations, scheduling commands and output contract.
 A neutral example is:
 
 ```text
@@ -1409,13 +1409,8 @@ review = Example review | /path/to/review.status
 ```
 
 `fm-goal-digest.sh install` installs a macOS LaunchAgent that runs every 20 minutes.
-The agent's label carries a suffix derived from the home, and it runs with that home's `FM_HOME` and the installer's `PATH` and `HOME`.
-Each run writes `latest.md` and `latest.json` plus a timestamped copy under `history/` in the output directory, which defaults to `data/goal-digest/` under the effective home.
 The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
-Generation and ETA dates use America/Mexico_City.
-The script header defines merge-window recovery, supported native owner-action records, wait-age semantics, and explicit unknown coverage.
-On a changed run, a summary is produced by a fixed text-only model runner with no tools, the current native account and a cheap non-Opus model (`summarize_model`, default `haiku`; `summarize = off` disables it).
-No shell command from the config is ever executed, and an unavailable or failed runner is reported rather than silently succeeding.
+The script header defines output paths, merge-window recovery, supported native owner-action records, wait-age semantics, explicit unknown coverage and summary-runner behavior.
 The job never merges, deploys, tags, pushes or messages anyone.
 Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.
 
