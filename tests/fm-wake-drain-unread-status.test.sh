@@ -13,6 +13,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
 
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$ROOT/bin/fm-timeout-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-wake-drain-unread-status-tests)
 
@@ -449,6 +451,109 @@ test_routine_working_and_covered_done_stay_silent_on_the_empty_queue() {
   pass "routine working and branch-covered done lines print nothing on an empty-queue drain"
 }
 
+test_presentation_deadline_preserves_pending_data_and_recovers() {
+  local dir state status rc=0 reader_pid
+  dir=$(make_case presentation-deadline)
+  state="$dir/state"
+  status="$state/task-deadline.status"
+  printf 'note: answer must remain unread until presented\nneeds-decision [key=held]: retain this decision\n' > "$status"
+  cp "$status" "$dir/status.before"
+  append_wake "$state" check deadline 'unhandled deadline fixture' || fail 'could not seed deadline wake'
+  cp "$state/.wake-queue" "$dir/queue.before"
+  cat > "$dir/blocked-reader" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_DRAIN_READER_PID"
+exec sleep 30
+SH
+  chmod +x "$dir/blocked-reader"
+  # The outer test bound is independent: the product must report its own
+  # shorter presentation deadline rather than merely be killed by this guard.
+  fm_run_timed 6 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
+    FM_STATUS_SPAN_READER="$dir/blocked-reader" FM_DRAIN_READER_PID="$dir/reader.pid" \
+    "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+  assert_equals 124 "$rc" 'presentation deadline must report incomplete execution'
+  assert_grep 'WAKE DRAIN INCOMPLETE:' "$dir/timed.err" 'product did not report its own deadline'
+  assert_grep 'phase=status-' "$dir/timed.err" 'deadline did not identify the blocked product phase'
+  assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
+  cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
+  cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
+  reader_pid=$(cat "$dir/reader.pid")
+  if /bin/bash -c '. "$1"; fm_pid_alive "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$reader_pid"; then
+    fail 'presentation deadline left its reader running'
+  fi
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" \
+    || fail 'a drain after the failed presentation could not recover'
+  assert_grep 'answer must remain unread until presented' "$dir/retry.out" 'failed presentation advanced the unread receipt'
+  assert_grep '[key=held]' "$dir/retry.out" 'failed presentation lost an open decision'
+  cmp "$dir/queue.before" "$state/.wake-queue" || fail 'recovery acknowledged a still-unhandled wake'
+  pass 'a bounded presentation names its phase, preserves pending data, reaps readers and recovers'
+}
+
+test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
+  local dir state
+  dir=$(make_case explicit-phase-trace)
+  state="$dir/state"
+  printf 'note: phase trace fixture\n' > "$state/task-trace.status"
+  append_wake "$state" check trace 'phase trace wake' || fail 'could not seed traced wake'
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" --phases > "$dir/trace.out" 2> "$dir/trace.err" \
+    || fail 'phase-traced drain failed'
+  assert_grep 'phase=queue-read' "$dir/trace.err" 'trace did not identify queue collection'
+  assert_grep 'phase=status-classify' "$dir/trace.err" 'trace did not identify informational classification'
+  grep -Eq 'phase=finished .*exit=0' "$dir/trace.err" || fail 'trace lacked an identity-bound terminal receipt'
+  assert_no_grep 'phase=' "$dir/trace.out" 'phase diagnostics polluted the raw wake/output channel'
+  assert_grep "$(printf '\tcheck\ttrace\t')" "$dir/trace.out" 'trace hid the authoritative wake row'
+  pass 'an explicit phase trace reports progress and completion on stderr'
+}
+
+test_warm_routine_history_is_bounded_without_acknowledging_it() {
+  local dir state status i epoch rc=0 offset
+  dir=$(make_case warm-routine-history)
+  state="$dir/state"
+  status="$state/task-history.status"
+  printf 'kind=ship\n' > "$state/task-history.meta"
+  printf 'working: initial routine context\n' > "$status"
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > /dev/null 2> /dev/null || fail 'could not establish a routine-only presentation'
+  : > "$dir/expected"
+  i=0
+  while [ "$i" -lt 130 ]; do
+    printf 'needs-decision [key=k%03d]: exact decision %03d\n' "$i" "$i" >> "$status"
+    printf 'k%03d\tneeds-decision\texact decision %03d\n' "$i" "$i" >> "$dir/expected"
+    i=$((i + 1))
+  done
+  awk 'BEGIN { for (i=0;i<10000;i++) print "working: historical routine context" }' >> "$status"
+  cp "$status" "$dir/history.before"
+  # Warm only the decision fold through its real interface. The independent
+  # presentation receipt must still retain the earlier routine context.
+  FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_incremental "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$status" | LC_ALL=C sort > "$dir/open.before"
+  cmp "$dir/expected" "$dir/open.before" || fail 'history fixture lost a decision while warming its fold'
+  epoch=$(( $(date +%s) - 1800 ))
+  i=12328
+  while [ "$i" -le 12334 ]; do
+    printf '%s\t%s\tcheck\tfixture-%s\tunhandled fixture wake\n' "$epoch" "$i" "$i" >> "$state/.wake-queue"
+    i=$((i + 1))
+  done
+  cp "$state/.wake-queue" "$dir/queue.before"
+  fm_run_timed 12 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=6 \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" "$BASH" "$DRAIN" \
+    > "$dir/warm.out" 2> "$dir/warm.err" || rc=$?
+  assert_equals 0 "$rc" 'a warm routine-only history still held the full drain past its presentation budget'
+  cmp "$dir/history.before" "$status" || fail 'fast presentation rewrote history'
+  cmp "$dir/queue.before" "$state/.wake-queue" || fail 'fast presentation consumed queued wakes'
+  offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_presentation_cursor_offset "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+  assert_equals 0 "$offset" 'fast classification acknowledged routine context needed by a later signal'
+  FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_incremental "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$status" | LC_ALL=C sort > "$dir/open.after"
+  cmp "$dir/expected" "$dir/open.after" || fail 'fast presentation changed the 130 open decisions'
+  pass 'warm routine-only history completes without changing wake, decision or presentation ownership'
+}
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit "$?"
+fi
+
 test_incident_note_answer_buried_under_routine_note_surfaces_both
 test_already_presented_notes_are_not_replayed
 test_brand_new_note_after_presentation_is_surfaced
@@ -463,3 +568,6 @@ test_snapshot_failure_is_visible
 test_open_decisions_fold_is_unchanged
 test_empty_queue_does_not_swallow_later_signal_annotation
 test_routine_working_and_covered_done_stay_silent_on_the_empty_queue
+test_presentation_deadline_preserves_pending_data_and_recovers
+test_explicit_phase_trace_keeps_raw_wakes_on_stdout
+test_warm_routine_history_is_bounded_without_acknowledging_it

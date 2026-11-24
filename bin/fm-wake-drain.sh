@@ -7,9 +7,23 @@
 # a supervision-host home the supervision session's new and unprocessed
 # outcomes (BRANCH OUTCOMES), then assert liveness.
 #
+# Usage: fm-wake-drain.sh [--phases]
+#        fm-wake-drain.sh [--phases] --ack-through <sequence> --recovery-generation <token>
+# --phases prints PID/start-bound progress and a terminal exit receipt to stderr;
+# stdout remains the wake/status presentation channel.
+# FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds the combined optional status,
+# branch-outcome and liveness presentation after queue collection (default 30s,
+# positive whole seconds). A timeout returns 124 and names its last phase.
+# Already completed sections keep their receipts; incomplete status output never
+# commits its presentation receipt. This command never acknowledges queue rows
+# without the explicit sequence/generation acknowledgement arguments.
+# The bound covers the optional worker, not runner setup, a caller that stops
+# reading stdout, or filesystem I/O before queue-lock release. Queue-lock waits
+# retain their existing bound.
+#
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
-# Every scratch file this script mints (.main-eligible-rows.tmp.*,
+# Queue-mutation scratch files (.main-eligible-rows.tmp.*,
 # .wake-rows.consume.*, .wake-queue.retire.*, .wake-queue.ack.*,
 # .wake-queue.actor-view.*) is created and removed under the queue lock, so one
 # found while taking that lock was left by a drain that died mid-write; each
@@ -18,6 +32,10 @@
 # presentation-path locks (default 10); queue mutation locks, acknowledgement
 # included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
 # and exit 1 with the state untouched past it.
+# A separate per-attempt phase file under TMPDIR is removed by the invoking
+# process after the bounded presentation or from its exit trap. Descriptor 18
+# stays open while the worker writes, so caller death cannot turn a later phase
+# update into a pathname replacement race.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
@@ -54,8 +72,34 @@ PRESENTED_MAX=0
 ACK_FINGERPRINTS=
 ACK_NOTICE_FINGERPRINTS=
 PRESENTATION_LOCK_TIMEOUT=${FM_STATUS_PRESENTATION_LOCK_TIMEOUT:-10}
-BRANCH_OUTCOMES_RC=0
+DRAIN_PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-30}
+DRAIN_PHASE_FILE=
+DRAIN_PHASE_FD_OPEN=0
+DRAIN_TRACE=0
+DRAIN_PARENT_PID=
+fm_current_pid DRAIN_PARENT_PID || exit 1
+DRAIN_STARTED_SECONDS=$SECONDS
+DRAIN_STARTED_EPOCH=$(date +%s)
 case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10 ;; esac
+case "$DRAIN_PRESENTATION_TIMEOUT" in
+  ''|0*|*[!0-9]*)
+    printf 'wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT must be positive whole seconds\n' >&2
+    exit 2
+    ;;
+esac
+case "${1:-}" in --phases) DRAIN_TRACE=1; shift ;; esac
+
+drain_phase() {  # <phase> [detail]
+  local phase=$1 detail=${2:-}
+  if [ "$DRAIN_PHASE_FD_OPEN" -eq 1 ]; then
+    printf '%s\n' "$phase" >&18 2>/dev/null || true
+  fi
+  if [ "$DRAIN_TRACE" -eq 1 ]; then
+    printf 'wake drain: pid=%s started=%s phase=%s elapsed=%ss%s\n' \
+      "$DRAIN_PARENT_PID" "$DRAIN_STARTED_EPOCH" "$phase" \
+      "$((SECONDS - DRAIN_STARTED_SECONDS))" "${detail:+ $detail}" >&2
+  fi
+}
 
 # --- per-actor consume (docs/watcher-continuity.md "Per-actor acknowledgement") --
 # main (FM_SUPERVISION_ACTOR unset or "main", via fm-lease-lib.sh's fm_lease_actor
@@ -790,13 +834,14 @@ print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
+  drain_phase status-classify
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
   prepared=$(mktemp "$STATE/.status-presentation.prepared.XXXXXX") || return 1
   if ! {
-    print_unread_status_section "$snapshot" \
-      && print_status_outcome_backstop_section "$snapshot" \
-      && print_open_decisions_section "$snapshot" \
-      && print_record_divergence_section
+    drain_phase status-unread && print_unread_status_section "$snapshot" \
+      && drain_phase status-outcome-backstop && print_status_outcome_backstop_section "$snapshot" \
+      && drain_phase status-open-decisions && print_open_decisions_section "$snapshot" \
+      && drain_phase status-record-divergence && print_record_divergence_section
   } > "$prepared"; then
     rm -f -- "$prepared"
     return 1
@@ -804,10 +849,14 @@ print_status_sections() {
   # Prepare every section before presentation, but do not commit its receipt
   # until the prepared bytes reach stdout. If the consumer closes or fails,
   # leave the receipt behind so the next drain can recover the presentation.
-  if ! command cat "$prepared"; then
+  drain_phase status-output
+  # Bash 3.2 can exec-optimize `command cat` in the asynchronous timeout
+  # worker. Isolate that transfer so receipt publication still runs afterward.
+  if ! (command cat "$prepared"); then
     rm -f -- "$prepared"
     return 1
   fi
+  drain_phase status-receipt
   if ! status_commit_presentation_snapshot "$STATE" "$acknowledged"; then
     rm -f -- "$prepared"
     return 1
@@ -818,6 +867,7 @@ print_status_sections() {
 print_status_presentation() {  # [<deduped-raw-rows>]
   local rows=${1:-} lock="$STATE/.status-presentation-lock" snapshot annotation_manifest fully_presented='' rc=0
   local lock_rc holder_pid
+  drain_phase status-lock
   if fm_lock_acquire_wait_bounded "$lock" "$PRESENTATION_LOCK_TIMEOUT"; then
     :
   else
@@ -831,11 +881,13 @@ print_status_presentation() {  # [<deduped-raw-rows>]
     fi
     return 1
   fi
+  drain_phase status-snapshot
   snapshot=$(status_presentation_snapshot "$STATE") || {
     printf 'STATUS PRESENTATION INCOMPLETE: status snapshot could not be read.\n'
     rc=1
   }
   if [ "$rc" -eq 0 ] && [ -n "$rows" ]; then
+    drain_phase status-annotations
     fm_wake_print_annotations "$rows" "$snapshot" || rc=1
     if [ "$rc" -eq 0 ]; then
       annotation_manifest=$(fm_wake_annotation_manifest "$rows") || rc=1
@@ -847,13 +899,56 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   return "$rc"
 }
 
+# This already ran in a subshell before it was bounded. No child variables are
+# needed by queue acknowledgement, which has its own separate locked path.
+drain_presentation_worker() {  # [<deduped-raw-rows>]
+  local branch_rc=0
+  print_status_presentation "${1:-}" || true
+  drain_phase branch-outcomes
+  print_branch_outcomes_section || branch_rc=1
+  drain_phase liveness
+  assert_watcher_liveness
+  return "$branch_rc"
+}
+
+run_drain_presentation() {  # [<deduped-raw-rows>]
+  local rc=0 phase=optional-presentation phase_line
+  drain_phase presentation-setup
+  DRAIN_PHASE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-wake-drain-phase.XXXXXX" 2>/dev/null) || DRAIN_PHASE_FILE=
+  if [ -n "$DRAIN_PHASE_FILE" ] && { exec 18>> "$DRAIN_PHASE_FILE"; } 2>/dev/null; then
+    DRAIN_PHASE_FD_OPEN=1
+  fi
+  fm_run_timed_fn "$DRAIN_PRESENTATION_TIMEOUT" drain_presentation_worker "${1:-}" || rc=$?
+  if fm_timed_out "$rc"; then
+    if [ -n "$DRAIN_PHASE_FILE" ] && [ -r "$DRAIN_PHASE_FILE" ]; then
+      while IFS= read -r phase_line; do phase=$phase_line; done < "$DRAIN_PHASE_FILE"
+    fi
+    printf 'WAKE DRAIN INCOMPLETE: pid=%s phase=%s exceeded %ss presentation bound; retry unfinished presentation.\n' \
+      "$DRAIN_PARENT_PID" "$phase" "$DRAIN_PRESENTATION_TIMEOUT" >&2
+    rc=124
+  fi
+  [ "$DRAIN_PHASE_FD_OPEN" -eq 0 ] || exec 18>&-
+  DRAIN_PHASE_FD_OPEN=0
+  [ -z "$DRAIN_PHASE_FILE" ] || rm -f -- "$DRAIN_PHASE_FILE"
+  DRAIN_PHASE_FILE=
+  return "$rc"
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
-  local status=$?
+  local status=$? current_pid
   [ -z "$DRAIN_TMP" ] || rm -f -- "$DRAIN_TMP" 2>/dev/null || true
   [ -z "$DRAIN_VIEW_TMP" ] || rm -f -- "$DRAIN_VIEW_TMP" 2>/dev/null || true
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  fi
+  fm_current_pid current_pid || current_pid=
+  if [ "$current_pid" = "$DRAIN_PARENT_PID" ]; then
+    [ "$DRAIN_PHASE_FD_OPEN" -eq 0 ] || exec 18>&-
+    DRAIN_PHASE_FD_OPEN=0
+    [ -z "$DRAIN_PHASE_FILE" ] || rm -f -- "$DRAIN_PHASE_FILE" 2>/dev/null || true
+    DRAIN_PHASE_FILE=
+    drain_phase finished "exit=$status"
   fi
   exit "$status"
 }
@@ -862,7 +957,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+drain_phase queue-read
 if [ -n "$ACK_THROUGH" ]; then
+  drain_phase queue-acknowledge
   fm_wake_queue_lock_acquire || exit 1
 elif fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" "$PRESENTATION_LOCK_TIMEOUT"; then
   :
@@ -1042,13 +1139,12 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   esac
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
-  (print_status_presentation) || true
-  print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
     printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation %s\n' "${RECOVERY_MARKER_TOKEN##*:}" >&2
   fi
-  assert_watcher_liveness
-  exit "$BRANCH_OUTCOMES_RC"
+  rc=0
+  run_drain_presentation || rc=$?
+  exit "$rc"
 fi
 
 if [ "$ACTOR" = main ]; then
@@ -1064,10 +1160,9 @@ if [ "$ACTOR" = main ]; then
     print_branch_held_notice
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
-    (print_status_presentation) || true
-    print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
-    assert_watcher_liveness
-    exit "$BRANCH_OUTCOMES_RC"
+    rc=0
+    run_drain_presentation || rc=$?
+    exit "$rc"
   fi
 fi
 
@@ -1127,7 +1222,6 @@ DRAIN_LOCK_HELD=false
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 
-(print_status_presentation "$RAW_ROWS") || true
-print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
-assert_watcher_liveness
-exit "$BRANCH_OUTCOMES_RC"
+rc=0
+run_drain_presentation "$RAW_ROWS" || rc=$?
+exit "$rc"

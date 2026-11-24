@@ -244,6 +244,7 @@ No unit is installed by a repository checkout alone.
 
 A recovery episode is one generation of the `state/.watcher-down` marker.
 The drain prints generation-bound acknowledgement as `WAKE_ACK_REQUIRED`; [Announcement](#announcement) also describes silent retirement when no queued work remains.
+The [drain header](../bin/fm-wake-drain.sh) owns its optional-presentation deadline, phase diagnostics and exit statuses.
 The away return brief treats a still-open handling episode as a wake in progress, not watcher downtime; an open downtime episode remains a gap.
 
 ### Announcement
