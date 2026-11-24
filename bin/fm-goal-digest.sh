@@ -344,7 +344,7 @@ except BlockingIOError:
   [ -f "$seen_file" ] || : > "$seen_file"
   [ -f "$since_file" ] || : > "$since_file"
   local work
-  work=$(mktemp -d "${TMPDIR:-/tmp}/fm-goal-digest.XXXXXX") || return 1
+  work=$(mktemp -d "$output_dir/.state/run.XXXXXX") || return 1
   # shellcheck disable=SC2064
   trap "rm -rf '$work'" EXIT
   : > "$work/new_merges.tsv"
@@ -373,7 +373,10 @@ except BlockingIOError:
     # First fetch for a repository stops at the preceding day, matching
     # the first-run reporting window, so a large repository cannot page
     # to the cap before any fetch time exists.
-    [ -n "$stop_before" ] || stop_before=$((now_epoch - 86400))
+    if [ -z "$stop_before" ]; then
+      stop_before=$((now_epoch - 86400))
+      printf '%s\t%s\n' "$repo" "$stop_before" >> "$work/since-new.tsv"
+    fi
     if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
@@ -427,12 +430,9 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             # of reporting every old merge in the window as new.
             continue
         out.write("\t".join([repo, number, clean(pr.get("title", "")), clean(pr.get("html_url", "")), sha, str(pr.get("merged_at", ""))]) + "\n")
-# Always advance the watermark, even after a truncated fetch: the list
-# is sorted by recent update, so the cap holds the most recent window,
-# and seen.tsv deduplicates anything fetched again. Holding the
-# watermark would repeat the same truncated fetch on every run.
-with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
-    fh.write(f"{repo}\t{now - 300}\n")
+if os.environ["FM_GD_TRUNCATED"] != "1":
+    with open(os.environ["FM_GD_SINCE_NEW"], "a") as fh:
+        fh.write(f"{repo}\t{now - 300}\n")
 PY
       # Record every merged pull as seen, new or not. This is staged and
       # only committed to seen.tsv after archival and publication, so an
@@ -644,14 +644,11 @@ PY
   printf '%s\n' "$content_hash" > "$hash_file.tmp" && mv "$hash_file.tmp" "$hash_file" || return 1
 
   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
-    local summarize_ok=0
-    if timed 120 /bin/sh -c "$summarize_cmd" < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null; then
-      summarize_ok=1
-    fi
-    if [ "$summarize_ok" = 1 ]; then
-      mv "$output_dir/summary.txt.tmp" "$output_dir/summary.txt"
+    if timed 120 /bin/sh -c "$summarize_cmd" < "$output_dir/latest.md" > "$work/summary.txt" 2>/dev/null &&
+       mv "$work/summary.txt" "$output_dir/summary.txt"; then
+      :
     else
-      rm -f "$output_dir/summary.txt.tmp"
+      rm -f "$work/summary.txt"
       printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
     fi
   fi

@@ -1412,6 +1412,7 @@ review = Example review | /path/to/review.status
 The agent's label carries a suffix derived from the home, and it runs with that home's `FM_HOME` and the installer's `PATH` and `HOME`.
 Each run writes `latest.md` and `latest.json` plus a timestamped copy under `history/` in the output directory, which defaults to `data/goal-digest/` under the effective home.
 The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
+Failed or capped repository collection is reported as incomplete and retains the pending merge window. An incomplete first fetch retains its initial one-day baseline. Collected merges are reported once; a complete fetch advances the window.
 Generation and ETA dates use America/Mexico_City.
 The script header defines the supported native owner-action records, wait-age semantics, and explicit unknown coverage.
 A configured summarizer runs as the owner configured it and is outside the job's read-only promise.

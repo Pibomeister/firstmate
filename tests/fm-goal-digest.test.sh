@@ -300,6 +300,84 @@ JSON
   pass "first-run large repository stops and saves watermark"
 }
 
+test_incomplete_collection_retains_unreported_merge_window() {
+  PATH="$FAKE:$BASE_PATH" python3 - "$SCRIPT" "$TMP_ROOT/pending-merges" "$RUN1_EPOCH" <<'PYTEST' || fail "incomplete collection consumed an unreported merge"
+import datetime, json, os, pathlib, subprocess, sys
+script, root, initial = sys.argv[1], pathlib.Path(sys.argv[2]), int(sys.argv[3])
+outage = initial + 172800
+retry_time = outage + 172800
+def stamp(epoch):
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+for scenario in ("resumed", "bootstrap-truncated", "bootstrap-failed"):
+    home = root / scenario
+    (home / "config").mkdir(parents=True)
+    (home / "config/goal-digest").write_text("repo = example-org/example-repo\n")
+    fixture = home / "pulls.json"
+    fixture.write_text("[]")
+    requests = home / "requests.jsonl"
+    gh = home / "gh"
+    gh.write_text("#!" + sys.executable + "\n" + '''import json, pathlib, sys
+from urllib.parse import parse_qs, urlsplit
+home = pathlib.Path(__file__).parent
+query = parse_qs(urlsplit(sys.argv[2]).query)
+page = int(query["page"][0])
+state = query["state"][0]
+with (home / "requests.jsonl").open("a") as fh:
+    fh.write(json.dumps([state, page]) + "\\n")
+if state == "closed" and page == 2 and (home / "fail").exists():
+    sys.exit(1)
+rows = json.loads((home / "pulls.json").read_text()) if state == "closed" else []
+print(json.dumps(rows[(page - 1) * 100:page * 100]))
+''')
+    gh.chmod(0o755)
+    env = dict(os.environ, FM_HOME=str(home), FM_TEST_SEAM="1", FM_GOAL_DIGEST_GH=str(gh))
+    output = home / "data/goal-digest"
+    def run(now):
+        env["FM_GD_NOW_EPOCH"] = str(now)
+        requests.write_text("")
+        result = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=60)
+        assert result.returncode == 0, result.stderr
+        return json.loads((output / "latest.json").read_text())
+    if scenario == "resumed":
+        run(initial)
+        baseline = (output / ".state/since.tsv").read_bytes()
+    else:
+        baseline = f"example-org/example-repo\t{outage - 86400}\n".encode()
+    rows = [{"number": i, "updated_at": stamp(outage - 60 - i), "merged_at": None} for i in range(1, 1001)]
+    rows[0].update(merged_at=stamp(outage - 3600), merge_commit_sha="aaaaaaaaaaaa1111", html_url="https://example.invalid/pr/1")
+    late = {"number": 1001, "updated_at": stamp(outage - 7200), "merged_at": stamp(outage - 43200),
+            "merge_commit_sha": "bbbbbbbbbbbb2222", "html_url": "https://example.invalid/pr/1001"}
+    rows.append(late)
+    fixture.write_text(json.dumps(rows))
+    if scenario == "bootstrap-failed":
+        (home / "fail").touch()
+    incomplete = run(outage)
+    assert any(u["kind"] == "repo" for u in incomplete["unreachable_sources"]), incomplete
+    assert 1001 not in [m["number"] for m in incomplete["new_merges"]]
+    assert (output / ".state/since.tsv").read_bytes() == baseline, scenario
+    assert "1001" not in (output / ".state/seen.tsv").read_text()
+    pages = [page for state, page in map(json.loads, requests.read_text().splitlines()) if state == "closed"]
+    assert pages == list(range(1, 3 if scenario == "bootstrap-failed" else 11)), pages
+    if scenario == "bootstrap-failed":
+        (home / "fail").unlink()
+        assert (output / ".state/seen.tsv").read_text() == ""
+    late["updated_at"] = stamp(retry_time - 60)
+    fixture.write_text(json.dumps(sorted(rows, key=lambda row: row["updated_at"], reverse=True)))
+    recovered = run(retry_time)
+    merge = next(m for m in recovered["new_merges"] if m["number"] == 1001)
+    assert merge["url"] == "https://example.invalid/pr/1001", merge
+    assert merge["sha"] == "bbbbbbbbbbbb", merge
+    assert (output / ".state/since.tsv").read_bytes() == baseline
+    assert any(u["kind"] == "repo" for u in recovered["unreachable_sources"])
+    assert run(retry_time + 1200)["new_merges"] == []
+    fixture.write_text(json.dumps([late]))
+    complete = run(retry_time + 2400)
+    assert not any(u["kind"] == "repo" for u in complete["unreachable_sources"])
+    assert (output / ".state/since.tsv").read_text() == f"example-org/example-repo\t{retry_time + 2100}\n"
+PYTEST
+  pass "capped and failed collection retain pending merges across outages and bootstrap"
+}
+
 
 test_owner_actions_are_explicit_and_age_from_wait_start() {
   write_fixtures 0
@@ -599,15 +677,35 @@ SH
 }
 
 test_killed_digest_releases_lock_while_summarizer_lives() {
-  python3 - "$SCRIPT" "$TMP_ROOT/crashed-summary" <<'PYTEST' || fail "killed digest left its run lock held by a child"
+  python3 - "$SCRIPT" "$TMP_ROOT/crashed-summary" <<'PYTEST' || fail "orphan summarizer blocked or corrupted its replacement"
 import os, pathlib, shlex, signal, subprocess, sys, time
 script, home = sys.argv[1], pathlib.Path(sys.argv[2])
 (home / "config").mkdir(parents=True)
 ready = home / "ready"
+release = home / "release"
+done = home / "done"
+review = home / "review"
+review.write_text("pending\n")
 helper = home / "summarize.py"
-helper.write_text('import os, pathlib, sys, time\npathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(300)\n')
+helper.write_text('''import os, pathlib, sys, time
+home = pathlib.Path(sys.argv[1])
+if sys.argv[2] == "replacement":
+    print("replacement summary", flush=True)
+else:
+    print("orphan started", flush=True)
+    (home / "ready").write_text(str(os.getpid()))
+    deadline = time.monotonic() + 90
+    while not (home / "release").exists():
+        if time.monotonic() >= deadline:
+            sys.exit(1)
+        time.sleep(0.05)
+    print("orphan finished", flush=True)
+    (home / "done").touch()
+''')
 config = home / "config/goal-digest"
-config.write_text("summarize_cmd = " + shlex.join([sys.executable, str(helper), str(ready)]) + "\n")
+def configure(mode):
+    config.write_text("review = Progress | " + str(review) + "\nsummarize_cmd = " + shlex.join([sys.executable, str(helper), str(home), mode]) + "\n")
+configure("orphan")
 env = dict(os.environ, FM_HOME=str(home))
 children = set()
 with (home / "first.log").open("w") as log:
@@ -630,10 +728,21 @@ with (home / "first.log").open("w") as log:
         first.kill()
         first.wait()
         os.kill(child, 0)
-        config.write_text("")
+        configure("replacement")
+        review.write_text("complete\n")
         retry = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=60)
         assert retry.returncode == 0, retry.stderr
+        assert "changed=yes" in retry.stdout, retry.stdout
         assert (home / "data/goal-digest/latest.json").is_file()
+        summary = home / "data/goal-digest/summary.txt"
+        assert summary.read_text() == "replacement summary\n"
+        os.kill(child, 0)
+        release.touch()
+        deadline = time.monotonic() + 10
+        while not done.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert done.exists(), "orphan never finished its delayed write"
+        assert summary.read_text() == "replacement summary\n", summary.read_text()
     finally:
         try:
             os.killpg(first.pid, signal.SIGKILL)
@@ -647,7 +756,7 @@ with (home / "first.log").open("w") as log:
         if first.poll() is None:
             first.wait()
 PYTEST
-  pass "killed digest releases the lock while its summarizer is still alive"
+  pass "killed digest releases its lock and its delayed summarizer cannot corrupt a replacement"
 }
 
-fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
+fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_incomplete_collection_retains_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
