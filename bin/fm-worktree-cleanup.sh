@@ -324,6 +324,9 @@ pr_rows() {
   command -v gh >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
   json=$(cd "$wt" && gh pr list --json number,state,headRefOid,url,headRepositoryOwner --head "$branch" --state all --limit 20 2>/dev/null) || return 1
+  # At the bound the list may be truncated with no flag: refuse to conclude
+  # no-PR / landed from it (caller reports the lookup failed, visibly).
+  [ "$(printf '%s' "$json" | jq 'if type == "array" then length else 0 end' 2>/dev/null)" -lt 20 ] || return 1
   rows=$(printf '%s' "$json" | jq -r '
     if type != "array" then
       error("pull request list is not an array")

@@ -332,7 +332,7 @@ JS
 }
 
 read_inventory() {
-  orca terminal list --json > "$WORK/terminals.json" 2>/dev/null || {
+  orca terminal list --json --limit 100000 > "$WORK/terminals.json" 2>/dev/null || {
     echo "error: orca terminal list failed; nothing was closed" >&2; return 1; }
   collect_owners > "$WORK/owners.tsv" || {
     echo "error: a home, task record, or secondmate registry could not be read; nothing was closed" >&2; return 1; }
@@ -416,7 +416,7 @@ if (mode === "terminals") {
   if (!mem || mem.ok === false || !mem.result || !Array.isArray(mem.result.worktrees)) {
     console.error("error: orca diagnostics memory returned no process sweep"); process.exit(1);
   }
-  if (data.result.truncated) console.error("warning: Orca truncated the terminal list; unlisted terminals are not judged");
+  if (data.result.truncated) { console.error("error: Orca truncated the terminal list; enumeration incomplete, nothing was closed"); process.exit(1); }
   const pidOf = new Map(), dup = new Set();
   for (const wt of mem.result.worktrees) for (const s of (wt && wt.sessions) || []) {
     if (!s || typeof s.sessionId !== "string") continue;
@@ -630,8 +630,9 @@ lane_now() {
 # current_title <handle>: the terminal's title from a fresh Orca listing; exit 1
 # when the listing is unreadable or no longer holds the terminal.
 current_title() {  # <handle>
-  orca terminal list --json 2>/dev/null | node -e '
+  orca terminal list --json --limit 100000 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (d && d.result && d.result.truncated) process.exit(1);
 const ts = d && d.ok !== false && d.result && Array.isArray(d.result.terminals) ? d.result.terminals : null;
 if (!ts) process.exit(1);
 const t = ts.find((x) => x && x.handle === process.argv[1]);
