@@ -225,6 +225,45 @@ SH
   pass "classify stat helpers resolve the kernel name once per process"
 }
 
+test_meta_out_variables_preserve_last_key_values() {
+  local script="$TMP_ROOT/meta-out-var.sh" cases="$TMP_ROOT/meta-out-var-cases"
+  mkdir -p "$cases"
+  printf '%s\n' 'repeated=first' 'repeated=last' 'empty=' 'equals=a=b=c' \
+    'prefix=short' 'prefix_more=long' 'spaced=  padded\value  ' > "$cases/values"
+  printf 'crlf=carriage\r\nbinary=\377\376\303\nfinal=unterminated' >> "$cases/values"
+  cat > "$script" <<'SH'
+. "$1/bin/fm-backend.sh"
+check_meta() {
+  local t_file=$1 t_key=$2 t_expected=$3 t_name t_want t_wrc t_grc
+  local line value meta key out
+  t_want=$(fm_meta_get "$t_file" "$t_key"); t_wrc=$?
+  [ "$t_wrc" = 0 ] && [ "$t_want" = "$t_expected" ] \
+    || printf 'metadata %q: output %q rc %s, expected %q rc 0\n' "$t_key" "$t_want" "$t_wrc" "$t_expected"
+  for t_name in line value meta key out; do
+    printf -v "$t_name" '%s' sentinel
+    fm_meta_get_into "$t_name" "$t_file" "$t_key"; t_grc=$?
+    [ "$t_grc" = 0 ] && [ "${!t_name}" = "$t_expected" ] \
+      && [ "$t_grc" = "$t_wrc" ] && [ "${!t_name}" = "$t_want" ] \
+      || printf 'metadata %q into %s: %q rc %s, expected %q rc 0, command %q rc %s\n' \
+        "$t_key" "$t_name" "${!t_name}" "$t_grc" "$t_expected" "$t_want" "$t_wrc"
+  done
+}
+check_meta "$2/missing" repeated ''
+check_meta "$2/values" missing ''
+check_meta "$2/values" repeated last
+check_meta "$2/values" empty ''
+check_meta "$2/values" equals a=b=c
+check_meta "$2/values" prefix short
+check_meta "$2/values" prefix_more long
+check_meta "$2/values" spaced '  padded\value  '
+check_meta "$2/values" final unterminated
+check_meta "$2/values" crlf $'carriage\r'
+check_meta "$2/values" binary $'\xff\xfe\xc3'
+SH
+  run_everywhere "metadata out-variables" "$script" "$cases"
+  pass "metadata readers preserve specified last-key bytes and status in every caller variable"
+}
+
 test_status_line_out_variables_match_command_substitution() {
   local script="$TMP_ROOT/out-var.sh" cases="$TMP_ROOT/out-var-cases"
   # NUL-separated so a line may end in newlines, which $(...) strips.
@@ -268,5 +307,6 @@ else
     test_recovery_marker_read_accepts_exactly_one_newline \
     test_window_to_task_matches_the_meta_pipeline \
     test_classify_stat_helpers_read_the_kernel_name_once \
+    test_meta_out_variables_preserve_last_key_values \
     test_status_line_out_variables_match_command_substitution
 fi

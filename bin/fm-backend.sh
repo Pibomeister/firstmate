@@ -582,14 +582,21 @@ fm_backend_required_tool_available() {  # <backend> <tool>
 # errors) if the file or key is absent. Mirrors the ad hoc `grep '^key=' |
 # tail -1 | cut -d= -f2-` snippet every fm-*.sh script used to repeat inline.
 fm_meta_get() {  # <meta-file> <key>
-  local meta=$1 key=$2 line value=''
-  [ -f "$meta" ] || return 0
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      "$key="*) value=${line#*=} ;;
-    esac
-  done < "$meta" 2>/dev/null || true
-  printf '%s' "$value"
+  local __fm_mg_value
+  fm_meta_get_into __fm_mg_value "$1" "$2"
+  printf '%s' "$__fm_mg_value"
+}
+
+fm_meta_get_into() {
+  local __fm_mgi_line __fm_mgi_value=''
+  if [ -f "$2" ]; then
+    while IFS= read -r __fm_mgi_line || [ -n "$__fm_mgi_line" ]; do
+      case "$__fm_mgi_line" in
+        "$3="*) __fm_mgi_value=${__fm_mgi_line#*=} ;;
+      esac
+    done < "$2" 2>/dev/null || true
+  fi
+  printf -v "$1" '%s' "$__fm_mgi_value"
 }
 
 # fm_backend_of_meta: the backend recorded in <meta-file>, defaulting to

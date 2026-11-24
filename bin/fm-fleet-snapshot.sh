@@ -344,26 +344,6 @@ path_present_json() {  # <contract-path> [<observed-path>]
     '{path:$path,present:$present}'
 }
 
-meta_value() {  # <meta-file> <key>
-  fm_meta_get "$1" "$2"
-}
-
-# Out-variable form of meta_value for the per-row reads, so a row reads its
-# metadata without a command-substitution subshell per key. It sets <out-var>
-# to the bytes meta_value prints: the LAST value of `key=`, or empty when the
-# file or key is absent, read the same way fm_meta_get (fm-backend.sh) reads it.
-meta_value_into() {  # <out-var> <meta-file> <key>
-  local __fm_mvi_line __fm_mvi_value=''
-  if [ -f "$2" ]; then
-    while IFS= read -r __fm_mvi_line || [ -n "$__fm_mvi_line" ]; do
-      case "$__fm_mvi_line" in
-        "$3="*) __fm_mvi_value=${__fm_mvi_line#*=} ;;
-      esac
-    done < "$2" 2>/dev/null || true
-  fi
-  printf -v "$1" '%s' "$__fm_mvi_value"
-}
-
 # Task id of a <dir>/<id>.meta path into <out-var>: the bytes
 # `basename <path> .meta` prints, without forking basename.
 snapshot_meta_id_into() {  # <out-var> <meta-path>
@@ -708,9 +688,9 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   local captured_meta=$1 id=$2 current_meta captured_gen current_gen captured_contents current_contents
   current_meta="$STATE/$id.meta"
   [ -f "$current_meta" ] || return 1
-  meta_value_into captured_gen "$captured_meta" spawn_gen
+  fm_meta_get_into captured_gen "$captured_meta" spawn_gen
   if [ -n "$captured_gen" ]; then
-    meta_value_into current_gen "$current_meta" spawn_gen
+    fm_meta_get_into current_gen "$current_meta" spawn_gen
     [ "$current_gen" = "$captured_gen" ]
   else
     # Legacy metadata has no generation token. Exact equality is the strongest
@@ -742,7 +722,7 @@ prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture
   local kind backend target endpoint_exists=null agent_alive=not_checked generation_current=1
-  meta_value_into remote_host "$meta" remote_host
+  fm_meta_get_into remote_host "$meta" remote_host
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
   endpoint_file="$SNAPSHOT_TASK_DIR/$id.endpoint"
   status_log="$STATE/$id.status"
@@ -763,7 +743,7 @@ prefetch_task_observations() {  # <meta> <id>
   elif [ "$generation_current" = 1 ]; then
     crew_state_json "$id" "$meta" "$status_capture" > "$current_file" &
     current_pid=$!
-    meta_value_into kind "$meta" kind
+    fm_meta_get_into kind "$meta" kind
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     if [ -n "$target" ]; then
@@ -862,31 +842,31 @@ task_row_json() {  # <captured-meta>
 
   snapshot_meta_id_into id "$meta"
   original_meta="$STATE/$id.meta"
-  meta_value_into kind "$meta" kind
+  fm_meta_get_into kind "$meta" kind
   [ -n "$kind" ] || kind=ship
-  meta_value_into harness "$meta" harness
-  meta_value_into mode "$meta" mode
-  meta_value_into yolo "$meta" yolo
-  meta_value_into project "$meta" project
-  meta_value_into worktree "$meta" worktree
-  meta_value_into home "$meta" home
-  meta_value_into projects "$meta" projects
-  meta_value_into spawn_gen "$meta" spawn_gen
-  meta_value_into branch "$meta" branch
-  meta_value_into remote_host "$meta" remote_host
-  meta_value_into remote_root "$meta" remote_root
+  fm_meta_get_into harness "$meta" harness
+  fm_meta_get_into mode "$meta" mode
+  fm_meta_get_into yolo "$meta" yolo
+  fm_meta_get_into project "$meta" project
+  fm_meta_get_into worktree "$meta" worktree
+  fm_meta_get_into home "$meta" home
+  fm_meta_get_into projects "$meta" projects
+  fm_meta_get_into spawn_gen "$meta" spawn_gen
+  fm_meta_get_into branch "$meta" branch
+  fm_meta_get_into remote_host "$meta" remote_host
+  fm_meta_get_into remote_root "$meta" remote_root
   if [ -n "$remote_host" ]; then
-    meta_value_into backend "$meta" remote_backend
+    fm_meta_get_into backend "$meta" remote_backend
     [ -n "$backend" ] || backend=unknown
-    meta_value_into target "$meta" remote_target
+    fm_meta_get_into target "$meta" remote_target
   else
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
   fi
   status_log="$SNAPSHOT_TASK_DIR/$id.status"
   report_path="$SNAPSHOT_TASK_DIR/$id.report"
-  meta_value_into pr "$meta" pr
-  meta_value_into pr_head "$meta" pr_head
+  fm_meta_get_into pr "$meta" pr
+  fm_meta_get_into pr_head "$meta" pr_head
   pr_source=meta
   if [ -z "$pr" ]; then
     pr_from_status=$(first_pr_url_in_file "$status_log" || true)
@@ -2118,9 +2098,9 @@ contribution_tasks_json() {
     if fm_merge_authority_resolve "$FM_HOME" "$STATE" "$meta" "$id"; then
       merge_authority=$FM_MERGE_AUTHORITY
     fi
-    meta_value_into kind "$meta" kind
-    meta_value_into pr "$meta" pr
-    meta_value_into pr_head "$meta" pr_head
+    fm_meta_get_into kind "$meta" kind
+    fm_meta_get_into pr "$meta" pr
+    fm_meta_get_into pr_head "$meta" pr_head
     jq -n --arg id "$id" --arg kind "$kind" \
       --arg url "$pr" --arg head "$pr_head" \
       --arg merge_authority "$merge_authority" '{id:$id,kind:$kind,pr:{url:$url,head:$head},merge_authority:$merge_authority}'
