@@ -1,0 +1,15 @@
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 200, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 5000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 5000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 5000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.read", "params": {"terminal": "term-captain", "limit": 80}}
+{"kind": "orca", "method": "terminal.read", "params": {"terminal": "term-captain", "limit": 5}}
+{"kind": "orca", "method": "terminal.list", "params": {"includeVisualLayouts": false}}
+{"kind": "orca", "method": "diagnostics.memory", "params": null}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 100000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 100000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 100000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 100000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "worktree.list", "params": {"limit": 100000}}
+{"kind": "orca", "method": "terminal.list", "params": {"limit": 100000, "includeVisualLayouts": false}}
+{"kind": "orca", "method": "worktree.list", "params": {"limit": 100000}}

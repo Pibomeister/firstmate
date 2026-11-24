@@ -1,0 +1,1267 @@
+$ orca terminal list --limit 200 --json
+exit=0
+{
+  "id": "f0e57d69-3dba-4190-bd09-cfc56ff81f03",
+  "ok": true,
+  "result": {
+    "terminals": [
+      {
+        "handle": "term-0",
+        "title": "T0",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-1",
+        "title": "T1",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-2",
+        "title": "T2",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-3",
+        "title": "T3",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-4",
+        "title": "T4",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-5",
+        "title": "T5",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-6",
+        "title": "T6",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-7",
+        "title": "T7",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-8",
+        "title": "T8",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-9",
+        "title": "T9",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-10",
+        "title": "T10",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-11",
+        "title": "T11",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-12",
+        "title": "T12",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-13",
+        "title": "T13",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-14",
+        "title": "T14",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-15",
+        "title": "T15",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-16",
+        "title": "T16",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-17",
+        "title": "T17",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-18",
+        "title": "T18",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-19",
+        "title": "T19",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-20",
+        "title": "T20",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-21",
+        "title": "T21",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-22",
+        "title": "T22",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-23",
+        "title": "T23",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-24",
+        "title": "T24",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-25",
+        "title": "T25",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-26",
+        "title": "T26",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-27",
+        "title": "T27",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-28",
+        "title": "T28",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-29",
+        "title": "T29",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-30",
+        "title": "T30",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-31",
+        "title": "T31",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-32",
+        "title": "T32",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-33",
+        "title": "T33",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-34",
+        "title": "T34",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-35",
+        "title": "T35",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-36",
+        "title": "T36",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-37",
+        "title": "T37",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-38",
+        "title": "T38",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-39",
+        "title": "T39",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-40",
+        "title": "T40",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-41",
+        "title": "T41",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-42",
+        "title": "T42",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-43",
+        "title": "T43",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-44",
+        "title": "T44",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-45",
+        "title": "T45",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-46",
+        "title": "T46",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-47",
+        "title": "T47",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-48",
+        "title": "T48",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-49",
+        "title": "T49",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-50",
+        "title": "T50",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-51",
+        "title": "T51",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-52",
+        "title": "T52",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-53",
+        "title": "T53",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-54",
+        "title": "T54",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-55",
+        "title": "T55",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-56",
+        "title": "T56",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-57",
+        "title": "T57",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-58",
+        "title": "T58",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-59",
+        "title": "T59",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-60",
+        "title": "T60",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-61",
+        "title": "T61",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-62",
+        "title": "T62",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-63",
+        "title": "T63",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-64",
+        "title": "T64",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-65",
+        "title": "T65",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-66",
+        "title": "T66",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-67",
+        "title": "T67",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-68",
+        "title": "T68",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-69",
+        "title": "T69",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-70",
+        "title": "T70",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-71",
+        "title": "T71",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-72",
+        "title": "T72",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-73",
+        "title": "T73",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-74",
+        "title": "T74",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-75",
+        "title": "T75",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-76",
+        "title": "T76",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-77",
+        "title": "T77",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-78",
+        "title": "T78",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-79",
+        "title": "T79",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-80",
+        "title": "T80",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-81",
+        "title": "T81",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-82",
+        "title": "T82",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-83",
+        "title": "T83",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-84",
+        "title": "T84",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-85",
+        "title": "T85",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-86",
+        "title": "T86",
+        "lastOutputAt": 1795553184373,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-87",
+        "title": "T87",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-88",
+        "title": "T88",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-89",
+        "title": "T89",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-90",
+        "title": "T90",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-91",
+        "title": "T91",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-92",
+        "title": "T92",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-93",
+        "title": "T93",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-94",
+        "title": "T94",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-95",
+        "title": "T95",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-96",
+        "title": "T96",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-97",
+        "title": "T97",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-98",
+        "title": "T98",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-99",
+        "title": "T99",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-100",
+        "title": "T100",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-101",
+        "title": "T101",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-102",
+        "title": "T102",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-103",
+        "title": "T103",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-104",
+        "title": "T104",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-105",
+        "title": "T105",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-106",
+        "title": "T106",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-107",
+        "title": "T107",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-108",
+        "title": "T108",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-109",
+        "title": "T109",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-110",
+        "title": "T110",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-111",
+        "title": "T111",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-112",
+        "title": "T112",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-113",
+        "title": "T113",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-114",
+        "title": "T114",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-115",
+        "title": "T115",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-116",
+        "title": "T116",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-117",
+        "title": "T117",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-118",
+        "title": "T118",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-119",
+        "title": "T119",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-120",
+        "title": "T120",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-121",
+        "title": "T121",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-122",
+        "title": "T122",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-123",
+        "title": "T123",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-124",
+        "title": "T124",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-125",
+        "title": "T125",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-126",
+        "title": "T126",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-127",
+        "title": "T127",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-128",
+        "title": "T128",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-129",
+        "title": "T129",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-130",
+        "title": "T130",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-131",
+        "title": "T131",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-132",
+        "title": "T132",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-133",
+        "title": "T133",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-134",
+        "title": "T134",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-135",
+        "title": "T135",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-136",
+        "title": "T136",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-137",
+        "title": "T137",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-138",
+        "title": "T138",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-139",
+        "title": "T139",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-140",
+        "title": "T140",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-141",
+        "title": "T141",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-142",
+        "title": "T142",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-143",
+        "title": "T143",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-144",
+        "title": "T144",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-145",
+        "title": "T145",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-146",
+        "title": "T146",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-147",
+        "title": "T147",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-148",
+        "title": "T148",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-149",
+        "title": "T149",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-150",
+        "title": "T150",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-151",
+        "title": "T151",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-152",
+        "title": "T152",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-153",
+        "title": "T153",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-154",
+        "title": "T154",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-155",
+        "title": "T155",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-156",
+        "title": "T156",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-157",
+        "title": "T157",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-158",
+        "title": "T158",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-159",
+        "title": "T159",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-160",
+        "title": "T160",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-161",
+        "title": "T161",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-162",
+        "title": "T162",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-163",
+        "title": "T163",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-164",
+        "title": "T164",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-165",
+        "title": "T165",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-166",
+        "title": "T166",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-167",
+        "title": "T167",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-168",
+        "title": "T168",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-169",
+        "title": "T169",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-170",
+        "title": "T170",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-171",
+        "title": "T171",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-172",
+        "title": "T172",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-173",
+        "title": "T173",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-174",
+        "title": "T174",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-175",
+        "title": "T175",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-176",
+        "title": "T176",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-177",
+        "title": "T177",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-178",
+        "title": "T178",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-179",
+        "title": "T179",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-180",
+        "title": "T180",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-181",
+        "title": "T181",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-182",
+        "title": "T182",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-183",
+        "title": "T183",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-184",
+        "title": "T184",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-185",
+        "title": "T185",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-186",
+        "title": "T186",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-187",
+        "title": "T187",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-188",
+        "title": "T188",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-189",
+        "title": "T189",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-190",
+        "title": "T190",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-191",
+        "title": "T191",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-192",
+        "title": "T192",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-193",
+        "title": "T193",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-194",
+        "title": "T194",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-195",
+        "title": "T195",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-196",
+        "title": "T196",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-197",
+        "title": "T197",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-198",
+        "title": "T198",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      },
+      {
+        "handle": "term-199",
+        "title": "T199",
+        "lastOutputAt": 1795553184374,
+        "worktreePath": "{run-worktree}/.v/foreign"
+      }
+    ],
+    "truncated": true,
+    "totalCount": 211
+  },
+  "_meta": {
+    "runtimeId": "enum-lab"
+  }
+}
+
+$ bash bin/fm-captain-nudge.sh once --config {run-worktree}/.v/nudge/config.json
+exit=0
+{"ts":"2026-11-24T14:46:29-06:00","epoch":1795553189,"host":"local-enum-lab","captain":"alpha","owner":"firstmate","event":"skip_enumeration_incomplete","severity":"medium","reason":"terminal list truncated; captain pane presence unknown, not missing","idle_min":0,"open_work":"none","should_send":false,"dry_run":true}
+
+{"ts": "2026-11-24T14:46:29-06:00", "host": "local-enum-lab", "captain": "alpha", "event": "skip_enumeration_incomplete", "severity": "medium", "owner": "firstmate", "reason": "terminal list truncated; captain pane presence unknown, not missing", "idle_min": 0, "open_work": "none", "epoch": 1795553189, "should_send": false, "dry_run": true}
+$ bash bin/fm-captain-nudge.sh once --config {run-worktree}/.v/nudge/config.json
+exit=0
+{"ts":"2026-11-24T14:46:34-06:00","epoch":1795553194,"host":"local-enum-lab","captain":"alpha","owner":"firstmate","event":"skip_enumeration_incomplete","severity":"medium","reason":"terminal list truncated; captain pane presence unknown, not missing","idle_min":0,"open_work":"none","should_send":false,"dry_run":true}
+
+{"ts": "2026-11-24T14:46:34-06:00", "host": "local-enum-lab", "captain": "alpha", "event": "skip_enumeration_incomplete", "severity": "medium", "owner": "firstmate", "reason": "terminal list truncated; captain pane presence unknown, not missing", "idle_min": 0, "open_work": "none", "epoch": 1795553194, "should_send": false, "dry_run": true}
+$ bash bin/fm-captain-nudge.sh once --config {run-worktree}/.v/nudge/config.json
+exit=0
+
+
+{"ts": "2026-11-24T14:46:47-06:00", "host": "local-enum-lab", "captain": "alpha", "event": "skip_not_idle", "severity": "info", "owner": "firstmate", "reason": "idle 0m below threshold 20m", "idle_min": 0, "open_work": "none", "epoch": 1795553207, "should_send": false, "dry_run": true, "target": "term-captain", "backend": "orca"}
+SCENARIO PASS: local captain-nudge refuses truncated and total-mismatch inventories; complete 211-row list finds captain
+$ bash bin/fm-terminal-reap.sh --min-age 0 --no-browsers
+exit=1
+
+error: Orca truncated the terminal list; enumeration incomplete, nothing was closed
+SCENARIO PASS: local terminal-reap visibly refuses truncated inventory and closes nothing
+$ git init -q -b main {run-worktree}/.v/lane-home/repo
+exit=0
+
+
+$ git -C {run-worktree}/.v/lane-home/repo -c user.name=Lab -c user.email=lab@example.invalid commit -qm base --allow-empty
+exit=0
+
+
+$ bash bin/fm-lane-register.sh enum-lane --repo {run-worktree}/.v/lane-home/repo --terminal term-lane
+exit=0
+registered enum-lane repo={run-worktree}/.v/lane-home/repo terminal=term-lane worktree=-
+
+$ bash bin/fm-worktree-cleanup.sh
+exit=0
+worktree-cleanup: report lane terminal term-lane inventory is unreadable or incomplete
+
+worktree-cleanup: report lane terminal term-lane inventory is unreadable or incomplete
+
+$ bash bin/fm-worktree-cleanup.sh scan
+exit=0
+
+
+worktree-cleanup: report lane terminal term-lane inventory is unreadable or incomplete
+worktree-cleanup: report lane terminal term-lane inventory is unreadable or incomplete
+
+$ bash bin/fm-worktree-cleanup.sh
+exit=0
+worktree-cleanup: forget lane enum-lane no worktree was registered
+
+SCENARIO PASS: local cleanup reports incomplete terminal inventory in direct and scan logs, preserves lane, then retires it only with complete absence proof

@@ -1,0 +1,24 @@
+
+TEST_EXIT_STATUS=-9
+ repository is refused with no gh calls
+ok - --repo accepts owner/name only
+ok - a new issue gets both labels and the full body
+ok - existing labels are not recreated
+ok - both label probes refuse visibly when the requested label is beyond the bound
+ok - a new issue without evidence says none was supplied
+ok - dedupe comments with the new evidence on an open failure-class issue
+ok - a comment without evidence says none was supplied
+ok - secret-shaped input is refused with no gh calls
+ok - ordinary log lines pass the secret filter
+ok - gate-project filing allows the registered project repository only with --for-gate-project
+ok - gate-project filing allows the origin remote only
+ok - gate-project lookup cannot leave the registered project's own clone
+ok - unset FM_HOME defaults to the checkout
+ok - a user role is refused on firstmate with no gh calls
+ok - a maintainer role files on firstmate
+ok - a maintainer scope on a fork does not authorize firstmate
+ok - other approved repositories do not need the firstmate grant
+ok - a flag without a value is a usage error
+FM_TEST_COMPLETE
+
+TEST_EXIT_STATUS=0

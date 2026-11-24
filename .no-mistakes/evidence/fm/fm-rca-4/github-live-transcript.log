@@ -1,0 +1,102 @@
+$ gh label list --repo Pibomeister/firstmate --limit 500 --json name --jq length
+exit=0
+500
+
+$ git init -q {run-worktree}/.v/label-home/code
+exit=0
+
+
+$ git -C {run-worktree}/.v/label-home/code remote add origin https://github.com/Pibomeister/firstmate.git
+exit=0
+
+
+$ bash bin/fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class demo --title Synthetic enumeration lab
+exit=1
+
+fm-self-heal-issue: label enumeration incomplete; presence of self-heal is unknown
+$ bash bin/fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class demo --title Synthetic enumeration lab
+exit=1
+
+fm-self-heal-issue: label enumeration incomplete; presence of failure-class:demo is unknown
+SCENARIO PASS: actual gh pagination reaches 500 labels; self-heal visibly refuses labels past the bound without mutations
+$ git init -q -b main {run-worktree}/.v/reconcile-home/projects/demo
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo add change.txt
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo -c user.name=Lab -c user.email=lab@example.invalid commit -qm base
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo remote add origin https://github.com/Pibomeister/firstmate.git
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo update-ref refs/remotes/origin/main HEAD
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo checkout -qb fm/task
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo add change.txt
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo -c user.name=Lab -c user.email=lab@example.invalid commit -qm task
+exit=0
+
+
+$ git -C {run-worktree}/.v/reconcile-home/projects/demo rev-parse HEAD
+exit=0
+2b69fc1fe944dd0fcee6e93e3f76c7dcc5aa97f0
+
+$ bash bin/fm-unpushed-reconcile.sh scan
+exit=0
+UNPUSHED: project={run-worktree}/.v/reconcile-home/projects/demo branch=fm/task head=2b69fc1fe944dd0fcee6e93e3f76c7dcc5aa97f0 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: branch=fm/task ledger=missing pr=none merged=unknown (forge read failed); reconcile the ledger and resume the owning task or escalate its blocker
+
+$ bash bin/fm-unpushed-reconcile.sh scan
+exit=0
+
+
+SCENARIO PASS: actual gh-axi/gh refuse closed-PR page with matching merged head at row 101; complete exact-head page proves landing
+$ git init -q -b main {run-worktree}/.v/prcleanup-home/repo
+exit=0
+
+
+$ git -C {run-worktree}/.v/prcleanup-home/repo -c user.name=Lab -c user.email=lab@example.invalid commit -qm base --allow-empty
+exit=0
+
+
+$ git -C {run-worktree}/.v/prcleanup-home/repo remote add origin https://github.com/Pibomeister/firstmate.git
+exit=0
+
+
+$ git -C {run-worktree}/.v/prcleanup-home/repo worktree add -qb feature {run-worktree}/.v/prcleanup-home/linked
+exit=0
+
+
+$ git -C {run-worktree}/.v/prcleanup-home/repo rev-parse HEAD
+exit=0
+c6b73668e5e0f3ef5217dd11721be8de0cabb3c8
+
+$ bash bin/fm-worktree-cleanup.sh --dry-run {run-worktree}/.v/prcleanup-home/repo
+exit=0
+worktree-cleanup: report {run-worktree}/.v/prcleanup-home/linked pull request lookup failed
+worktree-cleanup: skip {run-worktree}/.v/prcleanup-home/repo main checkout
+
+$ bash bin/fm-worktree-cleanup.sh --dry-run {run-worktree}/.v/prcleanup-home/repo
+exit=0
+worktree-cleanup: dry-run {run-worktree}/.v/prcleanup-home/linked pull request MERGED https://github.com/Pibomeister/firstmate/pull/1
+worktree-cleanup: skip {run-worktree}/.v/prcleanup-home/repo main checkout
+
+SCENARIO PASS: actual gh 20-row PR list cannot authorize cleanup; complete merged-PR control reaches dry-run removal

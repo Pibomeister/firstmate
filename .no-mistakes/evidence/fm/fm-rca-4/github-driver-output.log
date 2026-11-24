@@ -1,0 +1,21 @@
+$ gh label list --repo Pibomeister/firstmate --limit 500 --json name --jq length
+exit=0
+500
+
+$ git init -q {run-worktree}/.v/label-home/code
+exit=0
+
+
+$ git -C {run-worktree}/.v/label-home/code remote add origin https://github.com/Pibomeister/firstmate.git
+exit=0
+
+
+$ bash bin/fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class demo --title Synthetic enumeration lab
+exit=1
+
+fm-self-heal-issue: label enumeration incomplete; presence of self-heal is unknown
+$ bash bin/fm-self-heal-issue.sh --repo Pibomeister/firstmate --failure-class demo --title Synthetic enumeration lab
+exit=1
+
+fm-self-heal-issue: label enumeration incomplete; presence of failure-class:demo is unknown
+SCENARIO PASS: actual gh pagination reaches 500 labels; self-heal visibly refuses labels past the bound without mutations

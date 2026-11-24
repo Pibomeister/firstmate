@@ -1,0 +1,19 @@
+{
+  "revision": "512c61467694aa50f49e897fb05fa00855029c86",
+  "targeted_suites": {
+    "fm-enumeration-completeness": 0,
+    "fm-captain-nudge": 0,
+    "fm-terminal-reap": 0,
+    "fm-self-heal-issue": 0,
+    "fm-unpushed-reconcile": 0,
+    "fm-worktree-cleanup": 0
+  },
+  "initial_cleanup_parallel_exit": 1,
+  "isolated_watcher_exit": 0,
+  "serial_cleanup_exit": 0,
+  "base_overflow_regression_exit": 1,
+  "local_live_driver_exit": 0,
+  "scope": "Actual Firstmate and installed Orca/gh/gh-axi CLIs against worktree-local protocol emulators with synthetic inventories; no operator fleet or GitHub tenant validation.",
+  "source_changes": false,
+  "disposable_processes_remaining": 0
+}

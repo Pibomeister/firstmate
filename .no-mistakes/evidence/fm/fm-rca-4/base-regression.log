@@ -1,0 +1,4 @@
+not ok - truncated list (total 211, captain past bound 200) must refuse visibly, not report pane missing (expected 'skip_enumeration_incomplete', got 'skip_pane_missing')
+
+BASE_REVISION=d3d97c97d7bcd7dac112f0167186502a11373152
+EXIT_STATUS=1

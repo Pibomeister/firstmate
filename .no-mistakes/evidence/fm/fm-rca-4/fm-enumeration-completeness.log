@@ -1,0 +1,7 @@
+
+TEST_EXIT_STATUS=-9
+captain-nudge refuses on truncated terminal list
+ok - fm-enumeration: captain-nudge finds terminal past the old bound on a complete list
+ok - fm-enumeration: terminal-reap refuses on truncated terminal list
+
+TEST_EXIT_STATUS=0
