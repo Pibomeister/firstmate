@@ -1,0 +1,7 @@
+case=baseline-no-actor
+revision=28234b635acdd7689752cadaa6280617cb6305cc (baseline script from d3d97c97 where stated)
+FM_SUPERVISION_ACTOR=UNSET
+PI_CODING_AGENT=UNSET
+not ok - teardown exited non-zero with a valid tasktmp
+exit_status=1
+expected_status=1

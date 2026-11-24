@@ -1,0 +1,5 @@
+Targeted test driver exited 0.
+Live CLI driver exited 0.
+Private tmux server PID 70022 and lab sleep PID 70418 both absent.
+Both disposable lab homes and baseline script removed.
+Git worktree clean.

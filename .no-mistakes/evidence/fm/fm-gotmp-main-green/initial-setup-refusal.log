@@ -1,0 +1,22 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gotmp-live-ssvkd1sy
+{run-worktree}/.gotmp-live-ssvkd1sy
+exit_status=0
+CASE actor=UNSET; PI_CODING_AGENT=UNSET; tasktmp=populated; metadata_exists=True; tasktmp_exists=True
+$ bash bin/fm-teardown.sh gotmp-live-0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.gotmp-live-ssvkd1sy
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 8s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+error: tmux window absent:fm-gotmp-live-0 could not be read after its close, so whether it survived is unknown
+error: the tmux endpoint absent:fm-gotmp-live-0 for gotmp-live-0 could not be closed, so it may still be live.
+error: stopping this cleanup without removing the task's records, so the record naming absent:fm-gotmp-live-0 is still here to reconcile from.
+error: that retention is not durable across a session start: if this task carries a backlog transition, the next session replays its pending close and removes the retained record, so reconcile the surviving endpoint yourself rather than trusting the retention.
+error: rerun teardown once the close can succeed, or rerun with --force to discard this task's records deliberately.
+exit_status=1
+AFTER metadata_exists=True; tasktmp_exists=True; unrelated_content=preserve
+Disposable lab removed=True

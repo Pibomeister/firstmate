@@ -1,0 +1,9 @@
+case=target-main-actor
+revision=28234b635acdd7689752cadaa6280617cb6305cc (baseline script from d3d97c97 where stated)
+FM_SUPERVISION_ACTOR=main
+PI_CODING_AGENT=UNSET
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+exit_status=0
+expected_status=0

@@ -1,0 +1,56 @@
+$ bash bin/fm-lab-home.sh create {run-worktree}/.gotmp-live-enh4nhod
+{run-worktree}/.gotmp-live-enh4nhod
+exit_status=0
+$ bash bin/fm-lab-home.sh tmux-dir {run-worktree}/.gotmp-live-enh4nhod
+/tmp/fml.OJWByV
+exit_status=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gotmp-live-enh4nhod new-session -d -s fm-lab-gotmp -x 100 -y 30 sleep 900
+exit_status=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gotmp-live-enh4nhod display-message -p -t fm-lab-gotmp #{socket_path},#{pid},#{session_id}
+/tmp/fml.OJWByV/tmux-501/default,70022,$0
+exit_status=0
+CASE actor=UNSET; PI_CODING_AGENT=UNSET; tasktmp=populated; metadata_exists=True; tasktmp_exists=True
+$ bash bin/fm-teardown.sh gotmp-live-0
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.gotmp-live-enh4nhod
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 8s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown gotmp-live-0 complete (window fm-lab-gotmp:fm-gotmp-live-0, worktree {run-worktree}/.gotmp-live-enh4nhod/nonexistent-worktree-0)
+Backlog: gotmp-live-0 just finished (config/backlog-backend selects manual editing). Update {run-worktree}/.gotmp-live-enh4nhod/data/backlog.md - move gotmp-live-0 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit_status=0
+AFTER metadata_exists=False; tasktmp_exists=False; unrelated_content=preserve
+CASE actor=UNSET; PI_CODING_AGENT=UNSET; tasktmp=absent-field; metadata_exists=True; tasktmp_exists=False
+$ bash bin/fm-teardown.sh gotmp-live-1
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.gotmp-live-enh4nhod
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 90s) - full banner already printed this episode.
+teardown gotmp-live-1 complete (window fm-lab-gotmp:fm-gotmp-live-1, worktree {run-worktree}/.gotmp-live-enh4nhod/nonexistent-worktree-1)
+Backlog: gotmp-live-1 just finished (config/backlog-backend selects manual editing). Update {run-worktree}/.gotmp-live-enh4nhod/data/backlog.md - move gotmp-live-1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit_status=0
+AFTER metadata_exists=False; tasktmp_exists=False; unrelated_content=preserve
+CASE actor=UNSET; PI_CODING_AGENT=UNSET; tasktmp=missing-dir; metadata_exists=True; tasktmp_exists=False
+$ bash bin/fm-teardown.sh gotmp-live-2
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.gotmp-live-enh4nhod
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 170s) - full banner already printed this episode.
+teardown gotmp-live-2 complete (window fm-lab-gotmp:fm-gotmp-live-2, worktree {run-worktree}/.gotmp-live-enh4nhod/nonexistent-worktree-2)
+Backlog: gotmp-live-2 just finished (config/backlog-backend selects manual editing). Update {run-worktree}/.gotmp-live-enh4nhod/data/backlog.md - move gotmp-live-2 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit_status=0
+AFTER metadata_exists=False; tasktmp_exists=False; unrelated_content=preserve
+CASE actor=main; PI_CODING_AGENT=UNSET; tasktmp=populated; metadata_exists=True; tasktmp_exists=True
+$ bash bin/fm-teardown.sh gotmp-live-3
+fm-gate-refuse: gate agent lifecycle permitted only against lab home {run-worktree}/.gotmp-live-enh4nhod
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 236s) - full banner already printed this episode.
+teardown gotmp-live-3 complete (window fm-lab-gotmp:fm-gotmp-live-3, worktree {run-worktree}/.gotmp-live-enh4nhod/nonexistent-worktree-3)
+Backlog: gotmp-live-3 just finished (config/backlog-backend selects manual editing). Update {run-worktree}/.gotmp-live-enh4nhod/data/backlog.md - move gotmp-live-3 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+exit_status=0
+AFTER metadata_exists=False; tasktmp_exists=False; unrelated_content=preserve
+All four local CLI filesystem postconditions satisfied; real helpers and tmux backend, no stubs.
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.gotmp-live-enh4nhod kill-server
+exit_status=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.gotmp-live-enh4nhod
+exit_status=0
+Disposable lab removed=True
