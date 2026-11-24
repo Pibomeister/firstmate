@@ -608,6 +608,15 @@ SH
   assert_not_contains "$waiting" '    - M3:' "a default-date receipt was lost across midnight: $waiting"
   assert_not_contains "$waiting" '    - local:' "the inbox receipt did not close the local row: $waiting"
   assert_not_contains "$waiting" '(nothing)' "unclosed postmortems left waiting on you empty"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8,30).timestamp()))')
+  contract_in "$dir" enter --words 'keep watching the fleet' >/dev/null 2>&1 || fail "could not start the next away window"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,9).timestamp()))')
+  out=$(run_return "$dir" begin) || fail "the second morning return did not complete: $out"
+  waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
+  assert_contains "$waiting" '    - Hetzner: 2026-11-24: no artifact receipt recorded' "new away window hid the missing machine"
+  assert_contains "$waiting" '    - Studio: 2026-11-24: artifact hash mismatch' "new away window hid the bad hash"
+  assert_not_contains "$waiting" '    - M3:' "second return reopened a verified machine"
+  assert_not_contains "$waiting" '    - local:' "second return lost the inbox receipt"
   pass "the return collects receipts across midnight and names missing and bad-hash machines at 07:45"
 )
 

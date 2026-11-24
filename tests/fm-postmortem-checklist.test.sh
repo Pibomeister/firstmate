@@ -35,6 +35,30 @@ seed_artifact() {  # <home> <machine> -> prints the artifact path
   printf '%s\n' "$path"
 }
 
+install_clock() {
+  local h=$1
+  export POSTMORTEM_REAL_DATE
+  POSTMORTEM_REAL_DATE=$(command -v date)
+  mkdir -p "$h/fakebin"
+  cat > "$h/fakebin/date" <<'SH'
+#!/bin/bash
+case "$*" in
+  +%s) printf '%s\n' "$POSTMORTEM_TEST_EPOCH" ;;
+  +%F) python3 -c 'import datetime, os; print(datetime.datetime.fromtimestamp(int(os.environ["POSTMORTEM_TEST_EPOCH"])).date())' ;;
+  *) exec "$POSTMORTEM_REAL_DATE" "$@" ;;
+esac
+SH
+  chmod +x "$h/fakebin/date"
+  export PATH="$h/fakebin:$PATH" POSTMORTEM_TEST_EPOCH
+}
+
+inbox_receipt() {
+  local h=$1 epoch=$2 suffix=$3 directory=$4 machine=$5 path=$6 hash=$7
+  mkdir -p "$h/state/inbox/$directory"
+  printf 'id=%s-%s\n--\npostmortem-receipt\t%s\t%s\t%s\t%s\n' \
+    "$epoch" "$suffix" "$NIGHT" "$machine" "$path" "$hash" > "$h/state/inbox/$directory/$epoch-$suffix.note"
+}
+
 test_missing_machine_is_named_open_and_bad_hash_stays_open() {
   local h out rc artifact
   h=$(make_home missing)
@@ -213,16 +237,22 @@ SH
   pass "missing or failing SHA tools keep every affected machine named and open"
 }
 
-test_collection_creates_each_due_morning_and_reads_inbox_receipts() {
-  local h out machine artifact hash since until
+test_collection_creates_each_due_morning_and_reads_inbox_receipts() (
+  local h out machine artifact hash since now rc
   h=$(make_home collection)
+  install_clock "$h"
   since=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,22,20).timestamp()))')
-  until=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,7,45).timestamp()))')
-  mkdir -p "$h/state/inbox/handled"
+  now=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,7,45).timestamp()))')
+  POSTMORTEM_TEST_EPOCH=$((now - 1))
   artifact=$(seed_artifact "$h" M3)
   hash=$(sha_of "$artifact")
-  printf 'id=%s-m3\n--\npostmortem-receipt\t2026-11-24\tM3\t%s\t%s\n' "$until" "$artifact" "$hash" > "$h/state/inbox/handled/$until-m3.note"
-  out=$(checklist "$h" collect --since "$since" --until "$until") || fail "collection failed: $out"
+  inbox_receipt "$h" "$POSTMORTEM_TEST_EPOCH" m3 handled M3 "$artifact" "$hash"
+  out=$(checklist "$h" collect --since "$since") || fail "early collection failed"
+  assert_not_contains "$out" '2026-11-24:' "collection opened a morning before 07:45"
+  if checklist "$h" check --night "$NIGHT" >/dev/null 2>&1; then rc=0; else rc=$?; fi
+  assert_equals 2 "$rc" "early collection created a future checklist"
+  POSTMORTEM_TEST_EPOCH=$now
+  out=$(checklist "$h" collect --since "$since") || fail "collection failed: $out"
   for machine in M3 Studio Hetzner local; do
     assert_contains "$out" "$machine"$'\topen\t2026-11-23: no artifact receipt recorded' "first morning hid $machine"
   done
@@ -230,14 +260,116 @@ test_collection_creates_each_due_morning_and_reads_inbox_receipts() {
   assert_not_contains "$out" $'M3\topen\t2026-11-24:' "handled inbox receipt was ignored"
   out=$(checklist "$h" open --night 2026-11-24) || fail "open failed"
   assert_not_contains "$out" $'M3\topen' "open disagreed with collection about receipt"
-  out=$(checklist "$h" collect --since "$since" --until "$((until - 1))") || fail "early collection failed"
-  assert_not_contains "$out" '2026-11-24:' "collection opened a morning before 07:45"
+  if out=$(checklist "$h" collect --until "$now" 2>&1); then rc=0; else rc=$?; fi
+  assert_equals 2 "$rc" "collection accepted a historical clock override"
   pass "collection creates every due morning and consumes durable inbox receipts"
-}
+)
+
+test_open_machines_survive_new_away_windows_and_later_mornings() (
+  local h out artifact machine since
+  h=$(make_home retained)
+  install_clock "$h"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+  for machine in M3 Studio local; do
+    artifact=$(seed_artifact "$h" "$machine")
+    checklist "$h" receipt --machine "$machine" --path "$artifact" --hash "$(sha_of "$artifact")" >/dev/null || fail "could not record $machine"
+  done
+  out=$(checklist "$h" collect) || fail "first return failed"
+  assert_contains "$out" $'Hetzner\topen\t2026-11-24:' "first return hid the missing machine"
+  since=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8,30).timestamp()))')
+  POSTMORTEM_TEST_EPOCH=$((since + 1800))
+  out=$(checklist "$h" collect --since "$since") || fail "second return failed"
+  assert_contains "$out" $'Hetzner\topen\t2026-11-24:' "new away window hid an open machine"
+  assert_equals 1 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "second return duplicated or reopened rows"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,25,9).timestamp()))')
+  since=$((POSTMORTEM_TEST_EPOCH - 1800))
+  out=$(checklist "$h" collect --since "$since") || fail "next morning failed"
+  assert_contains "$out" $'Hetzner\topen\t2026-11-24:' "next morning hid an unresolved checklist"
+  assert_contains "$out" $'M3\topen\t2026-11-25:' "late away entry hid the current morning"
+  artifact=$(seed_artifact "$h" Hetzner)
+  checklist "$h" receipt --machine Hetzner --path "$artifact" --hash "$(sha_of "$artifact")" --night "$NIGHT" >/dev/null || fail "could not close old row"
+  out=$(checklist "$h" collect --since "$since") || fail "collection after closure failed"
+  assert_not_contains "$out" '2026-11-24:' "verified old checklist stayed open"
+  pass "unresolved machines remain visible across away windows and mornings until verified"
+)
+
+test_receipt_conflicts_do_not_depend_on_scan_order() (
+  local case_name h out artifact hash bad epoch rc receipt_hash
+  epoch=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+  bad=0000000000000000000000000000000000000000000000000000000000000000
+  for case_name in pending-za pending-az handled-good handled-bad ledger-good ledger-bad path; do
+    h=$(make_home "conflict-$case_name")
+    install_clock "$h"
+    POSTMORTEM_TEST_EPOCH=$epoch
+    artifact=$(seed_artifact "$h" M3)
+    hash=$(sha_of "$artifact")
+    checklist "$h" start >/dev/null || fail "could not start checklist"
+    case "$case_name" in
+      pending-az)
+        inbox_receipt "$h" "$epoch" a '' M3 "$artifact" "$hash"
+        inbox_receipt "$h" "$epoch" z '' M3 "$artifact" "$bad" ;;
+      pending-za)
+        inbox_receipt "$h" "$epoch" z '' M3 "$artifact" "$hash"
+        inbox_receipt "$h" "$epoch" a '' M3 "$artifact" "$bad" ;;
+      handled-good)
+        inbox_receipt "$h" "$epoch" good handled M3 "$artifact" "$hash"
+        inbox_receipt "$h" "$epoch" bad '' M3 "$artifact" "$bad" ;;
+      handled-bad)
+        inbox_receipt "$h" "$epoch" good '' M3 "$artifact" "$hash"
+        inbox_receipt "$h" "$epoch" bad handled M3 "$artifact" "$bad" ;;
+      ledger-good)
+        checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash" >/dev/null || fail "ledger receipt failed"
+        inbox_receipt "$h" "$epoch" bad '' M3 "$artifact" "$bad" ;;
+      ledger-bad)
+        checklist "$h" receipt --machine M3 --path "$artifact" --hash "$bad" >/dev/null || fail "ledger receipt failed"
+        inbox_receipt "$h" "$epoch" good '' M3 "$artifact" "$hash" ;;
+      path)
+        cp "$artifact" "$h/artifacts/other.md"
+        inbox_receipt "$h" "$epoch" first '' M3 "$artifact" "$hash"
+        inbox_receipt "$h" "$epoch" second '' M3 "$h/artifacts/other.md" "$hash" ;;
+    esac
+    if out=$(checklist "$h" check); then rc=0; else rc=$?; fi
+    assert_equals 1 "$rc" "$case_name conflict reported complete"
+    assert_contains "$out" $'M3\topen\tartifact receipt could not be verified' "$case_name selected a receipt by scan order"
+    out=$(checklist "$h" open) || fail "open failed"
+    assert_contains "$out" $'M3\topen\t' "$case_name hid the conflicting machine"
+    receipt_hash=$hash
+    [ "$case_name" != ledger-bad ] || receipt_hash=$bad
+    out=$(checklist "$h" receipt --machine M3 --path "$artifact" --hash "$receipt_hash") || fail "receipt failed"
+    assert_contains "$out" $'M3\topen\t' "$case_name receipt ignored tied inbox evidence"
+    out=$(checklist "$h" collect) || fail "collection failed"
+    assert_contains "$out" $'M3\topen\t2026-11-24:' "$case_name collection hid the conflict"
+    POSTMORTEM_TEST_EPOCH=$((epoch + 1))
+    out=$(checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash") || fail "newer receipt failed"
+    assert_contains "$out" $'M3\tclosed\t' "$case_name did not accept a strictly newer receipt"
+    export PATH=${PATH#*:}
+  done
+  pass "conflicting receipts stay open across filename orders, inbox locations, and ledger boundaries"
+)
+
+test_identical_ties_and_ordered_ledger_receipts_verify() (
+  local h artifact hash out
+  h=$(make_home identical)
+  install_clock "$h"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+  artifact=$(seed_artifact "$h" M3)
+  hash=$(sha_of "$artifact")
+  checklist "$h" receipt --machine M3 --path "$artifact" --hash "$(printf '%064d' 0)" >/dev/null || fail "first ledger receipt failed"
+  out=$(checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash") || fail "replacement receipt failed"
+  assert_contains "$out" $'M3\tclosed\t' "known ledger order was treated as ambiguous"
+  inbox_receipt "$h" "$POSTMORTEM_TEST_EPOCH" a '' M3 "$artifact" "$hash"
+  inbox_receipt "$h" "$POSTMORTEM_TEST_EPOCH" z handled M3 "$artifact" "$(printf '%s' "$hash" | tr 'a-f' 'A-F')"
+  out=$(checklist "$h" open) || fail "open failed"
+  assert_not_contains "$out" M3 "identical receipts were treated as conflicting"
+  pass "identical receipt ties and known ledger order retain the successful path"
+)
 
 test_relative_receipts_survive_a_different_working_directory
 test_unavailable_or_failed_hashing_keeps_every_machine_open
 test_collection_creates_each_due_morning_and_reads_inbox_receipts
+test_open_machines_survive_new_away_windows_and_later_mornings
+test_receipt_conflicts_do_not_depend_on_scan_order
+test_identical_ties_and_ordered_ledger_receipts_verify
 test_missing_machine_is_named_open_and_bad_hash_stays_open
 test_all_closed_check_passes_and_missing_artifact_stays_open
 test_unknown_night_and_bad_input_are_refused

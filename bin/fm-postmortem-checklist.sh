@@ -24,8 +24,8 @@
 #   fm-postmortem-checklist.sh open [--night <YYYY-MM-DD>]
 #       Print only the open rows, in the same shape as `check`.
 #       Exit 0; an unopened night lists every machine as missing.
-#   fm-postmortem-checklist.sh collect [--since <epoch>] [--until <epoch>]
-#       Open and report every morning due at 07:45 in the window.
+#   fm-postmortem-checklist.sh collect [--since <epoch>]
+#       Report existing nights and mornings due at 07:45 through now.
 #       Nights name the morning of collection; --night defaults to today.
 #       Inbox note bodies may contain a tab-separated receipt line:
 #       postmortem-receipt<TAB>night<TAB>machine<TAB>absolute-path<TAB>sha256
@@ -37,7 +37,8 @@
 # <night><TAB><machine><TAB><event><TAB><path><TAB><hash><TAB><epoch>
 # with event `opened` (machine `-`, from `start`) or `receipt`. The
 # newest ledger or inbox receipt for a machine and night is verified.
-# Receipt epochs order ledger rows and inbox notes; a later input wins ties.
+# Ledger append order is authoritative within the ledger.
+# Cross-record receipt epochs order candidates; conflicting ties stay open.
 # A night exists once any row names it, so a receipt recorded before
 # `start` still opens the other machines' rows for that night.
 #
@@ -112,8 +113,9 @@ latest_receipt() {  # <night> <machine>
     if [ -f "$LEDGER" ]; then
       awk -F '\t' -v night="$night" -v machine="$machine" '
         $1 == night && $2 == machine && $3 == "receipt" {
-          printf "%s\t%s\t%s\n", $6, $4, $5
-        }' "$LEDGER" || return 1
+          epoch = $6; path = $4; hash = $5
+        }
+        END { if (path != "") printf "%s\t%s\t%s\n", epoch, path, hash }' "$LEDGER" || return 1
     fi
     for note in "$STATE/inbox/"*.note "$STATE/inbox/handled/"*.note; do
       [ -f "$note" ] || continue
@@ -126,17 +128,24 @@ latest_receipt() {  # <night> <machine>
         }' "$note" || return 1
     done
   } | awk -F '\t' '
-    $1 ~ /^[0-9]+$/ && $1 + 0 >= latest {
-      latest = $1 + 0; path = $2; hash = $3
+    $1 ~ /^[0-9]+$/ {
+      if (!seen || $1 + 0 > latest) {
+        seen = 1; latest = $1 + 0; path = $2; hash = tolower($3); conflict = 0
+      } else if ($1 + 0 == latest && ($2 != path || tolower($3) != hash)) {
+        conflict = 1
+      }
     }
-    END { if (path != "") printf "%s\t%s\n", path, hash }'
+    END {
+      if (conflict) exit 1
+      if (path != "") printf "%s\t%s\n", path, hash
+    }'
 }
 
 # One machine's verified row: <machine><TAB>closed|open<TAB><detail>.
 machine_row() {  # <night> <machine>
   local night=$1 machine=$2 receipt path hash actual
   if ! receipt=$(latest_receipt "$night" "$machine"); then
-    printf '%s\topen\tartifact receipt could not be read\n' "$machine"
+    printf '%s\topen\tartifact receipt could not be verified\n' "$machine"
     return 0
   fi
   if [ -z "$receipt" ]; then
@@ -255,27 +264,36 @@ cmd_check() {  # <all|open> [args...]
 }
 
 cmd_collect() {
-  local since="" until nights night machine state detail rc=0
-  until=$(date +%s) || return 1
+  local since="" now nights night machine state detail rc=0
+  now=$(date +%s) || return 1
   while [ $# -gt 0 ]; do
     case "$1" in
       --since) [ $# -ge 2 ] || die "--since needs an epoch" 2; since=$2; shift 2 ;;
-      --until) [ $# -ge 2 ] || die "--until needs an epoch" 2; until=$2; shift 2 ;;
       *) die "unknown argument: $1" 2 ;;
     esac
   done
-  nights=$(python3 - "$since" "$until" <<'PYDATES'
+  nights=$(python3 - "$since" "$now" "$LEDGER" <<'PYDATES'
 import datetime as dt
 import sys
+from pathlib import Path
 
 end = dt.datetime.fromtimestamp(int(sys.argv[2]))
 start = dt.datetime.fromtimestamp(int(sys.argv[1])) if sys.argv[1] else end.replace(hour=0, minute=0, second=0, microsecond=0)
+nights = set()
+ledger = Path(sys.argv[3])
+if ledger.exists():
+    for row in ledger.read_text().splitlines():
+        night = dt.date.fromisoformat(row.split("\t", 1)[0])
+        if night <= end.date():
+            nights.add(night)
 day = start.date()
 while day <= end.date():
     due = dt.datetime.combine(day, dt.time(7, 45))
-    if start <= due <= end:
-        print(day.isoformat())
+    if due <= end and (due >= start or day == end.date()):
+        nights.add(day)
     day += dt.timedelta(days=1)
+for night in sorted(nights):
+    print(night.isoformat())
 PYDATES
   ) || {
     for machine in $MACHINES; do
