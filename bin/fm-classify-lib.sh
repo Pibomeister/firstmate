@@ -1740,11 +1740,8 @@ EOF
     fi
     ident=$cur_ident
   else
-    legacy=$(_fm_open_decisions_cursor_path "$f")
-    if [ -e "$legacy" ] || [ -L "$legacy" ]; then
-      status_open_decisions_cursor_offset "$f"
-      return
-    fi
+    # A decision fold can finish before output fails. Only a presentation
+    # receipt proves these bytes reached the consumer.
     offset=0
     ident=$(_fm_open_decisions_file_ident "$f") || return 1
   fi
@@ -2130,10 +2127,9 @@ EOF
 # reserved-key resolutions are the fleet-wide unread surface;
 # they are not open decisions and are not persisted in the folded open-set.
 
-# Read the legacy per-task open-decisions cursor used to seed the presentation
-# offset before the fleet manifest exists. A fold-version mismatch, identity
-# mismatch, or offset past the current size falls back to 0. Never writes unless
-# a caller explicitly requests a migration snapshot.
+# Read the per-task decision-fold offset for classification ownership.
+# A fold-version mismatch, identity mismatch, or offset past the current size
+# falls back to 0. This offset is not a presentation receipt.
 status_open_decisions_cursor_offset() {  # <status-file>
   local f=$1 cf offset=0 ident='' version='' cursor_data first rest open=''
   local offset_line ident_line cur_ident size fold_version

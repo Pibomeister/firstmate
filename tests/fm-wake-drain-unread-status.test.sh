@@ -57,6 +57,36 @@ test_incident_note_answer_buried_under_routine_note_surfaces_both() {
   pass "a note: answer buried under a later routine note: is surfaced with both lines"
 }
 
+test_failed_output_preserves_unread_notes_without_a_receipt() {
+  local dir state status posture
+  # An unread note must survive a failed transfer on both a fresh home and
+  # one with an earlier receipt. Folding decisions is not presentation.
+  for posture in fresh primed; do
+    dir=$(make_case "failed-output-$posture")
+    state="$dir/state"
+    status="$state/task.status"
+    if [ "$posture" = primed ]; then prime_cursor "$state" "$status"; fi
+    printf 'note: answer retained after failed output\n' >> "$status"
+    cp "$status" "$dir/status.before"
+    # Close the actual output descriptor; no product executable is replaced.
+    FM_STATE_OVERRIDE="$state" "$DRAIN" >&- 2> "$dir/failed.err" || true
+    append_wake "$state" check output 'unhandled output recovery wake' \
+      || fail 'could not queue output recovery wake'
+    cp "$state/.wake-queue" "$dir/queue.before"
+    FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" \
+      || fail "$posture retry failed after the output consumer recovered"
+    assert_grep 'task note: answer retained after failed output' "$dir/retry.out" \
+      "$posture retry lost an unread note after the failed transfer"
+    cmp "$dir/status.before" "$status" || fail 'output recovery changed status bytes'
+    cmp "$dir/queue.before" "$state/.wake-queue" || fail 'output recovery acknowledged a wake'
+    FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/repeat.out" 2> "$dir/repeat.err" \
+      || fail 'drain failed after successful retry'
+    assert_no_grep 'answer retained after failed output' "$dir/repeat.out" \
+      'successful retry did not commit its presentation receipt'
+  done
+  pass 'failed output preserves unread notes until a successful presentation'
+}
+
 test_already_presented_notes_are_not_replayed() {
   local dir state out status
   dir=$(make_case no-replay)
@@ -566,7 +596,10 @@ import time
 bash, drain, directory, requested_signal = sys.argv[1:]
 case = pathlib.Path(directory)
 with (case / 'timed.out').open('wb') as out, (case / 'timed.err').open('wb') as err:
-    child = subprocess.Popen([bash, drain, '--phases'], stdout=out, stderr=err)
+    # A background test runner may inherit SIGINT ignored. Bash cannot install
+    # its INT trap unless the disposition is restored before it starts.
+    child = subprocess.Popen([bash, drain, '--phases'], stdout=out, stderr=err,
+                             preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
     try:
         deadline = time.monotonic() + 20
         while not (case / 'drain.pid').exists():
@@ -694,6 +727,7 @@ if [ "$#" -gt 0 ]; then
 fi
 
 test_incident_note_answer_buried_under_routine_note_surfaces_both
+test_failed_output_preserves_unread_notes_without_a_receipt
 test_already_presented_notes_are_not_replayed
 test_brand_new_note_after_presentation_is_surfaced
 test_signal_annotation_surfaces_every_unread_note_not_only_the_newest
