@@ -361,7 +361,10 @@ print(json.dumps(rows[(page - 1) * 100:page * 100]))
     def run(now):
         env["FM_GD_NOW_EPOCH"] = str(now)
         requests.write_text("")
-        result = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=60)
+        # This fixture starts a separate CLI for every page in both collections.
+        # Allow loaded gate hosts time to collect all pages without weakening
+        # the assertions on recovered merges or watermark advancement.
+        result = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=180)
         assert result.returncode == 0, result.stderr
         return json.loads((output / "latest.json").read_text())
     if scenario == "resumed":
