@@ -3281,23 +3281,25 @@ wd_once() {  # [home-filter]
   WD_PROGRESS_HEALTH=$health
   WD_PROGRESS_AT=$(wd_now)
   wd_reconcile_pending
-  wd_subjects | while IFS=$'\t' read -r home parent id; do
-    [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
-    wd_monitor_read "$home"
-    wd_observe "$home" "$parent" "$id"
-    wd_score_gap
-    wd_score_activity
-    WD_SYMPTOM=ok WD_RESTARTED=0
-    wd_handle_subject
-    # A home whose restart awaits pickup gets no action, quota checks included,
-    # and the ledger is read again so that holds from the pass that starts it.
-    if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
-      wd_quota_guard_pass
-    fi
-    wd_visit_worker_dialogs page
-    wd_health_line >> "$health"
+  wd_subjects | {
+    while IFS=$'\t' read -r home parent id; do
+      [ -z "$filter" ] || [ "$home" = "$filter" ] || continue
+      wd_monitor_read "$home"
+      wd_observe "$home" "$parent" "$id"
+      wd_score_gap
+      wd_score_activity
+      WD_SYMPTOM=ok WD_RESTARTED=0
+      wd_handle_subject
+      # A home whose restart awaits pickup gets no action, quota checks included,
+      # and the ledger is read again so that holds from the pass that starts it.
+      if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
+        wd_quota_guard_pass
+      fi
+      wd_visit_worker_dialogs page
+      wd_health_line >> "$health"
+    done
     [ "$WD_PROGRESS_FAILED" = 0 ]
-  done || scan_rc=$?
+  } || scan_rc=$?
   wd_memory_guard_pass
   [ -n "$(wd_models)" ] || printf -- '- no model configured; judged symptoms are reported only\n' >> "$WD_GAPS"
   wd_write_status "$health" "$WD_GAPS" || {

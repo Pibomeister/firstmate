@@ -43,9 +43,17 @@ SH
   cat >"$H/bin/mv" <<'SH'
 #!/usr/bin/env bash
 for argument in "$@"; do target=$argument; done
-if [ "$WD_FAIL_STATUS" = 1 ] && [ "$target" = "$FM_HOME/data/watchdog/status.md" ]; then
-  printf 'fixture status replacement refused\n' >&2
-  exit 73
+if [ "$target" = "$FM_HOME/data/watchdog/status.md" ]; then
+  phase=complete
+  if grep -q 'scan incomplete' "$1"; then phase=progress; fi
+  if [ "$WD_FAIL_STATUS" = 1 ] || { [ "$WD_FAIL_STATUS" = progress ] && [ "$phase" = progress ]; }; then
+    printf '%s refused\n' "$phase" >>"$FM_HOME/replacements.log"
+    printf 'fixture status replacement refused\n' >&2
+    exit 73
+  fi
+  "$WD_REAL_MV" "$@" || exit "$?"
+  printf '%s replaced\n' "$phase" >>"$FM_HOME/replacements.log"
+  exit 0
 fi
 exec "$WD_REAL_MV" "$@"
 SH
@@ -98,14 +106,16 @@ SH
 }
 
 publication_once() {
-  local cost=$1 fail_write=${2:-0}
+  local cost=$1 fail_write=${2:-0} filter=${3:-}
+  set -- once --dry-run
+  [ -z "$filter" ] || set -- "$@" --home "$filter"
   env -i HOME="$H/user" PATH="$H/bin:$PATH" TMPDIR="$H/tmp" LC_ALL=C \
     FM_HOME="$H" FM_STATE_OVERRIDE="$H/state" FM_ROOT_OVERRIDE="$ROOT" \
     FM_TEST_SEAM=1 FM_ORCA_CLI_CACHE=1 FM_ORCA_CLI_CACHE_TTL=0 \
     FM_ORCA_CLI_CACHE_DIR="$H/cache" WD_CLOCK="$H/clock" WD_READ_COST="$cost" \
     WD_TEST_BLOCK_READ="${WD_TEST_BLOCK_READ:-0}" \
     WD_REAL_DATE="$REAL_DATE" WD_REAL_MV="$REAL_MV" WD_FAIL_STATUS="$fail_write" \
-    /bin/bash "$WD" once --dry-run >"$H/once.out" 2>"$H/once.err"
+    /bin/bash "$WD" "$@" >"$H/once.out" 2>"$H/once.err"
 }
 
 seed_workers() {
@@ -223,6 +233,31 @@ test_status_write_failure_is_reported() {
   pass 'failed status replacement preserves prior bytes and returns failure'
 }
 
+test_filtered_progress_failure_is_reported() {
+  local count rc skipped
+  for count in 1 2; do
+    make_publication_case "filtered-progress-failure-$count"
+    publication_once 0 || fail 'filtered progress baseline failed'
+    skipped="$H/skipped"
+    mkdir -p "$skipped/state"
+    printf 'homes=%s,%s\n' "$H" "$skipped" >>"$H/config/watchdog"
+    printf '%s\n' "$((BASE + 120))" >"$H/clock"
+    seed_workers "$count"
+    : >"$H/replacements.log"
+    rc=0
+    publication_once 120 progress "$H" || rc=$?
+    assert_grep 'progress publication failed' "$H/once.err" 'progress failure was not exercised'
+    assert_equals "$count" "$(grep -c '^progress refused$' "$H/replacements.log")" 'worker completion did not attempt progress publication'
+    assert_equals 'complete replaced' "$(tail -n 1 "$H/replacements.log")" 'final publication did not succeed'
+    assert_no_grep 'scan incomplete' "$H/data/watchdog/status.md" 'final publication remained incomplete'
+    assert_absent "$skipped/state/monitor-status" 'filtered scan visited the excluded home'
+    assert_records_retained
+    printf 'filtered-progress-failure workers=%s public_exit=%s final_replaced=true\n' "$count" "$rc"
+    [ "$rc" -ne 0 ] || fail 'skipped subject hid an earlier progress publication failure'
+  done
+  pass 'filtered scans retain progress failures after skipped subjects and final success'
+}
+
 if [ "$#" -gt 0 ]; then fm_test_run "$@"; else
-  fm_test_run test_publication_fast_control test_completed_reads_keep_publication_honest test_blocked_reader_does_not_publish_timer_progress test_status_write_failure_is_reported
+  fm_test_run test_publication_fast_control test_completed_reads_keep_publication_honest test_blocked_reader_does_not_publish_timer_progress test_status_write_failure_is_reported test_filtered_progress_failure_is_reported
 fi
