@@ -32,8 +32,10 @@
 #
 # The digest lists new merges (URL and 12-character SHA). The first fetch
 # for each repository reports only merges from the preceding day. Later
-# fetches use its last successful fetch time with a five-minute overlap;
-# already reported merges are excluded. It also lists open pull requests
+# complete fetches advance its merge-window watermark with a five-minute
+# overlap. Failed or capped collection is reported as incomplete and
+# retains the pending window, including the initial one-day baseline.
+# Already reported merges are excluded. It also lists open pull requests
 # (drafts included) with their age, missed ETAs (a status
 # line with the word "eta" followed by ":" or space and a YYYY-MM-DD date
 # in the past), stalled status sources (local or remote files whose
@@ -63,8 +65,8 @@
 # both history copies succeed. Notification state advances only after
 # publication succeeds. History is retained without automatic pruning.
 #
-# State under the output directory: .state/seen.tsv holds every merged
-# pull request already reported, .state/since.tsv holds each repository's
+# State under the output directory: .state/seen.tsv holds merged pull
+# requests already collected, .state/since.tsv holds each repository's
 # merge-window watermark, .state/content.hash holds the previous
 # content hash, and .state/run.flock is the run lock: a run that finds
 # another run holding it prints a skip line and exits 1. The kernel lock
