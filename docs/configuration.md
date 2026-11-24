@@ -1414,8 +1414,8 @@ Each run writes `latest.md` and `latest.json` plus a timestamped copy under `his
 The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
 Generation and ETA dates use America/Mexico_City.
 The script header defines merge-window recovery, supported native owner-action records, wait-age semantics, and explicit unknown coverage.
-A configured summarizer runs as the owner configured it and is outside the job's read-only promise.
-A configured summarizer runs only when the digest changed.
+On a changed run, a summary is produced by a fixed text-only model runner with no tools, the current native account and a cheap non-Opus model (`summarize_model`, default `haiku`; `summarize = off` disables it).
+No shell command from the config is ever executed, and an unavailable or failed runner is reported rather than silently succeeding.
 The job never merges, deploys, tags, pushes or messages anyone.
 Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.
 

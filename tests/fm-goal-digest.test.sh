@@ -97,7 +97,7 @@ JSON
 JSON
 }
 
-make_home() {  # <name> [summarize_cmd]
+make_home() {  # <name> [claude-stub]
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/config" "$home/data"
   printf 'eta: 2020-01-01 deliver the thing\nprogress: started\nbeta 2020-03-01 release\nshipped 2020-01-05 (eta: 2099-12-01)\n' > "$home/status.txt"
@@ -108,13 +108,16 @@ make_home() {  # <name> [summarize_cmd]
     printf 'status = Example status | %s\n' "$home/status.txt"
     printf 'status = Missing status | %s\n' "$home/no-such-status.txt"
     printf 'review = Example review | %s\n' "$home/review.status"
-    printf 'summarize_cmd = %s\n' "${2:-$TMP_ROOT/summarize.sh}"
   } > "$home/config/goal-digest"
+  printf '%s' "${2:-$TMP_ROOT/summarize.sh}" > "$home/.claude-stub"
   printf '%s' "$home"
 }
 
 run_digest() {  # <home> [now-epoch]
+  local stub
+  stub=$(cat "$1/.claude-stub" 2>/dev/null || printf '%s' "$TMP_ROOT/summarize.sh")
   PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 FM_HOME="$1" FM_GD_FIXTURE="$FIXTURE" \
+    FM_GOAL_DIGEST_CLAUDE="$stub" \
     FM_GD_NOW_EPOCH="${2:-}" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" "$SCRIPT" run
 }
 
@@ -387,6 +390,7 @@ test_owner_actions_are_explicit_and_age_from_wait_start() {
 {"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[
  {"id":"decision-a","title":"Choose route","captain_actionable":true,"hold_set":"2026-01-01T10:00:00Z"},
  {"id":"decision-b","title":"Choose access","captain_actionable":true},
+ {"id":"decision-c","title":"Choose date","captain_actionable":true,"hold_set":"2025-12-30"},
  {"id":"done","title":"Answered","captain_actionable":false,"hold_set":"2020-01-01T00:00:00Z"}
 ]},"secondmate_current":{"registry":{"available":true,"complete":true},"records":[],"truncated":0}}
 JSON
@@ -403,9 +407,10 @@ EOF
 import json, sys
 value = json.load(open(sys.argv[1]))
 waits = {w["id"]: w for w in value["waiting_on_captain"]}
-assert set(waits) == {"decision-a", "decision-b"}, waits
+assert set(waits) == {"decision-a", "decision-b", "decision-c"}, waits
 assert waits["decision-a"]["age_hours"] == 2
 assert waits["decision-b"]["age_hours"] is None
+assert waits["decision-c"]["age_hours"] is None and waits["decision-c"]["age_days"] == 2 and waits["decision-c"]["age_precision"] == "day", waits["decision-c"]
 assert [p["number"] for p in value["open_pull_requests"]] == [7]
 assert value["waiting_on_captain_status"] == "unknown"
 assert value["waiting_on_captain_unknown_sources"] == [{"source":"Missing status", "detail":"source unreachable"}]
@@ -421,7 +426,7 @@ value["backlog"]["records"][0]["captain_actionable"] = False
 json.dump(value, open(sys.argv[1], "w"))
 PYUPDATE
   run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "resolution run failed"
-  assert_equals "['decision-b']" "$(python3 -c 'import json,sys; print([w["id"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"]])' "$home/data/goal-digest/latest.json")" "resolved owner action leaves waiting set"
+  assert_equals "['decision-b', 'decision-c']" "$(python3 -c 'import json,sys; print([w["id"] for w in json.load(open(sys.argv[1]))["waiting_on_captain"]])' "$home/data/goal-digest/latest.json")" "resolved owner action leaves waiting set"
   pass "explicit owner actions, actual wait age, resolutions and unknown sources"
 }
 
@@ -703,10 +708,14 @@ else:
     (home / "done").touch()
 ''')
 config = home / "config/goal-digest"
+wrapper = home / "claude-stub"
+wrapper.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(helper), str(home)]) + " \"$(cat " + str(home / "mode") + ")\"\n")
+wrapper.chmod(0o755)
 def configure(mode):
-    config.write_text("review = Progress | " + str(review) + "\nsummarize_cmd = " + shlex.join([sys.executable, str(helper), str(home), mode]) + "\n")
+    config.write_text("review = Progress | " + str(review) + "\n")
+    (home / "mode").write_text(mode)
 configure("orphan")
-env = dict(os.environ, FM_HOME=str(home))
+env = dict(os.environ, FM_HOME=str(home), FM_TEST_SEAM="1", FM_GOAL_DIGEST_CLAUDE=str(wrapper))
 children = set()
 with (home / "first.log").open("w") as log:
     first = subprocess.Popen([script, "run"], env=env, stdout=log, stderr=log, start_new_session=True)

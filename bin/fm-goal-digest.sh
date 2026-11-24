@@ -26,7 +26,8 @@
 #   review = <label> | <local-path or ssh:<host>:<absolute-path>>
 #   stall_hours = <n>               (default 48)
 #   timeout_seconds = <n>           (per gh/ssh call, default 60)
-#   summarize_cmd = <command>       (optional, run only when changed)
+#   summarize = <on|off>            (default on, run only when changed)
+#   summarize_model = <model>       (cheap non-Opus model, default haiku)
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
 #
@@ -53,13 +54,15 @@
 # changed is yes on the first run, when new merges are found, or when
 # persistent digest content changes. Generated time, age values and the
 # disappearance of previously reported merges do not count as changes.
-# A configured summarize_cmd runs only on a changed run, receives
-# latest.md on stdin and replaces summary.txt only on success. It has a
-# 120-second timeout; failure leaves the digest published and the previous
-# summary intact. The configured command is outside the collector's
-# read-only guarantee. The collector never merges, deploys, tags, pushes
-# or messages anyone: its network reads use `gh api` GET requests and
-# read-only ssh cat/stat commands.
+# On a changed run the summary is produced by one fixed text-only model
+# runner: claude -p with no tools, the current native account and the
+# configured cheap non-Opus model (default haiku). It replaces
+# summary.txt only on success, has a 120-second timeout, and reports
+# summary unavailable instead of succeeding silently when the runner is
+# missing or fails. No shell command from config is ever executed. The
+# collector never merges, deploys, tags, pushes or messages anyone: its
+# network reads use `gh api` GET requests and read-only ssh cat/stat
+# commands.
 #
 # Each latest document is published through atomic replacement after
 # both history copies succeed. Notification state advances only after
@@ -101,7 +104,12 @@ repos=()
 status_labels=(); status_locs=()
 review_labels=(); review_locs=()
 stall_hours=$STALL_DEFAULT
-summarize_cmd=
+summarize=on
+summarize_model=haiku
+claude_bin=claude
+if [ -n "${FM_TEST_SEAM:-}" ] && [ -n "${FM_GOAL_DIGEST_CLAUDE:-}" ]; then
+  claude_bin=$FM_GOAL_DIGEST_CLAUDE
+fi
 output_dir=
 timeout_seconds=60
 
@@ -132,7 +140,8 @@ load_config() {
         fi
         ;;
       stall_hours) case "$value" in ''|*[!0-9]*) ;; *) stall_hours=$value ;; esac ;;
-      summarize_cmd) summarize_cmd=$value ;;
+            summarize) case "$value" in off) summarize=off ;; *) summarize=on ;; esac ;;
+      summarize_model) summarize_model=$value ;;
       output_dir) output_dir=$value ;;
       timeout_seconds) case "$value" in ''|*[!0-9]*) ;; *) timeout_seconds=$value ;; esac ;;
     esac
@@ -271,12 +280,34 @@ def unknown(source, detail):
 def emit(source, row, title):
     stamp = row.get("hold_set") or ""
     age = "unknown"
+    age_days = ""
+    precision = "unknown"
     try:
         held = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         age = str(max(0, int((int(sys.argv[3]) - held.timestamp()) // 3600)))
+        precision = "hour"
     except ValueError:
-        pass
-    values = [source, row["id"], title, row.get("pr_url") or "", stamp, age]
+        # Native producers also emit date-only hold_set values. That
+        # precision is trustworthy only to the day: prefer the source's
+        # own day age when present, else derive whole days between the
+        # hold date and today (CST). Hours stay unknown.
+        try:
+            held_date = datetime.datetime.strptime(stamp, "%Y-%m-%d").date()
+            source_days = row.get("hold_age_days")
+            if isinstance(source_days, (int, float)) and not isinstance(source_days, bool):
+                age_days = str(max(0, int(source_days)))
+            else:
+                try:
+                    from zoneinfo import ZoneInfo
+                    tz = ZoneInfo("America/Mexico_City")
+                except Exception:
+                    tz = datetime.timezone(datetime.timedelta(hours=-6))
+                today = datetime.datetime.fromtimestamp(int(sys.argv[3]), tz).date()
+                age_days = str(max(0, (today - held_date).days))
+            precision = "day"
+        except ValueError:
+            pass
+    values = [source, row["id"], title, row.get("pr_url") or "", stamp, age, age_days, precision]
     print("\t".join(clean(v) for v in values))
 label = sys.argv[2]
 backlog = data.get("backlog") or {}
@@ -546,7 +577,7 @@ def rows(name):
     return out
 new_merges = [{"repo": r[0], "number": int(r[1]) if len(r) > 1 and r[1].isdigit() else r[1] if len(r) > 1 else "", "title": r[2] if len(r) > 2 else "", "url": r[3] if len(r) > 3 else "", "sha": r[4] if len(r) > 4 else "", "merged_at": r[5] if len(r) > 5 else ""} for r in rows("new_merges.tsv")]
 open_prs = [{"repo": r[0], "number": int(r[1]) if len(r) > 1 and r[1].isdigit() else r[1] if len(r) > 1 else "", "title": r[2] if len(r) > 2 else "", "url": r[3] if len(r) > 3 else "", "created_at": r[4] if len(r) > 4 else "", "age_hours": int(r[5]) if len(r) > 5 and r[5].isdigit() else None, "author": r[6] if len(r) > 6 else "", "draft": (r[7] == "yes") if len(r) > 7 else False} for r in rows("open.tsv")]
-waiting = [{"source": r[0], "id": r[1], "title": r[2], "url": r[3], "wait_started_at": r[4] or None, "age_hours": int(r[5]) if r[5].isdigit() else None} for r in rows("waiting.tsv")]
+waiting = [{"source": r[0], "id": r[1], "title": r[2], "url": r[3], "wait_started_at": r[4] or None, "age_hours": int(r[5]) if r[5].isdigit() else None, "age_days": int(r[6]) if len(r) > 6 and r[6].isdigit() else None, "age_precision": r[7] if len(r) > 7 else "unknown"} for r in rows("waiting.tsv")]
 waiting_unknown = [{"source": r[0], "detail": r[1]} for r in rows("waiting-unknown.tsv")]
 missed = [{"source": r[0], "eta": r[1] if len(r) > 1 else "", "line": r[2] if len(r) > 2 else ""} for r in rows("missed.tsv")]
 stalled = [{"source": r[0], "age_hours": int(r[1]) if len(r) > 1 and r[1].lstrip("-").isdigit() else None} for r in rows("stalled.tsv")]
@@ -587,7 +618,7 @@ if open_prs:
 else:
     lines.append("- None")
 lines += ["", "## Waiting on owner", ""]
-lines += [f"- {w['source']} {w['id']}: {w['title']} age_hours={w['age_hours'] if w['age_hours'] is not None else 'unknown'}" for w in waiting] or ["- None known" if waiting_unknown else "- None"]
+lines += [f"- {w['source']} {w['id']}: {w['title']} age_hours={w['age_hours']}" if w['age_hours'] is not None else (f"- {w['source']} {w['id']}: {w['title']} age_days={w['age_days']} (day precision)" if w['age_days'] is not None else f"- {w['source']} {w['id']}: {w['title']} age_hours=unknown") for w in waiting] or ["- None known" if waiting_unknown else "- None"]
 lines += [f"- Unknown: {u['source']}: {u['detail']}" for u in waiting_unknown]
 lines += ["", "## Missed ETAs", ""]
 lines += [f"- {m['source']}: eta {m['eta']} - {m['line']}" for m in missed] or ["- None"]
@@ -645,14 +676,27 @@ PY
 
   printf '%s\n' "$content_hash" > "$hash_file.tmp" && mv "$hash_file.tmp" "$hash_file" || return 1
 
-  if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
-    if timed 120 /bin/sh -c "$summarize_cmd" < "$output_dir/latest.md" > "$work/summary.txt" 2>/dev/null &&
-       mv "$work/summary.txt" "$output_dir/summary.txt"; then
-      :
-    else
-      rm -f "$work/summary.txt"
-      printf '%s\n' "goal-digest: summarize_cmd failed; digest still written" >&2
-    fi
+  if [ "$changed" = yes ] && [ "$summarize" != off ]; then
+    # Fixed text-only model runner: fixed argv, no tools, the current
+    # native claude account, a cheap non-Opus model. No shell command
+    # from config is ever executed.
+    case "$summarize_model" in
+      ''|*[!A-Za-z0-9._-]*|*[Oo][Pp][Uu][Ss]*)
+        printf '%s\n' "goal-digest: summary unavailable: summarize_model '$summarize_model' is not a supported cheap model" >&2
+        ;;
+      *)
+        if ! command -v "$claude_bin" >/dev/null 2>&1; then
+          printf '%s\n' "goal-digest: summary unavailable: claude runner not found" >&2
+        elif { printf '%s\n' "Summarize this goal digest for its owner in at most 12 short lines: new merges, items waiting, missed ETAs, stalls and anything blocked. Use only the input below."; cat "$output_dir/latest.md"; } > "$work/summary-prompt.txt" &&
+           timed 120 "$claude_bin" -p --model "$summarize_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null &&
+           mv "$work/summary.txt" "$output_dir/summary.txt"; then
+          :
+        else
+          rm -f "$work/summary.txt"
+          printf '%s\n' "goal-digest: summary unavailable: model runner failed; digest still written" >&2
+        fi
+        ;;
+    esac
   fi
 
   trap - EXIT
