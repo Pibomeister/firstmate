@@ -225,6 +225,39 @@ SH
   pass "classify stat helpers resolve the kernel name once per process"
 }
 
+test_status_line_out_variables_match_command_substitution() {
+  local script="$TMP_ROOT/out-var.sh" cases="$TMP_ROOT/out-var-cases"
+  # NUL-separated so a line may end in newlines, which $(...) strips.
+  printf '%s\0' '' 'note' 'working: plain note' '  spaced  :   padded note   ' \
+    'needs-decision [key=pick-one] [at=1700000000]: pick one' \
+    'done [at=1700000000]: PR https://example.invalid/pull/1 checks green' \
+    'blocked: [key=human-step-otp] enter the code' 'paused [at=]: no time' \
+    'paused [at=abc]: bad time' 'note [at=1700000000] [key=k1]: order swapped' \
+    $'working: ends in a newline\n' $'working: ends in two\n\n' $'working:\n' \
+    $'working: caf\xc3\xa9 \xff bytes' 'a:b:c' ':' '[at=1700000000]' > "$cases"
+  cat > "$script" <<'SH'
+. "$1/bin/fm-classify-lib.sh"
+while IFS= read -r -d '' t_line; do
+  # Ordinary caller names: the helpers' own locals must never capture them.
+  for t_name in out v note epoch k n value result word x; do
+    t_want=$(status_line_note "$t_line"); t_wrc=$?
+    printf -v "$t_name" '%s' sentinel
+    status_line_note "$t_line" "$t_name"; t_grc=$?
+    [ "$t_grc" = "$t_wrc" ] && [ "${!t_name}" = "$t_want" ] \
+      || printf 'note %q into %s: %q rc %s, command %q rc %s\n' "$t_line" "$t_name" "${!t_name}" "$t_grc" "$t_want" "$t_wrc"
+    t_want=$(status_line_at_epoch "$t_line"); t_wrc=$?
+    printf -v "$t_name" '%s' sentinel
+    status_line_at_epoch "$t_line" "$t_name"; t_grc=$?
+    [ "$t_grc" = "$t_wrc" ] || printf 'epoch %q into %s: rc %s, command rc %s\n' "$t_line" "$t_name" "$t_grc" "$t_wrc"
+    [ "$t_wrc" != 0 ] || [ "${!t_name}" = "$t_want" ] \
+      || printf 'epoch %q into %s: %q, command %q\n' "$t_line" "$t_name" "${!t_name}" "$t_want"
+  done
+done < "$2"
+SH
+  run_everywhere "status-line out-variables" "$script" "$cases"
+  pass "status_line_note and status_line_at_epoch assign exactly what \$(...) captures, into any caller name"
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
 else
@@ -234,5 +267,6 @@ else
     test_signal_seen_path_and_lock_abs_path_are_unchanged \
     test_recovery_marker_read_accepts_exactly_one_newline \
     test_window_to_task_matches_the_meta_pipeline \
-    test_classify_stat_helpers_read_the_kernel_name_once
+    test_classify_stat_helpers_read_the_kernel_name_once \
+    test_status_line_out_variables_match_command_substitution
 fi
