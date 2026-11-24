@@ -536,8 +536,12 @@ A task silent past its window produces exactly one escalation naming the task, i
 A missing artifact or a hash mismatch records the failed attempt and cannot close the deliverable.
 Cross-agent handoffs (b2b notes, Hermes answers) are filed in, or mirrored into, the single read location the receiving agent actually reads, each carrying that same path-plus-hash receipt.
 A handoff filed only in the other location is a delivery failure naming the hidden item on every `fm-delegated.sh check` pass until it is mirrored, never silence.
-Each handoff names its registered delegated task and uses the receiver's `state/<receiver>.inbox`.
-Mirroring enqueues a normal numbered `.msg`; moving that message to `handled/` supplies the read receipt, provided its body and artifact hash still verify.
+Each handoff names its registered delegated task.
+Firstmate receives handoffs through the existing wake queue, and its wake acknowledgement ledger proves consumption.
+Task receivers use their `state/<receiver>.inbox`; moving a numbered `.msg` to `handled/` proves consumption while its body and artifact hash verify.
+Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
+Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
+Report completion does not prevent the worker from advancing or relaunching.
 The spawn path registers ship and scout report deliverables with a 300-second heartbeat interval and a two-hour silence window.
 Worker briefs provide heartbeat and delivery commands; watcher passes check the records and route reports through the wake queue and the stored supervisor's inbox when it has task metadata.
 Session-start output includes the delegated supervisor view.

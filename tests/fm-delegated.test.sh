@@ -18,7 +18,8 @@ T0=1800000000
 
 new_home() {  # <name>: fresh home plus artifact/read/alt dirs; prints home
   local h="$TMP_ROOT/$1"
-  mkdir -p "$h/state" "$h/art" "$h/read" "$h/alt"
+  mkdir -p "$h/state" "$h/config" "$h/art" "$h/read" "$h/alt"
+  touch "$h/state/worker.meta"
   printf 'deliverable body\n' > "$h/art/out.txt"
   printf '%s\n' "$h"
 }
@@ -108,23 +109,23 @@ test_hidden_handoff_is_delivery_failure_until_mirrored() {
   h=$(new_home hidden)
   register_task "$h" "$T0" hermes-1 || fail "register failed"
   hash=$(sha_of "$h/art/out.txt")
-  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver firstmate --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/firstmate.inbox" --alt-dir "$h/alt.inbox" --location alt >/dev/null \
+  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location alt >/dev/null \
     || fail "handoff failed"
   del "$h" "$T0" dispatch --task hermes-1 >/dev/null || fail "dispatch failed"
   out=$(del "$h" $((T0 + 400)) check) || fail "check failed"
   case "$out" in *escalation*) fail "a hidden answer was classified as silence" ;; esac
   assert_contains "$out" "delivery-failure handoff=hf1" "a hidden handoff surfaces as a delivery failure naming it"
   assert_contains "$(del "$h" $((T0 + 20)) view)" "handoff=hf1 state=delivery-failure" "a hidden handoff is unread"
-  mkdir -p "$h/state/firstmate.inbox"
-  : > "$h/state/firstmate.inbox/001.msg"
+  mkdir -p "$h/state/worker.inbox"
+  : > "$h/state/worker.inbox/001.msg"
   del "$h" $((T0 + 30)) mirror --id hf1 >/dev/null || fail "mirror failed"
   out=$(del "$h" $((T0 + 40)) check) || fail "check after mirror failed"
   case "$out" in
     *delivery-failure*) fail "a mirrored handoff must stop surfacing as a delivery failure: $out" ;;
   esac
   assert_contains "$(del "$h" $((T0 + 45)) view)" "handoff=hf1 state=mirrored" "enqueue alone is not a read"
-  mv "$h/state/firstmate.inbox/002.msg" "$h/state/firstmate.inbox/handled/" || fail "receiver acknowledgement failed"
+  mv "$h/state/worker.inbox/002.msg" "$h/state/worker.inbox/handled/" || fail "receiver acknowledgement failed"
   out=$(del "$h" $((T0 + 50)) view) || fail "view failed"
   assert_contains "$out" "handoff=hf1 state=read" "the receiver acknowledgement receipts the read"
   assert_contains "$out" "hash=$hash" "the read receipt carries the artifact hash"
@@ -137,19 +138,19 @@ test_handoff_in_read_location_and_broken_artifact() {
   h=$(new_home readloc)
   register_task "$h" "$T0" hermes-1 || fail "register failed"
   hash=$(sha_of "$h/art/out.txt")
-  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver firstmate --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/firstmate.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null \
+  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null \
     || fail "handoff in read location failed"
   out=$(del "$h" $((T0 + 10)) check) || fail "check failed"
   case "$out" in
     *delivery-failure*) fail "a handoff in the read location is not a delivery failure: $out" ;;
   esac
   printf 'tampered\n' > "$h/art/out.txt"
-  mv "$h/state/firstmate.inbox/001.msg" "$h/state/firstmate.inbox/handled/" || fail "ack failed"
+  mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail "ack failed"
   assert_contains "$(del "$h" $((T0 + 20)) view)" "handoff=hf1 state=delivery-failure" "a tampered artifact cannot receipt a read"
   rc=0
-  del "$h" $((T0 + 30)) handoff --task hermes-1 --id hf2 --receiver firstmate --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/firstmate.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null 2>&1 || rc=$?
+  del "$h" $((T0 + 30)) handoff --task hermes-1 --id hf2 --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null 2>&1 || rc=$?
   assert_equals 1 "$rc" "a handoff with a mismatched artifact receipt is refused at filing"
   pass "a read-location handoff is no failure, and a tampered artifact receipts nothing"
 }
@@ -215,16 +216,16 @@ test_concurrent_mirror_and_ack() {
   h=$(new_home concurrent-mirror)
   register_task "$h" "$T0" hermes-1 || fail 'register failed'
   hash=$(sha_of "$h/art/out.txt")
-  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver firstmate \
-    --path "$h/art/out.txt" --hash "$hash" --read-dir "$h/state/firstmate.inbox" \
+  del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker \
+    --path "$h/art/out.txt" --hash "$hash" --read-dir "$h/state/worker.inbox" \
     --alt-dir "$h/alt.inbox" --location alt >/dev/null || fail 'handoff failed'
   del "$h" "$T0" mirror --id hf1 >/dev/null & p1=$!
   del "$h" "$T0" mirror --id hf1 >/dev/null & p2=$!
   wait "$p1" || fail 'first mirror failed'
   wait "$p2" || fail 'second mirror failed'
-  set -- "$h/state/firstmate.inbox/"*.msg
+  set -- "$h/state/worker.inbox/"*.msg
   assert_equals 1 "$#" 'racing mirrors enqueue one message'
-  mv "$1" "$h/state/firstmate.inbox/handled/" || fail 'ack failed'
+  mv "$1" "$h/state/worker.inbox/handled/" || fail 'ack failed'
   del "$h" "$T0" mirror --id hf1 >/dev/null || fail 'mirror after ack failed'
   assert_contains "$(del "$h" "$T0" view)" 'handoff=hf1 state=read' 'mirror preserves acknowledged receipt'
   pass 'mirrors share one numbered inbox message and preserve its acknowledgement'
@@ -270,6 +271,80 @@ test_named_supervisor_receives_escalation() {
   pass 'silence reaches the named supervisor through the existing numbered inbox'
 }
 
+test_primary_handoff_uses_wake_channel() {
+  local h hash out seq generation
+  h=$(new_home primary-handoff)
+  register_task "$h" "$T0" hermes-1 || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" handoff --task hermes-1 --id answer --receiver firstmate \
+    --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted.inbox" --location alt >/dev/null || fail 'hidden answer failed'
+  assert_contains "$(del "$h" $((T0 + 400)) check)" 'delivery-failure handoff=answer' 'hidden primary answer is a delivery failure'
+  del "$h" "$T0" mirror --id answer >/dev/null || fail 'primary mirror failed'
+  [ ! -e "$h/state/firstmate.inbox" ] || fail 'primary answer was placed in an unread task inbox'
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" FM_CONFIG_OVERRIDE="$h/config" \
+    bash "$ROOT/bin/fm-wake-drain.sh" > "$h/drained" 2> "$h/drain.err" || fail "drain failed: $(cat "$h/drain.err")"
+  out=$(cat "$h/drained")
+  assert_contains "$out" "handoff=answer task=hermes-1 receiver=firstmate artifact=$h/art/out.txt hash=$hash" 'the real primary read channel presents the artifact receipt'
+  assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=mirrored' 'presentation alone does not acknowledge consumption'
+  seq=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation .*$/\1/p' "$h/drain.err")
+  generation=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--recovery-generation \([A-Za-z0-9._-]*\)$/\1/p' "$h/drain.err")
+  [ -n "$seq" ] && [ -n "$generation" ] || fail 'primary drain produced no acknowledgement token'
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" FM_CONFIG_OVERRIDE="$h/config" \
+    bash "$ROOT/bin/fm-wake-drain.sh" --ack-through "$seq" --recovery-generation "$generation" >/dev/null || fail 'primary acknowledgement failed'
+  assert_contains "$(del "$h" "$T0" view)" 'handoff=answer state=read' 'primary acknowledgement receipts the handoff'
+  rm -f "$h/art/out.txt"
+  del "$h" "$T0" mirror --id answer >/dev/null || fail 'mirror lost the consumed primary receipt'
+  out=$(del "$h" $((T0 + 500)) check)
+  case "$out" in *delivery-failure*) fail 'consumed primary answer re-alerted after artifact cleanup' ;; esac
+  pass 'primary handoffs are presented and acknowledged through the actual wake channel'
+}
+
+test_completed_report_operations_preserve_receipt() {
+  local h hash report
+  h=$(new_home completed-report)
+  register_task "$h" "$T0" hermes-1 || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" deliver --task hermes-1 --path "$h/art/out.txt" --hash "$hash" >/dev/null || fail 'deliver failed'
+  cp "$h/state/delegated/hermes-1.record" "$h/completed.record"
+  printf 'kind=ship\npromoted_status_lines=1\n' > "$h/state/hermes-1.meta"
+  del "$h" $((T0 + 10)) heartbeat --task hermes-1 >/dev/null || fail 'promoted worker heartbeat refused'
+  del "$h" $((T0 + 20)) dispatch --task hermes-1 >/dev/null || fail 'replacement launch refused'
+  printf 'ship outcome\n' > "$h/art/out.txt"
+  report=$(sha_of "$h/art/out.txt")
+  del "$h" $((T0 + 30)) deliver --task hermes-1 --path "$h/art/out.txt" --hash "$report" >/dev/null || fail 'promoted worker delivery refused'
+  cmp -s "$h/completed.record" "$h/state/delegated/hermes-1.record" || fail 'lifecycle operation discarded the completed report receipt'
+  assert_contains "$(del "$h" $((T0 + 40)) view)" 'state=closed' 'fulfilled report remains closed across promotion and relaunch'
+  pass 'completed report receipts remain immutable across repeated worker lifecycle operations'
+}
+
+test_read_receipt_survives_cleanup() {
+  local h hash mode out
+  for mode in check view mirror receipt; do
+    h=$(new_home "durable-$mode")
+    register_task "$h" "$T0" hermes-1 || fail 'register failed'
+    hash=$(sha_of "$h/art/out.txt")
+    del "$h" "$T0" handoff --task hermes-1 --id answer --receiver worker \
+      --path "$h/art/out.txt" --hash "$hash" --alt-dir "$h/hosted.inbox" --location read >/dev/null || fail 'handoff failed'
+    mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'acknowledgement failed'
+    case "$mode" in
+      check|view) del "$h" "$T0" "$mode" >/dev/null || fail 'receipt observation failed' ;;
+      mirror) del "$h" "$T0" mirror --id answer >/dev/null || fail 'mirror observation failed' ;;
+      receipt) del "$h" "$T0" receipt --receiver worker || fail 'pre-cleanup receipt failed' ;;
+    esac
+    del "$h" "$T0" deliver --task hermes-1 --path "$h/art/out.txt" --hash "$hash" >/dev/null || fail 'deliver failed'
+    rm -rf "$h/state/worker.inbox"
+    rm -f "$h/state/worker.meta" "$h/art/out.txt"
+    out=$(del "$h" $((T0 + 400)) check) || fail 'post-cleanup check failed'
+    case "$out" in *delivery-failure*) fail "$mode lost verified consumption during normal inbox cleanup" ;; esac
+    out=$(del "$h" $((T0 + 500)) view)
+    assert_contains "$out" 'handoff=answer state=read' 'durable receipt survives receiver cleanup'
+    assert_contains "$out" "hash=$hash" 'durable read receipt retains the content hash'
+    del "$h" "$T0" mirror --id answer >/dev/null || fail 'mirror forgot the durable receipt'
+    [ ! -d "$h/state/worker.inbox" ] || fail 'mirror recreated a retired receiver inbox'
+  done
+  pass 'every consumption observer persists the path-and-hash receipt before inbox cleanup'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -282,5 +357,8 @@ fm_test_run \
   test_concurrent_transactions \
   test_concurrent_mirror_and_ack \
   test_watcher_routes_silence \
-  test_named_supervisor_receives_escalation
+  test_named_supervisor_receives_escalation \
+  test_primary_handoff_uses_wake_channel \
+  test_completed_report_operations_preserve_receipt \
+  test_read_receipt_survives_cleanup
 

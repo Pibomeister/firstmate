@@ -4022,6 +4022,10 @@ elif [ "$KIND" != secondmate ]; then
   reap_task_worktree_processes tasktmp "$TASK_TMP"
 fi
 
+if [ -d "$STATE/delegated" ]; then
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" receipt --receiver "$ID" || exit 1
+fi
+
 # A worker can write after the first proof, including while its run is concluded
 # or its processes exit. Inspect the stopped copy before dropping its branch or
 # returning it on either backend path.
