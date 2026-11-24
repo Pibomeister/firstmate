@@ -364,6 +364,136 @@ test_identical_ties_and_ordered_ledger_receipts_verify() (
   pass "identical receipt ties and known ledger order retain the successful path"
 )
 
+test_calendar_dates_are_validated_and_invalid_history_is_isolated() (
+  local h artifact hash invalid action out rc before
+  h=$(make_home calendar)
+  install_clock "$h"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+  artifact=$(seed_artifact "$h" M3)
+  hash=$(sha_of "$artifact")
+  checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash" >/dev/null || fail "valid receipt failed"
+  before=$(cat "$h/state/postmortem-checklist.tsv")
+  for invalid in 2026-11-31 2026-02-29 1900-02-29 0000-01-01 2026-00-01 2026-01-00 2026-13-01; do
+    for action in start receipt check open; do
+      if [ "$action" = receipt ]; then
+        if out=$(checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash" --night "$invalid" 2>&1); then rc=0; else rc=$?; fi
+      else
+        if out=$(checklist "$h" "$action" --night "$invalid" 2>&1); then rc=0; else rc=$?; fi
+      fi
+      assert_equals 2 "$rc" "$action accepted invalid calendar date $invalid: $out"
+    done
+  done
+  assert_equals "$before" "$(cat "$h/state/postmortem-checklist.tsv")" "invalid input changed the ledger"
+  for valid in 2000-02-29 2024-02-29 2026-11-30; do
+    checklist "$h" start --night "$valid" >/dev/null || fail "Gregorian date $valid was refused"
+  done
+  printf '2026-11-31\t-\topened\t\t\t%s\n2026-02-29\tM3\treceipt\t%s\t%s\t%s\n' \
+    "$POSTMORTEM_TEST_EPOCH" "$artifact" "$hash" "$POSTMORTEM_TEST_EPOCH" >> "$h/state/postmortem-checklist.tsv"
+  out=$(checklist "$h" collect) || fail "invalid legacy dates stopped collection: $out"
+  assert_contains "$out" $'Hetzner\topen\t2026-11-24:' "invalid history hid a valid morning"
+  assert_not_contains "$out" $'M3\topen\t2026-11-24:' "invalid history lost a valid receipt"
+  assert_not_contains "$out" '2026-11-31:' "invalid legacy morning was collected"
+  assert_not_contains "$out" '2026-02-29:' "invalid legacy receipt was collected"
+  pass "Gregorian input validation rejects impossible dates and isolates invalid legacy rows"
+)
+
+test_receipt_inputs_are_read_once_per_command() (
+  local h night machine artifact hash epoch directory out action
+  h=$(make_home reads)
+  install_clock "$h"
+  epoch=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8).timestamp()))')
+  POSTMORTEM_TEST_EPOCH=$epoch
+  for night in 2026-11-22 2026-11-23 2026-11-24; do
+    checklist "$h" start --night "$night" >/dev/null || fail "could not start $night"
+    NIGHT=$night
+    for machine in M3 Studio Hetzner local; do
+      [ "$night/$machine" != 2026-11-22/Hetzner ] || continue
+      artifact="$h/artifacts/$night-$machine.md"
+      printf '%s %s postmortem\n' "$night" "$machine" > "$artifact"
+      hash=$(sha_of "$artifact")
+      [ "$night/$machine" != 2026-11-23/Studio ] || hash=$(printf '%064d' 0)
+      directory=''
+      [ "$machine" != local ] || directory=handled
+      inbox_receipt "$h" "$epoch" "$night-$machine" "$directory" "$machine" "$artifact" "$hash"
+    done
+  done
+  NIGHT=2026-11-24
+  printf 'id=%s-noise\n--\nordinary inbox note\n' "$epoch" > "$h/state/inbox/$epoch-noise.note"
+  export POSTMORTEM_READ_HOME="$h" POSTMORTEM_READ_LOG="$h/reads.log" POSTMORTEM_REAL_AWK POSTMORTEM_REAL_PYTHON
+  POSTMORTEM_REAL_AWK=$(command -v awk)
+  POSTMORTEM_REAL_PYTHON=$(command -v python3)
+  cat > "$h/fakebin/awk" <<'SH'
+#!/bin/bash
+for arg in "$@"; do
+  case "$arg" in
+    "$POSTMORTEM_READ_HOME"/state/inbox/*.note|"$POSTMORTEM_READ_HOME"/state/postmortem-checklist.tsv)
+      printf '%s\n' "$arg" >> "$POSTMORTEM_READ_LOG" ;;
+  esac
+done
+exec "$POSTMORTEM_REAL_AWK" "$@"
+SH
+  cat > "$h/fakebin/python3" <<'SH'
+#!/bin/bash
+exec "$POSTMORTEM_REAL_PYTHON" -c '
+import os, sys
+log = open(os.environ["POSTMORTEM_READ_LOG"], "a")
+home = os.environ["POSTMORTEM_READ_HOME"]
+def record(event, args):
+    if event == "open" and isinstance(args[0], str) and args[1] == "r":
+        path = args[0]
+        if path == home + "/state/postmortem-checklist.tsv" or (path.startswith(home + "/state/inbox/") and path.endswith(".note")):
+            log.write(path + "\n")
+            log.flush()
+sys.addaudithook(record)
+if sys.argv[1] == "-":
+    code = sys.stdin.read()
+    sys.argv = sys.argv[1:]
+else:
+    assert sys.argv[1] == "-c"
+    code = sys.argv[2]
+    sys.argv = ["-c", *sys.argv[3:]]
+exec(compile(code, "<receipt-read-probe>", "exec"))
+' "$@"
+SH
+  chmod +x "$h/fakebin/awk" "$h/fakebin/python3"
+  for action in check open receipt collect; do
+    : > "$POSTMORTEM_READ_LOG"
+    if [ "$action" = receipt ]; then
+      artifact="$h/artifacts/2026-11-24-M3.md"
+      hash=$(sha_of "$artifact")
+      out=$(checklist "$h" receipt --machine M3 --path "$artifact" --hash "$hash") || fail "receipt failed: $out"
+      assert_contains "$out" $'M3\tclosed\t' "new receipt was absent from the invocation snapshot"
+    else
+      out=$(checklist "$h" "$action") || fail "$action failed: $out"
+      case "$action" in
+        check) assert_contains "$out" $'M3\tclosed\t' "current morning did not verify" ;;
+        open) assert_equals '' "$out" "closed current morning was reopened" ;;
+        collect)
+          assert_contains "$out" $'Hetzner\topen\t2026-11-22: no artifact receipt recorded' "snapshot skipped the missing machine"
+          assert_contains "$out" $'Studio\topen\t2026-11-23: artifact hash mismatch' "snapshot skipped the bad hash"
+          assert_equals 2 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "snapshot lost or duplicated historical rows" ;;
+      esac
+    fi
+    "$POSTMORTEM_REAL_PYTHON" - "$h" "$POSTMORTEM_READ_LOG" <<'PYCHECK'
+import collections
+import sys
+from pathlib import Path
+
+home, log = map(Path, sys.argv[1:])
+notes = set((home / "state/inbox").glob("*.note")) | set((home / "state/inbox/handled").glob("*.note"))
+assert len(notes) == 12
+expected = notes | {home / "state/postmortem-checklist.tsv"}
+reads = collections.Counter(map(Path, log.read_text().splitlines()))
+assert set(reads) == expected, (set(reads), expected)
+assert all(reads[path] == 1 for path in expected), reads
+PYCHECK
+    [ "$?" -eq 0 ] || fail "$action re-read or skipped receipt inputs"
+  done
+  pass "each command reads every ledger and inbox input once while preserving historical verification"
+)
+
+test_calendar_dates_are_validated_and_invalid_history_is_isolated
+test_receipt_inputs_are_read_once_per_command
 test_relative_receipts_survive_a_different_working_directory
 test_unavailable_or_failed_hashing_keeps_every_machine_open
 test_collection_creates_each_due_morning_and_reads_inbox_receipts

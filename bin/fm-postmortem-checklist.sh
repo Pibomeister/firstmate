@@ -54,6 +54,8 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 LEDGER="$STATE/postmortem-checklist.tsv"
+RECEIPT_ROWS=""
+RECEIPTS_READABLE=0
 
 # The fixed machine roster, in checklist order. The local home's row is
 # named `local`.
@@ -69,10 +71,21 @@ die() {  # <message> [code]
 }
 
 valid_night() {  # <YYYY-MM-DD>
+  local year month day days
   case "$1" in
-    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) return 0 ;;
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
     *) return 1 ;;
   esac
+  year=$((10#${1:0:4})); month=$((10#${1:5:2})); day=$((10#${1:8:2}))
+  [ "$year" -ge 1 ] && [ "$month" -ge 1 ] && [ "$month" -le 12 ] && [ "$day" -ge 1 ] || return 1
+  case "$month" in
+    4|6|9|11) days=30 ;;
+    2)
+      days=28
+      if ((year % 400 == 0 || (year % 4 == 0 && year % 100 != 0))); then days=29; fi ;;
+    *) days=31 ;;
+  esac
+  [ "$day" -le "$days" ]
 }
 
 valid_machine() {  # <name>
@@ -101,44 +114,65 @@ file_sha256() {  # <file>
 }
 
 night_exists() {  # <night>
+  if [ "$RECEIPTS_READABLE" -eq 1 ]; then
+    awk -F '\t' -v night="$1" '$1 == night && $3 != "inbox-receipt" { found = 1 } END { exit !found }' <<< "$RECEIPT_ROWS"
+    return
+  fi
   [ -f "$LEDGER" ] || return 1
   awk -F '\t' -v night="$1" '$1 == night { found = 1 } END { exit !found }' "$LEDGER"
+}
+
+load_receipts() {
+  RECEIPT_ROWS=$(python3 - "$LEDGER" "$STATE/inbox" <<'PYRECEIPTS'
+import sys
+from pathlib import Path
+
+ledger, inbox = map(Path, sys.argv[1:])
+if ledger.exists():
+    for line in ledger.read_text(errors="surrogateescape").splitlines():
+        print(line)
+for directory in (inbox, inbox / "handled"):
+    for note in directory.glob("*.note"):
+        if not note.is_file():
+            continue
+        epoch = note.name.split("-", 1)[0]
+        if not epoch.isascii() or not epoch.isdecimal():
+            continue
+        body = False
+        for line in note.read_text(errors="surrogateescape").splitlines():
+            if line == "--":
+                body = True
+                continue
+            fields = line.split("\t")
+            if body and len(fields) == 5 and fields[0] == "postmortem-receipt":
+                print("\t".join((fields[1], fields[2], "inbox-receipt", fields[3], fields[4], epoch)))
+PYRECEIPTS
+  ) || return 1
+  RECEIPTS_READABLE=1
 }
 
 # The latest recorded receipt for one machine and night:
 # prints <path><TAB><hash>, empty when none was recorded.
 latest_receipt() {  # <night> <machine>
-  local night=$1 machine=$2 note id epoch
-  {
-    if [ -f "$LEDGER" ]; then
-      awk -F '\t' -v night="$night" -v machine="$machine" '
-        $1 == night && $2 == machine && $3 == "receipt" {
-          epoch = $6; path = $4; hash = $5
-        }
-        END { if (path != "") printf "%s\t%s\t%s\n", epoch, path, hash }' "$LEDGER" || return 1
-    fi
-    for note in "$STATE/inbox/"*.note "$STATE/inbox/handled/"*.note; do
-      [ -f "$note" ] || continue
-      id=${note##*/}; epoch=${id%%-*}
-      case "$epoch" in ''|*[!0-9]*) continue ;; esac
-      awk -F '\t' -v epoch="$epoch" -v night="$night" -v machine="$machine" '
-        /^--$/ { body = 1; next }
-        body && NF == 5 && $1 == "postmortem-receipt" && $2 == night && $3 == machine {
-          printf "%s\t%s\t%s\n", epoch, $4, $5
-        }' "$note" || return 1
-    done
-  } | awk -F '\t' '
-    $1 ~ /^[0-9]+$/ {
-      if (!seen || $1 + 0 > latest) {
-        seen = 1; latest = $1 + 0; path = $2; hash = tolower($3); conflict = 0
-      } else if ($1 + 0 == latest && ($2 != path || tolower($3) != hash)) {
+  [ "$RECEIPTS_READABLE" -eq 1 ] || return 1
+  awk -F '\t' -v night="$1" -v machine="$2" '
+    function consider(epoch, candidate_path, candidate_hash) {
+      if (epoch !~ /^[0-9]+$/) return
+      if (!seen || epoch + 0 > latest) {
+        seen = 1; latest = epoch + 0; path = candidate_path; hash = tolower(candidate_hash); conflict = 0
+      } else if (epoch + 0 == latest && (candidate_path != path || tolower(candidate_hash) != hash)) {
         conflict = 1
       }
     }
+    $1 == night && $2 == machine && $3 == "receipt" {
+      ledger_epoch = $6; ledger_path = $4; ledger_hash = $5
+    }
+    $1 == night && $2 == machine && $3 == "inbox-receipt" { consider($6, $4, $5) }
     END {
+      if (ledger_path != "") consider(ledger_epoch, ledger_path, ledger_hash)
       if (conflict) exit 1
       if (path != "") printf "%s\t%s\n", path, hash
-    }'
+    }' <<< "$RECEIPT_ROWS"
 }
 
 # One machine's verified row: <machine><TAB>closed|open<TAB><detail>.
@@ -185,7 +219,11 @@ print_rows() {  # <night> <all|open>
       printf '%s\n' "$row"
     fi
   done
-  return "$open_count"
+  if [ "$mode" = all ]; then
+    [ "$open_count" -eq 0 ]
+  else
+    return 0
+  fi
 }
 
 append_row() {  # <night> <machine> <event> <path> <hash>
@@ -243,24 +281,20 @@ cmd_receipt() {
   [ -n "$night" ] || night=$(date +%F)
   valid_night "$night" || die "night must be YYYY-MM-DD, got: $night" 2
   append_row "$night" "$machine" receipt "$path" "$hash"
+  load_receipts || :
   machine_row "$night" "$machine"
 }
 
 cmd_check() {  # <all|open> [args...]
   local mode=$1
   shift
-  local night open_count
+  local night
   night=$(parse_night "$@") || exit $?
-  if [ "$mode" = all ]; then
+  load_receipts || :
+  if [ "$mode" = all ] && [ "$RECEIPTS_READABLE" -eq 1 ]; then
     night_exists "$night" || die "no postmortem checklist for night $night" 2
   fi
   print_rows "$night" "$mode"
-  open_count=$?
-  if [ "$mode" = all ]; then
-    [ "$open_count" -eq 0 ]
-    return
-  fi
-  return 0
 }
 
 cmd_collect() {
@@ -272,18 +306,25 @@ cmd_collect() {
       *) die "unknown argument: $1" 2 ;;
     esac
   done
-  nights=$(python3 - "$since" "$now" "$LEDGER" <<'PYDATES'
+  if ! load_receipts; then
+    print_rows "" open
+    return 1
+  fi
+  nights=$(python3 - "$since" "$now" 3<<< "$RECEIPT_ROWS" <<'PYDATES'
 import datetime as dt
+import os
 import sys
-from pathlib import Path
 
 end = dt.datetime.fromtimestamp(int(sys.argv[2]))
 start = dt.datetime.fromtimestamp(int(sys.argv[1])) if sys.argv[1] else end.replace(hour=0, minute=0, second=0, microsecond=0)
 nights = set()
-ledger = Path(sys.argv[3])
-if ledger.exists():
-    for row in ledger.read_text().splitlines():
-        night = dt.date.fromisoformat(row.split("\t", 1)[0])
+for row in os.fdopen(3, errors="surrogateescape"):
+    fields = row.rstrip("\n").split("\t")
+    if len(fields) >= 3 and fields[2] != "inbox-receipt":
+        try:
+            night = dt.date.fromisoformat(fields[0])
+        except ValueError:
+            continue
         if night <= end.date():
             nights.add(night)
 day = start.date()
@@ -304,7 +345,7 @@ PYDATES
   while IFS= read -r night; do
     [ -n "$night" ] || continue
     (cmd_start --night "$night") >/dev/null || rc=1
-    cmd_check open --night "$night" | while IFS=$'\t' read -r machine state detail; do
+    print_rows "$night" open | while IFS=$'\t' read -r machine state detail; do
       printf '%s\t%s\t%s: %s\n' "$machine" "$state" "$night" "$detail"
     done || rc=1
   done <<< "$nights"
