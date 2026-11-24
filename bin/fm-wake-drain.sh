@@ -74,6 +74,7 @@ ACK_NOTICE_FINGERPRINTS=
 PRESENTATION_LOCK_TIMEOUT=${FM_STATUS_PRESENTATION_LOCK_TIMEOUT:-10}
 DRAIN_PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-30}
 DRAIN_PHASE_FILE=
+_FM_STATUS_SCRATCH_DIR=
 DRAIN_PHASE_FD_OPEN=0
 DRAIN_TRACE=0
 DRAIN_PARENT_PID=
@@ -912,7 +913,7 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
 }
 
 run_drain_presentation() {  # [<deduped-raw-rows>]
-  local rc=0 phase=optional-presentation phase_line _FM_STATUS_SCRATCH_DIR
+  local rc=0 phase=optional-presentation phase_line
   drain_phase presentation-setup
   _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.XXXXXX") || return 1
   DRAIN_PHASE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-wake-drain-phase.XXXXXX" 2>/dev/null) || DRAIN_PHASE_FILE=
@@ -920,7 +921,6 @@ run_drain_presentation() {  # [<deduped-raw-rows>]
     DRAIN_PHASE_FD_OPEN=1
   fi
   fm_run_timed_fn "$DRAIN_PRESENTATION_TIMEOUT" drain_presentation_worker "${1:-}" || rc=$?
-  rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
   if fm_timed_out "$rc"; then
     if [ -n "$DRAIN_PHASE_FILE" ] && [ -r "$DRAIN_PHASE_FILE" ]; then
       while IFS= read -r phase_line; do phase=$phase_line; done < "$DRAIN_PHASE_FILE"
@@ -946,6 +946,10 @@ cleanup() {
   fi
   fm_current_pid current_pid || current_pid=
   if [ "$current_pid" = "$DRAIN_PARENT_PID" ]; then
+    trap '' INT TERM
+    fm_cancel_bash_timeout
+    [ -z "$_FM_STATUS_SCRATCH_DIR" ] || rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
+    _FM_STATUS_SCRATCH_DIR=
     [ "$DRAIN_PHASE_FD_OPEN" -eq 0 ] || exec 18>&-
     DRAIN_PHASE_FD_OPEN=0
     [ -z "$DRAIN_PHASE_FILE" ] || rm -f -- "$DRAIN_PHASE_FILE" 2>/dev/null || true

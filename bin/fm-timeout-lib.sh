@@ -148,19 +148,37 @@ fm_bash_timeout_child() {
   exit "$command_rc"
 }
 
+fm_cancel_bash_timeout() {
+  if [ -n "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}" ]; then
+    kill -TERM -- "-$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+  fi
+  if [ -n "${_FM_BASH_TIMEOUT_CHILD_PID:-}" ]; then
+    kill -TERM -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+    command -p sleep 1
+    kill -KILL -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+    wait "$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+  fi
+  if [ -n "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}" ]; then
+    wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+  fi
+  [ -z "${_FM_BASH_TIMEOUT_STATUS_FILE:-}" ] \
+    || command -p rm -f "$_FM_BASH_TIMEOUT_STATUS_FILE" "${_FM_BASH_TIMEOUT_DEADLINE_FILE:-}" 2>/dev/null || true
+}
+
 fm_run_bash_timeout() {
-  local seconds=$1 command_status deadline_status child_pid watchdog_pid command_rc recorded_rc monitor_was_on=0 caller
+  local seconds=$1 _FM_BASH_TIMEOUT_STATUS_FILE= _FM_BASH_TIMEOUT_DEADLINE_FILE=
+  local _FM_BASH_TIMEOUT_CHILD_PID= _FM_BASH_TIMEOUT_WATCHDOG_PID= command_rc recorded_rc monitor_was_on=0 caller
   shift
   # Its helper tools come from the default PATH (an absolute sh, command -p
   # otherwise), so a caller with a trimmed PATH still gets a real bound rather
   # than an immediate 124.
   caller=$(exec /bin/sh -c 'echo "$PPID"')
-  command_status=$(command -p mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
-  deadline_status="${command_status}.deadline"
+  _FM_BASH_TIMEOUT_STATUS_FILE=$(command -p mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
+  _FM_BASH_TIMEOUT_DEADLINE_FILE="${_FM_BASH_TIMEOUT_STATUS_FILE}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
-  fm_timeout_background fm_bash_timeout_child "$command_status" "$@"
-  child_pid=$!
+  fm_timeout_background fm_bash_timeout_child "$_FM_BASH_TIMEOUT_STATUS_FILE" "$@"
+  _FM_BASH_TIMEOUT_CHILD_PID=$!
   # The watchdog's sleeps come from the default PATH (command -p): a bound is
   # wall-clock time even where a caller's PATH puts a stub or wrapper first.
   # Its own group outlives a caller stopped from outside, so it also ends the
@@ -176,30 +194,30 @@ fm_run_bash_timeout() {
           i=$((i + 1))
         done ;;
     esac
-    printf 'expired\n' > "$deadline_status"
-    kill -TERM -- "-$child_pid" 2>/dev/null || true
+    printf 'expired\n' > "$_FM_BASH_TIMEOUT_DEADLINE_FILE"
+    kill -TERM -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
     command -p sleep 1
-    kill -KILL -- "-$child_pid" 2>/dev/null || true
+    kill -KILL -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
     exit 124
   ) &
-  watchdog_pid=$!
+  _FM_BASH_TIMEOUT_WATCHDOG_PID=$!
   [ "$monitor_was_on" -eq 1 ] || set +m
 
-  if wait "$child_pid" 2>/dev/null; then
+  if wait "$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null; then
     command_rc=0
   else
     command_rc=$?
   fi
-  if [ -s "$deadline_status" ]; then
-    wait "$watchdog_pid" 2>/dev/null || true
+  if [ -s "$_FM_BASH_TIMEOUT_DEADLINE_FILE" ]; then
+    wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
     command_rc=124
   else
-    kill -TERM -- "-$watchdog_pid" 2>/dev/null || kill "$watchdog_pid" 2>/dev/null || true
-    wait "$watchdog_pid" 2>/dev/null || true
-    recorded_rc=$(command -p cat "$command_status" 2>/dev/null || true)
+    kill -TERM -- "-$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || kill "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    recorded_rc=$(command -p cat "$_FM_BASH_TIMEOUT_STATUS_FILE" 2>/dev/null || true)
     case "$recorded_rc" in ''|*[!0-9]*) ;; *) command_rc=$recorded_rc ;; esac
   fi
-  command -p rm -f "$command_status" "$deadline_status" 2>/dev/null || true
+  command -p rm -f "$_FM_BASH_TIMEOUT_STATUS_FILE" "$_FM_BASH_TIMEOUT_DEADLINE_FILE" 2>/dev/null || true
   return "$command_rc"
 }
 

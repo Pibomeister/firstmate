@@ -489,13 +489,20 @@ SH
   pass 'a bounded presentation names its phase, preserves pending data, reaps readers and recovers'
 }
 
-test_timeout_cleans_only_attempt_owned_presentation_scratch() {
-  local dir state stage rc scratch peer_pid peer_shell i peer_scratch
+check_attempt_owned_presentation_scratch() {
+  local mode=$1 expected_rc=124 dir state stage rc scratch peer_pid peer_shell i peer_scratch reader_pid
+  case "$mode" in TERM) expected_rc=143 ;; INT) expected_rc=130 ;; esac
   for stage in preparation fold; do
-    dir=$(make_case "scratch-$stage")
+    dir=$(make_case "scratch-$mode-$stage")
     state="$dir/state"
     printf 'note: retained note\nneeds-decision [key=held]: retained decision\n' > "$state/task.status"
     cp "$state/task.status" "$dir/status.before"
+    if [ "$mode" = timeout ]; then
+      : > "$state/.wake-queue"
+    else
+      append_wake "$state" check scratch 'unhandled scratch fixture' || fail 'could not seed scratch wake'
+    fi
+    cp "$state/.wake-queue" "$dir/queue.before"
     cat > "$dir/reader" <<'SH'
 #!/usr/bin/env bash
 if [ "${FM_PEER_READER:-0}" = 1 ]; then
@@ -510,6 +517,7 @@ for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*
   esac
   for scratch in "$pattern"*; do
     [ -f "$scratch" ] || continue
+    [ "${FM_INTERRUPT_TEST:-0}" != 1 ] || trap '' TERM
     printf '%s\n' "$$" > "$FM_READER_PID"
     exec sleep 30
   done
@@ -540,15 +548,48 @@ SH
     cp "$peer_scratch" "$dir/peer.before"
     rm "$state/peer.status"
     rc=0
-    fm_run_timed 8 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=3 \
-      FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" FM_READER_PID="$dir/drain.pid" \
-      "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+    if [ "$mode" = timeout ]; then
+      fm_run_timed 8 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=3 \
+        FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" FM_READER_PID="$dir/drain.pid" \
+        "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+    else
+      FM_STATE_OVERRIDE="$state" FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" \
+        FM_READER_PID="$dir/drain.pid" FM_INTERRUPT_TEST=1 \
+        python3 - "$BASH" "$DRAIN" "$dir" "$mode" <<'PY_SIGNAL' || rc=$?
+import pathlib
+import signal
+import subprocess
+import sys
+import time
+bash, drain, directory, requested_signal = sys.argv[1:]
+case = pathlib.Path(directory)
+with (case / 'timed.out').open('wb') as out, (case / 'timed.err').open('wb') as err:
+    child = subprocess.Popen([bash, drain, '--phases'], stdout=out, stderr=err)
+    try:
+        deadline = time.monotonic() + 20
+        while not (case / 'drain.pid').exists():
+            if child.poll() is not None or time.monotonic() >= deadline:
+                raise RuntimeError('drain never reached the blocked reader: ' + (case / 'timed.err').read_text())
+            time.sleep(0.05)
+        child.send_signal(getattr(signal, 'SIG' + requested_signal))
+        rc = child.wait(timeout=10)
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=35)
+sys.exit(rc)
+PY_SIGNAL
+    fi
     kill -0 "$peer_pid" || fail 'drain stopped a concurrent reader'
     cmp "$dir/peer.before" "$peer_scratch" || fail 'drain removed or changed concurrent scratch'
     kill "$peer_pid" 2>/dev/null || true
     wait "$peer_shell" 2>/dev/null || true
     rm -f "$peer_scratch"
-    assert_equals 124 "$rc" 'presentation timeout must remain incomplete'
+    assert_equals "$expected_rc" "$rc" 'presentation must preserve its terminal status'
+    reader_pid=$(cat "$dir/drain.pid")
+    if /bin/bash -c '. "$1"; fm_pid_alive "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$reader_pid"; then
+      fail 'presentation exited before stopping its reader'
+    fi
     [ -s "$dir/drain.pid" ] || fail "timeout did not reach $stage"
     if [ "$stage" = preparation ]; then
       assert_grep 'phase=status-unread' "$dir/timed.err" 'preparation did not block inside prepared output'
@@ -562,11 +603,24 @@ SH
       [ ! -e "$scratch" ] || fail "timed-out drain leaked scratch: $scratch"
     done
     cmp "$dir/status.before" "$state/task.status" || fail 'scratch cleanup changed durable status'
+    cmp "$dir/queue.before" "$state/.wake-queue" || fail 'scratch cleanup acknowledged an unhandled wake'
     FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" || fail 'retry failed after scratch cleanup'
     assert_grep 'retained note' "$dir/retry.out" 'scratch cleanup lost unread status'
     assert_grep '[key=held]' "$dir/retry.out" 'scratch cleanup lost an open decision'
   done
-  pass 'preparation and fold timeouts clean owned scratch and preserve a concurrent reader'
+  pass "$mode during preparation and folding cleans owned scratch and preserves a concurrent reader"
+}
+
+test_timeout_cleans_only_attempt_owned_presentation_scratch() {
+  check_attempt_owned_presentation_scratch timeout
+}
+
+test_term_cleans_only_attempt_owned_presentation_scratch() {
+  check_attempt_owned_presentation_scratch TERM
+}
+
+test_int_cleans_only_attempt_owned_presentation_scratch() {
+  check_attempt_owned_presentation_scratch INT
 }
 
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
@@ -650,5 +704,7 @@ test_empty_queue_does_not_swallow_later_signal_annotation
 test_routine_working_and_covered_done_stay_silent_on_the_empty_queue
 test_presentation_deadline_preserves_pending_data_and_recovers
 test_timeout_cleans_only_attempt_owned_presentation_scratch
+test_term_cleans_only_attempt_owned_presentation_scratch
+test_int_cleans_only_attempt_owned_presentation_scratch
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout
 test_warm_routine_history_is_bounded_without_acknowledging_it
