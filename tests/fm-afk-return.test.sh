@@ -42,6 +42,7 @@ install_runner() {  # <case-dir>
   # The merge-notification marker reader behind the brief's landed section.
   cp "$ROOT/bin/fm-pr-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-postmortem-checklist.sh" "$dir/bin/"
   fm_test_tasks_toml "$dir/home/.tasks.toml"
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/home/data/backlog.md"
   # The fake stop mirrors the real one's ordering: the away flag goes, then the
@@ -557,6 +558,42 @@ test_return_brief_lists_open_human_only_steps() {
   assert_not_contains "$out" 'human-step-gh-login' "a resolved human-only step was still listed"
   assert_equals 1 "$(awk -F'\t' '$2 == "worker:auth" && $5 == "briefed"' "$dir/home/state/watchdog/human-steps.tsv" | wc -l | tr -d ' ')" "a step shown twice was marked briefed twice"
   pass "the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate"
+}
+
+test_return_brief_names_unclosed_postmortem_machines() {
+  local dir out waiting night artifact hash
+  dir="$TMP_ROOT/brief-postmortems"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'collect the overnight postmortems' >/dev/null 2>&1 || fail "could not confirm the away-posture record"
+  night=$(date +%F)
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" start --night "$night" >/dev/null \
+    || fail "could not open the postmortem checklist"
+  # M3 and the local home close with verified receipts; Studio's artifact
+  # hash does not match its receipt; Hetzner records no receipt at all.
+  for machine in M3 local; do
+    artifact="$dir/home/$machine-postmortem.md"
+    printf '%s postmortem\n' "$machine" > "$artifact"
+    hash=$(shasum -a 256 "$artifact" | awk '{print $1}')
+    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
+      --machine "$machine" --path "$artifact" --hash "$hash" --night "$night" >/dev/null \
+      || fail "could not record the $machine receipt"
+  done
+  artifact="$dir/home/Studio-postmortem.md"
+  printf 'Studio postmortem\n' > "$artifact"
+  FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
+    --machine Studio --path "$artifact" --hash 0000000000000000000000000000000000000000000000000000000000000000 --night "$night" >/dev/null \
+    || fail "could not record the Studio receipt"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  out=$(run_return "$dir" begin) || fail "the postmortem return did not complete: $out"
+  waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
+  assert_contains "$waiting" 'overnight postmortems not received:' "unclosed postmortems were not listed under waiting on you: $out"
+  assert_contains "$waiting" '    - Hetzner: no artifact receipt recorded' "the missing machine was not named as missing in the brief: $waiting"
+  assert_contains "$waiting" '    - Studio: artifact hash mismatch' "a bad-hash artifact was not kept open in the brief: $waiting"
+  assert_not_contains "$waiting" '    - M3:' "a verified machine was still listed as waiting: $waiting"
+  assert_not_contains "$waiting" '    - local:' "the verified local home was still listed as waiting: $waiting"
+  assert_not_contains "$waiting" '(nothing)' "unclosed postmortems left waiting on you empty"
+  pass "the return brief names each unclosed postmortem machine and keeps a bad-hash receipt open"
 }
 
 test_return_brief_points_at_the_drain_on_a_host_home_only() {
@@ -1612,6 +1649,7 @@ test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
+test_return_brief_names_unclosed_postmortem_machines
 test_return_brief_points_at_the_drain_on_a_host_home_only
 test_return_brief_all_silent_window_does_not_point_at_drain
 test_return_keeps_catchup_gated_when_the_drain_cannot_record_outcomes

@@ -27,8 +27,11 @@
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
-# status logs, and the watchdog's human-only-step record
-# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh). An open
+# status logs, the watchdog's human-only-step record
+# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh), and the
+# overnight postmortem checklist ledger (bin/fm-postmortem-checklist.sh owns
+# its receipt contract; its unclosed machine rows are named under what is
+# waiting). An open
 # `human-step-<slug>` keyed blocker is a worker's human-only step: it is listed
 # under what is waiting on the captain and never holds the catch-up. Its order
 # is fixed: supervisor health across the away window
@@ -655,6 +658,23 @@ open_human_steps() {  # <human-steps.tsv>
     done
 }
 
+# Unclosed overnight-postmortem rows for the away window's night, from the
+# checklist owner (bin/fm-postmortem-checklist.sh). Prints nothing when no
+# checklist was opened for that night, so a night with no 07:45 order adds
+# no rows. The night is the away window's start date, else today.
+postmortem_open_rows() {  # <since-epoch>
+  local since=$1 night
+  [ -x "$SCRIPT_DIR/fm-postmortem-checklist.sh" ] || return 0
+  if [ -n "$since" ]; then
+    night=$(date -r "$since" +%F 2>/dev/null || date -d "@$since" +%F 2>/dev/null || printf '')
+  else
+    night=$(date +%F)
+  fi
+  [ -n "$night" ] || return 0
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-postmortem-checklist.sh" open --night "$night" 2>/dev/null || true
+}
+
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
   local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp
   local tag task key summary count routine routine_visible captain visible_outcomes live held_err last verb rows status url drained=0 pointer
@@ -762,6 +782,15 @@ EOF
     count=$((count + 1))
     printf '  - %s [key=%s] human-only step, other work continues: %s\n' "$task" "$key" "$summary"
   done < "$blockers"
+  # Unclosed overnight postmortems: each machine is named, never silently absent.
+  rows=$(postmortem_open_rows "$since")
+  if [ -n "$rows" ]; then
+    count=$((count + 1))
+    printf '  overnight postmortems not received:\n'
+    printf '%s\n' "$rows" | while IFS= read -r row; do
+      printf '    - %s: %s\n' "$(printf '%s' "$row" | cut -f1)" "$(printf '%s' "$row" | cut -f3-)"
+    done
+  fi
   [ "$count" -gt 0 ] || printf '  (nothing)\n'
 
   # 4. tried and failed, or could not be fixed.
