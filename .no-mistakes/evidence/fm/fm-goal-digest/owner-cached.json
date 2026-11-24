@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-11-24T00:00:11Z",
+  "generated_at_local": "2026-11-23T18:00:11-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [],
+  "waiting_on_captain": [
+    {
+      "source": "Fleet",
+      "id": "ask",
+      "title": "Choose release window",
+      "url": "",
+      "wait_started_at": "2026-11-23T20:54:56Z",
+      "age_hours": 3
+    },
+    {
+      "source": "Fleet/mate",
+      "id": "route",
+      "title": "Choose route",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null
+    }
+  ],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "Fleet/mate",
+      "detail": "secondmate decisions from cached ledger"
+    },
+    {
+      "source": "M4",
+      "detail": "native owner-action records unavailable"
+    },
+    {
+      "source": "Offline",
+      "detail": "source unreachable"
+    }
+  ],
+  "missed_etas": [
+    {
+      "source": "M4",
+      "eta": "2020-01-01",
+      "line": "eta: 2020-01-01 overdue"
+    }
+  ],
+  "stalls": [
+    {
+      "source": "M4",
+      "age_hours": 72
+    }
+  ],
+  "review_convergence": [
+    {
+      "source": "Reviews",
+      "entries": [
+        "T1: blocked",
+        "T7: pending",
+        "T5: done",
+        "T6b: pending",
+        "T10: pending",
+        "T8: done",
+        "AgentKit: 2 unresolved"
+      ]
+    }
+  ],
+  "unreachable_sources": [
+    {
+      "kind": "status",
+      "source": "Offline",
+      "detail": "{run-worktree}/.test-goal-digest-tmp/live/owner/missing"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-11-24T00:00:49Z",
+  "generated_at_local": "2026-11-23T18:00:50-0600 CST",
+  "changed": true,
+  "new_merges": [],
+  "open_pull_requests": [
+    {
+      "repo": "synthetic/project",
+      "number": 7,
+      "title": "PR 7",
+      "url": "https://synthetic.invalid/pulls/7",
+      "created_at": "2026-11-22T00:00:23Z",
+      "age_hours": 48,
+      "author": "synthetic-user",
+      "draft": true
+    }
+  ],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [],
+  "unreachable_sources": [
+    {
+      "kind": "repo",
+      "source": "synthetic/project",
+      "detail": "gh api failed or incomplete; results not used"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+before parent kill
+COMMAND   PID          USER   FD   TYPE DEVICE SIZE/OFF       NODE NAME
+bash    35733 eduardopicazo   10w   REG   1,16        0 1463810967 {run-worktree}/.test-goal-digest-tmp/lock-probe/data/goal-digest/.state/run.flock
+Python  36910 eduardopicazo   10w   REG   1,16        0 1463810967 {run-worktree}/.test-goal-digest-tmp/lock-probe/data/goal-digest/.state/run.flock
+
+after parent kill
+COMMAND   PID          USER   FD   TYPE DEVICE SIZE/OFF       NODE NAME
+Python  36910 eduardopicazo   10w   REG   1,16        0 1463810967 {run-worktree}/.test-goal-digest-tmp/lock-probe/data/goal-digest/.state/run.flock
+
+retry exit 1  goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-tmp/lock-probe/data/goal-digest/.state/run.flock)
+

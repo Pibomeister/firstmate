@@ -1,0 +1,41 @@
+# Goal digest
+
+Generated: 2026-11-23T18:00:20-0600 CST / 2026-11-24T00:00:20Z
+Changed: yes
+
+## New merges since last run
+
+- None
+
+## Open pull requests
+
+- None
+
+## Waiting on owner
+
+- None known
+- Unknown: Fleet/mate: secondmate decision coverage incomplete
+- Unknown: M4: native owner-action records unavailable
+- Unknown: Offline: source unreachable
+
+## Missed ETAs
+
+- M4: eta 2020-01-01 - eta: 2020-01-01 overdue
+
+## Stalls
+
+- M4: no update for 72h
+
+## Review convergence
+
+- Reviews: T1: blocked
+- Reviews: T7: pending
+- Reviews: T5: done
+- Reviews: T6b: pending
+- Reviews: T10: pending
+- Reviews: T8: done
+- Reviews: AgentKit: 2 unresolved
+
+## Unreachable sources
+
+- status Offline: {run-worktree}/.test-goal-digest-tmp/live/owner/missing

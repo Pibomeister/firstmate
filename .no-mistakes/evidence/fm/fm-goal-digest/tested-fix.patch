@@ -1,0 +1,104 @@
+diff --git a/bin/fm-goal-digest.sh b/bin/fm-goal-digest.sh
+index a599427b..40f23e20 100755
+--- a/bin/fm-goal-digest.sh
++++ b/bin/fm-goal-digest.sh
+@@ -136,6 +136,8 @@ load_config() {
+ timed() {
+   local seconds=$1
+   shift
++  # Close the lock on the external command, not on this shell function:
++  # Bash saves function redirections in an inheritable duplicate fd.
+   FM_GD_TIMEOUT=$seconds python3 -c '
+ import os, signal, subprocess, sys
+ proc = subprocess.Popen(sys.argv[1:], start_new_session=True)
+@@ -145,7 +147,7 @@ except subprocess.TimeoutExpired:
+     os.killpg(proc.pid, signal.SIGKILL)
+     proc.wait()
+     raise SystemExit(124)
+-' "$@"
++' "$@" 9>&-
+ }
+ 
+ shell_quote() {
+@@ -225,8 +227,8 @@ read_source() {
+       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
+       local quoted
+       quoted=$(shell_quote "$path")
+-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" 9>&- > "$content_out" 2>/dev/null || return 1
+-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" 9>&- > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
++      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
++      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+       return 0
+       ;;
+     *)
+@@ -628,7 +630,7 @@ PY
+ 
+   if [ "$changed" = yes ] && [ -n "$summarize_cmd" ]; then
+     local summarize_ok=0
+-    if timed 120 /bin/sh -c "$summarize_cmd" 9>&- < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null; then
++    if timed 120 /bin/sh -c "$summarize_cmd" < "$output_dir/latest.md" > "$output_dir/summary.txt.tmp" 2>/dev/null; then
+       summarize_ok=1
+     fi
+     if [ "$summarize_ok" = 1 ]; then
+diff --git a/tests/fm-goal-digest.test.sh b/tests/fm-goal-digest.test.sh
+index e53e3187..ec9862a7 100755
+--- a/tests/fm-goal-digest.test.sh
++++ b/tests/fm-goal-digest.test.sh
+@@ -578,4 +578,56 @@ SH
+   pass "summarizer, gh and ssh timeouts stop owned descendants"
+ }
+ 
+-fm_test_run test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants
++test_killed_digest_releases_lock_while_summarizer_lives() {
++  python3 - "$SCRIPT" "$TMP_ROOT/crashed-summary" <<'PYTEST' || fail "killed digest left its run lock held by a child"
++import os, pathlib, shlex, signal, subprocess, sys, time
++script, home = sys.argv[1], pathlib.Path(sys.argv[2])
++(home / "config").mkdir(parents=True)
++ready = home / "ready"
++helper = home / "summarize.py"
++helper.write_text('import os, pathlib, sys, time\npathlib.Path(sys.argv[1]).write_text(str(os.getpid()))\ntime.sleep(300)\n')
++config = home / "config/goal-digest"
++config.write_text("summarize_cmd = " + shlex.join([sys.executable, str(helper), str(ready)]) + "\n")
++env = dict(os.environ, FM_HOME=str(home))
++children = set()
++with (home / "first.log").open("w") as log:
++    first = subprocess.Popen([script, "run"], env=env, stdout=log, stderr=log, start_new_session=True)
++    try:
++        deadline = time.monotonic() + 60
++        while not ready.exists() and first.poll() is None and time.monotonic() < deadline:
++            time.sleep(0.1)
++        assert ready.exists(), "digest did not reach the real summarizer"
++        pairs = [tuple(map(int, line.split())) for line in subprocess.check_output(["ps", "-axo", "pid=,ppid="], text=True).splitlines()]
++        parents = {first.pid}
++        while True:
++            found = {pid for pid, parent in pairs if parent in parents} - parents
++            if not found:
++                break
++            children.update(found)
++            parents.update(found)
++        child = int(ready.read_text())
++        children.add(child)
++        first.kill()
++        first.wait()
++        os.kill(child, 0)
++        config.write_text("")
++        retry = subprocess.run([script, "run"], env=env, text=True, capture_output=True, timeout=60)
++        assert retry.returncode == 0, retry.stderr
++        assert (home / "data/goal-digest/latest.json").is_file()
++    finally:
++        try:
++            os.killpg(first.pid, signal.SIGKILL)
++        except ProcessLookupError:
++            pass
++        for child in children:
++            try:
++                os.kill(child, signal.SIGKILL)
++            except ProcessLookupError:
++                pass
++        if first.poll() is None:
++            first.wait()
++PYTEST
++  pass "killed digest releases the lock while its summarizer is still alive"
++}
++
++fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants

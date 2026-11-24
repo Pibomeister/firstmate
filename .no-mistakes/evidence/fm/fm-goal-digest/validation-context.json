@@ -1,0 +1,12 @@
+{
+  "target": "5de69cb9eecc98e233245a25aee423c025f68e76",
+  "patch": "tested-fix.patch",
+  "baseline_test_exit": 0,
+  "live_driver_exit": 0,
+  "surface": "CLI and generated configuration; synthetic local data, real gh CLI through a local Unix socket",
+  "not_executed": [
+    "system LaunchAgent registration",
+    "operator private repositories and remote fleet homes"
+  ],
+  "post_fix_targeted_test_exit": 0
+}

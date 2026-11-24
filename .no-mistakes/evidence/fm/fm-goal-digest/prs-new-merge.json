@@ -1,0 +1,39 @@
+{
+  "generated_at": "2026-11-24T00:00:36Z",
+  "generated_at_local": "2026-11-23T18:00:36-0600 CST",
+  "changed": true,
+  "new_merges": [
+    {
+      "repo": "synthetic/project",
+      "number": 3,
+      "title": "PR 3",
+      "url": "https://synthetic.invalid/pulls/3",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:35Z"
+    }
+  ],
+  "open_pull_requests": [
+    {
+      "repo": "synthetic/project",
+      "number": 7,
+      "title": "PR 7",
+      "url": "https://synthetic.invalid/pulls/7",
+      "created_at": "2026-11-22T00:00:23Z",
+      "age_hours": 48,
+      "author": "synthetic-user",
+      "draft": true
+    }
+  ],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [],
+  "unreachable_sources": []
+}

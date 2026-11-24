@@ -1,0 +1,6 @@
+1..15
+Traceback (most recent call last):
+  File "<stdin>", line 33, in <module>
+AssertionError: goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-tmp/fm-goal-digest.M631Fq/crashed-summary/data/goal-digest/.state/run.flock)
+
+not ok - killed digest left its run lock held by a child

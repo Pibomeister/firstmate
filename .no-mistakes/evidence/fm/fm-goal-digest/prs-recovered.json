@@ -1,0 +1,839 @@
+{
+  "generated_at": "2026-11-24T00:00:55Z",
+  "generated_at_local": "2026-11-23T18:00:55-0600 CST",
+  "changed": true,
+  "new_merges": [
+    {
+      "repo": "synthetic/project",
+      "number": 2000,
+      "title": "PR 2000",
+      "url": "https://synthetic.invalid/pulls/2000",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2001,
+      "title": "PR 2001",
+      "url": "https://synthetic.invalid/pulls/2001",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2002,
+      "title": "PR 2002",
+      "url": "https://synthetic.invalid/pulls/2002",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2003,
+      "title": "PR 2003",
+      "url": "https://synthetic.invalid/pulls/2003",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2004,
+      "title": "PR 2004",
+      "url": "https://synthetic.invalid/pulls/2004",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2005,
+      "title": "PR 2005",
+      "url": "https://synthetic.invalid/pulls/2005",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2006,
+      "title": "PR 2006",
+      "url": "https://synthetic.invalid/pulls/2006",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2007,
+      "title": "PR 2007",
+      "url": "https://synthetic.invalid/pulls/2007",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2008,
+      "title": "PR 2008",
+      "url": "https://synthetic.invalid/pulls/2008",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2009,
+      "title": "PR 2009",
+      "url": "https://synthetic.invalid/pulls/2009",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2010,
+      "title": "PR 2010",
+      "url": "https://synthetic.invalid/pulls/2010",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2011,
+      "title": "PR 2011",
+      "url": "https://synthetic.invalid/pulls/2011",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2012,
+      "title": "PR 2012",
+      "url": "https://synthetic.invalid/pulls/2012",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2013,
+      "title": "PR 2013",
+      "url": "https://synthetic.invalid/pulls/2013",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2014,
+      "title": "PR 2014",
+      "url": "https://synthetic.invalid/pulls/2014",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2015,
+      "title": "PR 2015",
+      "url": "https://synthetic.invalid/pulls/2015",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2016,
+      "title": "PR 2016",
+      "url": "https://synthetic.invalid/pulls/2016",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2017,
+      "title": "PR 2017",
+      "url": "https://synthetic.invalid/pulls/2017",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2018,
+      "title": "PR 2018",
+      "url": "https://synthetic.invalid/pulls/2018",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2019,
+      "title": "PR 2019",
+      "url": "https://synthetic.invalid/pulls/2019",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2020,
+      "title": "PR 2020",
+      "url": "https://synthetic.invalid/pulls/2020",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2021,
+      "title": "PR 2021",
+      "url": "https://synthetic.invalid/pulls/2021",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2022,
+      "title": "PR 2022",
+      "url": "https://synthetic.invalid/pulls/2022",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2023,
+      "title": "PR 2023",
+      "url": "https://synthetic.invalid/pulls/2023",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2024,
+      "title": "PR 2024",
+      "url": "https://synthetic.invalid/pulls/2024",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2025,
+      "title": "PR 2025",
+      "url": "https://synthetic.invalid/pulls/2025",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2026,
+      "title": "PR 2026",
+      "url": "https://synthetic.invalid/pulls/2026",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2027,
+      "title": "PR 2027",
+      "url": "https://synthetic.invalid/pulls/2027",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2028,
+      "title": "PR 2028",
+      "url": "https://synthetic.invalid/pulls/2028",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2029,
+      "title": "PR 2029",
+      "url": "https://synthetic.invalid/pulls/2029",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2030,
+      "title": "PR 2030",
+      "url": "https://synthetic.invalid/pulls/2030",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2031,
+      "title": "PR 2031",
+      "url": "https://synthetic.invalid/pulls/2031",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2032,
+      "title": "PR 2032",
+      "url": "https://synthetic.invalid/pulls/2032",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2033,
+      "title": "PR 2033",
+      "url": "https://synthetic.invalid/pulls/2033",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2034,
+      "title": "PR 2034",
+      "url": "https://synthetic.invalid/pulls/2034",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2035,
+      "title": "PR 2035",
+      "url": "https://synthetic.invalid/pulls/2035",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2036,
+      "title": "PR 2036",
+      "url": "https://synthetic.invalid/pulls/2036",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2037,
+      "title": "PR 2037",
+      "url": "https://synthetic.invalid/pulls/2037",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2038,
+      "title": "PR 2038",
+      "url": "https://synthetic.invalid/pulls/2038",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2039,
+      "title": "PR 2039",
+      "url": "https://synthetic.invalid/pulls/2039",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2040,
+      "title": "PR 2040",
+      "url": "https://synthetic.invalid/pulls/2040",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2041,
+      "title": "PR 2041",
+      "url": "https://synthetic.invalid/pulls/2041",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2042,
+      "title": "PR 2042",
+      "url": "https://synthetic.invalid/pulls/2042",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2043,
+      "title": "PR 2043",
+      "url": "https://synthetic.invalid/pulls/2043",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2044,
+      "title": "PR 2044",
+      "url": "https://synthetic.invalid/pulls/2044",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2045,
+      "title": "PR 2045",
+      "url": "https://synthetic.invalid/pulls/2045",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2046,
+      "title": "PR 2046",
+      "url": "https://synthetic.invalid/pulls/2046",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2047,
+      "title": "PR 2047",
+      "url": "https://synthetic.invalid/pulls/2047",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2048,
+      "title": "PR 2048",
+      "url": "https://synthetic.invalid/pulls/2048",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2049,
+      "title": "PR 2049",
+      "url": "https://synthetic.invalid/pulls/2049",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2050,
+      "title": "PR 2050",
+      "url": "https://synthetic.invalid/pulls/2050",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2051,
+      "title": "PR 2051",
+      "url": "https://synthetic.invalid/pulls/2051",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2052,
+      "title": "PR 2052",
+      "url": "https://synthetic.invalid/pulls/2052",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2053,
+      "title": "PR 2053",
+      "url": "https://synthetic.invalid/pulls/2053",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2054,
+      "title": "PR 2054",
+      "url": "https://synthetic.invalid/pulls/2054",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2055,
+      "title": "PR 2055",
+      "url": "https://synthetic.invalid/pulls/2055",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2056,
+      "title": "PR 2056",
+      "url": "https://synthetic.invalid/pulls/2056",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2057,
+      "title": "PR 2057",
+      "url": "https://synthetic.invalid/pulls/2057",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2058,
+      "title": "PR 2058",
+      "url": "https://synthetic.invalid/pulls/2058",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2059,
+      "title": "PR 2059",
+      "url": "https://synthetic.invalid/pulls/2059",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2060,
+      "title": "PR 2060",
+      "url": "https://synthetic.invalid/pulls/2060",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2061,
+      "title": "PR 2061",
+      "url": "https://synthetic.invalid/pulls/2061",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2062,
+      "title": "PR 2062",
+      "url": "https://synthetic.invalid/pulls/2062",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2063,
+      "title": "PR 2063",
+      "url": "https://synthetic.invalid/pulls/2063",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2064,
+      "title": "PR 2064",
+      "url": "https://synthetic.invalid/pulls/2064",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2065,
+      "title": "PR 2065",
+      "url": "https://synthetic.invalid/pulls/2065",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2066,
+      "title": "PR 2066",
+      "url": "https://synthetic.invalid/pulls/2066",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2067,
+      "title": "PR 2067",
+      "url": "https://synthetic.invalid/pulls/2067",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2068,
+      "title": "PR 2068",
+      "url": "https://synthetic.invalid/pulls/2068",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2069,
+      "title": "PR 2069",
+      "url": "https://synthetic.invalid/pulls/2069",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2070,
+      "title": "PR 2070",
+      "url": "https://synthetic.invalid/pulls/2070",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2071,
+      "title": "PR 2071",
+      "url": "https://synthetic.invalid/pulls/2071",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2072,
+      "title": "PR 2072",
+      "url": "https://synthetic.invalid/pulls/2072",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2073,
+      "title": "PR 2073",
+      "url": "https://synthetic.invalid/pulls/2073",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2074,
+      "title": "PR 2074",
+      "url": "https://synthetic.invalid/pulls/2074",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2075,
+      "title": "PR 2075",
+      "url": "https://synthetic.invalid/pulls/2075",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2076,
+      "title": "PR 2076",
+      "url": "https://synthetic.invalid/pulls/2076",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2077,
+      "title": "PR 2077",
+      "url": "https://synthetic.invalid/pulls/2077",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2078,
+      "title": "PR 2078",
+      "url": "https://synthetic.invalid/pulls/2078",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2079,
+      "title": "PR 2079",
+      "url": "https://synthetic.invalid/pulls/2079",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2080,
+      "title": "PR 2080",
+      "url": "https://synthetic.invalid/pulls/2080",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2081,
+      "title": "PR 2081",
+      "url": "https://synthetic.invalid/pulls/2081",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2082,
+      "title": "PR 2082",
+      "url": "https://synthetic.invalid/pulls/2082",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2083,
+      "title": "PR 2083",
+      "url": "https://synthetic.invalid/pulls/2083",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2084,
+      "title": "PR 2084",
+      "url": "https://synthetic.invalid/pulls/2084",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2085,
+      "title": "PR 2085",
+      "url": "https://synthetic.invalid/pulls/2085",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2086,
+      "title": "PR 2086",
+      "url": "https://synthetic.invalid/pulls/2086",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2087,
+      "title": "PR 2087",
+      "url": "https://synthetic.invalid/pulls/2087",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2088,
+      "title": "PR 2088",
+      "url": "https://synthetic.invalid/pulls/2088",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2089,
+      "title": "PR 2089",
+      "url": "https://synthetic.invalid/pulls/2089",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2090,
+      "title": "PR 2090",
+      "url": "https://synthetic.invalid/pulls/2090",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2091,
+      "title": "PR 2091",
+      "url": "https://synthetic.invalid/pulls/2091",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2092,
+      "title": "PR 2092",
+      "url": "https://synthetic.invalid/pulls/2092",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2093,
+      "title": "PR 2093",
+      "url": "https://synthetic.invalid/pulls/2093",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2094,
+      "title": "PR 2094",
+      "url": "https://synthetic.invalid/pulls/2094",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2095,
+      "title": "PR 2095",
+      "url": "https://synthetic.invalid/pulls/2095",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2096,
+      "title": "PR 2096",
+      "url": "https://synthetic.invalid/pulls/2096",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2097,
+      "title": "PR 2097",
+      "url": "https://synthetic.invalid/pulls/2097",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2098,
+      "title": "PR 2098",
+      "url": "https://synthetic.invalid/pulls/2098",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2099,
+      "title": "PR 2099",
+      "url": "https://synthetic.invalid/pulls/2099",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    },
+    {
+      "repo": "synthetic/project",
+      "number": 2100,
+      "title": "PR 2100",
+      "url": "https://synthetic.invalid/pulls/2100",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:00:49Z"
+    }
+  ],
+  "open_pull_requests": [
+    {
+      "repo": "synthetic/project",
+      "number": 7,
+      "title": "PR 7",
+      "url": "https://synthetic.invalid/pulls/7",
+      "created_at": "2026-11-22T00:00:23Z",
+      "age_hours": 48,
+      "author": "synthetic-user",
+      "draft": true
+    }
+  ],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [],
+  "unreachable_sources": []
+}

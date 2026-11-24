@@ -1,0 +1,93 @@
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:33Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:37Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:40Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:44Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:48Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:54:51Z
+
+PASS Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions
+$ gh api repos/synthetic/project/pulls?state=open
+exit=0
+[{"number": 7, "title": "PR 7", "html_url": "https://synthetic.invalid/pulls/7", "merge_commit_sha": "0000000000000000000000000000000000000007", "merged_at": null, "created_at": "2026-11-21T23:54:54Z", "updated_at": "2026-11-23T23:54:54Z", "user": {"login": "synthetic-user"}, "draft": true}]
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:54:55Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:55:03Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:55:09Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:55:19Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:55:30Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-23T23:55:38Z
+
+PASS Real gh CLI against synthetic local Unix-socket API: paginate PRs, report new merge once, discard partial fetch and recover
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-23T23:55:45Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-23T23:55:48Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-23T23:55:59Z
+
+PASS Run real local summarizer only for content changes and preserve every review-ledger entry
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/latest.md generated=2026-11-23T23:56:03Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+Traceback (most recent call last):
+  File "<stdin>", line 72, in <module>
+IsADirectoryError: [Errno 21] Is a directory: '{run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/history/20261123T235606Z.json.tmp'
+goal-digest: digest generation failed; state not advanced
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/latest.md generated=2026-11-23T23:56:12Z
+
+Concurrent reader parsed 30075 complete latest.json documents; no partial publication observed.
+Archive failure left latest JSON/Markdown, seen set, watermark and changed hash byte-identical; recovered merge 9002 remained reportable.
+PASS Reject failed archival without consuming notifications and publish complete JSON to concurrent readers
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-tmp/live/locks/data/goal-digest/.state/run.flock)
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-tmp/live/locks/data/goal-digest/.state/run.flock)
+
+FAIL Reject concurrent run, recover after killed owner, and terminate network and summarizer descendants at deadlines: AssertionError()

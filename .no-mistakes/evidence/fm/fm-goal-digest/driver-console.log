@@ -1,0 +1,134 @@
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:59:58Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-24T00:00:07Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-24T00:00:11Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-24T00:00:15Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-24T00:00:17Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-24T00:00:20Z
+
+PASS Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions
+$ gh api repos/synthetic/project/pulls?state=open
+exit=0
+[{"number": 7, "title": "PR 7", "html_url": "https://synthetic.invalid/pulls/7", "merge_commit_sha": "0000000000000000000000000000000000000007", "merged_at": null, "created_at": "2026-11-22T00:00:23Z", "updated_at": "2026-11-24T00:00:23Z", "user": {"login": "synthetic-user"}, "draft": true}]
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:24Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:29Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:36Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:42Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:49Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/prs/data/goal-digest/latest.md generated=2026-11-24T00:00:55Z
+
+PASS Real gh CLI against synthetic local Unix-socket API: paginate PRs, report new merge once, discard partial fetch and recover
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-24T00:01:03Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-24T00:01:05Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/summary/data/goal-digest/latest.md generated=2026-11-24T00:01:06Z
+
+PASS Run real local summarizer only for content changes and preserve every review-ledger entry
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/latest.md generated=2026-11-24T00:01:08Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+Traceback (most recent call last):
+  File "<stdin>", line 72, in <module>
+IsADirectoryError: [Errno 21] Is a directory: '{run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/history/20261124T000115Z.json.tmp'
+goal-digest: digest generation failed; state not advanced
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/publication/data/goal-digest/latest.md generated=2026-11-24T00:01:22Z
+
+Concurrent reader parsed 22004 complete latest.json documents; no partial publication observed.
+Archive failure left latest JSON/Markdown, seen set, watermark and changed hash byte-identical; recovered merge 9002 remained reportable.
+PASS Reject failed archival without consuming notifications and publish complete JSON to concurrent readers
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=1
+goal-digest: another run is in progress; skipping (lock {run-worktree}/.test-goal-digest-tmp/live/locks/data/goal-digest/.state/run.flock)
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/locks/data/goal-digest/latest.md generated=2026-11-24T00:01:31Z
+
+Killed digest parent; subsequent run acquired its lock while the old summarizer process group still existed.
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/network-timeout/data/goal-digest/latest.md generated=2026-11-24T00:01:32Z
+
+Slow localhost API was bounded by 1-second per-call deadlines; digest returned after 4.1s with explicit unavailable sources.
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/summarizer-timeout/data/goal-digest/latest.md generated=2026-11-24T00:01:36Z
+goal-digest: summarize_cmd failed; digest still written
+
+$ ps -o stat= -p 83989
+exit=1
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/summarizer-timeout/data/goal-digest/latest.md generated=2026-11-24T00:03:39Z
+
+Production 120-second summarizer deadline elapsed after 121.7s; descendant 83989 exited and next run succeeded.
+PASS Reject concurrent run, recover after killed owner, and terminate network and summarizer descendants at deadlines
+$ {run-worktree}/bin/fm-goal-digest.sh install
+exit=0
+goal-digest: installed={run-worktree}/.test-goal-digest-tmp/live/schedule-user/Library/LaunchAgents/dev.firstmate.goal-digest-1254570693.plist interval_seconds=1200
+
+$ {run-worktree}/bin/fm-goal-digest.sh install
+exit=0
+goal-digest: installed={run-worktree}/.test-goal-digest-tmp/live/schedule-user/Library/LaunchAgents/dev.firstmate.goal-digest-677465908.plist interval_seconds=1200
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/scheduled & home/data/goal-digest/latest.md generated=2026-11-24T00:04:06Z
+
+Generated plist parsed; fixed StartInterval=1200, two home-scoped labels, escaped home path, and declared clean environment executed the real digest successfully. No LaunchAgent registered.
+$ {run-worktree}/bin/fm-goal-digest.sh uninstall
+exit=0
+goal-digest: uninstalled={run-worktree}/.test-goal-digest-tmp/live/schedule-user/Library/LaunchAgents/dev.firstmate.goal-digest-1254570693.plist
+
+$ {run-worktree}/bin/fm-goal-digest.sh uninstall
+exit=0
+goal-digest: uninstalled={run-worktree}/.test-goal-digest-tmp/live/schedule-user/Library/LaunchAgents/dev.firstmate.goal-digest-677465908.plist
+
+PASS Generate home-scoped 20-minute LaunchAgent configuration and execute its declared environment locally

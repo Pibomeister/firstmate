@@ -1,0 +1,37 @@
+[
+  {
+    "name": "Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+  },
+  {
+    "name": "Real gh CLI against synthetic local Unix-socket API: paginate PRs, report new merge once, discard partial fetch and recover",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+  },
+  {
+    "name": "Run real local summarizer only for content changes and preserve every review-ledger entry",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+  },
+  {
+    "name": "Reject failed archival without consuming notifications and publish complete JSON to concurrent readers",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": "Executed the real digest CLI in a disposable home with synthetic inputs."
+  },
+  {
+    "name": "Reject concurrent run, recover after killed owner, and terminate network and summarizer descendants at deadlines",
+    "result": "fail",
+    "live": true,
+    "evidence": "live-transcript.log",
+    "reason": ""
+  }
+]

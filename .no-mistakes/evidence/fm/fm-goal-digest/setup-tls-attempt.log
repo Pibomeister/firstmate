@@ -1,0 +1,38 @@
+$ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config {run-worktree}/.test-goal-digest-tmp/live/cert.conf -keyout {run-worktree}/.test-goal-digest-tmp/live/key.pem -out {run-worktree}/.test-goal-digest-tmp/live/cert.pem
+exit=0
+Generating a 2048 bit RSA private key
+.............+++++
+................+++++
+writing new private key to '{run-worktree}/.test-goal-digest-tmp/live/key.pem'
+-----
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:52:41Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:52:47Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:52:50Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=no latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:52:53Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:52:57Z
+
+$ {run-worktree}/bin/fm-goal-digest.sh run
+exit=0
+goal-digest: changed=yes latest={run-worktree}/.test-goal-digest-tmp/live/owner/data/goal-digest/latest.md generated=2026-11-23T23:53:02Z
+
+PASS Generate local CST digest with explicit owner holds, ETA/stall/review records and cached coverage transitions
+$ gh api repos/synthetic/project/pulls?state=open
+exit=1
+Get "https://127.0.0.1:61895/api/v3/repos/synthetic/project/pulls?state=open": tls: failed to verify certificate: x509: certificate signed by unknown authority
+
+FAIL Real gh CLI against synthetic localhost TLS API: paginate PRs, report new merge once, discard partial fetch and recover: AssertionError('Get "https://127.0.0.1:61895/api/v3/repos/synthetic/project/pulls?state=open": tls: failed to verify certificate: x509: certificate signed by unknown authority\n')

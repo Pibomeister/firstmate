@@ -1,0 +1,16 @@
+1..14
+ok - new merge detection, changed flag and changed-only summarizer
+ok - missed ETA, stall, unreachable source and review record
+ok - missing config writes an empty digest in the default directory
+ok - launchagent install and uninstall
+ok - ssh quoting, concurrent-run lock, crashed-run lock release and install failure
+ok - summarizer background helper does not hold the run lock
+ok - first-run seeding and later-page failure
+ok - explicit owner actions, actual wait age, resolutions and unknown sources
+ok - registered secondmate holds, change detection and incomplete coverage
+ok - CST calendar, complete review changes and retained history
+ok - archive failure does not consume notifications or report success
+ok - UTC update times stop pagination before the watermark
+ok - failed serialization preserves complete published documents
+ok - summarizer, gh and ssh timeouts stop owned descendants
+FM_TEST_COMPLETE

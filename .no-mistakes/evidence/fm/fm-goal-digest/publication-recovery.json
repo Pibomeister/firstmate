@@ -1,0 +1,28 @@
+{
+  "generated_at": "2026-11-24T00:01:22Z",
+  "generated_at_local": "2026-11-23T18:01:22-0600 CST",
+  "changed": true,
+  "new_merges": [
+    {
+      "repo": "synthetic/project",
+      "number": 9002,
+      "title": "PR 9002",
+      "url": "https://synthetic.invalid/pulls/9002",
+      "sha": "000000000000",
+      "merged_at": "2026-11-24T00:01:14Z"
+    }
+  ],
+  "open_pull_requests": [],
+  "waiting_on_captain": [],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "owner actions",
+      "detail": "no sources configured"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [],
+  "unreachable_sources": []
+}
