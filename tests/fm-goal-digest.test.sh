@@ -145,6 +145,25 @@ test_new_merge_changed_and_summarize_only_on_change() {
   pass "new merge detection, changed flag and changed-only summarizer"
 }
 
+test_summarizer_avoids_native_file_watching() {
+  # Chokidar's polling environment contract keeps the fixed native runner
+  # off the FSEvents startup path observed to exhaust its 120-second limit.
+  local home
+  write_fixtures 0
+  home=$(make_home summary-polling "$TMP_ROOT/polling-claude")
+  cat > "$TMP_ROOT/polling-claude" <<'SH'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s\n' "${CHOKIDAR_USEPOLLING:-unset}" > "$FM_HOME/runner-polling"
+printf 'summary\n'
+SH
+  chmod +x "$TMP_ROOT/polling-claude"
+  CHOKIDAR_USEPOLLING=0 run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "digest failed"
+  assert_equals "1" "$(cat "$home/runner-polling")" "native runner uses polling despite inherited native-watch preference"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "runner output is published"
+  pass "summarizer bypasses native file-watch startup"
+}
+
 test_missed_eta_stall_and_unreachable() {
   write_fixtures 0
   local home
@@ -794,4 +813,4 @@ PYTEST
   pass "killed digest releases its lock and its delayed summarizer cannot corrupt a replacement"
 }
 
-fm_test_run test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
+fm_test_run test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark

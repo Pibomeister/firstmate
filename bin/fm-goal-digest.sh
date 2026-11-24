@@ -656,6 +656,8 @@ PY
     # Fixed text-only model runner: fixed argv, no tools, the current
     # native claude account, a cheap non-Opus model. No shell command
     # from config is ever executed.
+    # Poll Claude's optional file watchers: native FSEvents registration
+    # can stall startup long enough to exhaust the model-call deadline.
     case "$summarize_model" in
       ''|*[!A-Za-z0-9._-]*|*[Oo][Pp][Uu][Ss]*)
         printf '%s\n' "goal-digest: summary unavailable: summarize_model '$summarize_model' is not a supported cheap model" >&2
@@ -664,7 +666,7 @@ PY
         if ! command -v "$claude_bin" >/dev/null 2>&1; then
           printf '%s\n' "goal-digest: summary unavailable: claude runner not found" >&2
         elif { printf '%s\n' "Summarize this goal digest for its owner in at most 12 short lines: new merges, items waiting, missed ETAs, stalls and anything blocked. Use only the input below."; cat "$output_dir/latest.md"; } > "$work/summary-prompt.txt" &&
-           timed 120 "$claude_bin" -p --model "$summarize_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null &&
+           CHOKIDAR_USEPOLLING=1 timed 120 "$claude_bin" -p --model "$summarize_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null &&
            mv "$work/summary.txt" "$output_dir/summary.txt"; then
           :
         else
