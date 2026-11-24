@@ -115,12 +115,45 @@ unit_enter_records_the_posture_in_one_step_without_a_daemon() {
     fail "enter: --grant was not refused by name (rc=$rc): $out"
   fi
   printf 'schema\tfm-afk-return.v1\nphase\tblocked\n' > "$st/state/.afk-return-catchup"
-  if FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'merge task a PR when green' >/dev/null 2>&1; then
-    fail "enter: accepted a new mandate while the prior return catch-up was pending"
-  elif [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" words)" = 'merge the windows fix when green' ]; then
-    pass "enter: refuses while the prior return catch-up is pending"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'merge task a PR when green' 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -e "$st/state/.afk-return-catchup" ] \
+    && [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" words)" = 'merge task a PR when green' ] \
+    && [ -z "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" carried)" ]; then
+    pass "enter: a pending catch-up with no open blocker no longer refuses the posture, and plain entry carries nothing"
   else
-    fail "enter: a refused entry changed the standing record"
+    fail "enter: a blocker-free pending catch-up should be consumed by entry (rc=$rc): $out"
+  fi
+  rm -rf "$st"
+}
+
+# Entry with open blockers from the previous return records the posture and
+# carries each blocker with its own key and reason; the gate is consumed.
+# An entry action that is itself refused (the retired --grant) leaves the
+# gate and any standing record untouched, with its exact reason.
+unit_enter_carries_open_return_blockers() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-carry.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nblocker\ttask-a\tkey-a\tfirst reason\nblocker\ttask-b\tkey-b\tsecond reason here\n' \
+    > "$st/state/.afk-return-catchup"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'merge it' --grant fix-windows 2>&1)
+  rc=$?
+  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -F -- '--grant was retired' >/dev/null \
+    && [ -f "$st/state/.afk-return-catchup" ] && [ ! -e "$st/state/.afk-contract" ]; then
+    pass "enter carry: a refused entry action leaves the gate untouched and names its exact reason"
+  else
+    fail "enter carry: a refused entry action should leave the gate untouched (rc=$rc): $out"
+  fi
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'watch the fleet' 2>&1)
+  rc=$?
+  if [ "$rc" -eq 0 ] && [ -f "$st/state/.afk-contract" ] && [ ! -e "$st/state/.afk-return-catchup" ] \
+    && [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" carried)" = "$(printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason here')" ] \
+    && printf '%s' "$out" | grep -F 'task-a [key=key-a] first reason' >/dev/null \
+    && printf '%s' "$out" | grep -F 'task-b [key=key-b] second reason here' >/dev/null; then
+    pass "enter carry: entry records the posture and carries each open blocker with its key and reason"
+  else
+    fail "enter carry: entry with open blockers did not record and carry them (rc=$rc): $out"
   fi
   rm -rf "$st"
 }
@@ -1911,6 +1944,7 @@ e2e_rex() {
 
 unit_clear_stale
 unit_enter_records_the_posture_in_one_step_without_a_daemon
+unit_enter_carries_open_return_blockers
 unit_retired_two_step_entry_is_refused
 unit_pi_never_launches_the_daemon
 unit_test_harness_seam_requires_the_marker

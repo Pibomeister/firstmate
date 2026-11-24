@@ -36,7 +36,10 @@
 # superseded in-session mandates - followed by the away session's account of
 # every visible action it took under them (each non-silent outcome-store row
 # from the window whose summary opens with the "per your away instructions:"
-# marker the branch prompt in bin/fm-branch-prompt.sh requires), then what is
+# marker the branch prompt in bin/fm-branch-prompt.sh requires), then the
+# carried items the entry moved into the record from the previous return
+# gate (each with its task, key, and reason, listed whether or not it is
+# still open; only shown when the record carries any), then what is
 # waiting on the captain,
 # then what was tried and failed or could not be fixed (a supervision-host
 # latch or engine errors inside the window lead it), then landed work whose
@@ -704,6 +707,15 @@ render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-
     render_words_account
   else
     printf '  (no away-posture record for this window; legacy away flag only)\n'
+  fi
+
+  # 2b. carried items from the previous return, when the record carries any.
+  if [ -n "$record" ]; then
+    rows=$(fm_afk_contract_read_carried "$record" 2>/dev/null || true)
+    if [ -n "$rows" ]; then
+      printf 'Carried from the previous return:\n'
+      printf '%s\n' "$rows" | awk -F '\t' '{ printf "  - %s [key=%s] %s\n", $1, $2, $3 }'
+    fi
   fi
 
   # 3. waiting on the captain.

@@ -40,6 +40,8 @@ The next genuine captain message takes the normal return path below.
    Read `bin/fm-afk-contract.sh --help` for the flags rather than memorizing them.
    Plain `/afk` with no words is a valid entry with no mandate; the announcement says no instructions were recorded.
    Re-invoking `/afk` while already away with no new words is a refresh and leaves the standing record untouched; new words replace the mandate at once, preserve the original session entry, and archive the superseded words for the return brief.
+   Entry always records the requested posture, even while the previous return's catch-up is still open: its open blockers move into the new record as carried items, each with its own key and reason, are listed in the entry read-back, and stay visible in the next return brief until that key is resolved or reclassified at that return.
+   Unrelated carried blockers never refuse the posture; only the entry action itself can refuse (for example a retired flag or a quiet entry over a live away record), with its exact reason, and then the old gate stays untouched.
 2. **Per harness, after the record exists:**
    - **Pi and pi-signed**: nothing to launch; go on to the announcement.
      The away daemon is no longer launched on Pi; the ordinary supervision session (`docs/pi-supervision-branch.md`) keeps running with the record present, and `bin/fm-afk-launch.sh start` refuses on these harnesses.

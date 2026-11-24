@@ -493,6 +493,48 @@ test_return_brief_composes_from_record_store_and_held_set() {
   pass "the return brief renders health, the words with the session account, waiting, could-not-fix, handled, and cost from durable records, and the gate shrinks to what the away session could not fix"
 }
 
+# Carried items from the previous return stay visible in the next brief, a
+# wake handled under the new posture is recorded and counted, and the
+# per-key gate mechanics are unchanged: a still-open carried blocker
+# gates, and resolving its key clears it while the brief keeps listing it.
+test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture() {
+  local dir out rc gate carried second
+  dir="$TMP_ROOT/carried-brief"
+  install_runner "$dir"
+  carried="$dir/carried.tsv"
+  printf 'fix-windows\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason\n' > "$carried"
+  contract_in "$dir" enter --words 'watch the fleet' --carried-file "$carried" >/dev/null 2>&1 \
+    || fail "could not enter the carried fixture posture"
+  printf 'window=synthetic:fm-fix-windows\nbackend=tmux\nkind=ship\n' > "$dir/home/state/fix-windows.meta"
+  printf 'blocked [key=key-a]: first reason\n' > "$dir/home/state/fix-windows.status"
+  # One natural wake handled under the posture and recorded in the store.
+  outcome_in "$dir" append --task fix-windows --verdict routine \
+    --summary 'handled a wake under the away posture; worker resumed' --wake 'signal: fix-windows.status' >/dev/null \
+    || fail "could not record the wake handled under the posture"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  gate="$dir/home/state/.afk-return-catchup"
+  [ "$rc" -eq 3 ] || fail "a still-open carried blocker should still gate the return (rc=$rc): $out"
+  assert_contains "$out" 'Carried from the previous return:' "the brief did not list carried items"
+  assert_contains "$out" 'fix-windows [key=key-a] first reason' "the brief lost the first carried key and reason"
+  assert_contains "$out" 'task-b [key=key-b] second reason' "the brief lost the second carried key and reason"
+  assert_contains "$out" '1 outcome(s) handled by the away session (1 routine, 0 escalated above)' "the wake handled under the posture was not recorded in the brief"
+  assert_contains "$out" 'firstmate-actionable blocker: fix-windows [key=key-a]' "the carried blocker did not gate by its own key"
+
+  printf 'resolved [key=key-a]: first reason fixed\n' >> "$dir/home/state/fix-windows.status"
+  second=$(run_return "$dir" check) || fail "resolving the carried key did not clear the gate: $second"
+  assert_contains "$second" 'Carried from the previous return:' "the cleared brief dropped the carried section"
+  assert_contains "$second" 'task-b [key=key-b] second reason' "the cleared brief lost a carried item"
+  assert_contains "$second" 'catch-up clear' "check did not clear after the carried key resolved"
+  [ ! -e "$gate" ] || fail "the cleared carried check left the gate behind"
+  pass "the next return brief lists carried items, records a wake handled under the posture, and keeps per-key resolution mechanics"
+}
+
 # On a supervision-host home off Pi the drain's BRANCH OUTCOMES section is the
 # one presenter of branch outcomes and the one owner of their read cursor, so
 # the return brief counts the window's outcomes and points there instead of
@@ -1610,6 +1652,7 @@ test_check_retries_recorded_terminal_teardown
 test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
+test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
 test_return_brief_points_at_the_drain_on_a_host_home_only
