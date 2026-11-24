@@ -1,0 +1,5 @@
+head=834531d8 single=test_claim_rechecks_hold_at_publication start=2026-11-24T04:15:52Z
+1..1
+ok - a hold arriving after snapshot validation refuses receipt publication
+FM_TEST_COMPLETE
+exit=0 end=2026-11-24T04:26:13Z

@@ -1,0 +1,5 @@
+head=834531d8 single=test_claim_waits_for_concurrent_claim_scan start=2026-11-24T04:15:52Z
+1..1
+ok - a claimant waits for a concurrent claim scan instead of refusing
+FM_TEST_COMPLETE
+exit=0 end=2026-11-24T04:26:06Z

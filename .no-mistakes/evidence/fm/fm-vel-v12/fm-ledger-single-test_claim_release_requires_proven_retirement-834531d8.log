@@ -1,0 +1,5 @@
+head=834531d8 single=test_claim_release_requires_proven_retirement start=2026-11-24T04:15:52Z
+1..1
+ok - supervisor release preserves current ownership and requires proof that a delivered endpoint is gone
+FM_TEST_COMPLETE
+exit=0 end=2026-11-24T04:26:32Z
