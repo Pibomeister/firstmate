@@ -829,7 +829,10 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   assert_contains "$out" "summary unavailable: summarize_model 'best'" "opus alias model rejected"
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "rejected model keeps prior summary"
   printf 'summarize_model = haiku\n' >> "$home/config/goal-digest"
-  FM_GD_CLAUDE_EMPTY=1 run_digest "$home" "$RUN3_EPOCH" >/dev/null 2>&1 || fail "empty runner run failed"
+  printf 'T1: complete\n' > "$home/review.status"
+  out=$(FM_GD_CLAUDE_ARGS="$home/empty-runner-args" FM_GD_CLAUDE_EMPTY=1 run_digest "$home" "$RUN3_EPOCH" 2>&1) || fail "empty runner run failed"
+  assert_contains "$out" "changed=yes" "review progress change triggers summarization"
+  [ -s "$home/empty-runner-args" ] || fail "empty runner was not invoked"
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "empty runner output keeps prior summary"
   pass "fixed runner argv, model rejection and empty output"
 }
