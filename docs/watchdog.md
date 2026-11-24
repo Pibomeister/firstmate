@@ -525,8 +525,23 @@ An explicit positive `heartbeat-frozen-secs` remains an independent operator ove
 The watchdog never rewrites those settings.
 The independent [supervisor-gap record](#supervisor-gap-record) keeps its fixed publication-age metric.
 
+## Delegated-agent progress contract
+
+External delegated work (a Hermes-class overnight agent, a per-machine postmortem author) is not inside the pane fold above.
+It is held to the contract in [`bin/fm-delegated.sh`](../bin/fm-delegated.sh), whose header owns the commands and record files.
+`bin/fm-delegated-lib.sh` owns the hash, identifier, and state-derivation rules.
+Every delegated task records a named deliverable, a heartbeat interval, a silence window that escalates to the delegating supervisor, and a deliverable receipt bound to artifact path plus content hash.
+A dispatch-only receipt is reported as `dispatched-not-progressing` in the supervisor view (`fm-delegated.sh view`), never as progress.
+A task silent past its window produces exactly one escalation naming the task, its silence age, and its last receipt.
+A missing artifact or a hash mismatch records the failed attempt and cannot close the deliverable.
+Cross-agent handoffs (b2b notes, Hermes answers) are filed in, or mirrored into, the single read location the receiving agent actually reads, each carrying that same path-plus-hash receipt.
+A handoff filed only in the other location is a delivery failure naming the hidden item on every `fm-delegated.sh check` pass until it is mirrored, never silence.
+Once mirrored, the receiver's read is receipted only when the artifact still verifies against its recorded hash.
+The contract only reports; it never instructs, pushes, restarts, or stops a named external agent.
+
 ## Verification
 
+`tests/fm-delegated.test.sh` pins the delegated-agent progress contract: dispatch-only rendering, the exactly-one silence escalation, hash-bound closing, and the hidden-handoff delivery failure through mirror to a receipted read.
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
 `tests/fm-permission-prompt.test.sh` classifies real Claude Code 2.1.325 prompt captures in `tests/fixtures/permission-prompt/` and drives the worker route against real tmux panes that react to Escape as Claude did.
 `tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.
