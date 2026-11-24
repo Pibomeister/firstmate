@@ -556,10 +556,10 @@ _fm_status_until_date() {  # <status-line> <out-var> -> 0 date, 1 absent, 2 malf
   esac
 }
 
-status_line_at_epoch() {  # <status-line> -> epoch; nonzero when unknown
-  local epoch
-  _fm_status_at_epoch "$1" epoch || return 1
-  printf '%s' "$epoch"
+status_line_at_epoch() {  # <status-line> [<out-var>] -> epoch; nonzero when unknown
+  local __fm_slae_epoch
+  _fm_status_at_epoch "$1" __fm_slae_epoch || return 1
+  if [ "$#" -gt 1 ]; then printf -v "$2" '%s' "$__fm_slae_epoch"; else printf '%s' "$__fm_slae_epoch"; fi
 }
 
 # Stamp only a newly emitted event. Preserve an existing tag, even malformed,
