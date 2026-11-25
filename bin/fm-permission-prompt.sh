@@ -94,6 +94,13 @@ FM_PP_RELEASE_RE='git[[:space:]]([^|;&]*[[:space:]])?push[^|;&]*[[:space:]:/](ma
 _fm_pp_ruled_rows() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    function is_repeat_row(s, ch, min,    t, n) {
+      t = s
+      gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t == "") return 0
+      n = gsub(ch, "", t)
+      return (n >= min && t == "")
+    }
     { r[NR] = $0 }
     END {
       last = NR
@@ -101,15 +108,16 @@ _fm_pp_ruled_rows() {  # <screen>
       floor = last - 60; if (floor < 1) floor = 1
       top = 0; dashed = 0
       for (i = last; i >= floor; i--) {
-        if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) dashed++
-        else if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ && dashed % 2 == 0) { top = i; break }
+        # mawk 1.3.4 does not match (╌){20,} on a full-width dashed rule.
+        if (is_repeat_row(r[i], "╌", 20)) dashed++
+        else if ((is_repeat_row(r[i], "─", 20) || is_repeat_row(r[i], "━", 20)) && dashed % 2 == 0) { top = i; break }
       }
       if (!top) exit 1
       # A proven box has at most its two dashed rows, both below its top rule.
       # A dashed row above this rule means the rule may sit inside a command
       # preview, so the boundary is unproven.
       if (dashed > 2) exit 1
-      for (i = top - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(╌){20,}[ \t]*$/) exit 1
+      for (i = top - 1; i >= floor; i--) if (is_repeat_row(r[i], "╌", 20)) exit 1
       anchor = 0
       for (i = top + 1; i <= last; i++) {
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*1[.)][ \t]/ || tolower(r[i]) ~ /do you want to |would you like to /) anchor = i
