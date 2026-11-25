@@ -1396,6 +1396,24 @@ The ceiling is `max-load1` above unless the optional `config/load-relief` file s
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
 
+## Goal digest (config/goal-digest)
+
+The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
+The script header and `--help` own the configuration format, supported keys, source locations, scheduling commands and output contract.
+A neutral example is:
+
+```text
+repo = example-org/example-repo
+status = Example status | /path/to/status.txt
+review = Example review | /path/to/review.status
+```
+
+`fm-goal-digest.sh install` installs a macOS LaunchAgent that runs every 20 minutes.
+The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
+The script header defines output paths, merge-window recovery, supported native owner-action records, wait-age semantics, explicit unknown coverage and summary-runner behavior.
+The job never merges, deploys, tags, pushes or messages anyone.
+Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.
+
 ## Disk alarm
 
 `bin/fm-disk-alarm.sh` owns the free-space reading on `/System/Volumes/Data` and the launch gates that reading drives.
