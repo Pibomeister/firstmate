@@ -4186,6 +4186,58 @@ The output above is an excerpt of the 2026-11-17 rerun after the scope was narro
 That same run failed its later check that the home's waiting permission dialog is reported as a gap, and an unmodified copy of the prior commit fails the same check: the guard's heartbeat no longer gives the watchdog a home terminal endpoint, so the home pane is not read.
 No Codex or Antigravity tool-approval prompt was captured, so those prompts are held rather than declined.
 
+### 2026-11-25 Codex startup pickers and terminal confirmations
+
+Verified on 2026-11-25 on macOS (Darwin 25.6.0, arm64) with Codex CLI 0.172.0 and tmux 3.6a.
+The behavior contract is owned by [the watchdog page](../watchdog.md#worker-permission-prompts).
+A real Codex session on a private tmux socket, 110 columns by 36 rows, in a new git repository, started with an empty Codex home and the `--disable hooks` flag every Codex worker launches with, raised two pickers before any composer.
+
+```sh
+tmux -L <private-socket> -f /dev/null new-session -d -s signin -x 110 -y 36 -c <new-repo> "env CODEX_HOME='<empty-dir>' codex --disable hooks"
+tmux -L <private-socket> capture-pane -p -t signin
+  Background server has incompatible feature settings
+  This session requires hooks to be disabled
+  These settings persist and can disable functionality for other clients. Restart may interrupt active or
+  queued work.
+  Restart will use these shared feature settings:
+    hooks = false
+  1. Run without daemon this time
+  2. Restart with these settings (recommended)
+› 3. Cancel
+```
+
+The capture above omits its blank rows.
+Pressing `1` in that disposable session drew the first-run sign-in picker: `> 1. Sign in with ChatGPT`, `2. Sign in with Device Code`, `3. Sign in another way`, and `Press enter to continue` as the last row.
+No option of the sign-in picker was chosen, and the session was killed.
+Copies of both screens with trailing blank rows removed are `tests/fixtures/permission-prompt/codex-0.172.0-daemon-settings.txt` and `codex-0.172.0-sign-in.txt`.
+
+```sh
+bash tests/fm-permission-prompt.test.sh test_codex_startup_pickers_classify test_terminal_confirmations_classify test_codex_and_terminal_prompts_get_no_key test_hook_hold_and_pane_are_one_decision
+ok - Codex 0.172.0 startup pickers: sign-in is a hard stop, the background-server picker is held, and both refuse a send
+ok - terminal confirmations: a yes/no last row is held, a warning in its last 20 rows is a hard stop, and a send is refused
+ok - Codex startup pickers and terminal confirmations on workers: no key, one keyed line, and a refused send
+ok - hook and pane: one prompt is one open decision, a reserved request is never declined, and only a proven-clear pane closes an ordinary hold
+```
+
+The terminal confirmation rows are not harness output: `[y/N]`, `(yes/no)`, and `(yes/no/[fingerprint])` are the wordings of the programs a worker runs, and the `Press y|Y for Yes, any other key for No` row is `mysql_secure_installation`'s.
+The Codex CLI 0.172.0 command-approval dialog was not recorded: the account's Codex quota was exhausted on that date, so no session reached a tool call, and the classifier still reads only the Codex CLI 0.151.0 recording.
+No Antigravity approval dialog was recorded either, so the route holds only the Antigravity trust dialog.
+The usage-limit rows in `test_hardstop_categories` are the picker a recorded Claude Code 2.1.323 pane drew at a weekly limit: `What do you want to do?` over `1. Stop and wait for limit to reset`, `2. Wait here, then continue automatically at <reset>`, and `3. Add funds to continue with usage credits`.
+On that pane the limit text sits above the dialog rule, so `fm_wd_pane_dialog` names the picker `question`, and the classifier defers it to the usage-limit path only for a caller that names it `usage-limit`.
+
+### 2026-11-25 worker permission hook
+
+Verified on 2026-11-25 on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.332.
+The behavior contract is owned by [the watchdog page](../watchdog.md#the-workers-own-permission-hook), and `tests/fm-permission-route.test.sh` is the portable regression.
+The live guard starts ten real `claude -p` sessions on the default `haiku` model, each in its own disposable home, and it is opt-in because it submits prompts.
+
+```sh
+FM_PERMISSION_ROUTE_LIVE_E2E=1 FM_PERMISSION_ROUTE_LIVE_TIMEOUT=1200 bash tests/fm-permission-route-live-e2e.test.sh
+ok - 2.1.332 (Claude Code) live E2E refused the established prompt class with a correction the model applied, held each reserved category for a person, closed answered holds, and left an attended session alone
+```
+
+In two of the six reserved cases the model asked a second time with its command reshaped, and each distinct waiting request woke the supervisor once before the one close.
+
 ## Merge review reviewer tools
 
 Verified on 2026-11-13 (UTC) on macOS (Darwin 25.6.0, arm64) with Claude Code 2.1.323, Antigravity `agy` 1.5.8, and Grok 1.0.77.

@@ -66,20 +66,33 @@ classify() {  # <command>
   printf '%s' "$1" | bash "$ROUTE" classify
 }
 
-key_is_open() {  # <home>
-  status_open_decisions "$1/state/task.status" ship | grep -q "^permission-prompt$(printf '\t')"
+HELD=permission-prompt-held
+HARDSTOP=permission-prompt-hardstop
+
+# open_keys <home>: the route's keys the supervisor's fold still reads as
+# open, sorted, on one row.
+open_keys() {
+  status_open_decisions "$1/state/task.status" ship | cut -f1 | grep '^permission-prompt' | sort | tr '\n' ' ' | sed 's/ $//'
+}
+
+key_is_open() {  # <home> [<key>]
+  status_open_decisions "$1/state/task.status" ship | grep -q "^${2:-permission-prompt-[a-z]*}$(printf '\t')"
+}
+
+pane_clear() {  # <home> [<quiet-secs>]
+  FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=${2:-} bash "$ROUTE" claude-settled "$1/state" task pane-clear </dev/null
 }
 
 ledger_field() {  # <home> <row> <field>
   sed -n "${2}p" "$1/state/task.permission-route.tsv" 2>/dev/null | cut -f"$3"
 }
 
-assert_held() {  # <home> <category> <label>
+assert_held() {  # <home> <category> <label> [<key>]
   expect_code 0 "$RC" "$3 exit"
   assert_equals "" "$OUT" "$3 prints no answer, so the prompt stays for a person"
   assert_equals "hold" "$(tail -n 1 "$1/state/task.permission-route.tsv" | cut -f2)" "$3 is recorded as a hold"
   assert_equals "$2" "$(tail -n 1 "$1/state/task.permission-route.tsv" | cut -f3)" "$3 records its category"
-  key_is_open "$1" || fail "$3 opens the supervisor wake"
+  assert_equals "${4:-$HELD}" "$(open_keys "$1")" "$3 opens exactly its supervisor wake"
 }
 
 test_identified_class_is_refused_with_a_fix_instruction() {
@@ -108,7 +121,8 @@ test_each_reserved_category_is_held_for_a_person() {
   while IFS='|' read -r category tail; do
     home=$(new_home "reserved-$category")
     request "$home" "$(bash_payload "$(class_command "$tail")")"
-    assert_held "$home" "$category" "a $category prompt"
+    assert_held "$home" "$category" "a $category prompt" "$HARDSTOP"
+    assert_grep "only the owner answers it" "$home/state/task.status" "a $category wake says who may answer it"
   done <<'ROWS'
 credential|cat ~/.aws/config
 sign-in|gcloud auth login
@@ -116,12 +130,13 @@ spend|npm run upgrade-billing
 security|sudo ls
 destructive|git -C . push origin main
 production|kubectl get pods
+release|git tag v1.2.0
 ROWS
   home=$(new_home reserved-divergence)
   request "$home" "$(bash_payload "$(class_command 'echo done')")"
   assert_equals "deny" "$(printf '%s' "$OUT" | jq -r '.hookSpecificOutput.decision.behavior')" \
     "the same command without a reserved word is refused, so the holds above came from the reserved word"
-  pass "credential, sign-in, spend, security, destructive, and production prompts are held and wake the supervisor"
+  pass "credential, sign-in, spend, security, destructive, production, and release prompts are held under the owner-reserved key"
 }
 
 test_command_text_verdicts() {
@@ -153,6 +168,7 @@ removal split by quotes|hold destructive|cat <<EOF\n@t@\nEOF\nr''m -rf target
 removal split by a line continuation|hold destructive|cat <<EOF\n@t@\nEOF\nr\\\nm -rf target
 network transfer|hold security|cat <<EOF\n@t@\nEOF\ncurl https://example.invalid
 release word|hold production|cat <<EOF\n@t@\nEOF\nnpm publish
+tag from the watchdog vocabulary|hold release|cat <<EOF\n@t@\nEOF\ngit tag v1.2.0
 escape byte|hold shape|cat <<EOF\n@t@\nEOF\nprintf '\033[0m'
 ROWS
   assert_equals "hold shape" "$(classify "")" "classify: empty command"
@@ -194,18 +210,30 @@ test_posture_tool_and_input_are_held() {
   home=$(new_home tool)
   payload=$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Write", tool_input: {file_path: "/x/.claude/settings.json", content: "{}"}}')
   request "$home" "$payload"
-  assert_held "$home" tool "a file write request"
+  assert_held "$home" tool "a file write to a settings path" "$HARDSTOP"
   assert_equals "Write" "$(ledger_field "$home" 1 4)" "the hold records the tool"
+  home=$(new_home tool-plain)
+  payload=$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Write", tool_input: {file_path: "/x/notes.txt", content: "plain"}}')
+  request "$home" "$payload"
+  assert_held "$home" tool "a file write that names no reserved category"
+  home=$(new_home tool-nested)
+  payload=$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "mcp__x__run", tool_input: {steps: [{note: "plain"}, {argv: ["gh", "auth", "login"]}]}}')
+  request "$home" "$payload"
+  assert_held "$home" tool "a tool whose nested input names a sign-in" "$HARDSTOP"
   home=$(new_home input-sandbox)
   request "$home" "$(bash_payload "$(class_command)" '{"dangerouslyDisableSandbox": true}')"
-  assert_held "$home" input "a request to leave the sandbox"
+  assert_held "$home" input "a request to leave the sandbox" "$HARDSTOP"
   home=$(new_home input-unknown)
   request "$home" "$(bash_payload "$(class_command)" '{"surprise": 1}')"
   assert_held "$home" input "a request with an unknown input key"
   home=$(new_home malformed)
   request "$home" 'not json'
-  assert_held "$home" posture "a malformed payload"
-  pass "wrong posture, another tool, and unexpected input are held and wake the supervisor"
+  assert_held "$home" posture "a malformed payload" "$HARDSTOP"
+  home=$(new_home oversize)
+  OUT=$(bash_payload "$(class_command)" | AK_LIFECYCLE_POLICY=unattended FM_PERMISSION_ROUTE_MAX_BYTES=10 bash "$ROUTE" claude-request "$home/state" task)
+  RC=$?
+  assert_held "$home" shape "a command past the size limit" "$HARDSTOP"
+  pass "wrong posture, another tool, and unexpected input are held, and a request that cannot be read whole is owner-reserved"
 }
 
 test_repeat_and_ceiling_stop_a_refusal_loop() {
@@ -232,7 +260,7 @@ test_unwritable_record_is_a_hold() {
   request "$home" "$(bash_payload "$(class_command)")"
   expect_code 0 "$RC" "unwritable record exit"
   assert_equals "" "$OUT" "no refusal is printed when it cannot be recorded first"
-  key_is_open "$home" || fail "the supervisor is woken when the record cannot be written"
+  key_is_open "$home" "$HELD" || fail "the supervisor is woken when the record cannot be written"
   assert_grep "held as record" "$home/state/task.status" "the wake names the record failure"
   pass "a refusal that cannot be recorded becomes a hold that still wakes the supervisor"
 }
@@ -275,12 +303,57 @@ test_session_end_and_supervisor_answer_close_a_hold() {
 
   home=$(new_home answered)
   request "$home" "$(bash_payload "$held")"
-  printf '%s\n' 'resolved [key=permission-prompt]: answered: denied in the terminal' >>"$home/state/task.status"
+  printf '%s\n' "resolved [key=$HARDSTOP]: answered: denied in the terminal" >>"$home/state/task.status"
   ! key_is_open "$home" || fail "the supervisor answer closes the key"
   request "$home" "$(bash_payload "$held")"
   key_is_open "$home" || fail "the same request waiting again after the supervisor closed the key wakes the supervisor again"
   assert_equals "2" "$(grep -c '^blocked ' "$home/state/task.status")" "the second wait is a new wake"
   pass "session end closes a hold, and a hold the supervisor closed can open again"
+}
+
+test_each_key_closes_on_its_own() {
+  local home plain reserved
+  home=$(new_home two-keys)
+  plain='echo hello'
+  reserved=$(class_command 'sudo ls')
+  request "$home" "$(bash_payload "$plain")"
+  assert_held "$home" unidentified "a request that names no reserved category"
+  request "$home" "$(bash_payload "$reserved")"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "two waiting requests of different kinds hold both keys open"
+  assert_equals "$HARDSTOP $HELD" "$(bash "$ROUTE" held-keys "$home/state" task | sort | tr '\n' ' ' | sed 's/ $//')" "held-keys names both"
+  settle "$home" tool-finished "$(finished_payload "$plain")"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "the finished request closes its own key and leaves the owner-reserved one"
+  assert_equals "$HARDSTOP" "$(bash "$ROUTE" held-keys "$home/state" task)" "held-keys names the one still open"
+  settle "$home" tool-finished "$(finished_payload "$reserved")"
+  assert_equals "" "$(open_keys "$home")" "the second finished request closes the owner-reserved key"
+  assert_equals "" "$(bash "$ROUTE" held-keys "$home/state" task)" "held-keys prints nothing when nothing is held"
+  assert_absent "$home/state/task.permission-held" "no held set is left"
+  pass "each waiting request closes only the key it was held under"
+}
+
+test_pane_clear_closes_only_a_settled_ordinary_hold() {
+  local home
+  home=$(new_home pane-clear)
+  request "$home" "$(bash_payload 'echo hello')"
+  request "$home" "$(bash_payload "$(class_command 'sudo ls')")"
+  pane_clear "$home"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "a hold written a moment ago is not closed: its prompt may not be drawn yet"
+  pane_clear "$home" 0
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "a clear pane closes the ordinary hold and never the owner-reserved one"
+  assert_grep "key=$HELD]: permission prompt no longer waiting: the worker pane shows an empty composer" "$home/state/task.status" "the close says what was proven"
+  pane_clear "$home" 0
+  assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "a second clear pane writes nothing more"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "the owner-reserved hold still waits"
+  assert_absent "$home/state/task.permission-lock" "the lock is released"
+
+  # A key the supervisor already answered leaves no row behind for the pane.
+  home=$(new_home pane-clear-answered)
+  request "$home" "$(bash_payload 'echo hello')"
+  printf '%s\n' "resolved [key=$HELD]: answered: declined in the terminal" >>"$home/state/task.status"
+  pane_clear "$home" 0
+  assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "an answered key gets no second close"
+  assert_absent "$home/state/task.permission-held" "its row is dropped"
+  pass "a proven-clear pane closes only an ordinary hold that has had time to draw its prompt"
 }
 
 test_bad_task_id_and_missing_state_touch_nothing() {
@@ -311,4 +384,6 @@ fm_test_run \
   test_unwritable_record_is_a_hold \
   test_hold_opens_once_and_closes_when_the_request_finishes \
   test_session_end_and_supervisor_answer_close_a_hold \
+  test_each_key_closes_on_its_own \
+  test_pane_clear_closes_only_a_settled_ordinary_hold \
   test_bad_task_id_and_missing_state_touch_nothing

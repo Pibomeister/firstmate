@@ -850,6 +850,14 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "tests/fixtures/permission-prompt/codex-0.172.0-daemon-settings.txt",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/permission-prompt/codex-0.172.0-sign-in.txt",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "tests/captures/kimi-code-2.3.0/README.md",
       "audience": "maintainer-verification"
     },

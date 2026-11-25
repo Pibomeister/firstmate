@@ -523,6 +523,12 @@ EOF
   no_escalation "$h" pg 'pager'
   case "$(reason_of "$h" pg would-act 5)" in *'screen-block pager'*) ;; *) fail 'a pager parks' ;; esac
 
+  # A yes/no prompt, in a wording only the shared owner of that row reads.
+  new_task "$h" yn
+  PANE_STYLE='Overwrite the build output (yes/no)?' ticks "$h" yn "$B" $((B + 1800))
+  no_escalation "$h" yn 'yes-no prompt'
+  case "$(reason_of "$h" yn would-act 5)" in *'screen-block yes-no prompt'*) ;; *) fail "a yes/no prompt parks: $(reason_of "$h" yn would-act 5)" ;; esac
+
   # A validation run in flight, in each state the crew state reports.
   new_task "$h" nm
   : > "$h/probe/nm.validating"

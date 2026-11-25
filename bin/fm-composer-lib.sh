@@ -2550,6 +2550,8 @@ EOF
 # The strings alone are not enough, because a diff, a note, or a test fixture
 # on the pane can quote all of them above a normal composer. A miss returns 1
 # and prints nothing.
+# A terminal yes/no confirmation is named too (fm_composer_yes_no_prompt): it
+# has no heading to prove, so its last row alone is the structure.
 # Recorded 2026-10-05 on Claude Code 2.1.289: /exit while a background shell
 # is still running opens this picker, and its selected row is Exit and stop tasks.
 fm_composer_blocking_dialog() {  # <screen> -> dialog name
@@ -2576,7 +2578,64 @@ fm_composer_blocking_dialog() {  # <screen> -> dialog name
     printf '%s' 'Grok weekly-limit choice'
     return 0
   fi
+  # Recorded 2026-11-25 on Codex CLI 0.172.0 with an empty Codex home: the
+  # first-run picker, whose Enter starts a ChatGPT sign-in. Its heading
+  # wording has changed between releases, so the first option and the footer
+  # are the proof; the cursor may sit on any numbered row.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*((>|›)[ \t]+)?1\. Sign in with ChatGPT[ \t\r]*$/ { first = 1; more = 0; cursor = 0 }
+    first && /^[ \t]*((>|›)[ \t]+)?[2-9]\. [^ \t]/ { more = 1 }
+    first && /^[ \t]*(>|›)[ \t]+[1-9]\. / { cursor++ }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(first && more && cursor == 1 && last ~ /^[ \t]*Press [Ee]nter to continue[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Codex sign-in picker'
+    return 0
+  fi
+  # Recorded 2026-11-25 on Codex CLI 0.172.0: a session launched with a
+  # feature flag the shared background server does not run with, such as
+  # --disable hooks, opens this picker. It has no footer, so its third option
+  # is the last row. Enter answers it, and its second option restarts a server
+  # that other Codex clients share.
+  if printf '%s\n' "$screen" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /^[ \t]*Background server has incompatible feature settings[ \t\r]*$/ { heading = 1; step = 0; cursor = 0 }
+    heading && step == 0 && /^[ \t]*((>|›)[ \t]+)?1\. Run without daemon this time[ \t\r]*$/ { step = 1 }
+    heading && step == 1 && /^[ \t]*((>|›)[ \t]+)?2\. Restart with these settings( \(recommended\))?[ \t\r]*$/ { step = 2 }
+    heading && step == 2 && /^[ \t]*((>|›)[ \t]+)?3\. Cancel[ \t\r]*$/ { step = 3 }
+    heading && /^[ \t]*(>|›)[ \t]+[1-3]\. / { cursor++ }
+    /[^ \t\r]/ { last = $0 }
+    END { exit !(step == 3 && cursor == 1 && last ~ /^[ \t]*((>|›)[ \t]+)?3\. Cancel[ \t\r]*$/) }
+  '; then
+    printf '%s' 'Codex background-server settings picker'
+    return 0
+  fi
+  if fm_composer_yes_no_prompt "$screen"; then
+    printf '%s' 'yes-no confirmation prompt'
+    return 0
+  fi
   return 1
+}
+
+# fm_composer_yes_no_prompt: 0 when the last non-blank row of the screen ends
+# in a terminal yes/no confirmation: [y/N], (y/n), [yes/no], (yes/no) in any
+# letter case, ssh's (yes/no/[fingerprint]), or the single-key
+# `Press y|Y for Yes, any other key for No`, each with an optional `?` or `:`
+# after it. A harness draws its footer or composer as the last row, so only a
+# pane that a plain command line holds can match. Any typed line answers such
+# a prompt, and a single-key prompt takes the first character.
+# This function is the one owner of that row; bin/fm-hung-ladder.sh and
+# bin/fm-permission-prompt.sh read it from here.
+fm_composer_yes_no_prompt() {  # <screen>
+  [ -n "${1-}" ] || return 1
+  printf '%s\n' "$1" | fm_composer_strip_ansi | LC_ALL=C awk '
+    /[^ \t\r]/ { last = $0 }
+    END {
+      sub(/[ \t\r]+$/, "", last)
+      row = tolower(last)
+      if (row ~ /(\[|\()(y|yes)\/(n|no)(\/\[fingerprint\])?(\]|\))[ \t]*[?:]?$/) exit 0
+      if (row ~ /press y\|y for yes, any other key for no[ \t]*[?:]?$/) exit 0
+      exit 1
+    }'
 }
 
 # A command substitution drops a shell variable, and every composer read runs

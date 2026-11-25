@@ -460,19 +460,30 @@ fhl_redact() {  # stdin -> pane text with known token patterns removed
   ' 2>/dev/null
 }
 
-# A pager or a y/N prompt on the last non-blank row: a screen block that is
-# not one of the composer library's recorded dialogs.
+# A pager or a yes/no prompt on the last non-blank row: a screen block that
+# reaches this gate without a dialog name. bin/fm-composer-lib.sh
+# (fm_composer_yes_no_prompt) owns what a yes/no prompt row is.
 fhl_pane_screen_block() {  # stdin -> name or nothing
-  perl -CSD -ne '
+  local pane
+  pane=$(cat)
+  if printf '%s\n' "$pane" | perl -CSD -ne '
     s/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/[ \t\r]+$//;
     $last = $_ if /\S/;
     END {
       exit 1 unless defined $last;
       chomp $last;
-      if ($last =~ /^\s*(\(END\)|--More--.*|:|lines \d+-\d+.*)$/) { print "pager"; exit 0 }
-      if ($last =~ /(\[y\/N\]|\[Y\/n\]|\(y\/n\))\s*\??\s*$/i) { print "yes-no prompt"; exit 0 }
+      exit 0 if $last =~ /^\s*(\(END\)|--More--.*|:|lines \d+-\d+.*)$/;
       exit 1;
-    }' 2>/dev/null
+    }' 2>/dev/null; then
+    printf 'pager'
+    return 0
+  fi
+  if ! declare -F fm_composer_yes_no_prompt >/dev/null; then
+    # shellcheck source=bin/fm-composer-lib.sh
+    . "$SCRIPT_DIR/fm-composer-lib.sh" || return 1
+  fi
+  fm_composer_yes_no_prompt "$pane" || return 1
+  printf 'yes-no prompt'
 }
 
 # The one list of secret patterns, matched without regard to case: file-name

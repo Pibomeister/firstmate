@@ -2282,8 +2282,55 @@ test_quoted_exit_picker_text_is_not_a_dialog() {
   pass "picker text quoted above a normal composer is not read as a live picker"
 }
 
+# The two Codex CLI 0.172.0 startup pickers (recorded 2026-11-25) and a
+# terminal yes/no confirmation: an Enter or a typed line would answer each.
+test_codex_startup_pickers_and_yes_no_rows_block_a_send() {
+  local fix="$ROOT/tests/fixtures/permission-prompt" signin daemon out rc row
+  signin=$(cat "$fix/codex-0.172.0-sign-in.txt")
+  daemon=$(cat "$fix/codex-0.172.0-daemon-settings.txt")
+  out=$(fm_composer_blocking_dialog "$signin"); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = 'Codex sign-in picker' ] || fail "the recorded sign-in picker was named '$out' (rc $rc)"
+  out=$(fm_composer_blocking_dialog "$daemon"); rc=$?
+  [ "$rc" -eq 0 ] && [ "$out" = 'Codex background-server settings picker' ] || fail "the recorded background-server picker was named '$out' (rc $rc)"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$daemon" '' '')"); rc=$?
+  [ "$rc" -eq 0 ] || fail "blank rows below the picker should still match"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$signin" '' '› Ask Codex to do anything')"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "a sign-in picker quoted above a composer must not match, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$daemon" '' '› Ask Codex to do anything')"); rc=$?
+  [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "a background-server picker quoted above a composer must not match, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$signin" | grep -v 'Sign in with ChatGPT')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a picker without its first option must not match, got '$out'"
+  out=$(fm_composer_blocking_dialog "$(printf '%s\n' "$daemon" | sed 's/^› 3\. Cancel/  3. Cancel/')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a picker with no cursor row must not match, got '$out'"
+  while IFS= read -r row; do
+    out=$(fm_composer_blocking_dialog "$(printf 'building\n%s\n\n' "$row")"); rc=$?
+    [ "$rc" -eq 0 ] && [ "$out" = 'yes-no confirmation prompt' ] || fail "'$row' was named '$out' (rc $rc)"
+    fm_composer_yes_no_prompt "$(printf 'building\n%s\n' "$row")" || fail "the row's owner did not read '$row'"
+  done <<'ROWS'
+Proceed? [y/N]
+Proceed? [Y/n] 
+Continue (y/n)?
+Is this ok [yes/no]:
+Are you sure you want to continue connecting (yes/no/[fingerprint])? 
+Press y|Y for Yes, any other key for No : 
+ROWS
+  while IFS= read -r row; do
+    out=$(fm_composer_blocking_dialog "$(printf 'building\n%s\n' "$row")"); rc=$?
+    [ "$rc" -eq 1 ] && [ -z "$out" ] || fail "'$row' must not read as a yes/no prompt, got '$out'"
+  done <<'ROWS'
+Proceed? [y/N] y
+The script asks (y/n) before each step.
+[y/N] is the default answer here
+Enter your password:
+ROWS
+  out=$(fm_composer_blocking_dialog "$(printf 'Proceed? [y/N]\n> \n')"); rc=$?
+  [ "$rc" -eq 1 ] || fail "a confirmation above a composer row must not match, got '$out'"
+  pass "the Codex 0.172.0 startup pickers and a yes/no last row are named only in their recorded structure"
+}
+
 test_background_exit_picker_stays_pending_and_blocks_retry
 test_dialog_heading_and_footer_must_be_the_recorded_lines
 test_dialog_note_skips_the_match_when_no_sink_is_set
 test_quoted_exit_picker_text_is_not_a_dialog
 test_grok_weekly_limit_choice_is_named_only_in_its_recorded_structure
+test_codex_startup_pickers_and_yes_no_rows_block_a_send

@@ -464,13 +464,13 @@ echo \$N" '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermis
   answer=$(run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$held") \
     || fail "the PermissionRequest hook command failed on a hold"
   assert_equals "" "$answer" "the wired route prints nothing for a held prompt"
-  grep -q '^blocked .*\[key=permission-prompt\]' "$state/$id.status" \
+  grep -q '^blocked .*\[key=permission-prompt-hardstop\]' "$state/$id.status" \
     || fail "a held prompt did not wake the supervisor through the task's status log"
 
   run_route_hook "$settings" '.hooks.PostToolUse[0].hooks[0].command' \
     '{"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "sudo ls"}}' \
     || fail "the PostToolUse hook command failed"
-  grep -q '^resolved .*\[key=permission-prompt\]' "$state/$id.status" \
+  grep -q '^resolved .*\[key=permission-prompt-hardstop\]' "$state/$id.status" \
     || fail "the finished held request did not close the wake"
 
   run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$held" >/dev/null

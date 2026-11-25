@@ -127,16 +127,21 @@ assert_held() {  # <name> <category>
   [ "$first" = "hold $category" ] || fail "$name: expected the request held as $category, the route recorded '$first'"
   ! ledger "$name" | grep -q '^refuse' || fail "$name: a request that names a reserved category was refused instead of held"
   ! results "$name" | grep -qF "$REFUSAL_MARK" || fail "$name: the route answered a request that names a reserved category"
-  status_line "$name" 1 | grep -Eq "^blocked \[at=[0-9]+\] \[key=permission-prompt\]: .* held as $category;" \
+  status_line "$name" 1 | grep -Eq "^blocked \[at=[0-9]+\] \[key=permission-prompt-hardstop\]: .* held as $category;" \
     || fail "$name: no supervisor wake for the held request, status starts with '$(status_line "$name" 1)'"
 }
 
+# The model may ask again with its command reshaped, and each distinct waiting
+# request wakes the supervisor once. The close comes once and last.
 assert_closed() {  # <name> <reason>
-  local name=$1 reason=$2 lines
+  local name=$1 reason=$2 lines asked wakes
   lines=$(grep -c . "$LAB/$name/home/state/task.status" 2>/dev/null)
-  [ "$lines" = 2 ] || fail "$name: expected one wake and one close, the status record holds $lines lines"
-  status_line "$name" 2 | grep -Eq "^resolved \[at=[0-9]+\] \[key=permission-prompt\]: .*$reason\$" \
-    || fail "$name: the hold did not close because $reason, status ends with '$(status_line "$name" 2)'"
+  asked=$(awk -F '\t' '$2 == "hold" { print $7 }' "$LAB/$name/home/state/task.permission-route.tsv" 2>/dev/null | sort -u | grep -c .)
+  wakes=$(grep -c '^blocked \[at=[0-9]*\] \[key=permission-prompt-hardstop\]: ' "$LAB/$name/home/state/task.status" 2>/dev/null)
+  [ "$wakes" = "$asked" ] || fail "$name: expected one wake for each of the $asked held requests, the status record holds $wakes"
+  [ "$lines" = $((wakes + 1)) ] || fail "$name: expected $wakes wake(s) and one close, the status record holds $lines lines"
+  status_line "$name" "$lines" | grep -Eq "^resolved \[at=[0-9]+\] \[key=permission-prompt-hardstop\]: .*$reason\$" \
+    || fail "$name: the hold did not close because $reason, status ends with '$(status_line "$name" "$lines")'"
   [ ! -e "$LAB/$name/home/state/task.permission-held" ] || fail "$name: the held set outlived the close"
 }
 
