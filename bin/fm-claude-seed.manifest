@@ -1,5 +1,5 @@
 fm-claude-seed.v1
-a577f193c567d232a26c1031598b6fc3d14cff65	.agents/skills/afk/SKILL.md
+7b291f4ebf20e4b730c1cdf06a051eff591c846e	.agents/skills/afk/SKILL.md
 00918a4bb074b1304218bd57902563d21871e659	.agents/skills/agent-skill-trigger-index/SKILL.md
 0d9bd0c86ca74d8e430f0f1d132c8f4d307d69ea	.agents/skills/ahoy/SKILL.md
 47a6d1c9212449b560418350e60d0ce5061b4a2c	.agents/skills/ask-user-authority/SKILL.md
@@ -21,7 +21,7 @@ efd67e38f4f39aa1c8380f523d6db622931f1393	.agents/skills/firstmate-self-repo/SKIL
 eda57198865d7df8680e75cb2a263192dcdd24bb	.agents/skills/harness-adapters/references/common/dispatch.md
 56b81965cb9165f2f6162e2f39574400113bbade	.agents/skills/harness-adapters/references/common/model-and-effort.md
 d32d86d77016affc8a76e3ff60e30326af53dc8e	.agents/skills/harness-adapters/references/common/primary-hooks.md
-c0ae106b91cba0482d8a814dc11a321169d44a55	.agents/skills/harness-adapters/references/harness/agy.md
+7215850e4c3d568409eb5cd5ea9e3f01e8d3c2a3	.agents/skills/harness-adapters/references/harness/agy.md
 fcde0512b2f64a7f6e78d5be5398a3cff3a5ea89	.agents/skills/harness-adapters/references/harness/claude.md
 b1812903967aec67d6049704d48a303580ec2ae2	.agents/skills/harness-adapters/references/harness/codex.md
 1361f1b234171d3b52a0aadf187de06412c02fa6	.agents/skills/harness-adapters/references/harness/commandcode.md
@@ -70,5 +70,5 @@ ef492c1f3c1fe7514a10f89a939e7591fe596c12	.claude/mods/firstmate-calm/lib/fm-calm
 dadb6777faa9e822c0dcccf59b1bd64a31a86aeb	.claude/mods/firstmate-calm/tests/calm.test.ts
 140d4db05ff26a87c434a766279a80ea5e543741	.claude/mods/firstmate-calm/tests/support.ts
 a5210b1c660d4445138df49b7f274118dbefd299	.claude/mods/firstmate-calm/tests/working-ship.test.ts
-83f40f1f372c62afb92b88b47802e9a00b785e9a	.claude/settings.json
+8adcf9c8dd944fd1fd5cca662edd1d98bfe1f22b	.claude/settings.json
 2b7a412b8fa0fb7e985b0793321bd4e698f2b6cd	.claude/skills
