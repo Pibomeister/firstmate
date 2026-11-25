@@ -779,6 +779,60 @@ test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture() {
   pass "the next return brief lists carried items, records a wake handled under the posture, and keeps per-key resolution mechanics"
 }
 
+# When stop fails before archive, the live record still holds the carried
+# rows. The brief must list them from that live record.
+test_return_brief_lists_carried_from_live_record_when_stop_does_not_archive() {
+  local dir out rc carried
+  dir="$TMP_ROOT/live-carried-stop-fail"
+  install_runner "$dir"
+  carried="$dir/carried.tsv"
+  printf 'repair-task\tkey-a\tfirst reason\n' > "$carried"
+  contract_in "$dir" enter --words 'watch the fleet' --carried-file "$carried" >/dev/null 2>&1 \
+    || fail "could not enter the live-carried fixture"
+  seed_live_blocker "$dir" tmux key-a
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  touch "$dir/home/state/.fail-terminal-stop-once"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "failed stop should keep catch-up gated (rc=$rc): $out"
+  [ -f "$dir/home/state/.afk-contract" ] || fail "failed stop archived the live record"
+  assert_contains "$out" 'Carried from the previous return:' "the brief omitted carried items from the live record"
+  assert_contains "$out" 'repair-task [key=key-a] first reason' "the brief lost the live record's carried row"
+  pass "the return brief lists carried rows from the live record when stop does not archive"
+}
+
+# An unreadable or truncated retained sidecar must keep catch-up gated and
+# must not be deleted.
+test_unreadable_or_malformed_retained_sidecar_keeps_catchup_gated() {
+  local dir out rc sidecar case_name
+  for case_name in unreadable malformed; do
+    dir="$TMP_ROOT/sidecar-$case_name"
+    install_runner "$dir"
+    sidecar="$dir/home/state/.afk-carried-retained"
+    : > "$dir/home/state/.fake-drain"
+    if [ "$case_name" = unreadable ]; then
+      printf 'retained-record\t%s\n' "$dir/home/state/afk-contracts/1.afk-contract" > "$sidecar"
+      chmod 000 "$sidecar"
+    else
+      printf 'retained-recor\t%s\n' "$dir/home/state/afk-contracts/1.afk-contract" > "$sidecar"
+    fi
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "$case_name sidecar printed catch-up clear (rc=$rc): $out"
+    assert_not_contains "$out" 'catch-up clear' "$case_name sidecar cleared catch-up"
+    if [ "$case_name" = unreadable ]; then
+      chmod 600 "$sidecar"
+    fi
+    [ -e "$sidecar" ] || fail "$case_name sidecar was deleted"
+  done
+  pass "an unreadable or malformed retained sidecar keeps catch-up gated and is not deleted"
+}
+
 # On a supervision-host home off Pi the drain's BRANCH OUTCOMES section is the
 # one presenter of branch outcomes and the one owner of their read cursor, so
 # the return brief counts the window's outcomes and points there instead of
@@ -1901,6 +1955,8 @@ test_retained_records_gate_after_launch_rollback
 test_return_recovers_interrupted_entry_handoff
 test_reentry_takes_fresh_health_and_engine_snapshots
 test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
+test_return_brief_lists_carried_from_live_record_when_stop_does_not_archive
+test_unreadable_or_malformed_retained_sidecar_keeps_catchup_gated
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
 test_return_brief_points_at_the_drain_on_a_host_home_only

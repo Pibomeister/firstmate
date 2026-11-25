@@ -46,8 +46,8 @@
 # broken-session latch holds, that the session is paused and when it retries;
 # either way a quiet `enter` refuses (exit 3) before writing anything, so quiet
 # mode never leaves a record that would park a present captain's main. While
-# an away record (one without the quiet mode a quiet entry records) is live on
-# that home, whatever state/.afk says, `quiet-check` (exit 2) and a quiet
+# an away record (one without the quiet mode a quiet entry records) is live,
+# whatever state/.afk says, `quiet-check` (exit 2) and a quiet
 # `enter` (exit 3) refuse and name it: the captain's return
 # (bin/fm-afk-return.sh and its catch-up gate) comes first. Where the attended
 # host lacks one of those parts, `quiet-check` names it and quiet mode enters
@@ -283,7 +283,7 @@ fm_afk_launch_requested_mode() {
 }
 
 # Whether /quiet needs anything here (the header's QUIET MODE): 0 when it needs
-# nothing; 2 while an away record is live on a home that runs the host;
+# nothing; 2 while an away record is live;
 # otherwise 1, with FM_AFK_LAUNCH_QUIET_WHY naming what the attended host
 # lacks on a home that runs it, or empty where quiet mode is the daemon's as
 # it is without the host (no host, another primary, or quiet mode already
@@ -291,12 +291,14 @@ fm_afk_launch_requested_mode() {
 fm_afk_launch_quiet_needs_nothing() {
   local harness config
   FM_AFK_LAUNCH_QUIET_WHY=
+  if fm_afk_contract_present "$FM_AFK_LAUNCH_STATE"; then
+    fm_afk_launch_record_quiet || return 2
+  fi
   harness=$(fm_afk_launch_primary_harness)
   fm_afk_launch_host_primary "$harness" || return 1
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   fm_supervision_host_enabled "$config" "$harness" || return 1
   if fm_afk_contract_present "$FM_AFK_LAUNCH_STATE"; then
-    fm_afk_launch_record_quiet || return 2
     return 1
   fi
   [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ] || return 1
@@ -395,10 +397,25 @@ fm_afk_launch_checkpoint_note() {
 
 fm_afk_launch_catchup_pending() {
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
-    fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+    if [ "${FM_AFK_MODE:-}" = quiet ]; then
+      fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before entering quiet mode"
+    else
+      fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+    fi
     return 0
   fi
   return 1
+}
+
+# Enter must not consume a return seed that has not yet scanned blockers.
+# Taking the return lock here would deadlock with stop, which the return
+# already holds that lock when it calls. Refusing the incomplete seed is
+# the smaller fail-closed option: the gate stays, and the next enter
+# after return finishes carries the completed blocker rows.
+fm_afk_launch_catchup_draining() {
+  local gate="$FM_AFK_LAUNCH_STATE/.afk-return-catchup"
+  [ -f "$gate" ] || return 1
+  [ "$(awk -F '\t' '$1 == "phase" { print $2; exit }' "$gate")" = stopping-and-draining ]
 }
 
 # Away entry (not quiet) never refuses for the previous return's open
@@ -482,6 +499,10 @@ fm_afk_launch_enter() {
     esac
     "$FM_AFK_CONTRACT_CMD" enter "$@" || return
   else
+    if fm_afk_launch_catchup_draining; then
+      fm_afk_launch_log "return catch-up is still draining; wait for bin/fm-afk-return.sh to finish before entering away mode"
+      return 1
+    fi
     [ ! -e "$gate" ] || had_gate=1
     fm_afk_launch_carried_from_gate || return 1
     if [ -n "${FM_AFK_LAUNCH_CARRIED_FILE:-}" ]; then

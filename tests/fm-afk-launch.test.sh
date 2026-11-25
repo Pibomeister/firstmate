@@ -162,6 +162,75 @@ unit_enter_carries_open_return_blockers() {
   rm -rf "$st"
 }
 
+# A return seed in phase stopping-and-draining has not yet scanned blockers.
+# Enter must refuse it rather than consume an empty carried set.
+unit_enter_refuses_while_return_seed_is_draining() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-drain-seed.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'schema\tfm-afk-return.v1\nphase\tstopping-and-draining\n' > "$st/state/.afk-return-catchup"
+  printf 'window=synthetic:fm-repair-task\nbackend=tmux\nkind=ship\n' > "$st/state/repair-task.meta"
+  printf 'blocked [key=key-a]: firstmate can refresh the synthetic token\n' > "$st/state/repair-task.status"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'watch the fleet' 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] && [ -f "$st/state/.afk-return-catchup" ] \
+    && printf '%s' "$out" | grep -F 'return catch-up is still draining' >/dev/null \
+    && [ ! -e "$st/state/.afk-contract" ]; then
+    pass "enter: a mid-drain return seed is refused and the gate is left untouched"
+  else
+    fail "enter: a mid-drain return seed should refuse without consuming the gate (rc=$rc): $out"
+  fi
+  rm -rf "$st"
+}
+
+# Quiet enter over a live away record is the unsafe action: it refuses even
+# when the supervision host is opted out, and leaves the away record alone.
+unit_quiet_enter_over_away_refuses_without_host() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-quiet-away-off.XXXXXX")
+  mkdir -p "$st/state"
+  FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" enter --words 'away mandate' >/dev/null 2>&1 \
+    || { fail "quiet-over-away: away entry failed"; rm -rf "$st"; return; }
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$LAUNCH" enter --words 'be quiet' 2>&1)
+  rc=$?
+  if [ "$rc" -eq 3 ] \
+    && printf '%s' "$out" | grep -F 'away record (state/.afk-contract) is live' >/dev/null \
+    && [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" words)" = 'away mandate' ] \
+    && [ "$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$CONTRACT" mode)" = away ]; then
+    pass "quiet enter: over a live away record refuses without a supervision host and leaves the away words"
+  else
+    fail "quiet enter: over a live away record should refuse off-host (rc=$rc): $out"
+  fi
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" "$LAUNCH" quiet-check 2>&1)
+  rc=$?
+  if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -F 'away record (state/.afk-contract) is live' >/dev/null; then
+    pass "quiet-check: over a live away record refuses without a supervision host"
+  else
+    fail "quiet-check: over a live away record should refuse off-host (rc=$rc): $out"
+  fi
+  rm -rf "$st"
+}
+
+# Quiet enter over an open catch-up gate names quiet mode, not away re-entry.
+unit_quiet_enter_over_catchup_names_quiet_mode() {
+  local st out rc
+  st=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-quiet-catchup.XXXXXX")
+  mkdir -p "$st/state"
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nblocker\ttask-a\tkey-a\tfirst reason\n' \
+    > "$st/state/.afk-return-catchup"
+  out=$(FM_HOME="$st" FM_STATE_OVERRIDE="$st/state" FM_AFK_MODE=quiet "$LAUNCH" enter --words 'be quiet' 2>&1)
+  rc=$?
+  if [ "$rc" -ne 0 ] \
+    && printf '%s' "$out" | grep -F 'before entering quiet mode' >/dev/null \
+    && ! printf '%s' "$out" | grep -F 're-entering away mode' >/dev/null \
+    && [ -f "$st/state/.afk-return-catchup" ]; then
+    pass "quiet enter: an open catch-up gate is refused with a quiet-mode reason"
+  else
+    fail "quiet enter: catch-up refusal should name quiet mode (rc=$rc): $out"
+  fi
+  rm -rf "$st"
+}
+
 # No launch path waits for a separate go: the retired two-step subcommands are
 # refused by name and write nothing, so no caller can stage a mandate that then
 # waits on a human response before it binds.
@@ -1949,6 +2018,9 @@ e2e_rex() {
 unit_clear_stale
 unit_enter_records_the_posture_in_one_step_without_a_daemon
 unit_enter_carries_open_return_blockers
+unit_enter_refuses_while_return_seed_is_draining
+unit_quiet_enter_over_away_refuses_without_host
+unit_quiet_enter_over_catchup_names_quiet_mode
 unit_retired_two_step_entry_is_refused
 unit_pi_never_launches_the_daemon
 unit_test_harness_seam_requires_the_marker

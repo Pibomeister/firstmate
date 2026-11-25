@@ -26,7 +26,8 @@
 #
 # THE AWAY RETURN BRIEF (stdout, on begin and every away check) uses durable
 # records, never from conversation memory: the archived away-posture record
-# (bin/fm-afk-contract.sh), the supervision outcome store
+# (bin/fm-afk-contract.sh), or the live record when stop did not archive it,
+# the supervision outcome store
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
 # status logs, and the watchdog's human-only-step record
 # (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh). An open
@@ -76,6 +77,7 @@
 # must validate before catch-up clears, even without a current posture record
 # after launch rollback. Until seeded into the gate, the sidecar itself makes
 # guard and catchup-summary report pending catch-up.
+# An unreadable or malformed sidecar keeps catch-up gated and is not deleted.
 # If entry published a new record before consuming the old gate, return selects
 # the live record's window and retains the old gate's archive obligations and
 # historical evidence. tests/fm-afk-return.test.sh covers both interrupted
@@ -149,13 +151,35 @@ remove_evidence_prefix() {  # <kind> <text-prefix> <file>
   mv "$pending" "$file"
 }
 
+# A retained sidecar is recovery evidence. An unreadable file or a row
+# whose tag is truncated or unknown must refuse rather than drop the
+# obligation.
+retained_sidecar_ok() {  # <file>
+  local file=$1
+  [ -f "$file" ] && [ -r "$file" ] || return 1
+  awk -F '\t' '
+    $0 == "" { next }
+    $1 == "evidence" || $1 == "window" || $1 == "contract" || $1 == "superseded" || $1 == "retained-record" {
+      if (NF < 2 || $2 == "") exit 1
+      next
+    }
+    { exit 1 }
+  ' "$file"
+}
+
 preserve_evidence() {  # <destination>
-  local destination=$1 source historical live_epoch gate_epoch
+  local destination=$1 source historical live_epoch gate_epoch sidecar
+  sidecar="$STATE/.afk-carried-retained"
   live_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
   case "$live_epoch" in ''|*[!0-9]*) live_epoch= ;; esac
   gate_epoch=$(gate_contract_epoch)
-  for source in "$GATE" "$STATE/.afk-carried-retained"; do
-    [ -f "$source" ] || continue
+  for source in "$GATE" "$sidecar"; do
+    if [ "$source" = "$sidecar" ]; then
+      [ -e "$source" ] || continue
+      retained_sidecar_ok "$source" || return 1
+    else
+      [ -f "$source" ] || continue
+    fi
     historical=0
     if [ "$source" != "$GATE" ] || { [ -n "$live_epoch" ] && [ "$live_epoch" != "$gate_epoch" ]; }; then
       historical=1
@@ -171,7 +195,7 @@ preserve_evidence() {  # <destination>
           if ($1 == "evidence" && ($2 == "health" || $2 == "engine")) $2 = "retained-" $2
         }
         print
-      }' "$source" >> "$destination" 2>/dev/null || true
+      }' "$source" >> "$destination" || return 1
   done
 }
 
@@ -265,21 +289,28 @@ EOF
 }
 
 write_pending_seed() {  # <window-epoch> <contract-epoch>  Fail-closed marker before any lifecycle mutation.
-  local window_epoch=$1 contract_epoch=$2 pending started
+  local window_epoch=$1 contract_epoch=$2 pending started preserved
   mkdir -p "$STATE" || return 1
   started=$(awk -F '\t' '$1 == "started" { print $2; exit }' "$GATE" 2>/dev/null || true)
   [ -n "$started" ] || started=$(date +%s)
   pending=$(mktemp "$STATE/.afk-return-catchup.pending.XXXXXX") || return 1
+  preserved=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || { rm -f "$pending"; return 1; }
   {
     printf 'schema\tfm-afk-return.v1\n'
     printf 'started\t%s\n' "$started"
     printf 'phase\tstopping-and-draining\n'
     [ -z "$window_epoch" ] || printf 'window\t%s\n' "$window_epoch"
     [ -z "$contract_epoch" ] || printf 'contract\t%s\n' "$contract_epoch"
-    preserve_evidence /dev/stdout | grep -Ev "^(window|contract)$(printf '\t')" || true
-  } > "$pending" || { rm -f "$pending"; return 1; }
+  } > "$pending" || { rm -f "$pending" "$preserved"; return 1; }
+  if ! preserve_evidence "$preserved"; then
+    rm -f "$pending" "$preserved"
+    return 1
+  fi
+  grep -Ev "^(window|contract)$(printf '\t')" "$preserved" >> "$pending" || true
+  rm -f "$preserved"
   mv "$pending" "$GATE" || return 1
-  # The seeded gate now owns any retained evidence; the sidecar is spent.
+  # The seeded gate now owns any retained evidence; the sidecar is spent
+  # only after that copy succeeded.
   rm -f "$STATE/.afk-carried-retained"
 }
 
@@ -704,7 +735,7 @@ open_human_steps() {  # <human-steps.tsv>
 }
 
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
-  local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp
+  local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp live_record live_epoch
   local tag task key summary count routine routine_visible captain visible_outcomes live held_err last verb rows status url drained=0 pointer
   now=$(date +%s)
   # Where main processes outcomes through the drain's BRANCH OUTCOMES section
@@ -737,6 +768,13 @@ render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-
   record=""
   MANDATE_COUNT=0
   [ -z "$since" ] || record=$("$CONTRACT" archived "$since" 2>/dev/null || true)
+  if [ -z "$record" ] && fm_afk_contract_present "$STATE"; then
+    live_record=$(fm_afk_contract_path "$STATE")
+    live_epoch=$("$CONTRACT" field entered_epoch --path "$live_record" 2>/dev/null || true)
+    if [ -z "$since" ] || [ "$live_epoch" = "$since" ]; then
+      record=$live_record
+    fi
+  fi
   if [ -n "$record" ]; then
     archive_dir=$(fm_afk_contract_archive_dir "$STATE")
     for superseded in "$archive_dir/$since-superseded-"*.afk-contract; do
@@ -897,7 +935,10 @@ return_reconcile() {
   evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
   blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
   drain_err=$(mktemp "$STATE/.afk-return-drain.XXXXXX") || { rm -f "$evidence" "$blockers"; return 1; }
-  preserve_evidence "$evidence"
+  if ! preserve_evidence "$evidence"; then
+    append_evidence lifecycle 'retained recovery evidence unreadable; catch-up stays gated' "$evidence"
+    lifecycle_ok=0
+  fi
   since=$(gate_window_epoch)
   contract_since=$(gate_contract_epoch)
 

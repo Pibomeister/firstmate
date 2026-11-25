@@ -369,7 +369,17 @@ fm_afk_contract_read_carried() {  # <path>
     *[!0-9]*) fm_afk_contract_log "record $path has an invalid carried_blockers count"; return 1 ;;
     *)
       awk -F '\t' -v want="$count" '
-        /^carried: / { n++; if (NF < 3 || $2 == "") bad = 1; line = $0; sub(/^carried: /, "", line); print line }
+        /^words: / { in_words = 1 }
+        in_words { next }
+        /^carried_blockers: / { in_carried = 1; next }
+        /^carried: / {
+          n++
+          sub(/^carried: /, "")
+          if (NF < 3 || $1 == "" || $2 == "") bad = 1
+          print
+          next
+        }
+        in_carried && $0 != "" { bad = 1 }
         END { if (bad || n != want) exit 1 }' "$path" || {
           fm_afk_contract_log "record $path has a malformed carried section"
           return 1

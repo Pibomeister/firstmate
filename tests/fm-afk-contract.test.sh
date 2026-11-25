@@ -697,6 +697,48 @@ test_enter_records_carried_items_and_plain_entry_has_none() {
   pass "entry records carried items with key and reason, replacements and carry-only refreshes keep them, and plain entry carries none"
 }
 
+# A leftover unprefixed row in the carried section, or an empty task field,
+# is a malformed section: validate and read_carried refuse rather than
+# counting only ^carried: lines.
+test_carried_section_refuses_truncated_or_empty_task_rows() {
+  local home record out rc tab
+  tab=$(printf '\t')
+  home=$(make_home carried-garbled)
+  printf 'task-a\tkey-a\tfirst reason\n' > "$home/carried.tsv"
+  contract "$home" enter --words 'watch the fleet' --carried-file "$home/carried.tsv" >/dev/null 2>&1 \
+    || fail "carried fixture entry failed"
+  record="$home/state/.afk-contract"
+  awk -v row="task-b${tab}key-b${tab}leftover" '
+    /^words: / { print row; print; next }
+    { print }
+  ' "$record" > "$home/garbled"
+  mv "$home/garbled" "$record"
+  set +e
+  out=$(contract "$home" validate 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "validation accepted a leftover unprefixed carried row: $out"
+  assert_contains "$out" 'malformed carried section' "validation did not name the garbled carried section"
+
+  home=$(make_home carried-empty-task)
+  printf 'task-a\tkey-a\tfirst reason\n' > "$home/carried.tsv"
+  contract "$home" enter --words 'watch the fleet' --carried-file "$home/carried.tsv" >/dev/null 2>&1 \
+    || fail "empty-task fixture entry failed"
+  record="$home/state/.afk-contract"
+  awk -v tab="$tab" '
+    /^carried: / { print "carried: " tab "key-a" tab "reason"; next }
+    { print }
+  ' "$record" > "$home/empty-task"
+  mv "$home/empty-task" "$record"
+  set +e
+  out=$(contract "$home" validate 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "validation accepted an empty carried task: $out"
+  assert_contains "$out" 'malformed carried section' "validation did not name the empty-task carried row"
+  pass "validate and read_carried refuse a truncated carried section and an empty task"
+}
+
 test_enter_records_carried_items_and_plain_entry_has_none
 test_readback_renders_words_verbatim_with_the_record_scalars
 test_words_preserve_final_newline_shape
@@ -719,3 +761,4 @@ test_version_1_record_is_replaced_by_a_version_2_record
 test_record_changes_refuse_while_a_reader_holds_the_lock
 test_quiet_record_reads_as_a_present_captain_holding_nothing
 test_away_entry_over_quiet_mode_becomes_away_and_quiet_never_masks_away
+test_carried_section_refuses_truncated_or_empty_task_rows
