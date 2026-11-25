@@ -1,0 +1,9 @@
+[
+  {
+    "name": "live-runtime-retention-and-optional-pruning",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-runtime-retention-and-optional-pruning.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  }
+]

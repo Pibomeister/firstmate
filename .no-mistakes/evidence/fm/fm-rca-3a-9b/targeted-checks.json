@@ -1,0 +1,32 @@
+[
+  {
+    "command": "bash tests/fm-delegated.test.sh",
+    "exit_code": 0,
+    "seconds": 308.5
+  },
+  {
+    "command": "bash tests/fm-brief.test.sh",
+    "exit_code": 0,
+    "seconds": 228.8
+  },
+  {
+    "command": "bash tests/fm-session-start.test.sh",
+    "exit_code": 143,
+    "seconds": 1661.4
+  },
+  {
+    "command": "bash tests/fm-teardown.test.sh",
+    "exit_code": 1,
+    "seconds": 1770.5
+  },
+  {
+    "command": "bash tests/fm-teardown-endpoint-safety.test.sh",
+    "exit_code": 1,
+    "seconds": 630.5
+  },
+  {
+    "command": "bash tests/fm-spawn-agent-exit-status.test.sh",
+    "exit_code": 0,
+    "seconds": 720.7
+  }
+]

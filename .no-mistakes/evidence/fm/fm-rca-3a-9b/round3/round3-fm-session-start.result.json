@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/fm-session-start.test.sh",
+  "exit_code": 143,
+  "seconds": 442.8
+}

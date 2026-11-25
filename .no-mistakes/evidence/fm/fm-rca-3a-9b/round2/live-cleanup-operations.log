@@ -1,0 +1,4 @@
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.nm-delegated-live-a8th3mgi/lifecycle kill-server
+exit=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.nm-delegated-live-a8th3mgi/lifecycle
+exit=0

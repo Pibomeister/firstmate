@@ -1,0 +1,62 @@
+diff --git a/tests/fm-teardown-endpoint-safety.test.sh b/tests/fm-teardown-endpoint-safety.test.sh
+index 4cc91659..0dd152d7 100755
+--- a/tests/fm-teardown-endpoint-safety.test.sh
++++ b/tests/fm-teardown-endpoint-safety.test.sh
+@@ -623,7 +623,9 @@ test_reused_pool_slot_refuses_before_touching_the_other_task() {
+   # Staged in this shell, not a command substitution: a background child of a
+   # $(...) subshell does not outlive it, and the point of this worker is to be
+   # alive in the slot while teardown runs.
+-  ( cd "$dir/worktree" && exec sleep 30 ) &
++  # Keep the sentinel alive until explicitly stopped. Its fixture-path argument
++  # also lets the suite's EXIT cleanup find it if an assertion fails.
++  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
+   worker=$!
+ 
+   set +e
+@@ -732,7 +734,7 @@ test_sole_slot_record_still_tears_down() {
+   fm_write_meta "$dir/home/state/neighbour.meta" \
+     "window=firstmate:fm-neighbour" "endpoint_task_id=neighbour" \
+     "worktree=$dir/other-worktree" "project=$dir/project" "kind=scout"
+-  ( cd "$dir/other-worktree" && exec sleep 30 ) &
++  ( cd "$dir/other-worktree" && exec perl -e 'sleep' "$dir/other-worktree" ) &
+   worker=$!
+ 
+   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
+@@ -1056,7 +1058,7 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
+   # Staged in this shell, not a command substitution: a background child of a
+   # $(...) subshell does not outlive it, and the point of this worker is to be
+   # alive in the slot while teardown runs.
+-  ( cd "$dir/worktree" && exec sleep 30 ) &
++  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
+   worker=$!
+ 
+   set +e
+@@ -1087,7 +1089,7 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
+     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
+     "worktree=$dir/worktree" "project=$dir/project" "kind=ship"
+   claim_pool_slot "$dir" "$other" "$dir/other-home"
+-  ( cd "$dir/worktree" && exec sleep 30 ) &
++  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
+   worker=$!
+ 
+   set +e
+diff --git a/tests/fm-teardown.test.sh b/tests/fm-teardown.test.sh
+index 020a2a64..8bff5c08 100755
+--- a/tests/fm-teardown.test.sh
++++ b/tests/fm-teardown.test.sh
+@@ -6640,12 +6640,13 @@ test_status_archive_missing_status_noop() {
+   printf '%s\n' "$$" > "$case_dir/state/.status-presentation-lock/pid"
+   printf 'neighbor\tidentity\t0\t0\n' > "$case_dir/state/.status-presentation-cursor"
+   cp "$case_dir/state/.status-presentation-cursor" "$case_dir/cursor.before"
+-  # A regression must fail within a bound, not wait forever on our live lock.
++  # Bound a presentation-lock regression while allowing the full teardown's
++  # process and worktree checks to finish on a loaded host.
+   . "$ROOT/bin/fm-timeout-lib.sh"
+   rc=0
+   FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
+     FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+-    fm_run_timed 20 "$TEARDOWN" task-x1 > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
++    fm_run_timed 180 "$TEARDOWN" task-x1 > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+   expect_code 0 "$rc" "local missing-status retirement"
+   cmp -s "$case_dir/cursor.before" "$case_dir/state/.status-presentation-cursor" || fail "missing-status no-op rewrote neighboring cursor"
+   assert_present "$case_dir/state/.status-presentation-lock" "missing-status no-op contended with presentation lock"

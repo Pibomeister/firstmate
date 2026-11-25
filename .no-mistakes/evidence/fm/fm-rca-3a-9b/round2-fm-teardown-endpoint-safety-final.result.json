@@ -1,0 +1,6 @@
+{
+  "command": "TMPDIR=/tmp bash tests/fm-teardown-endpoint-safety.test.sh",
+  "exit_code": 0,
+  "seconds": 2146.4,
+  "test_fix": "Publisher lifetime follows fixture owner; suite uses standard toolchain temp isolation."
+}

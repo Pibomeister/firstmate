@@ -1,0 +1,9 @@
+[
+  {
+    "name": "live-normal-watcher-delegated-escalation",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-normal-watcher-delegated-escalation.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  }
+]

@@ -1,0 +1,5 @@
+{
+  "command": "TMPDIR=/tmp FM_SESSION_START_TIMEOUT=600 bash tests/.nm-startup-final-1-rest.sh",
+  "exit_code": 143,
+  "seconds": 927.2
+}

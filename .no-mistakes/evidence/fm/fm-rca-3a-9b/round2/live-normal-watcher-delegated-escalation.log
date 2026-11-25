@@ -1,0 +1,21 @@
+revision=221e24e90ba26044c46bb73f3f834624d678b53e
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-umkr1nyf/watcher
+{run-worktree}/.nm-delegated-live-umkr1nyf/watcher
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-watcher --deliverable report --artifact {run-worktree}/.nm-delegated-live-umkr1nyf/watcher/art/report.md --heartbeat-secs 1 --silence-secs 2 --supervisor firstmate
+registered task=hermes-watcher deliverable=report heartbeat_secs=1 silence_secs=2
+exit=0
+$ bash bin/fm-delegated.sh dispatch --task hermes-watcher
+dispatched task=hermes-watcher state=dispatched-not-progressing
+exit=0
+$ bash bin/fm-watch.sh
+check: rearm-resurface
+exit=0
+ACTUAL WATCHER WAKE QUEUE
+1795584721	1	check	delegated:firstmate:silence:hermes-watcher	escalation task=hermes-watcher age=17 last_receipt=dispatch@1795584703 deliverable=report supervisor=firstmate
+
+$ bash bin/fm-delegated.sh check
+exit=0
+Normal watcher routed exactly one delegated escalation with no injected clock.
+SCENARIO PASS

@@ -1,0 +1,5 @@
+{
+  "original_pid": 66469,
+  "reason": "Complete the remaining existing baseline cases in isolated parallel batches within the 75-minute phase budget.",
+  "last_completed": "test_herdr_backend_diagnostics_follow_real_session_start"
+}

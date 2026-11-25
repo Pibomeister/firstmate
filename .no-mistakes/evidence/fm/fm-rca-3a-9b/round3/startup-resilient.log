@@ -1,0 +1,39 @@
+RUN test_runtime_bound_truncates_loudly_and_exits_zero
+not ok - the truncation banner did not name the incomplete stage (missing: 'stopped during the "bootstrap" stage')
+--- output ---
+
+================================================================================
+SESSION START - {run-worktree}/.nm-test-tmp/fm-session-start-tests.ueONfr/runtime-bound/home
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  STARTUP TRUNCATED - SESSION START HIT ITS 3s RUNTIME BOUND
+●  It stopped during the "lock" stage, so everything above is COMPLETE
+●  only up to that point.
+●  RECONCILE these stages before acting on anything they would have shown:
+●    lock role bootstrap wake-queue supervision-instructions read-once fleet-state network-checks context next-step
+●  Rerun bin/fm-session-start.sh now to finish taking the helm. If it truncates
+●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that
+●  cannot finish inside the bound is a fleet problem, not a reporting detail.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RESULT test_runtime_bound_truncates_loudly_and_exits_zero 1
+RUN test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact
+ok - true-start AGENTS baselines stay immutable while every drifted Pi compact re-emits the current contract
+RESULT test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact 0
+RUN test_dispatch_ledger_overdue_in_digest
+ok - session start lists overdue goals, and only a lock-holding session is told to act on them
+RESULT test_dispatch_ledger_overdue_in_digest 0
+RUN test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
+ok - --reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes
+RESULT test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain 0
+RUN test_reemit_keeps_repair_ownership_with_the_lock_holder
+ok - --reemit re-verifies lock ownership and keeps repair ownership with whoever holds it
+RESULT test_reemit_keeps_repair_ownership_with_the_lock_holder 0
+RUN test_shared_state_baseline_preserved_across_inspection_failures
+ok - session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, and failed or malformed baseline reads
+RESULT test_shared_state_baseline_preserved_across_inspection_failures 0
+RUN test_reemit_cue_survives_the_hook_output_preview
+Terminated: 15

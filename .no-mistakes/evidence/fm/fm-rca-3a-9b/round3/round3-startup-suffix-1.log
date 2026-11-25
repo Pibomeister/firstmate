@@ -1,0 +1,13 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_reemit_cue_survives_the_hook_output_preview
+ok - --reemit puts its read cue in the first 2000 characters and a normal start omits it
+RESULT test_reemit_cue_survives_the_hook_output_preview 0
+RUN test_runtime_bound_leaves_harness_ancestry_headroom
+ok - the runtime bound leaves enough ancestry headroom for a deeply nested session to take the lock
+RESULT test_runtime_bound_leaves_harness_ancestry_headroom 0
+RUN test_read_only_pi_compact_refreshes_against_its_own_session_identity
+ok - read-only Pi compact refreshes against the rebuilding session identity without mutation
+RESULT test_read_only_pi_compact_refreshes_against_its_own_session_identity 0
+RUN test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
+ok - Codex reset sources do not claim an unavailable instruction-refresh channel
+RESULT test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh 0

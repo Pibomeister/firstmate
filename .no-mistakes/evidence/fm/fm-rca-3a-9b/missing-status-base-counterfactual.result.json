@@ -1,0 +1,6 @@
+{
+  "command": "bash tests/.nm-teardown-missing-status-base.sh",
+  "base": "d3d97c97d7bcd7dac112f0167186502a11373152",
+  "exit_code": 1,
+  "observed": "The same preexisting 20-second deadline expired at the base revision."
+}

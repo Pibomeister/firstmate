@@ -1,0 +1,4 @@
+{
+  "command": "bash tests/.nm-teardown-missing-status-long.sh",
+  "exit_code": 0
+}

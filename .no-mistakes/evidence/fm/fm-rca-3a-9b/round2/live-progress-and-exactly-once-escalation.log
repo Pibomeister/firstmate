@@ -1,0 +1,35 @@
+revision=221e24e90ba26044c46bb73f3f834624d678b53e
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-_mnbnthh/progress
+{run-worktree}/.nm-delegated-live-_mnbnthh/progress
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-lab --deliverable report --artifact {run-worktree}/.nm-delegated-live-_mnbnthh/progress/art/report.md --heartbeat-secs 1 --silence-secs 30 --supervisor supervisor
+registered task=hermes-lab deliverable=report heartbeat_secs=1 silence_secs=30
+exit=0
+$ bash bin/fm-delegated.sh dispatch --task hermes-lab
+dispatched task=hermes-lab state=dispatched-not-progressing
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=dispatched-not-progressing deliverable=report last_receipt=dispatch@1795584601 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/progress/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh check
+exit=0
+$ bash bin/fm-delegated.sh heartbeat --task hermes-lab
+heartbeat task=hermes-lab state=progressing
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=progressing deliverable=report last_receipt=heartbeat@1795584614 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/progress/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh check
+exit=0
+$ bash bin/fm-delegated.sh check
+escalation task=hermes-lab age=35 last_receipt=heartbeat@1795584614 deliverable=report supervisor=supervisor
+exit=0
+$ bash -c '. "$1"; fm_task_inbox_body "$2"' _ {run-worktree}/bin/fm-task-inbox-lib.sh {run-worktree}/.nm-delegated-live-_mnbnthh/progress/state/supervisor.inbox/001.msg
+delegated-notification=delegated:supervisor:silence:hermes-lab
+escalation task=hermes-lab age=35 last_receipt=heartbeat@1795584614 deliverable=report supervisor=supervisor
+exit=0
+$ bash bin/fm-delegated.sh check
+exit=0
+Observable supervisor inbox has exactly one notification after two overdue checks.
+SCENARIO PASS

@@ -1,0 +1,6 @@
+{
+  "command": "bash tests/fm-teardown-endpoint-safety.test.sh",
+  "exit_code": 1,
+  "seconds": 184.1,
+  "test_fix": "Publisher lifetime follows fixture owner instead of a 30-second expiry."
+}

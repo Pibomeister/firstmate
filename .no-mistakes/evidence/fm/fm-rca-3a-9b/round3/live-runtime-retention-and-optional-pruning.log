@@ -1,0 +1,51 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime
+{run-worktree}/.nm-delegated-live-8rxf0d7t/runtime
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime new-session -d -s lab -n primary -x 120 -y 40 -c {run-worktree}
+exit=0
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime display-message -p '#{socket_path},#{pid},0'
+/tmp/fml.PvoDmo/tmux-501/default,12902,0
+exit=0
+$ git init -q -b main {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/projects/toy
+exit=0
+$ git -C {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/projects/toy -c 'user.name=Live Lab' -c user.email=lab@example.invalid commit -q --allow-empty -m 'synthetic base'
+exit=0
+$ bash -c 'cd "$1" && treehouse get --lease --no-fetch --json' _ {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/projects/toy
+{"path":"{run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/pool/.treehouse/toy-83a328/1/toy","lease_id":"a1fa9302d91aa7d144754c7065b5ade9","lease_holder":"","leased_at":"2026-11-25T00:52:13.260749-06:00","base_branch":"main"}
+stderr: A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Setting up worktree...
+🌳 Leased worktree at ~/.no-mistakes/worktrees/075d7f40c28a/01M87D89KGJ0YXRDHGHMZQ97E8/.nm-delegated-live-8rxf0d7t/runtime/pool/.treehouse/toy-83a328/1/toy. Run 'treehouse return ~/.no-mistakes/worktrees/075d7f40c28a/01M87D89KGJ0YXRDHGHMZQ97E8/.nm-delegated-live-8rxf0d7t/runtime/pool/.treehouse/toy-83a328/1/toy' to release it.
+exit=0
+LEASE {"path": "{run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/pool/.treehouse/toy-83a328/1/toy", "lease_id": "a1fa9302d91aa7d144754c7065b5ade9", "lease_holder": "", "leased_at": "2026-11-25T00:52:13.260749-06:00", "base_branch": "main"}
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime new-window -d -t lab: -n fm-producer -c {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/pool/.treehouse/toy-83a328/1/toy 'sleep 300'
+exit=0
+$ bash bin/fm-ledger.sh intake producer --project toy --title 'Synthetic completed task' --source ask:live-cleanup --kind ship
+filed producer project=toy source=ask:live-cleanup
+exit=0
+$ bash bin/fm-delegated.sh register --task evidence-owner --deliverable report --artifact {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/data/final-report.md --heartbeat-secs 60 --silence-secs 7200
+registered task=evidence-owner deliverable=report heartbeat_secs=60 silence_secs=7200
+exit=0
+$ bash bin/fm-delegated.sh handoff --task evidence-owner --id evidence --receiver receiver --path {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/state/producer.status --hash 45df432cf052c444e189e0d95635dfb8a68008513ecbd06b6efa05a1dec9f7a6 --alt-dir {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/hosted --location read
+handoff=evidence state=mirrored receiver=receiver
+exit=0
+$ bash bin/fm-teardown.sh producer
+
+stderr diagnostics retained in live-optional-teardown.trace.log
+exit=1
+Real teardown preserved runtime evidence and task record while consumption is pending.
+$ bash -c '. "$1"; fm_task_inbox_body "$2"' _ {run-worktree}/bin/fm-task-inbox-lib.sh {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/state/receiver.inbox/001.msg
+handoff=evidence task=evidence-owner receiver=receiver artifact={run-worktree}/.nm-delegated-live-8rxf0d7t/runtime/state/producer.status hash=45df432cf052c444e189e0d95635dfb8a68008513ecbd06b6efa05a1dec9f7a6
+exit=0
+$ bash bin/fm-teardown.sh producer
+
+stderr diagnostics retained in live-optional-teardown.trace.log
+exit=1
+$ bash bin/fm-lab-home.sh tmux {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime kill-server
+exit=0
+$ bash bin/fm-lab-home.sh teardown {run-worktree}/.nm-delegated-live-8rxf0d7t/runtime
+exit=0
+SCENARIO FAIL AssertionError((1, 0))

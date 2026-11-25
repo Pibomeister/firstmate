@@ -1,0 +1,5 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_forced_secondmate_child_scout_nested_clone_returns_clean
+ok - a forced secondmate teardown returns a child scout copy with a nested clone clean
+RUN test_forced_secondmate_dirty_child_return_warns_and_completes
+ok - a forced secondmate teardown warns about a dirty child return and still completes

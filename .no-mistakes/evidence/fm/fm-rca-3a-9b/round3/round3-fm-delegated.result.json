@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/fm-delegated.test.sh",
+  "exit_code": 0,
+  "seconds": 1109.3
+}

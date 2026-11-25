@@ -1,0 +1,30 @@
+diff --git a/tests/fm-session-start.test.sh b/tests/fm-session-start.test.sh
+index 971ba84f..e493c9f2 100755
+--- a/tests/fm-session-start.test.sh
++++ b/tests/fm-session-start.test.sh
+@@ -3106,7 +3106,10 @@ EOF
+     _ "$ROOT/bin/fm-timeout-lib.sh")
+   [ "$mechanism" = bash ] || fail "the forced pure-Bash timeout fixture selected '$mechanism'"
+ 
+-  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_SESSION_START_TIMEOUT=3 FM_STARTUP_NETWORK_TIMEOUT=2 \
++  # Leave enough time for local lock and role setup on a loaded host. The fake
++  # Git command hangs for 600 seconds, so this still exercises deadline cleanup
++  # during bootstrap rather than racing the setup stages themselves.
++  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_SESSION_START_TIMEOUT=60 FM_STARTUP_NETWORK_TIMEOUT=2 \
+     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
+ 
+   expect_code 0 "$status" "a truncated session start must still exit 0 so the session can open"
+diff --git a/tests/fm-teardown-endpoint-safety.test.sh b/tests/fm-teardown-endpoint-safety.test.sh
+index 7c6c2a98..2df545b5 100755
+--- a/tests/fm-teardown-endpoint-safety.test.sh
++++ b/tests/fm-teardown-endpoint-safety.test.sh
+@@ -17,6 +17,9 @@ make_case() {  # <name>
+     "$TMP_ROOT/$dir/home/config" "$TMP_ROOT/$dir/fakebin" \
+     "$TMP_ROOT/$dir/worktree" "$TMP_ROOT/$dir/project"
+   git init -q "$TMP_ROOT/$dir/project"
++  # Keep scratch cleanup inside the synthetic checkout. Without its own Git
++  # root, git -C worktree clean resolves the surrounding gate repository.
++  git init -q "$TMP_ROOT/$dir/worktree"
+   : > "$TMP_ROOT/$dir/worktree/sentinel"
+   : > "$TMP_ROOT/$dir/runtime.log"
+   cat > "$TMP_ROOT/$dir/fakebin/tmux" <<'SH'

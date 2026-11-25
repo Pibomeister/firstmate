@@ -1,0 +1,99 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_forced_secondmate_child_scout_nested_clone_returns_clean
+not ok - secondmate-child-nested-clean: forced secondmate teardown should succeed: expected exit 0, got 1
+RESULT test_forced_secondmate_child_scout_nested_clone_returns_clean 1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 23s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: unsafe secondmate home removal target {run-worktree}/.nm-test-tmp/fm-teardown-tests.JpAzkp/secondmate-child-nested-clean/secondmate-home is inside the active firstmate home
+RUN test_windowless_record_outside_the_leftover_class_still_refuses
+ok - a windowless record with a spawn_gen, a non-tmux backend or endpoint identity, no backlog validation, or ambiguous, foreign, or malformed identity still refuses
+RESULT test_windowless_record_outside_the_leftover_class_still_refuses 0
+RUN test_live_index_lock_is_never_removed_and_teardown_refuses
+ok - live-held worktree index.lock is never removed and teardown refuses
+RESULT test_live_index_lock_is_never_removed_and_teardown_refuses 0
+RUN test_teardown_records_the_task_pipeline_spend
+ok - teardown records the task's pipeline spend before removing its branch and record
+RESULT test_teardown_records_the_task_pipeline_spend 0
+RUN test_parked_run_with_malformed_ledger_row_is_never_aborted
+ok - a malformed ledger row never authorizes a parked-run abort
+RESULT test_parked_run_with_malformed_ledger_row_is_never_aborted 0
+RUN test_parked_advanced_run_ambiguous_rows_are_never_aborted
+ok - consecutive unresolvable rows are ambiguous and never conclude a run
+RESULT test_parked_advanced_run_ambiguous_rows_are_never_aborted 0
+RUN test_leaked_tasktmp_process_is_reaped
+ok - a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too
+RESULT test_leaked_tasktmp_process_is_reaped 0
+RUN test_merged_pr_patch_matching_preserves_indentation
+ok - merged PR patch matching preserves indentation, allows exact replays, and refuses unsupported Git
+RESULT test_merged_pr_patch_matching_preserves_indentation 0
+RUN test_content_in_default_fallback_allows
+ok - worktree whose content already landed in the default branch is torn down (content fallback)
+RESULT test_content_in_default_fallback_allows 0
+RUN test_dirty_return_warns_which_slot_was_lost
+ok - a return that leaves residue names the lost slot and the remaining paths
+RESULT test_dirty_return_warns_which_slot_was_lost 0
+RUN test_windowless_legacy_record_tears_down_with_the_legacy_flag
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 16s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - a windowless leftover with no spawn_gen also tears down when --legacy-record is passed
+RESULT test_windowless_legacy_record_tears_down_with_the_legacy_flag 0
+RUN test_legacy_record_never_accepts_a_corrupt_spawn_gen
+ok - a corrupt spawn_gen is never accepted as a legacy record
+RESULT test_legacy_record_never_accepts_a_corrupt_spawn_gen 0
+RUN test_empty_retry_wait_uses_default_without_aborting
+ok - empty retry wait overrides use the default without aborting teardown
+RESULT test_empty_retry_wait_uses_default_without_aborting 0
+RUN test_parked_run_advanced_past_unfetched_head_is_still_aborted
+ok - a parked run the pipeline advanced past the task copy is still concluded from the runs ledger, not orphaned
+RESULT test_parked_run_advanced_past_unfetched_head_is_still_aborted 0
+RUN test_parked_run_terminal_newest_row_at_own_head_is_never_aborted
+ok - a terminal newest row anchored at this worktree's head never authorizes an abort
+RESULT test_parked_run_terminal_newest_row_at_own_head_is_never_aborted 0
+RUN test_own_autonomous_run_is_left_alone
+ok - a task-owned autonomous running step is left alone rather than aborted
+RESULT test_own_autonomous_run_is_left_alone 0
+RUN test_process_exit_during_identity_lookup_does_not_refuse
+ok - a process exiting during identity lookup does not block teardown
+RESULT test_process_exit_during_identity_lookup_does_not_refuse 0
+RUN test_merged_pr_with_later_local_commit_refuses
+ok - merged PR does not allow teardown after a later local commit
+RESULT test_merged_pr_with_later_local_commit_refuses 0
+RUN test_content_fallback_uses_recorded_base_branch
+ok - the content-landed fallback checks a task's recorded base branch, not the default branch
+RESULT test_content_fallback_uses_recorded_base_branch 0
+RUN test_dirty_return_warns_even_when_a_later_step_refuses
+ok - a dirty return is reported even when a later teardown step refuses
+RESULT test_dirty_return_warns_even_when_a_later_step_refuses 0
+RUN test_windowless_legacy_record_still_refuses_unlanded_work
+ok - a windowless leftover still refuses while its worktree holds unlanded work
+RESULT test_windowless_legacy_record_still_refuses_unlanded_work 0
+RUN test_stale_index_lock_cleared_and_teardown_succeeds
+ok - provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds
+RESULT test_stale_index_lock_cleared_and_teardown_succeeds 0
+RUN test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
+ok - fractional legacy retry wait remains supported without arithmetic
+RESULT test_fractional_legacy_retry_wait_refuses_without_arithmetic_error 0
+RUN test_parked_run_with_mismatched_ledger_head_is_never_aborted
+ok - a ledger row for a different head never authorizes a parked-run abort
+RESULT test_parked_run_with_mismatched_ledger_head_is_never_aborted 0
+RUN test_parked_run_behind_diverged_newer_row_is_never_aborted
+ok - a resolvable diverged newer same-branch row makes every older row stale history; no run is concluded
+RESULT test_parked_run_behind_diverged_newer_row_is_never_aborted 0
+RUN test_leaked_worktree_process_is_reaped
+ok - a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving
+RESULT test_leaked_worktree_process_is_reaped 0
+RUN test_run_abort_precedes_process_reap_precedes_worktree_removal
+ok - the run abort and the leaked-process reap both complete before the destructive worktree return
+RESULT test_run_abort_precedes_process_reap_precedes_worktree_removal 0

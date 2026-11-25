@@ -1,0 +1,3 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+ok - teardown leaves opencode's busy plugin in the returned pool worktree as on main
+ok - hidden untracked work is refused before return while a clean control returns

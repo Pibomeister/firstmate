@@ -1,0 +1,65 @@
+[
+  {
+    "name": "live-progress-and-exactly-once-escalation",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-progress-and-exactly-once-escalation.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-artifact-validation-and-final-receipt",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-artifact-validation-and-final-receipt.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-hidden-handoffs-and-read-receipts",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-hidden-handoffs-and-read-receipts.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-tamper-retired-and-remote-guards",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-tamper-retired-and-remote-guards.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-symlink-retention-until-consumption",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-symlink-retention-until-consumption.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "Runtime artifact retained until read; real teardown resumes after acknowledgement",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-runtime-retention-completed.log",
+    "reason": "Real teardown, tmux, and Treehouse with synthetic task metadata and status evidence."
+  },
+  {
+    "name": "Unread old archive is retained while unrelated real teardown completes",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-optional-pruning-observable.log",
+    "reason": "Real marked lab with synthetic archive; actual teardown exit 0 and persisted state assertions."
+  },
+  {
+    "name": "Real Codex scout launch registers report, heartbeat and silence contract; startup renders dispatch-only status",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-scout-registration-and-startup.log",
+    "reason": "Real authenticated Codex exec on a synthetic toy repository. The later fixture cleanup timeout is retained in the raw transcript; that fixture was stopped and removed."
+  },
+  {
+    "name": "live-normal-watcher-delegated-escalation",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-normal-watcher-delegated-escalation.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  }
+]

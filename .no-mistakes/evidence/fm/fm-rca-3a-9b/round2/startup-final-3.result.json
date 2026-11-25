@@ -1,0 +1,28 @@
+{
+  "command": "TMPDIR=/tmp bash tests/.nm-startup-final-3.sh",
+  "selectors": [
+    "test_inactive_reconcile_never_blocks_the_digest",
+    "test_read_only_session_declares_skipped_network_checks",
+    "test_session_start_preserves_transiently_unreadable_tmux",
+    "test_work_under_way_one_line_per_task",
+    "test_endpoint_liveness_tmux",
+    "test_endpoint_read_hang_is_bounded_and_reported",
+    "test_abnormal_digest_death_banners_and_exits_zero",
+    "test_non_pi_session_start_leaves_branch_state_untouched",
+    "test_backlog_queued_bound_discloses_its_remainder",
+    "test_line_cuts_count_characters_not_bytes",
+    "test_fleet_digest_empty_fleet",
+    "test_next_step_quiet_mode_delegates_to_daemon",
+    "test_supervision_block_exactly_one_and_pi_diagnostic",
+    "test_pi_diagnostic_rejects_handoff_generation_marker",
+    "test_omp_diagnostic_checkout_home_keeps_restart_wording_and_names_cause",
+    "test_pi_diagnostic_rejects_previous_session_loaded_marker",
+    "test_runtime_bound_leaves_a_healthy_digest_untouched",
+    "test_reemit_cue_survives_the_hook_output_preview",
+    "test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh",
+    "test_affected_bash_warning_comes_first_and_once",
+    "test_shared_git_config_change_reported_at_session_start"
+  ],
+  "exit_code": 1,
+  "seconds": 121.4
+}

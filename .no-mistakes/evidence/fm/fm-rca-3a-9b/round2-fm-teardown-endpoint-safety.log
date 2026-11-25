@@ -1,0 +1,5 @@
+revision=221e24e90ba26044c46bb73f3f834624d678b53e
+ok - fm-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
+ok - fm-teardown: an unusable worktree identity refuses as before and names a repair path that runs as printed
+ok - fm-teardown: a concurrent lifecycle action refuses before mutation
+not ok - non-pool teardown removed the publisher's lock

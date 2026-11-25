@@ -1,0 +1,32 @@
+BEGIN test_read_only_session_declares_skipped_network_checks
+ok - session start: a read-only session declares its skipped network checks rather than dropping them
+BEGIN test_session_start_preserves_transiently_unreadable_tmux
+ok - session start: transient tmux unreadability never licenses a relaunch
+BEGIN test_work_under_way_one_line_per_task
+ok - work under way renders one line per live task with the full-detail pointer and no record bodies
+BEGIN test_endpoint_liveness_tmux
+ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+BEGIN test_endpoint_read_hang_is_bounded_and_reported
+Terminated: 15
+ok - a hung per-task endpoint read hits its configured bound, reports the task, and leaves nothing stuck
+BEGIN test_abnormal_digest_death_banners_and_exits_zero
+skip: /proc not readable (the digest-death shape needs process ancestry)
+BEGIN test_non_pi_session_start_leaves_branch_state_untouched
+ok - non-Pi session start neither sweeps nor replays Pi branch state
+BEGIN test_backlog_queued_bound_discloses_its_remainder
+ok - the startup backlog bound cuts only dispatchable queued rows and discloses the remainder exactly
+BEGIN test_line_cuts_count_characters_not_bytes
+ok - manual-row and latest-annotation cuts never split a multibyte character, under a UTF-8 or a C locale
+BEGIN test_fleet_digest_empty_fleet
+ok - an empty fleet reports (none) for in-flight tasks and an absent AFK flag
+BEGIN test_next_step_quiet_mode_delegates_to_daemon
+ok - next step delegates watcher ownership to the daemon in quiet mode, distinctly from away mode
+BEGIN test_supervision_block_exactly_one_and_pi_diagnostic
+ok - session start emits exactly one detected harness block and reports Pi extension load state
+BEGIN test_pi_diagnostic_rejects_handoff_generation_marker
+ok - session start rejects a Pi watcher generation left in handoff
+BEGIN test_omp_diagnostic_checkout_home_keeps_restart_wording_and_names_cause
+ok - omp diagnostic keeps today's wording for the checkout home and names the establishable cause
+BEGIN test_pi_diagnostic_rejects_previous_session_loaded_marker
+ok - session start rejects Pi loaded markers from previous sessions
+BEGIN test_runtime_bound_leaves_a_healthy_digest_untouched

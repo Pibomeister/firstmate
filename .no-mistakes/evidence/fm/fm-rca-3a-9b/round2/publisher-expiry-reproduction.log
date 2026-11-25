@@ -1,0 +1,4 @@
+publisher-ready epoch=1795584880
+publisher-exit epoch=1795584910
+teardown-return epoch=1795584910 holder-live=no
+not ok - non-pool teardown removed the publisher's lock

@@ -1,0 +1,46 @@
+revision=221e24e90ba26044c46bb73f3f834624d678b53e
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts
+{run-worktree}/.nm-delegated-live-_mnbnthh/artifacts
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-lab --deliverable report --artifact {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md --heartbeat-secs 1 --silence-secs 60 --supervisor firstmate
+registered task=hermes-lab deliverable=report heartbeat_secs=1 silence_secs=60
+exit=0
+$ bash bin/fm-delegated.sh dispatch --task hermes-lab
+dispatched task=hermes-lab state=dispatched-not-progressing
+exit=0
+$ bash bin/fm-delegated.sh deliver --task hermes-lab --path {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md --hash 0000000000000000000000000000000000000000000000000000000000000000
+stderr: fm-delegated: deliverable not closed task=hermes-lab reason=mismatch artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=1
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=dispatched-not-progressing deliverable=report last_receipt=dispatch@1795584659 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh deliver --task hermes-lab --path {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+stderr: fm-delegated: deliverable not closed task=hermes-lab reason=missing artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=1
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=dispatched-not-progressing deliverable=report last_receipt=dispatch@1795584659 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh deliver --task hermes-lab --path {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/other.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+stderr: fm-delegated: deliverable not closed task=hermes-lab reason=wrong-artifact artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/other.md
+exit=1
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=dispatched-not-progressing deliverable=report last_receipt=dispatch@1795584659 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh deliver --task hermes-lab --path {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+closed task=hermes-lab deliverable=report artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=closed deliverable=report last_receipt=deliverable@1795584667 artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md
+exit=0
+$ bash bin/fm-delegated.sh dispatch --task hermes-lab
+closed task=hermes-lab deliverable=report artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh heartbeat --task hermes-lab
+closed task=hermes-lab deliverable=report artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh deliver --task hermes-lab --path {run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+closed task=hermes-lab deliverable=report artifact={run-worktree}/.nm-delegated-live-_mnbnthh/artifacts/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+Completed path-and-hash receipt preserved across repeated delivery, redispatch, and heartbeat.
+SCENARIO PASS

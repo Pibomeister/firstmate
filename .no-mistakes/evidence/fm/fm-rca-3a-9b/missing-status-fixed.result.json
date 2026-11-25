@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/.nm-teardown-missing-status-fixed.sh",
+  "selector": "test_status_archive_missing_status_noop",
+  "exit_code": 0
+}

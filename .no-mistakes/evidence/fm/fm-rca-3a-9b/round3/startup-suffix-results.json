@@ -1,0 +1,17 @@
+[
+  {
+    "command": "bash ~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round3/startup-suffix-1.sh",
+    "exit_code": 0,
+    "seconds": 438.9
+  },
+  {
+    "command": "bash ~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round3/startup-suffix-2.sh",
+    "exit_code": 0,
+    "seconds": 530.3
+  },
+  {
+    "command": "bash ~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round3/startup-suffix-3.sh",
+    "exit_code": 0,
+    "seconds": 264.6
+  }
+]

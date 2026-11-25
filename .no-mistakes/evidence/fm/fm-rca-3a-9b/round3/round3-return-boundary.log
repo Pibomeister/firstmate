@@ -1,0 +1,2 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+ok - a return that leaves no readable copy reports the slot as unverified, not clean

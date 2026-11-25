@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/fm-spawn-agent-exit-status.test.sh",
+  "exit_code": 0,
+  "seconds": 577.1
+}

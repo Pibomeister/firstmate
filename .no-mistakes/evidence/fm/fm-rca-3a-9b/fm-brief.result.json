@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/fm-brief.test.sh",
+  "exit_code": 0,
+  "seconds": 228.8
+}

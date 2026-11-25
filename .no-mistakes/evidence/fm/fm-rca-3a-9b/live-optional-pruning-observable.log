@@ -1,0 +1,13 @@
+$ bash bin/fm-teardown.sh unrelated
+++ cd {run-worktree}/.nm-delegated-live-snvbmeiz/optional/projects/toy
+++ treehouse return --force {run-worktree}/.nm-delegated-live-snvbmeiz/optional/pool/.treehouse/toy-d84bc5/1/toy
+A new version of treehouse is available: v3.1.1 → v3.1.8
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown unrelated complete (window lab:fm-unrelated, worktree {run-worktree}/.nm-delegated-live-snvbmeiz/optional/pool/.treehouse/toy-d84bc5/1/toy)
+Backlog: unrelated is closed in {run-worktree}/.nm-delegated-live-snvbmeiz/optional/data/backlog.md. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+fm-delegated: cleanup deferred: handoff evidence awaits a read receipt for {run-worktree}/.nm-delegated-live-snvbmeiz/optional/data/older-task/status.log
+warning: could not prune status archive: {run-worktree}/.nm-delegated-live-snvbmeiz/optional/data/older-task/status.log
+exit=0
+Assertions after command: unread archive retained; unrelated metadata removed; unrelated status retired.

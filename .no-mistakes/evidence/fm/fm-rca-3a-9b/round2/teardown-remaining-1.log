@@ -1,0 +1,53 @@
+BEGIN test_record_export_archives_before_teardown_or_preserves_sources_on_failure
+ok - teardown commits the record archive before deleting sources and fails closed when export cannot commit
+BEGIN test_status_archive_nested_secondmate_children
+ok - forced secondmate retirement preserves two descendant levels and refuses linked child directories
+BEGIN test_status_archive_unsafe_paths_refuse
+ok - archive sources and directories reject symlinks; pruning never follows children links
+BEGIN test_status_archive_publish_and_cold_log_stay_inert
+ok - archive publication and cold logs never re-wake or re-present
+BEGIN test_unreadable_startup_source_refuses_before_cleanup
+ok - an unreadable teardown startup source refuses before cleanup
+BEGIN test_forced_secondmate_own_missing_adapter_sibling_refuses_before_child_cleanup
+ok - a forced secondmate with a missing own adapter sibling refuses before child cleanup
+BEGIN test_orca_selector_not_found_with_present_path_refuses_and_retains_records
+ok - Orca selector_not_found with a present recorded path refuses and retains records
+BEGIN test_orca_teardown_refuses_when_a_swept_terminal_will_not_close
+ok - Orca teardown refuses and keeps the worktree when a swept terminal will not close
+BEGIN test_local_only_fork_remote_allows
+ok - local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed
+BEGIN test_teardown_closes_a_gitlab_task_with_its_merge_request_url_as_a_note
+ok - teardown closes a landed GitLab task with its merge request URL as a note and GitHub and Forgejo tasks with --pr
+BEGIN test_local_only_merged_to_local_main_allows
+ok - local-only worktree with work merged into local main is torn down (no regression)
+BEGIN test_refreshed_refs_still_refuse_unreachable_commits
+ok - commits on no remote branch still refuse after a successful refresh
+BEGIN test_no_remote_project_refuses_without_fetching
+ok - a project with no remote refuses as before and fetches nothing
+BEGIN test_hung_fetch_is_bounded_and_refuses
+ok - a hung refresh is cut off at its bound and refuses
+BEGIN test_teardown_retires_provider_failover_state
+ok - teardown refuses during a live provider failover and retires the task's failover state after it
+BEGIN test_local_only_force_overrides_unpushed
+ok - local-only worktree with unpushed work is torn down under --force (escape hatch)
+BEGIN test_secondmate_pr_ready_line_follows_green_report_with_trailing_text
+ok - fm-pr-check releases the PR-ready line on a checks-green report that carries surrounding text
+BEGIN test_teardown_retires_polytoken_wiring_on_pool_return
+ok - teardown retires a polytoken task's generated worktree wiring on pool return
+BEGIN test_teardown_leaves_polytoken_layer_for_other_harnesses
+ok - teardown scopes .polytoken wiring removal to polytoken tasks
+BEGIN test_herdr_flat_teardown_refuses_records_on_unparseable_presence
+ok - herdr flat teardown never erases records when pane presence is unparseable
+BEGIN test_forced_secondmate_herdr_child_preflight_refuses_before_changes
+ok - forced secondmate teardown preflights every Herdr child before cleanup mutation
+BEGIN test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed
+ok - forced teardown retains a nested secondmate home and its grandchild's Herdr identity when the grandchild close is unconfirmed
+BEGIN test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+BEGIN test_teardown_retires_task_watcher_markers_and_orphan_journal
+ok - teardown retires the task's own watcher markers and orphaned presentation journal, leaving other tasks' markers alone
+BEGIN test_teardown_retains_v1_journal_when_projected_workspace_present
+ok - teardown retains a v1 presentation journal while its token workspace is still present
+BEGIN test_squash_merged_branch_deleted_allows
+ok - squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)
+BEGIN test_squash_merged_pr_allows_replayed_unpushed_patch

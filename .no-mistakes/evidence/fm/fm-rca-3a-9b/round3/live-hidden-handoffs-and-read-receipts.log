@@ -1,0 +1,81 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker
+{run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-lab --deliverable report --artifact {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md --heartbeat-secs 1 --silence-secs 2 --supervisor firstmate
+registered task=hermes-lab deliverable=report heartbeat_secs=1 silence_secs=2
+exit=0
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id answer --receiver worker --path {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d --alt-dir {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/hosted-answers --location alt
+handoff=answer state=delivery-failure receiver=worker hidden=answer
+exit=0
+$ bash bin/fm-delegated.sh check
+delivery-failure handoff=answer task=hermes-lab receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d filed=alt read_dir={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/state/worker.inbox
+exit=0
+$ bash bin/fm-delegated.sh check
+delivery-failure handoff=answer task=hermes-lab receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d filed=alt read_dir={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/state/worker.inbox
+exit=0
+$ bash bin/fm-delegated.sh mirror --id answer
+handoff=answer state=mirrored receiver=worker
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md
+handoff=answer state=mirrored receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash -c '. "$1"; fm_task_inbox_body "$2"' _ {run-worktree}/bin/fm-task-inbox-lib.sh {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/state/worker.inbox/001.msg
+handoff=answer task=hermes-lab receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md
+handoff=answer state=read receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh check
+escalation task=hermes-lab age=33 last_receipt=none deliverable=report supervisor=firstmate
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md
+handoff=answer state=read receiver=worker artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-worker/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+Read receipt survives artifact and receiver inbox cleanup: worker
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate
+{run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-lab --deliverable report --artifact {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md --heartbeat-secs 1 --silence-secs 2 --supervisor firstmate
+registered task=hermes-lab deliverable=report heartbeat_secs=1 silence_secs=2
+exit=0
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id answer --receiver firstmate --path {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d --alt-dir {run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/hosted-answers --location alt
+handoff=answer state=delivery-failure receiver=firstmate hidden=answer
+exit=0
+$ bash bin/fm-delegated.sh check
+delivery-failure handoff=answer task=hermes-lab receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d filed=alt read_dir={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/state
+exit=0
+$ bash bin/fm-delegated.sh check
+delivery-failure handoff=answer task=hermes-lab receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d filed=alt read_dir={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/state
+exit=0
+$ bash bin/fm-delegated.sh mirror --id answer
+handoff=answer state=mirrored receiver=firstmate
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md
+handoff=answer state=mirrored receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-wake-drain.sh
+1795589584	2	check	delegated:firstmate:handoff:answer	delivery-failure handoff=answer task=hermes-lab receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d filed=alt read_dir={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/state
+1795589590	3	check	delegated-handoff:answer:b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d	handoff=answer task=hermes-lab receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+stderr: WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 11862.1795589579.a7Zb1J
+exit=0
+$ bash bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 11862.1795589579.a7Zb1J
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md
+handoff=answer state=read receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh check
+escalation task=hermes-lab age=67 last_receipt=none deliverable=report supervisor=firstmate
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md
+handoff=answer state=read receiver=firstmate artifact={run-worktree}/.nm-delegated-live-xsqrlgue/hidden-firstmate/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+Read receipt survives artifact and receiver inbox cleanup: firstmate
+SCENARIO PASS

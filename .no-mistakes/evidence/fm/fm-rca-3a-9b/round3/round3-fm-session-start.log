@@ -1,0 +1,3 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a full-digest clear or compact keeps the automatic-away activity stamp; a session start records it

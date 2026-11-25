@@ -1,0 +1,9 @@
+[
+  {
+    "name": "live-runtime-retention-and-optional-pruning",
+    "result": "fail",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round3/live-runtime-retention-and-optional-pruning.log",
+    "reason": "AssertionError((1, 0))"
+  }
+]

@@ -1,0 +1,2 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+ok - session start: an unreachable host delays a reported check, not the digest

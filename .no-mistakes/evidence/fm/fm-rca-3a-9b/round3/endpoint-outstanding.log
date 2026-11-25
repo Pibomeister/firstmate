@@ -1,0 +1,109 @@
+RUN test_delegated_runtime_artifacts_survive_until_read
+ok - real teardown retains status, archived status, progress and runtime-directory evidence until acknowledgement
+RESULT test_delegated_runtime_artifacts_survive_until_read 0
+RUN test_unread_archive_pruning_is_best_effort
+ok - unread archive evidence is retained with a warning while unrelated teardown completes
+RESULT test_unread_archive_pruning_is_best_effort 0
+RUN test_forced_secondmate_child_close_failure_still_refuses
+not ok - the refusal did not name the child whose endpoint could not be closed
+RESULT test_forced_secondmate_child_close_failure_still_refuses 1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 7s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: unsafe secondmate home removal target {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/secondmate-child-close-failure/mate is inside the firstmate repo
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 8s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-delegated: cleanup deferred: handoff evidence awaits a read receipt for {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/delegated-runtime-archived-status/home/state/producer.status
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 4s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-delegated: cleanup deferred: handoff evidence awaits a read receipt for {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/delegated-runtime-directory/home/state/producer.kiro-home/evidence
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 4s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-delegated: cleanup deferred: handoff evidence awaits a read receipt for {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/delegated-runtime-progress/home/state/producer.progress
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 8s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-delegated: cleanup deferred: handoff evidence awaits a read receipt for {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/delegated-runtime-status/home/state/producer.status
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-delegated: cleanup deferred: handoff old-archive awaits a read receipt for {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/optional-archive-retention/home/data/older-task/status.log
+warning: could not prune status archive: {run-worktree}/.nm-test-tmp/fm-teardown-endpoint-safety.eKTv5q/optional-archive-retention/home/data/older-task/status.log
+RUN test_orca_close_failure_refuses_even_under_force
+ok - fm-teardown: an Orca close its missing CLI never attempted refuses even under --force, keeping the record naming the terminal
+RESULT test_orca_close_failure_refuses_even_under_force 0
+RUN test_already_gone_endpoint_still_completes_without_a_refusal
+ok - fm-teardown: an already-exited endpoint, and a server that is already gone, still complete cleanup silently
+RESULT test_already_gone_endpoint_still_completes_without_a_refusal 0
+RUN test_bare_relative_origin_shares_project_lock_with_clone
+ok - Treehouse locking resolves a bare local origin against its source project, matching the provisioned clone
+RESULT test_bare_relative_origin_shares_project_lock_with_clone 0
+RUN test_reused_pool_slot_refuses_before_touching_the_other_task
+ok - fm-teardown: a pool slot named by a second task record is never returned, killed, or reset
+RESULT test_reused_pool_slot_refuses_before_touching_the_other_task 0
+RUN test_cross_home_pool_slot_collision_refuses
+ok - fm-teardown: a pool slot held by another firstmate home is never returned
+RESULT test_cross_home_pool_slot_collision_refuses 0
+RUN test_sole_slot_record_still_tears_down
+ok - fm-teardown: a task that solely holds its slot still returns it
+RESULT test_sole_slot_record_still_tears_down 0
+RUN test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot
+ok - fm-teardown: a pool slot claimed by another task is left alone while the task's own cleanup finishes
+RESULT test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot 0
+RUN test_reassigned_pool_slot_keeps_claimant_codex_overlay_on_t3
+note: test_reassigned_pool_slot_keeps_claimant_codex_overlay_on_t3 skipped: no Python 3.11+ (tomllib) interpreter on PATH
+RESULT test_reassigned_pool_slot_keeps_claimant_codex_overlay_on_t3 0
+RUN test_stale_record_on_claimed_slot_retires_then_claimant_tears_down
+ok - fm-teardown: a stale record on a claimed slot retires, then the claimant tears down
+RESULT test_stale_record_on_claimed_slot_retires_then_claimant_tears_down 0
+RUN test_own_and_absent_slot_claims_still_tear_down
+ok - fm-teardown: a task's own slot claim, and an unclaimed slot, both still tear down
+RESULT test_own_and_absent_slot_claims_still_tear_down 0
+RUN test_recorded_endpoint_that_changed_directory_still_tears_down
+ok - fm-teardown: an exact recorded endpoint still tears down after changing cwd outside its worktree
+RESULT test_recorded_endpoint_that_changed_directory_still_tears_down 0
+RUN test_project_lock_anchors_at_the_local_root_across_home_layouts
+ok - Treehouse project locking anchors at the local root for main-home, local-secondmate, and remote-seeded layouts
+RESULT test_project_lock_anchors_at_the_local_root_across_home_layouts 0
+RUN test_remote_seeded_home_returns_its_uncontested_slot
+ok - fm-teardown: a remote-seeded secondmate home returns its own uncontested pool slot
+RESULT test_remote_seeded_home_returns_its_uncontested_slot 0
+RUN test_remote_seeded_home_still_refuses_a_slot_its_child_holds
+ok - fm-teardown: slot ownership across a remote-seeded home and its local child still refuses
+RESULT test_remote_seeded_home_still_refuses_a_slot_its_child_holds 0
+RUN test_remote_layout_homes_serialize_on_one_project_lock
+ok - Treehouse project locking still serializes two homes across the remote-seeded boundary
+RESULT test_remote_layout_homes_serialize_on_one_project_lock 0

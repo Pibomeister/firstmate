@@ -1,0 +1,35 @@
+BEGIN test_deferred_relaunch_is_always_reported
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+BEGIN test_deferred_result_reaches_the_agent_when_the_digest_cannot_print_it
+ok - session start: a deferred result the digest outran still reaches the agent as a wake
+BEGIN test_session_start_preserves_ambiguous_pi_process
+ok - session start: an existing ambiguous Pi process prevents duplicate recovery
+BEGIN test_session_start_relaunches_herdr_husk_secondmate
+ok - session start: a confirmed Herdr husk is closed and relaunched
+BEGIN test_orphan_status_logs_are_printed
+ok - orphan status logs render as one line each with the full-log pointer
+BEGIN test_endpoint_read_death_is_isolated_and_reported
+skip: /proc not readable (the read-death shape needs process ancestry)
+BEGIN test_perl_timeout_fallback_reports_signal_death_nonzero
+ok - the perl timeout fallback reports a signal death as a nonzero status
+BEGIN test_branch_outcome_replay_respects_captain_barrier_and_lease_sweep
+ok - locked Pi session start replays leading routine outcomes, preserves the captain barrier, and sweeps only dead leases
+BEGIN test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
+ok - compatible tasks-axi backlog rendering drops done rows and keeps every in-flight, held, and blocked row
+BEGIN test_backlog_compact_manual_backend_caps_title_lines
+ok - manual backlog rendering cuts long title lines at 180 and 320 characters and keeps every id
+BEGIN test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
+ok - unavailable or incompatible tasks-axi falls back to compact manual backlog rendering
+BEGIN test_next_step_afk_delegates_to_daemon
+ok - next step delegates watcher ownership to the AFK daemon
+BEGIN test_next_step_afk_legacy_empty_flag_defaults_away
+ok - a legacy empty .afk flag (written before mode existed) still reads as away mode
+BEGIN test_pi_diagnostic_rejects_stale_loaded_marker
+ok - session start rejects stale Pi loaded markers
+BEGIN test_omp_supervision_block_and_diagnostic
+ok - session start emits the omp block and reports omp extension load state
+BEGIN test_pi_diagnostic_rejects_missing_turnend_guard_marker
+ok - session start rejects Pi sessions missing the turn-end guard marker
+BEGIN test_portable_timeout_escalates_term_resistant_process
+ok - the portable timeout path force-kills a command that ignores TERM
+BEGIN test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain

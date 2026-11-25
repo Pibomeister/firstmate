@@ -1,0 +1,5 @@
+{
+  "command": "bash tests/fm-teardown-endpoint-safety.test.sh",
+  "exit_code": 1,
+  "seconds": 436.6
+}

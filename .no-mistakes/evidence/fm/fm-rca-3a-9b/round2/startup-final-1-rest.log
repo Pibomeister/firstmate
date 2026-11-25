@@ -1,0 +1,26 @@
+BEGIN test_tasks_axi_compatibility_is_probed_once
+ok - session start: the tasks-axi compatibility verdict is computed once and reused
+BEGIN test_session_start_preserves_proven_bare_shell_recovery
+ok - session start: the proven bare-shell recovery path remains intact
+BEGIN test_work_under_way_pr_url_only_from_ready_line
+ok - work under way takes a fallback PR URL only from the task's ready line
+BEGIN test_endpoint_liveness_herdr
+ok - herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status
+BEGIN test_endpoint_bound_rejects_padded_zero
+Terminated: 15
+ok - a padded-zero per-read bound falls back to the 10s default instead of removing the bound
+BEGIN test_composition_invokes_real_scripts
+ok - fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim
+BEGIN test_session_start_seeds_the_outcome_display_tail_while_away
+ok - session start seeds an existing outcome store's absent display tail copy while away, moving no marker
+BEGIN test_backlog_compact_manual_backend_skips_indented_bodies
+ok - manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest
+BEGIN test_ready_row_cut_counts_characters_not_bytes
+ok - ready-queued row cuts never split a multibyte character, under a UTF-8 or a C locale
+BEGIN test_next_step_sources_x_mode_cadence
+ok - session start emits X-mode cadence guidance in the harness supervision block
+BEGIN test_quiet_record_digest_holds_nothing_for_a_return
+ok - the AFK digest reads a quiet record as a present captain holding nothing, and an away record as hold-for-return
+BEGIN test_pi_signed_primary_uses_pi_extensions_without_identity_normalization
+ok - session start preserves pi-signed primary identity while applying Pi extension guarantees
+BEGIN test_pi_diagnostic_accepts_prelock_loaded_marker

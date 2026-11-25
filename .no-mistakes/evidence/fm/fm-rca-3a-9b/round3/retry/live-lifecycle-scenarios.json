@@ -1,0 +1,9 @@
+[
+  {
+    "name": "live-spawn-brief-session-and-watcher",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round3/retry/live-spawn-brief-session-and-watcher.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  }
+]

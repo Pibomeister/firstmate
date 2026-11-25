@@ -1,0 +1,3 @@
+ok - fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim
+ok - --reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes
+ok - an empty fleet reports (none) for in-flight tasks and an absent AFK flag

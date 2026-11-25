@@ -1,0 +1,37 @@
+[
+  {
+    "name": "live-progress-and-exactly-once-escalation",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-progress-and-exactly-once-escalation.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-artifact-validation-and-final-receipt",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-artifact-validation-and-final-receipt.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-hidden-handoffs-and-read-receipts",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-hidden-handoffs-and-read-receipts.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-tamper-retired-and-remote-guards",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-tamper-retired-and-remote-guards.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  },
+  {
+    "name": "live-symlink-retention-until-consumption",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/live-symlink-retention-until-consumption.log",
+    "reason": "Real local CLI with a disposable marked home and synthetic artifacts."
+  }
+]

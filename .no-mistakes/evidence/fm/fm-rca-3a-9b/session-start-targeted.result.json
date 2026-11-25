@@ -1,0 +1,9 @@
+{
+  "command": "bash tests/.nm-session-targeted.sh",
+  "selectors": [
+    "test_composition_invokes_real_scripts",
+    "test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain",
+    "test_fleet_digest_empty_fleet"
+  ],
+  "exit_code": 0
+}

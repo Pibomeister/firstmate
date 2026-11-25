@@ -1,0 +1,26 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_squash_merged_rebased_local_with_unlanded_commit_refuses
+ok - squash-merged rebased local still refuses a genuinely unlanded follow-up commit
+RUN test_tracked_edit_refusal_diagnostic
+ok - tracked/no-mistakes: dirty refusal classifies leftovers and preserves work
+ok - tracked/local-only: dirty refusal classifies leftovers and preserves work
+RUN test_scout_ignored_files_survive_scratch_clean
+ok - ignored files survive the scratch clean and plain scratch does not
+RUN test_legacy_record_teardown_refuses_unlanded_work
+ok - --legacy-record never relaxes the unlanded-work refusal
+RUN test_non_linked_index_lock_path_is_checked_from_worktree
+ok - normal repo index.lock is resolved from the worktree and cleared when stale
+RUN test_parked_own_run_is_aborted_before_teardown
+ok - a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed
+RUN test_parked_run_advanced_head_locally_fetched_is_still_aborted
+ok - an advanced head present locally aborts through the strict rule alone - the ledger fallback stays dormant
+RUN test_mismatched_run_after_abort_refuses_unconfirmed
+ok - a different run cannot confirm the targeted abort
+RUN test_reused_pid_identity_is_not_force_killed
+ok - a reused pid with a different start time is never force-killed
+RUN test_squash_merged_forgejo_pr_allows_when_main_moved_on
+ok - teardown proves a Forgejo task landed from the merged pull request when the content check is inconclusive
+RUN test_dirty_worktree_refuses
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+RUN test_forced_secondmate_dirty_child_return_warns_and_completes
+not ok - secondmate-child-dirty-return: a lost child slot should exit 4 after retirement: expected exit 4, got 1

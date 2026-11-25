@@ -1,0 +1,1 @@
+Premise to test: the teardown timeouts are only slow execution on this host, rather than a receipt-retention deadlock. Stream the real teardown output and inspect its child process at the delay. Separately, verify whether the pool-slot sentinel exited naturally after its fixed 30-second lifetime. No product change is justified until these observations identify the cause.

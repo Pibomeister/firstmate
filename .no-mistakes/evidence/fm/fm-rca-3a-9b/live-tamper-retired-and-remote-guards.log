@@ -1,0 +1,46 @@
+revision=da382a5058b6649f73ec1a1177d751286e6fb89d
+Real product CLI; isolated synthetic home; wall clock; no fake tools or injected clock.
+$ bash bin/fm-lab-home.sh create {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial
+{run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial
+exit=0
+$ bash bin/fm-delegated.sh register --task hermes-lab --deliverable report --artifact {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md --heartbeat-secs 1 --silence-secs 60 --supervisor firstmate
+registered task=hermes-lab deliverable=report heartbeat_secs=1 silence_secs=60
+exit=0
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id tampered --receiver worker --path {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md --hash b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d --alt-dir {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/hosted-answers --location read
+handoff=tampered state=mirrored receiver=worker
+exit=0
+$ bash -c '. "$1"; fm_task_inbox_body "$2"' _ {run-worktree}/bin/fm-task-inbox-lib.sh {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/state/worker.inbox/001.msg
+handoff=tampered task=hermes-lab receiver=worker artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md
+handoff=tampered state=delivery-failure receiver=worker artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+$ bash bin/fm-delegated.sh mirror --id tampered
+stderr: fm-delegated: handoff artifact no longer verifies: tampered
+exit=1
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id retired --receiver worker --path {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md --hash 7e49aba40120f4397b11ca0775e7af3d0d9846bab524eb2efb24d0e79f06f842 --alt-dir {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/hosted-answers --location alt
+handoff=retired state=delivery-failure receiver=worker hidden=retired
+exit=0
+$ bash bin/fm-delegated.sh mirror --id retired
+stderr: fm-delegated: cannot mirror handoff: retired
+exit=1
+$ bash bin/fm-delegated.sh mirror --id retired
+stderr: fm-delegated: receiver worker requires remote transport; local delivery refused
+fm-delegated: cannot mirror handoff: retired
+exit=1
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id remote-hidden --receiver worker --path {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md --hash 7e49aba40120f4397b11ca0775e7af3d0d9846bab524eb2efb24d0e79f06f842 --alt-dir {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/hosted-answers --location alt
+handoff=remote-hidden state=delivery-failure receiver=worker hidden=remote-hidden
+exit=0
+$ bash bin/fm-delegated.sh handoff --task hermes-lab --id remote-direct --receiver worker --path {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md --hash 7e49aba40120f4397b11ca0775e7af3d0d9846bab524eb2efb24d0e79f06f842 --alt-dir {run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/hosted-answers --location read
+stderr: fm-delegated: receiver worker requires remote transport; local delivery refused
+fm-delegated: cannot file handoff: remote-direct
+exit=1
+$ bash bin/fm-delegated.sh view
+task=hermes-lab state=registered deliverable=report last_receipt=none artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md
+handoff=remote-hidden state=delivery-failure receiver=worker artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md hash=7e49aba40120f4397b11ca0775e7af3d0d9846bab524eb2efb24d0e79f06f842
+handoff=retired state=delivery-failure receiver=worker artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md hash=7e49aba40120f4397b11ca0775e7af3d0d9846bab524eb2efb24d0e79f06f842
+handoff=tampered state=delivery-failure receiver=worker artifact={run-worktree}/.nm-delegated-live-f2dn4a7r/adversarial/art/report.md hash=b14a25a062c47b3d285df941d88d239ccb329a533824659c450ff232c103d13d
+exit=0
+Tampered artifacts, retired receivers, and remote routes cannot receive false read/mirror claims.
+SCENARIO PASS

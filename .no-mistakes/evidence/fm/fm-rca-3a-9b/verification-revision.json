@@ -1,0 +1,16 @@
+{
+  "head": "da382a5058b6649f73ec1a1177d751286e6fb89d",
+  "test_repair_diff_sha256": "02e3e7fa076110cb2430c2267f9d3eb5582a37b0179ed46b1803369ade979e56",
+  "product_source_changed_in_test_phase": false,
+  "live_scenario_results": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+  ]
+}

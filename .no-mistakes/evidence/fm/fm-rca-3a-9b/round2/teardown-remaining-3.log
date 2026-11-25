@@ -1,0 +1,49 @@
+BEGIN test_record_export_waits_for_endpoint_quiescence_before_archiving
+ok - record export waits for endpoint quiescence and retry captures records changed after refusal
+BEGIN test_status_archive_reuse_and_retention
+ok - reused task IDs never overwrite archives and retention removes only old owned logs
+BEGIN test_status_archive_cursor_failure_retries_without_duplicate
+ok - cursor retirement failure removes its archive so retry publishes one history
+BEGIN test_missing_startup_source_refuses_before_cleanup
+ok - a missing teardown startup source refuses before cleanup
+BEGIN test_forced_child_missing_adapter_sibling_refuses_before_cleanup
+ok - a forced descendant with a missing adapter sibling refuses before cleanup
+BEGIN test_orca_selector_not_found_with_absent_path_completes_cleanup
+ok - Orca selector_not_found with an absent recorded path completes teardown record cleanup
+BEGIN test_orca_teardown_sweeps_task_terminals_on_every_environment
+ok - Orca teardown closes local and recorded remote terminals, leaves path-only remote matches, and reports the count
+BEGIN test_orca_teardown_refuses_when_the_post_close_list_and_a_remote_list_fail
+ok - Orca teardown still refuses an unverified close when a paired environment also cannot be listed
+BEGIN test_teardown_closes_a_gerrit_task_with_its_change_url_as_a_note
+ok - teardown closes a landed Gerrit task with its change URL as a note and a GitHub task with --pr
+BEGIN test_local_only_truly_unpushed_refuses
+ok - local-only worktree with truly unpushed work is refused (safety preserved)
+BEGIN test_refresh_failure_does_not_read_as_landed
+ok - a failed refresh refuses and names the remote it could not reach
+BEGIN test_edit_saved_during_refresh_refuses
+ok - a file saved during the refresh refuses teardown and survives
+BEGIN test_reachable_work_needs_no_fetch
+ok - work the tracking refs already show adds no network call
+BEGIN test_no_mistakes_origin_remote_allows
+ok - no-mistakes worktree with HEAD on origin is torn down (no regression)
+BEGIN test_no_mistakes_mirror_only_branch_refuses
+ok - branch pushed only to the no-mistakes mirror is refused as unlanded
+BEGIN test_secondmate_pr_ready_line_waits_for_green_when_opted_in
+ok - fm-pr-check withholds the PR-ready line until checks are green when config/ready-after-green is present
+BEGIN test_teardown_missing_busy_sidecar_completes
+ok - teardown completes when an exact busy-state sidecar is already absent
+BEGIN test_teardown_preserves_ignored_project_polytoken_layer
+ok - teardown never deletes a .polytoken hook layer firstmate did not generate
+BEGIN test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
+ok - herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly
+BEGIN test_herdr_teardown_presentation_lock_namespace_is_per_account
+ok - herdr teardown refuses a foreign-owned per-account namespace (owner-shim arms need the non-Darwin stat branch; skipped on Darwin)
+BEGIN test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed
+ok - forced secondmate teardown retains Herdr child identity until exact pane disappearance
+BEGIN test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
+ok - herdr projection teardown retains every record when post-close presence is unknown
+BEGIN test_herdr_projection_teardown_refused_close_preserves_task_and_copy
+ok - herdr projection teardown retains the task, pane shell, and leased copy after a refused close
+BEGIN test_teardown_retires_v1_journal_when_projected_workspace_gone
+ok - teardown retires a v1 presentation journal once its token workspace is confirmed gone
+BEGIN test_recorded_merged_pr_target_blobs

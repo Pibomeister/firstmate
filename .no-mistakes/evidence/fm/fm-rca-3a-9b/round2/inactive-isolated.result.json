@@ -1,0 +1,6 @@
+{
+  "command": "TMPDIR=/tmp bash tests/.nm-inactive-isolated.sh",
+  "exit_code": 1,
+  "seconds": 100.8,
+  "environment": "Original 120-second startup and 30-second inactive-scan budgets; other baseline batches stopped."
+}

@@ -1,0 +1,10 @@
+{
+  "head": "221e24e90ba26044c46bb73f3f834624d678b53e",
+  "product_source_changed": false,
+  "test_fixes": {
+    "tests/fm-session-start.test.sh": "842d3339fc0dc61c0a4b31b9253f91ec21dc073fb3db9f69dc98d0e8bdd32d3d",
+    "tests/fm-teardown-endpoint-safety.test.sh": "7a7f075785fc1e2cc77d7235aefbd504675fc0c584644fc9c478ca0b5065c770"
+  },
+  "verdict": "no-go",
+  "reason": "Original inactive-reconciliation baseline fails in isolation; startup and teardown baselines remain incomplete."
+}

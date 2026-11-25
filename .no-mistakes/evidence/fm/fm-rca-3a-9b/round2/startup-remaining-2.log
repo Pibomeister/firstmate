@@ -1,0 +1,5 @@
+BEGIN test_deferred_relaunch_is_always_reported
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+BEGIN test_deferred_result_reaches_the_agent_when_the_digest_cannot_print_it
+ok - session start: a deferred result the digest outran still reaches the agent as a wake
+BEGIN test_session_start_preserves_ambiguous_pi_process

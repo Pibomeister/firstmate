@@ -1,0 +1,11 @@
+{
+  "reason": "Stop remaining baseline continuations inside the 75-minute phase budget; isolate the unresolved failed case and complete cleanup.",
+  "process_groups": [
+    15686,
+    40656,
+    52407,
+    52496,
+    52872,
+    69801
+  ]
+}

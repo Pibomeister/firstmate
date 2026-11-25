@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Dispatch-only receipt stays non-progress; a real heartbeat progresses; overdue task escalates once",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-progress-and-exactly-once-escalation.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Missing, altered or wrong-path deliverables stay open; valid path and hash close once",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-artifact-validation-and-final-receipt.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Hidden answers report delivery failure until mirrored; worker and primary reads persist through cleanup",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-hidden-handoffs-and-read-receipts.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Tampering, retired receivers and unsupported remote placement cannot claim delivery",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-tamper-retired-and-remote-guards.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Symlink-bound supporting evidence survives until read receipt permits removal",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-symlink-retention-until-consumption.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Runtime evidence blocks producer cleanup until acknowledged",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-runtime-retention-and-optional-pruning.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Unread old archive survives while unrelated cleanup completes",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-runtime-retention-and-optional-pruning.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  },
+  {
+    "name": "Real Codex scout launch registers its contract and startup renders dispatch-only state",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-spawn-brief-session-and-watcher.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real authenticated Codex exec, tmux, Treehouse and Firstmate CLI in a disposable toy project; actual harness exit 0 was awaited."
+  },
+  {
+    "name": "Normal watcher emits exactly one overdue delegated escalation",
+    "evidence": "~/.no-mistakes/evidence/01M87D89KGJ0YXRDHGHMZQ97E8/round2/live-normal-watcher-delegated-escalation.log",
+    "result": "pass",
+    "live": true,
+    "reason": "Real local Firstmate CLI and synthetic data in disposable marked lab homes; no injected clock or product mocks."
+  }
+]

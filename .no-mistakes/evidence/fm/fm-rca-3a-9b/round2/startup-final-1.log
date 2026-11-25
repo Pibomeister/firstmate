@@ -1,0 +1,4 @@
+BEGIN test_session_start_relaunches_missing_pi_secondmate
+ok - session start: an absent recorded tmux window relaunches its Pi secondmate exactly once, off the blocking path
+BEGIN test_unreachable_network_never_blocks_the_digest
+not ok - the digest waited for the 12s unreachable-host probe instead of returning from local state (92s)

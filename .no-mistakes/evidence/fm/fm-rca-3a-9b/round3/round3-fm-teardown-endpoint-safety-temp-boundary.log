@@ -1,0 +1,3 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_forced_secondmate_child_close_failure_still_refuses
+ok - fm-teardown: forced secondmate cleanup still refuses on a child endpoint close that failed

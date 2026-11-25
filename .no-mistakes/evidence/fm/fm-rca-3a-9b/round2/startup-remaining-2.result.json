@@ -1,0 +1,29 @@
+{
+  "command": "TMPDIR=/tmp bash tests/.nm-startup-remaining-2.sh",
+  "selectors": [
+    "test_deferred_relaunch_is_always_reported",
+    "test_deferred_result_reaches_the_agent_when_the_digest_cannot_print_it",
+    "test_session_start_preserves_ambiguous_pi_process",
+    "test_session_start_relaunches_herdr_husk_secondmate",
+    "test_orphan_status_logs_are_printed",
+    "test_endpoint_read_death_is_isolated_and_reported",
+    "test_perl_timeout_fallback_reports_signal_death_nonzero",
+    "test_branch_outcome_replay_respects_captain_barrier_and_lease_sweep",
+    "test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata",
+    "test_backlog_compact_manual_backend_caps_title_lines",
+    "test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback",
+    "test_next_step_afk_delegates_to_daemon",
+    "test_next_step_afk_legacy_empty_flag_defaults_away",
+    "test_pi_diagnostic_rejects_stale_loaded_marker",
+    "test_omp_supervision_block_and_diagnostic",
+    "test_pi_diagnostic_rejects_missing_turnend_guard_marker",
+    "test_portable_timeout_escalates_term_resistant_process",
+    "test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain",
+    "test_read_only_pi_compact_refreshes_against_its_own_session_identity",
+    "test_reemit_keeps_repair_ownership_with_the_lock_holder",
+    "test_order_sent_mid_restart_is_picked_up_by_the_new_captain",
+    "test_shared_state_baseline_preserved_across_inspection_failures"
+  ],
+  "exit_code": 143,
+  "seconds": 280.4
+}

@@ -1,0 +1,1 @@
+{"command": "bash bin/fm-teardown.sh unrelated", "exit_code": 0}

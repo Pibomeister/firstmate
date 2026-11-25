@@ -1,0 +1,69 @@
+BEGIN test_record_export_captures_forced_secondmate_sub_state
+ok - forced secondmate teardown exports task records from the child sub-state
+BEGIN test_status_archive_missing_status_noop
+ok - local missing-status retirement stays lock-free without creating an archive
+BEGIN test_status_archive_failed_publish_preserves_presentation
+ok - failed archive publication preserves presentation and watcher bookkeeping
+BEGIN test_status_archive_pruning_failure_warns_and_completes
+ok - retention failures warn without aborting unrelated teardown
+BEGIN test_missing_adapter_sibling_refuses_before_cleanup
+ok - a missing adapter sibling refuses before cleanup
+BEGIN test_retained_sources_still_reach_the_ordinary_refusal
+ok - present required sources still reach the ordinary teardown refusal
+BEGIN test_orca_other_remove_error_is_visible_and_retains_records
+ok - other Orca removal errors produce a visible refusal and retain records
+BEGIN test_orca_teardown_refuses_when_the_post_close_list_fails
+ok - Orca teardown refuses and keeps the worktree when the post-close listing fails
+BEGIN test_teardown_closes_the_backlog_item_itself
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 13s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - teardown closes its own backlog item before reporting success
+BEGIN test_teardown_manual_backend_leaves_the_backlog_to_the_operator
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 8s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 2s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - teardown honors config/backlog-backend=manual and still finishes cleanly
+BEGIN test_landed_on_other_origin_branch_with_stale_refs_allows
+ok - work landed on another origin branch from another clone is proven after a refresh
+BEGIN test_uncommitted_work_refuses_even_when_commits_landed
+ok - uncommitted work refuses even when the commits have landed
+BEGIN test_refresh_never_prunes_a_dropped_branch
+ok - the refresh keeps a dropped branch's tracking ref even with fetch.prune set
+BEGIN test_gate_remote_is_not_refreshed_into_landed
+ok - commits held only by the no-mistakes gate are not refreshed into landed
+BEGIN test_no_mistakes_truly_unpushed_refuses
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+BEGIN test_secondmate_pr_registration_publishes_ready_line
+ok - fm-pr-check publishes the PR-ready line on a secondmate's parent channel once
+BEGIN test_secondmate_home_teardown_delivers_final_line_or_refuses
+ok - a secondmate home's teardown delivers the child's final line or refuses until it can
+BEGIN test_teardown_preserves_tracked_polytoken_layer
+ok - teardown never deletes a tracked .polytoken hook layer
+BEGIN test_herdr_teardown_clears_escalation_marker
+ok - herdr teardown removes pane-owned escalation dedupe state
+BEGIN test_herdr_flat_teardown_preflight_refuses_before_changes
+ok - herdr flat teardown preflight refuses before every destructive change
+BEGIN test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
+ok - forced secondmate teardown holds every descendant lifecycle and metadata lock
+BEGIN test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+BEGIN test_herdr_projection_teardown_closes_pane_before_returning_its_copy
+ok - herdr projection teardown closes its exact pane, restoring focus, before returning the copy that holds its shell
+BEGIN test_teardown_retains_journal_bound_to_another_pane
+ok - teardown retains a presentation journal bound to a pane other than the closed endpoint
+BEGIN test_teardown_retains_v1_journal_when_workspace_query_ambiguous
+ok - teardown retains a v1 presentation journal when the workspace query is ambiguous
+BEGIN test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
+ok - squash-merged PR accepts a local HEAD that is an ancestor of the final PR head
+BEGIN test_merged_pr_patch_matching_preserves_indentation

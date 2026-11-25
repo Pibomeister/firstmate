@@ -1,0 +1,10 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_omp_diagnostic_accepts_prelock_loaded_marker
+ok - session start accepts current omp markers written before lock acquisition
+RESULT test_omp_diagnostic_accepts_prelock_loaded_marker 0
+RUN test_shared_nm_db_schema_change_reported_at_session_start
+ok - session start detects shared no-mistakes database schema changes while ignoring sqlite_* internal objects and row writes
+RESULT test_shared_nm_db_schema_change_reported_at_session_start 0
+RUN test_runtime_bound_leaves_a_healthy_digest_untouched
+ok - a session start inside its budget prints no truncation banner
+RESULT test_runtime_bound_leaves_a_healthy_digest_untouched 0

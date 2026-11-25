@@ -1,0 +1,9 @@
+{
+  "command": "bash tests/.nm-slot-repro.sh",
+  "selectors": [
+    "test_reused_pool_slot_refuses_before_touching_the_other_task",
+    "test_sole_slot_record_still_tears_down",
+    "test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot"
+  ],
+  "exit_code": 0
+}

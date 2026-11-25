@@ -1,0 +1,8 @@
+{
+  "command": "bash tests/.nm-teardown-delegated.sh",
+  "selectors": [
+    "test_delegated_runtime_artifacts_survive_until_read",
+    "test_unread_archive_pruning_is_best_effort"
+  ],
+  "exit_code": 0
+}

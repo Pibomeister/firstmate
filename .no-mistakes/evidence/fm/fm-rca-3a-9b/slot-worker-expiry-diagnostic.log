@@ -1,0 +1,14 @@
+DIAGNOSTIC worker_exit=0 elapsed=45 runtime_calls=
+TEARDOWN STDERR
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 8s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  do not start another foreground checkpoint. The Stop hook re-arms a persistent watcher or allows this turn to end. Poll a checkpoint only while it is still running, then stop.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: task stale-task's recorded worktree /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-teardown-endpoint-safety.aKwOig/slot-reuse/pool/1/project is also task live-task's recorded worktree.
+Returning that pool slot would kill live-task's processes and reset its copy, so nothing was changed - not even with --force.
+Reconcile whichever record is wrong (bin/fm-crew-state.sh stale-task; bin/fm-crew-state.sh live-task), then re-run teardown.
+not ok - teardown killed the worker holding the reused pool slot

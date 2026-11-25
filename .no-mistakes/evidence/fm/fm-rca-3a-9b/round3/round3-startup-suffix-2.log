@@ -1,0 +1,13 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_affected_bash_warning_comes_first_and_once
+ok - session start warns once, before its lock stage, about an affected running bash
+RESULT test_affected_bash_warning_comes_first_and_once 0
+RUN test_agents_baseline_requires_sha256_and_successful_completion
+ok - instruction baselines require SHA-256 and successful startup completion
+RESULT test_agents_baseline_requires_sha256_and_successful_completion 0
+RUN test_order_sent_mid_restart_is_picked_up_by_the_new_captain
+ok - an order sent mid-restart is named by the new captain's session start and read once
+RESULT test_order_sent_mid_restart_is_picked_up_by_the_new_captain 0
+RUN test_shared_git_config_change_reported_at_session_start
+ok - session start detects created, edited, and removed global/XDG/GIT_CONFIG_GLOBAL git config without mutating baseline on read-only or reemit
+RESULT test_shared_git_config_change_reported_at_session_start 0

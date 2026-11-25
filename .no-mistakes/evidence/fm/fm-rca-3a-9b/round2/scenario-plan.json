@@ -1,0 +1,42 @@
+{
+  "revision": "221e24e90ba26044c46bb73f3f834624d678b53e",
+  "oracle": "Author intent and recorded R7\u2013R25 fixes; real CLI output, inbox bodies, durable receipts and teardown effects",
+  "scenarios": [
+    {
+      "name": "Dispatch-only receipt stays non-progress; a real heartbeat progresses; overdue task escalates once",
+      "evidence": "live-progress-and-exactly-once-escalation.log"
+    },
+    {
+      "name": "Missing, altered or wrong-path deliverables stay open; valid path and hash close once",
+      "evidence": "live-artifact-validation-and-final-receipt.log"
+    },
+    {
+      "name": "Hidden answers report delivery failure until mirrored; worker and primary reads persist through cleanup",
+      "evidence": "live-hidden-handoffs-and-read-receipts.log"
+    },
+    {
+      "name": "Tampering, retired receivers and unsupported remote placement cannot claim delivery",
+      "evidence": "live-tamper-retired-and-remote-guards.log"
+    },
+    {
+      "name": "Symlink-bound supporting evidence survives until read receipt permits removal",
+      "evidence": "live-symlink-retention-until-consumption.log"
+    },
+    {
+      "name": "Runtime evidence blocks producer cleanup until acknowledged",
+      "evidence": "live-runtime-retention-and-optional-pruning.log"
+    },
+    {
+      "name": "Unread old archive survives while unrelated cleanup completes",
+      "evidence": "live-runtime-retention-and-optional-pruning.log"
+    },
+    {
+      "name": "Real Codex scout launch registers its contract and startup renders dispatch-only state",
+      "evidence": "live-spawn-brief-session-and-watcher.log"
+    },
+    {
+      "name": "Normal watcher emits exactly one overdue delegated escalation",
+      "evidence": "live-normal-watcher-delegated-escalation.log"
+    }
+  ]
+}

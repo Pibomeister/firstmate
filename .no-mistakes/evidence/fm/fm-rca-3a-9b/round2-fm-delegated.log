@@ -1,0 +1,37 @@
+revision=221e24e90ba26044c46bb73f3f834624d678b53e
+1..33
+ok - a dispatch-only receipt renders as dispatched-not-progressing, never progress
+ok - a task silent past its window escalates exactly once naming task, age, and last receipt
+ok - a heartbeat inside the silence window prevents escalation and renders as progressing
+ok - a hash-mismatched or missing artifact cannot close the deliverable; a verified one does
+ok - a handoff filed only in the non-read location is a delivery failure until mirrored, then its read is receipted
+ok - a read-location handoff is no failure, and a tampered artifact receipts nothing
+ok - register refuses a window that cannot work and an invalid id, writing nothing
+fm-delegated: deliverable not closed task=hermes-1 reason=wrong-artifact artifact={run-worktree}/.nm-test-tmp/fm-delegated.S2Kthj/wrong-artifact/art/unrelated.txt
+ok - closing requires the registered artifact identity, even for identical bytes
+ok - concurrent checks, heartbeats and delivery preserve state
+ok - mirrors share one numbered inbox message and preserve its acknowledgement
+ok - the production watcher automatically routes delegated silence to the supervisor
+ok - silence reaches the named supervisor through the existing numbered inbox
+ok - primary handoffs are presented and acknowledged through the actual wake channel
+ok - completed report receipts remain immutable across repeated worker lifecycle operations
+ok - every consumption observer persists the path-and-hash receipt before inbox cleanup
+ok - both receiver paths verify unreceipted artifacts before every read classification
+ok - silence notifications survive inbox, wake and marker failures without duplicate delivery
+ok - mirrored and read handoffs preserve the task silence escalation contract
+ok - handoffs carry independent verified evidence while final delivery keeps its identity check
+ok - non-read handoffs use the exact supplied directory without a suffix convention
+ok - unfiltered pre-cleanup receipt collection preserves primary and task acknowledgements
+ok - retired receivers cannot accept mirrors or conceal orphan pending records
+ok - placements and supervisor notifications share the existing metadata lock protocol
+ok - notification scans follow normal acknowledgements for unrelated and matching records
+ok - handoffs reject relative paths and retain absolute receipts across working directories
+ok - the real watcher defers contended notifications and continues unrelated supervision
+ok - remote placement, mirrors, classification and notifications never claim local delivery
+ok - handoffs derive the receiver channel without a read-directory configuration surface
+ok - notification replay follows acknowledgements that precede the existence probe
+ok - cleanup retains pending artifacts until primary and worker read receipts are durable
+ok - single-pass loaders preserve literal values and last-key semantics
+ok - closed history adds no external parser processes while live supervision and history views remain intact
+ok - artifact retention follows every symlink ancestor and intermediate link dependency
+FM_TEST_COMPLETE

@@ -1,0 +1,7 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_squash_merged_rebased_branch_allows
+ok - squash-merged task whose local branch followed the pipeline rebase is torn down
+RUN test_content_fallback_refreshes_stale_origin_ref
+ok - content fallback refreshes origin default before comparing trees
+RUN test_forced_secondmate_child_scout_nested_clone_returns_clean
+not ok - secondmate-child-nested-clean: forced secondmate teardown should succeed: expected exit 0, got 1

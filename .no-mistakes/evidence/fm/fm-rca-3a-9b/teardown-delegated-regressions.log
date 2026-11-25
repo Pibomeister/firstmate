@@ -1,0 +1,2 @@
+ok - real teardown retains status, archived status, progress and runtime-directory evidence until acknowledgement
+ok - unread archive evidence is retained with a warning while unrelated teardown completes

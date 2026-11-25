@@ -1,0 +1,22 @@
+[
+  "test_tasks_axi_compatibility_is_probed_once",
+  "test_session_start_preserves_proven_bare_shell_recovery",
+  "test_work_under_way_pr_url_only_from_ready_line",
+  "test_endpoint_liveness_herdr",
+  "test_endpoint_bound_rejects_padded_zero",
+  "test_composition_invokes_real_scripts",
+  "test_session_start_seeds_the_outcome_display_tail_while_away",
+  "test_backlog_compact_manual_backend_skips_indented_bodies",
+  "test_ready_row_cut_counts_characters_not_bytes",
+  "test_next_step_sources_x_mode_cadence",
+  "test_quiet_record_digest_holds_nothing_for_a_return",
+  "test_pi_signed_primary_uses_pi_extensions_without_identity_normalization",
+  "test_pi_diagnostic_accepts_prelock_loaded_marker",
+  "test_omp_diagnostic_accepts_prelock_loaded_marker",
+  "test_runtime_bound_truncates_loudly_and_exits_zero",
+  "test_runtime_bound_leaves_harness_ancestry_headroom",
+  "test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact",
+  "test_agents_baseline_requires_sha256_and_successful_completion",
+  "test_dispatch_ledger_overdue_in_digest",
+  "test_shared_nm_db_schema_change_reported_at_session_start"
+]

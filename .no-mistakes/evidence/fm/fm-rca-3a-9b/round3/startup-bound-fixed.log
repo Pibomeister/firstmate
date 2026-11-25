@@ -1,0 +1,1 @@
+ok - the pure-Bash watchdog bounds session start, kills its hung grandchild, and emits the truncation contract

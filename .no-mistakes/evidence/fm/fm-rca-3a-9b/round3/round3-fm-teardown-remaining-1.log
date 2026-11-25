@@ -1,0 +1,91 @@
+revision=de4989c03befba6f6f19fbbb93137fea4671a35c
+RUN test_squash_merged_pr_allows_replayed_unpushed_patch
+ok - squash-merged PR accepts replayed unpushed local patches contained in the PR head
+RUN test_pr_check_records_remote_head_when_local_lags
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 5s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+ok - fm-pr-check records the remote PR head when the local worktree lags
+RUN test_ship_nested_clone_is_refused_and_bytes_stay
+ok - ship copy with a nested clone is refused and its bytes stay
+RUN test_windowless_legacy_record_with_gone_worktree_tears_down
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 52s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 12s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - a windowless leftover with no spawn_gen and no worktree tears down without --legacy-record
+RUN test_retained_legacy_stamp_still_faces_the_endpoint_gate
+ok - a legacy stamp a failed rollback left behind still faces the endpoint gate
+RUN test_persistent_index_lock_exhausts_retries_and_refuses_loudly
+ok - persistent index.lock exhausts retries and refuses without force-removing the lock
+RUN test_parked_own_run_concludes_on_passed_with_skips_after_abort
+ok - a run that lands on passed-with-skips after abort is still recognized as terminal
+RUN test_parked_terminal_unfetched_row_is_never_aborted
+ok - a terminal unfetched-head row is stale history and never concludes a run
+RUN test_another_branchs_parked_run_is_never_touched
+ok - a parked run on another branch is never aborted by this task's teardown (ownership is precise)
+RUN test_persistent_scan_refuses_after_bounded_retries
+ok - persistent leaked processes refuse teardown after bounded retries
+RUN test_squash_merged_stale_local_refuses_when_forge_unreachable
+ok - squash-merged stale local still refuses when the forge is unreachable
+RUN test_mixed_refusal_diagnostic
+ok - mixed/no-mistakes: dirty refusal classifies leftovers and preserves work
+ok - mixed/local-only: dirty refusal classifies leftovers and preserves work
+RUN test_gh_error_and_content_absent_refuses
+ok - gh lookup error with content not in default refuses (fail-safe)
+RUN test_legacy_record_teardown_refuses_an_ambiguous_endpoint
+ok - an endpoint that cannot be confidently read as dead refuses --legacy-record teardown
+RUN test_index_lock_mtime_read_failure_refuses
+ok - index-lock mtime fault injection is PATH-based; skipped on Darwin where stat is /usr/bin/stat
+RUN test_parked_run_in_a_resolved_workspace_home_is_aborted
+ok - a parked run in a resolved workspace no-mistakes home is aborted before the worker is removed
+RUN test_parked_advanced_run_without_anchor_is_never_aborted
+ok - an unresolvable active row with no same-branch anchor is never concluded (conservative refusal)
+RUN test_empty_status_after_abort_refuses_unconfirmed
+ok - empty post-abort status is not accepted as confirmation
+RUN test_exec_changed_process_is_still_reaped
+ok - an exec change preserves birth identity and the process is reaped
+RUN test_no_pr_recorded_discovers_merged_pr_by_branch_allows
+ok - teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded
+RUN test_pr_check_does_not_refresh_stale_pr_head
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 3s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 4s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+WARNING: watcher still down (same stale episode; last beat: 21s ago, grace 300s; down 18s) - full banner already printed this episode.
+fm-contributions: data directory unavailable
+contributions: observation not armed; coverage is unconfirmed
+ok - fm-pr-check does not refresh PR head after HEAD moves
+RUN test_scout_nested_clone_returns_with_no_untracked_entries
+ok - scout copy with a nested clone and a scratch file returns with no untracked entries
+RUN test_legacy_record_without_the_flag_refuses
+ok - a record predating spawn_gen refuses teardown until --legacy-record is passed
+RUN test_legacy_record_rolls_the_stamp_back_when_the_marker_write_fails
+ok - --legacy-record teardown rolls its stamp back when the close marker write fails
+RUN test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds
+ok - transient index.lock cleared after first failed return is retried successfully without force-remove
+RUN test_parked_own_run_concludes_on_passed_with_override_after_abort
+ok - a run that lands on passed-with-override after abort is still recognized as terminal
+RUN test_parked_advanced_run_ancestor_anchor_is_never_aborted
+ok - an ancestor-only anchor never binds an advanced parked run to this task
+RUN test_not_found_status_after_abort_confirms_completion
+ok - the CLI's exact run-not-found signal confirms completion
+RUN test_process_spawned_during_grace_is_reaped_on_later_pass
+ok - a process spawned during grace is reaped on a later pass

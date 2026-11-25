@@ -1,0 +1,12 @@
+BEGIN test_inactive_reconcile_never_blocks_the_digest
+not ok - the deferred scan's terminal finding never reached the durable wake queue (calls=deferred, report=completed off the startup path in 49s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and unpublished task-branch reconciliation.
+(silent - no problems found)
+TIMINGS - where the deferred network checks spent their time (ms):
+  phase       gh-auth                                    start=+40000   elapsed=1000
+  phase       fleet-sync                                 start=+41000   elapsed=0
+  phase       home-drift                                 start=+41000   elapsed=1000
+  phase       secondmate-liveness                        start=+42000   elapsed=0
+  phase       secondmate-sync                            start=+43000   elapsed=1000
+  phase       handoff-delivery                           start=+44000   elapsed=0
+  stage       network-checks probe_sweeps                start=+2000    elapsed=46000
+  slowest: stage network-checks probe_sweeps 46000ms, phase home-drift 1000ms, phase secondmate-sync 1000ms, queue=)

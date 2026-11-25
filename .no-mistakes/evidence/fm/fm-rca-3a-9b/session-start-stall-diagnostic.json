@@ -1,0 +1,617 @@
+{
+  "reason": "Unchanged test_session_lock_concurrent_single_winner did not finish; forty contenders remained in fm-lock.sh while the suite made no further progress. Stopped this owned suite and its descendants.",
+  "processes": [
+    {
+      "pid": 2561,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2564,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2565,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2580,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2635,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2673,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2687,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2699,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2713,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2730,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2741,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2755,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2776,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2783,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2802,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2807,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2808,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2812,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2815,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2820,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2823,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2827,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2840,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2843,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2847,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2851,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2854,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2863,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2866,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2868,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2871,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2923,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2925,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2927,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2932,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2941,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2982,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 2985,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 3040,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 3066,
+      "ppid": 81567,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    },
+    {
+      "pid": 3153,
+      "ppid": 2871,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3383,
+      "ppid": 2941,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3386,
+      "ppid": 2561,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3417,
+      "ppid": 2808,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3419,
+      "ppid": 2580,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3619,
+      "ppid": 2982,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3777,
+      "ppid": 2863,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3778,
+      "ppid": 2927,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3840,
+      "ppid": 2807,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 3971,
+      "ppid": 2776,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 4002,
+      "ppid": 2820,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 4116,
+      "ppid": 2847,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 4124,
+      "ppid": 2840,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 4125,
+      "ppid": 2815,
+      "identity": "Tue Nov 24 22:21:04 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 12148,
+      "ppid": 3040,
+      "identity": "Tue Nov 24 22:35:11 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 12151,
+      "ppid": 2866,
+      "identity": "Tue Nov 24 22:35:11 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 12498,
+      "ppid": 3419,
+      "identity": "Tue Nov 24 22:35:11 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13478,
+      "ppid": 4116,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13488,
+      "ppid": 3153,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 13573,
+      "ppid": 2673,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 13620,
+      "ppid": 2741,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 13629,
+      "ppid": 2783,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13633,
+      "ppid": 2851,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13645,
+      "ppid": 3619,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13653,
+      "ppid": 2565,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 13776,
+      "ppid": 4124,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13787,
+      "ppid": 2755,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 13795,
+      "ppid": 13776,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13849,
+      "ppid": 13795,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 13874,
+      "ppid": 2564,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 13976,
+      "ppid": 2802,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 18356,
+      "ppid": 2827,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18447,
+      "ppid": 2932,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18449,
+      "ppid": 2687,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18477,
+      "ppid": 2854,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18491,
+      "ppid": 3778,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 18534,
+      "ppid": 2713,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18564,
+      "ppid": 2730,
+      "identity": "Tue Nov 24 22:35:12 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18955,
+      "ppid": 2843,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18958,
+      "ppid": 12498,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(cat)"
+    },
+    {
+      "pid": 18977,
+      "ppid": 2868,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18985,
+      "ppid": 2925,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 18996,
+      "ppid": 2985,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19000,
+      "ppid": 2823,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19056,
+      "ppid": 3386,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 19107,
+      "ppid": 3417,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19113,
+      "ppid": 3383,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(rmdir)"
+    },
+    {
+      "pid": 19114,
+      "ppid": 3840,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19120,
+      "ppid": 2812,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19163,
+      "ppid": 2635,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19187,
+      "ppid": 4002,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "<defunct>"
+    },
+    {
+      "pid": 19221,
+      "ppid": 3066,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19238,
+      "ppid": 3777,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19248,
+      "ppid": 19238,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(cat)"
+    },
+    {
+      "pid": 19251,
+      "ppid": 65369,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19263,
+      "ppid": 19251,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19293,
+      "ppid": 2699,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(sleep)"
+    },
+    {
+      "pid": 19331,
+      "ppid": 19107,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(cat)"
+    },
+    {
+      "pid": 19349,
+      "ppid": 19263,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(bash)"
+    },
+    {
+      "pid": 19387,
+      "ppid": 19114,
+      "identity": "Tue Nov 24 22:35:13 2026",
+      "args": "(cat)"
+    },
+    {
+      "pid": 65369,
+      "ppid": 4125,
+      "identity": "Tue Nov 24 22:34:34 2026",
+      "args": "bash {run-worktree}/bin/fm-lock.sh"
+    },
+    {
+      "pid": 81567,
+      "ppid": 81202,
+      "identity": "Tue Nov 24 22:10:12 2026",
+      "args": "bash tests/fm-session-start.test.sh"
+    }
+  ]
+}
