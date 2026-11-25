@@ -22,9 +22,9 @@
 # persistence revalidates the task's current pr= metadata under its metadata
 # and lifecycle locks and refuses a mismatch. The file is atomically published,
 # mode 0600, single-link, and on the state filesystem. A poll consumes it only
-# when all identity fields match its own validated snapshot. Missing, malformed,
-# or mismatched state means external; it is never resolved again from a later
-# away-posture record.
+# when all identity fields match its own validated snapshot. Without matching
+# stored authority or a matching sent self-landing pending record, the authority
+# is external; it is never resolved again from a later away-posture record.
 #
 # Resolution authorizes nothing by itself. bin/fm-pr-merge.sh owns the merge
 # gate and persists only after a forge command succeeds, before releasing the
@@ -168,9 +168,9 @@ fm_merge_authority_persist() {  # <state> <task-id> <meta> <provider> <host> <pa
   return "$status"
 }
 
-fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <number>
+fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <number> [head]
   local state=$1 id=$2 provider=$3 host=$4 path=$5 number=$6
-  local record state_device lock status=0
+  local record state_device lock status=0 authority pending_dir head=${7-}
   FM_MERGE_AUTHORITY='external'
   FM_MERGE_AUTHORITY_RECORD_IDENTITY=
   fm_pr_task_id_valid "$id" || return 1
@@ -183,6 +183,18 @@ fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <numbe
       "$provider" "$host" "$path" "$number"; then
     # shellcheck disable=SC2034 # Public results consumed by sourcing callers.
     FM_MERGE_AUTHORITY_RECORD_IDENTITY=$(fm_pr_file_identity "$record") || status=1
+  elif authority=$(
+    pending_dir=$(fm_self_land_repo_dir "$state" "$provider" "$host" "$path") || exit 1
+    fm_pr_private_file_valid "$pending_dir/pending" 600 "$state_device" || exit 1
+    fm_self_land_pending_read "$pending_dir" || exit 1
+    [ "$FM_SELF_LAND_PENDING_STATE" = sent ] || exit 1
+    [ -z "$head" ] || [ "$FM_SELF_LAND_PENDING_HEAD" = "$head" ] || exit 1
+    fm_pr_url_parse "$FM_SELF_LAND_PENDING_URL" || exit 1
+    [ "$FM_PR_PROVIDER" = "$provider" ] && [ "$FM_PR_HOST" = "$host" ] \
+      && [ "$FM_PR_PATH" = "$path" ] && [ "$FM_PR_NUMBER" = "$number" ] || exit 1
+    printf '%s\n' "$FM_SELF_LAND_PENDING_AUTHORITY"
+  ); then
+    FM_MERGE_AUTHORITY=$authority
   else
     FM_MERGE_AUTHORITY='external'
     status=1

@@ -197,6 +197,7 @@ case "${1:-} ${2:-}" in
       *statusCheckRollup*) hook gate-read; cat "$d/github-view.json"; exit 0 ;;
       *headRefOid*) cat "$d/github-head"; exit 0 ;;
       *isDraft*) cat "$d/github-view.json"; exit 0 ;;
+      *" --json state "*) jq -r .state "$d/pull-${3##*/}.json"; exit $? ;;
     esac
     ;;
   "pr merge")
@@ -456,18 +457,42 @@ assert_gate_stopped() {  # <case_dir> <reason> <label>
 # against the base the stand-in forge reports. With a process id, the record
 # names that process as the sender of its merge command; without one, that
 # command is known to have ended.
-# Args: case_dir url head state [sender process id]
+# Args: case_dir url head state [sender process id] [authority]
 seed_pending() {
   FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" bash -c '
     . "$1/bin/fm-merge-authority-lib.sh" && . "$1/bin/fm-wake-lib.sh" || exit 1
-    fm_self_land_pending_write "$2" task-x1 "$3" "$4" attended earlier-run main "$7" || exit 1
+    fm_self_land_pending_write "$2" task-x1 "$3" "$4" "${8:-attended}" earlier-run main "$7" || exit 1
     [ "$5" != armed ] || exit 0
     if [ -n "$6" ]; then
       fm_self_land_pending_change "$2" earlier-run armed "$5" "$(fm_self_land_sender_of "$6")"
     else
       fm_self_land_pending_change "$2" earlier-run armed "$5"
     fi' \
-    _ "$ROOT" "$(repo_dir "$1")" "$2" "$3" "$4" "${5:-}" "$BASE_SHA"
+    _ "$ROOT" "$(repo_dir "$1")" "$2" "$3" "$4" "${5:-}" "$BASE_SHA" "${6:-attended}"
+}
+
+read_poll_authority() {
+  local case_dir=$1
+  shift
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" bash -c '
+    . "$1/bin/fm-merge-authority-lib.sh" && . "$1/bin/fm-wake-lib.sh" || exit 1
+    shift
+    rc=0
+    fm_merge_authority_read "$@" || rc=$?
+    printf "%s|%s|%s\n" "$rc" "$FM_MERGE_AUTHORITY" "$FM_MERGE_AUTHORITY_RECORD_IDENTITY"
+  ' _ "$ROOT" "$case_dir/state" task-x1 "$@"
+}
+
+run_sent_merge_poll() {
+  local case_dir=$1
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-check-unregister.sh" contributions > "$case_dir/unregister.out" 2> "$case_dir/unregister.err" \
+    || fail "could not retire the unrelated contributions observer: $(cat "$case_dir/unregister.err")"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_TEST_CASE_DIR="$case_dir" PATH="$case_dir/fakebin:$PATH" HOME="$case_dir/user-home" \
+    FM_CHECK_INTERVAL=0 FM_WORKTREE_CLEANUP=0 FM_WATCH_ONCE=1 FM_HEARTBEAT=999999 FM_POLL=0.02 \
+    perl -e 'alarm 120; exec @ARGV' "$ROOT/bin/fm-watch.sh" > "$case_dir/watch.out" 2> "$case_dir/watch.err" \
+    || fail "merge poll watcher failed: $(cat "$case_dir/watch.err")"
 }
 
 pending_field() {  # <case_dir> <line number> -> that line of the pending record
@@ -1061,7 +1086,105 @@ test_recovery_reports_the_authority_at_send_after_posture_changes() {
   pass "reconciles lost responses with send-time authority across both posture changes"
 }
 
-# shellcheck disable=SC2016 # Hook text expands when the stand-in forge runs it, not here.
+test_watcher_recovers_send_authority_before_the_wrapper() {
+  local case_dir head url=$REPO_URL/pull/377 outcome
+  read -r case_dir head <<< "$(ready_case watcher-first 377)"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-afk-contract.sh" enter --words 'merge approved green pull requests' \
+    > "$case_dir/posture.out" 2> "$case_dir/posture.err" || fail "could not enter away posture"
+  touch "$case_dir/state/.last-watcher-beat"
+  printf '1\n' > "$case_dir/merge-rc"
+  printf 'merged\n' > "$case_dir/merge-effect"
+  : > "$case_dir/pull-read-fail-after-merge"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "watcher-first: the lost response must remain unresolved"
+  assert_equals away "$(pending_field "$case_dir" 5)" "watcher-first: the pending record must capture away authority"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "watcher-first: wrapper already reported the merge"
+  FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    "$ROOT/bin/fm-afk-contract.sh" archive > "$case_dir/posture.out" 2> "$case_dir/posture.err" \
+    || fail "could not restore attended posture"
+  run_sent_merge_poll "$case_dir"
+  outcome=$(awk -F '\t' -v prefix="check: merge landed: task-x1 $url" 'index($5, prefix) == 1 {print $5}' "$case_dir/state/.wake-queue")
+  assert_equals "check: merge landed: task-x1 $url away" "$outcome" "watcher-first: watcher lost send-time authority"
+  assert_present "$(repo_dir "$case_dir")/pending" "watcher-first: watcher consumed the wrapper's pending record"
+  rm -f "$case_dir/pull-read-fail" "$case_dir/pull-read-fail-after-merge"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "watcher-first: the wrapper must reconcile: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "watcher-first: wrapper sent a duplicate merge"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] || fail "watcher-first: wrapper duplicated the published outcome"
+  assert_absent "$(repo_dir "$case_dir")/pending" "watcher-first: the reconciled pending record remains"
+
+  url=$REPO_URL/pull/379
+  read -r case_dir head <<< "$(ready_case watcher-other-pr 379)"
+  touch "$case_dir/state/.last-watcher-beat"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_TEST_CASE_DIR="$case_dir" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-pr-check.sh" task-x1 "$url" > "$case_dir/arm.out" 2> "$case_dir/arm.err" \
+    || fail "watcher-other-pr: could not arm merge poll: $(cat "$case_dir/arm.err")"
+  seed_pending "$case_dir" "$REPO_URL/pull/378" "$head" sent '' away \
+    || fail "watcher-other-pr: could not seed the other pending merge"
+  edit_pull "$case_dir" 379 ".state = \"MERGED\" | .merged = true | .mergeCommit = {oid: \"$MERGE_SHA\"}"
+  run_sent_merge_poll "$case_dir"
+  outcome=$(awk -F '\t' -v prefix="check: merge landed: task-x1 $url" 'index($5, prefix) == 1 {print $5}' "$case_dir/state/.wake-queue")
+  assert_equals "check: merge landed: task-x1 $url external" "$outcome" "watcher-other-pr: another pending PR changed the external label"
+  assert_present "$(repo_dir "$case_dir")/pending" "watcher-other-pr: watcher consumed an unrelated pending merge"
+  [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "watcher-other-pr: watcher sent a merge command"
+  pass "watcher-first reporting preserves send authority without a duplicate merge"
+}
+
+test_poll_authority_rejects_unrelated_or_untrusted_pending_records() {
+  local case_dir variant record expected observed url=$REPO_URL/pull/378 head=$OTHER_SHA input_head replacement
+  for variant in matching supplied-head other-pr other-provider other-host other-path other-head armed queued absent malformed mode symlink hardlink directory persisted; do
+    case_dir=$(make_case "pending-authority-$variant")
+    seed_pending "$case_dir" "$url" "$head" sent '' away || fail "$variant: could not seed pending authority"
+    record="$(repo_dir "$case_dir")/pending"
+    expected='1|external|'
+    input_head=
+    replacement=
+    case "$variant" in
+      matching) expected='0|away|' ;;
+      supplied-head) expected='0|away|'; input_head=$head ;;
+      other-pr) replacement=$REPO_URL/pull/379 ;;
+      other-provider) replacement=https://gitlab.com/example/repo/-/merge_requests/378 ;;
+      other-host) replacement=https://other.ghe.com/example/repo/pull/378 ;;
+      other-path) replacement=https://github.com/example/other/pull/378 ;;
+      other-head) input_head=$BASE_SHA ;;
+      armed | queued)
+        awk -v state="$variant" 'NR == 7 {$0=state} {print}' "$record" > "$record.new"
+        chmod 0600 "$record.new"
+        mv "$record.new" "$record"
+        ;;
+      absent) rm -f "$record" ;;
+      malformed)
+        awk 'NR == 5 {$0="external"} {print}' "$record" > "$record.new"
+        chmod 0600 "$record.new"
+        mv "$record.new" "$record"
+        ;;
+      mode) chmod 0644 "$record" ;;
+      symlink) mv "$record" "$record.target"; ln -s "$record.target" "$record" ;;
+      hardlink) ln "$record" "$record.alias" ;;
+      directory) rm -f "$record"; mkdir "$record" ;;
+      persisted)
+        printf '%s\n' fm-merge-authority-v1 github github.com example/repo 378 attended > "$case_dir/state/task-x1.merge-authority"
+        chmod 0600 "$case_dir/state/task-x1.merge-authority"
+        ;;
+    esac
+    if [ -n "$replacement" ]; then
+      awk -v url="$replacement" 'NR == 3 {$0=url} {print}' "$record" > "$record.new"
+      chmod 0600 "$record.new"
+      mv "$record.new" "$record"
+    fi
+    observed=$(read_poll_authority "$case_dir" github github.com example/repo 378 "$input_head")
+    if [ "$variant" = persisted ]; then
+      case "$observed" in '0|attended|'?*) ;; *) fail "persisted task authority lost priority: $observed" ;; esac
+    else
+      assert_equals "$expected" "$observed" "$variant: pending authority must be private, sent, and identity-bound"
+    fi
+  done
+  pass "poll authority rejects other PRs and untrusted pending evidence"
+}
+
+# shellcheck disable=SC2016
 test_failed_merge_command_holds_the_repository_until_its_outcome_is_known() {
   local case_dir head url
 
@@ -1964,6 +2087,8 @@ fm_test_run \
   test_red_base_trips_the_breaker_and_it_stays_tripped \
   test_lost_forge_response_reconciles_without_a_second_merge \
   test_recovery_reports_the_authority_at_send_after_posture_changes \
+  test_watcher_recovers_send_authority_before_the_wrapper \
+  test_poll_authority_rejects_unrelated_or_untrusted_pending_records \
   test_failed_merge_command_holds_the_repository_until_its_outcome_is_known \
   test_refuses_known_deferred_merges_before_the_forge_write \
   test_queued_merge_holds_the_repository_until_it_leaves_the_queue \
