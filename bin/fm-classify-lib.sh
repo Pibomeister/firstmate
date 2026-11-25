@@ -1041,9 +1041,15 @@ status_open_decisions() {  # <status-file> [<kind>]
 # fold's most recently opened record supplies it; a standing declared wait, then
 # the latest recognized event, stands when nothing is open.
 # Actual run/pane evidence is still reconciled by fm-crew-state.sh.
-status_current_line() {  # <status-file> <kind>
+# A caller that already folded this exact file may pass that fold's output file
+# as <open-set-file>; it is read instead of folding again.
+status_current_line() {  # <status-file> <kind> [<open-set-file>]
   local open key verb note current=''
-  open=$(status_open_decisions "$1" "$2")
+  if [ -n "${3:-}" ] && [ -f "$3" ] && [ ! -L "$3" ]; then
+    open=$(<"$3")
+  else
+    open=$(status_open_decisions "$1" "$2")
+  fi
   while IFS=$'\t' read -r key verb note; do
     case "$verb" in ?*) current="$verb [key=$key]: $note" ;; esac
   done <<EOF
@@ -1334,6 +1340,10 @@ EOF
 # failure this reports the already-trusted persisted set unchanged rather than
 # risking a silent invalidation that would wipe it - never a bare "empty" as if
 # nothing were open.
+# A point-in-time reader that has its own whole-file fallback passes `strict`
+# as the fourth argument instead: any read failure then returns 3, and a cursor
+# already past <captured-end-offset> also returns 3, so a success is the fold of
+# exactly the first <captured-end-offset> bytes.
 #
 # Not a pure status-file read: this writes/rewrites the sibling cursor file as a
 # side effect (state/.<task>.open-decisions-cursor), the library's second
@@ -1471,7 +1481,7 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed] [strict]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor kind fold_version timed=${3:-} read_rc=0
+  local target_cursor kind fold_version timed=${3:-} read_rc=0 verb
   case "$timed" in ''|timed) ;; *) return 2 ;; esac
   # `strict` makes every read failure below return 3 instead of 0, for a caller
   # that must not read the already-trusted set (empty without a cursor) as the
@@ -1553,6 +1563,9 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     trusted_open=''
     cursor_dirty=1
   fi
+  # Strict means exactly the captured bytes: a cursor already past the captured
+  # end folds a later generation, so the caller re-folds its own capture.
+  [ "$read_rc" = 0 ] || [ "$offset" -le "$size" ] || return "$read_rc"
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
@@ -1573,6 +1586,13 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
+      # Same verb prefilter as status_open_decisions: any other verb leaves the
+      # set unchanged, so skipping it saves one subshell per line.
+      status_line_verb "$line" verb
+      case "$verb" in
+        needs-decision|blocked|done|failed|"$resolve"|"$held") ;;
+        *) continue ;;
+      esac
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")
     done < "$chunk_file"
     rm -f "$chunk_file"
