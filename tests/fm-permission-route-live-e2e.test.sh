@@ -7,8 +7,9 @@
 # holds a real task record. It proves, against the installed Claude Code:
 #   - the established prompt class is refused with the fix instruction, the
 #     model reissues a command the harness can check, and that command runs;
-#   - a request that names each reserved category is never answered: the
-#     harness's own refusal stands and the supervisor wake is written;
+#   - a request that names a reserved category is never answered, for six of
+#     the categories (the portable test also covers release): the harness's
+#     own refusal stands and the supervisor wake is written;
 #   - an open hold closes when the held request is answered elsewhere and
 #     finishes, whether the command succeeds or fails, and when the session
 #     ends;
@@ -138,6 +139,7 @@ assert_closed() {  # <name> <reason>
   lines=$(grep -c . "$LAB/$name/home/state/task.status" 2>/dev/null)
   asked=$(awk -F '\t' '$2 == "hold" { print $7 }' "$LAB/$name/home/state/task.permission-route.tsv" 2>/dev/null | sort -u | grep -c .)
   wakes=$(grep -c '^blocked \[at=[0-9]*\] \[key=permission-prompt-hardstop\]: ' "$LAB/$name/home/state/task.status" 2>/dev/null)
+  [ "$asked" -ge 1 ] || fail "$name: the route recorded no held request, so the close proves nothing"
   [ "$wakes" = "$asked" ] || fail "$name: expected one wake for each of the $asked held requests, the status record holds $wakes"
   [ "$lines" = $((wakes + 1)) ] || fail "$name: expected $wakes wake(s) and one close, the status record holds $lines lines"
   status_line "$name" "$lines" | grep -Eq "^resolved \[at=[0-9]+\] \[key=permission-prompt-hardstop\]: .*$reason\$" \

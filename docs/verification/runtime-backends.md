@@ -4236,7 +4236,8 @@ FM_PERMISSION_ROUTE_LIVE_E2E=1 FM_PERMISSION_ROUTE_LIVE_TIMEOUT=1200 bash tests/
 ok - 2.1.332 (Claude Code) live E2E refused the established prompt class with a correction the model applied, held each reserved category for a person, closed answered holds, and left an attended session alone
 ```
 
-In two of the six reserved cases the model asked a second time with its command reshaped, and each distinct waiting request woke the supervisor once before the one close.
+The model sometimes asks a second time with its command reshaped: it did so in two of the six reserved cases in one run on this date and in none in a later run.
+Each distinct waiting request woke the supervisor once before the one close.
 
 ## Merge review reviewer tools
 

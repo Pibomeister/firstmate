@@ -60,14 +60,17 @@
 #       not run with, such as the `--disable hooks` every Codex worker gets.
 #       Its second option restarts a server other Codex clients share, so no
 #       key is pressed. Only its settings rows, the rows the dialog does not
-#       fix, are checked for a hard stop.
+#       fix, are checked for a hard stop. A picker whose settings rows cannot
+#       be found is `hardstop reserved`.
 #   hold generic-confirm
 #       No harness dialog, and the last row is a terminal yes/no confirmation
 #       (fm_composer_yes_no_prompt in bin/fm-composer-lib.sh owns that row),
 #       such as `Proceed? [y/N]` from a command line the worker left waiting.
 #       The last 20 non-blank rows are checked for a hard stop, across blank
 #       rows, because such a prompt has no boundary to prove and its warning
-#       often sits a paragraph above it. No key. Any other screen with no
+#       often sits a paragraph above it. OpenSSH's unknown-host-key question
+#       (`(yes/no/[fingerprint])`) is `hardstop reserved` by that answer
+#       alone. No key. Any other screen with no
 #       recognized dialog has no verdict: other terminal and external-CLI
 #       prompts, such as a password input, are out of scope here.
 #   hold <external-imports|bypass-confirm|hooks-review>
@@ -354,27 +357,46 @@ _fm_pp_codex_daemon_rows() {  # <screen>
 }
 
 # A screen no harness dialog explains: a terminal yes/no confirmation is held,
-# or named a hard stop from the last 20 non-blank rows. Anything else has no
-# verdict.
+# or named a hard stop from the last 20 non-blank rows. OpenSSH's question
+# about an unknown host key, known by its `/[fingerprint]` answer, is always a
+# hard stop: its rows name no reserved word, and a yes trusts a host. Anything
+# else has no verdict.
 _fm_pp_plain_prompt() {  # <screen>
   local cat
   fm_composer_yes_no_prompt "${1-}" || return 1
   if cat=$(fm_pp_hardstop_category "$(_fm_wd_tail_rows "${1-}" 20)"); then
     printf 'hardstop\t%s\n' "$cat"; return 0
   fi
+  if printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
+      /[^ \t]/ { last = tolower($0) }
+      END { exit !(last ~ /\/\[fingerprint\]\)[ \t]*[?:]?[ \t]*$/) }'; then
+    printf 'hardstop\treserved\n'; return 0
+  fi
   printf 'hold\tgeneric-confirm\n'
 }
 
-# A numbered picker without the answers its cursor is not on: its title, the
-# answer under the cursor, and its footer. Empty when no numbered row carries
-# a selection mark.
+# A numbered picker without the answer rows its cursor is not on: its title,
+# the answer under the cursor, and its footer. A row is an answer row only
+# when its number is the next one in the picker's own count from 1, so a
+# wrapped row that happens to start with a number stays, and so does every
+# other wrapped row. Empty when no answer row carries a selection mark.
 _fm_pp_picker_chosen_rows() {  # <picker rows>
   printf '%s\n' "${1-}" | awk '
-    { r[NR] = $0 }
-    /^[ \t]*(❯|›|>)[ \t]*[0-9]+[.)][ \t]/ { chosen = NR }
+    BEGIN { want = 1 }
+    {
+      r[NR] = $0
+      row = $0
+      cur = 0
+      if (match(row, /^[ \t]*(❯|›|>)[ \t]*/)) { cur = 1; row = substr(row, RLENGTH + 1) }
+      else sub(/^[ \t]*/, "", row)
+      if (row ~ /^[0-9]+[.)][ \t]/ && row + 0 == want) {
+        want++
+        if (cur) chosen = NR; else other[NR] = 1
+      }
+    }
     END {
       if (!chosen) exit 0
-      for (i = 1; i <= NR; i++) if (i == chosen || r[i] !~ /^[ \t]*[0-9]+[.)][ \t]/) print r[i]
+      for (i = 1; i <= NR; i++) if (!other[i]) print r[i]
     }'
 }
 
@@ -404,7 +426,12 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   case "$(fm_composer_blocking_dialog "$screen")" in
     'Codex sign-in picker') printf 'hardstop\tsign-in\n'; return 0 ;;
     'Codex background-server settings picker')
-      if cat=$(fm_pp_hardstop_category "$(_fm_pp_codex_daemon_rows "$screen")"); then
+      # Settings rows that cannot be found cannot be read as free of a stop.
+      rows=$(_fm_pp_codex_daemon_rows "$screen")
+      if [ -z "$rows" ]; then
+        printf 'hardstop\treserved\n'; return 0
+      fi
+      if cat=$(fm_pp_hardstop_category "$rows"); then
         printf 'hardstop\t%s\n' "$cat"; return 0
       fi
       printf 'hold\tdaemon-settings\n'; return 0 ;;

@@ -1918,14 +1918,21 @@ wd_pp_stop() {
 }
 
 # wd_pp_clear <id>: the worker's pane shows no reported prompt any more.
+# A key the worker's permission hook still holds is the hook's to close: one
+# pane read without the prompt does not prove that the request was answered.
+# A key another writer already closed gets no second resolved line.
 wd_pp_clear() {
-  local id=$1 mark prev
+  local id=$1 mark prev key
   mark=$(wd_pp_mark "$id")
   prev=$(cat "$mark.open" 2>/dev/null) || return 0
   [ "$(wd_permission_mode)" = act ] || return 0
-  wd_pp_status "$id" resolved "${prev%% *}" "worker $id no longer shows the prompt" || return 0
+  key=${prev%% *}
+  ! wd_pp_hook_keys "$id" | grep -qx "$key" || return 0
+  if status_open_decisions "$O_HOME/state/$id.status" 2>/dev/null | cut -f1 | grep -qx "$key"; then
+    wd_pp_status "$id" resolved "$key" "worker $id no longer shows the prompt" || return 0
+    wd_rec "$(wd_id)" permission-prompt report "done" "resolved [key=$key]"
+  fi
   rm -f "$mark.open"
-  wd_rec "$(wd_id)" permission-prompt report "done" "resolved [key=${prev%% *}]"
 }
 
 # The worker's permission hook (bin/fm-permission-route.sh, the owner of its
@@ -1933,9 +1940,12 @@ wd_pp_clear() {
 # the watchdog's only reads and writes of that hold.
 
 # wd_pp_hook_keys <id>: the status keys the hook holds open, one per row.
+# A hold that exists but cannot be read counts as both keys, so an unreadable
+# hold is never read as no hold.
 wd_pp_hook_keys() {
   [ -s "$O_HOME/state/$1.permission-held" ] || return 0
-  fm_run_timed 20 bash "$SCRIPT_DIR/fm-permission-route.sh" held-keys "$O_HOME/state" "$1" 2>/dev/null </dev/null || true
+  fm_run_timed 20 bash "$SCRIPT_DIR/fm-permission-route.sh" held-keys "$O_HOME/state" "$1" 2>/dev/null </dev/null \
+    || printf 'permission-prompt-hardstop\npermission-prompt-held\n'
 }
 
 # wd_pp_hook_clear <id> <harness> <screen> <dialog>: close the hook's held key

@@ -170,8 +170,15 @@ network transfer|hold security|cat <<EOF\n@t@\nEOF\ncurl https://example.invalid
 release word|hold production|cat <<EOF\n@t@\nEOF\nnpm publish
 tag from the watchdog vocabulary|hold release|cat <<EOF\n@t@\nEOF\ngit tag v1.2.0
 escape byte|hold shape|cat <<EOF\n@t@\nEOF\nprintf '\033[0m'
+wrapper behind a quoted assignment|hold computed|cat <<EOF\n@t@\nEOF\nFOO="a b" eval "$X"
+computed word behind a quoted redirection|hold computed|cat <<EOF\n@t@\nEOF\n> "a b" $cmd
+wrapper split by a line continuation|hold computed|cat <<EOF\n@t@\nEOF\nev\\\nal "$X"
+plain assignment and redirection|refuse|cat <<EOF\n@t@\nEOF\nN=1 echo hi 2> err.log
 ROWS
   assert_equals "hold shape" "$(classify "")" "classify: empty command"
+  # shellcheck disable=SC2046
+  assert_equals "hold computed" "$(classify "$(printf 'A%s=1 ' $(seq 1 70))$(class_command true)")" \
+    "classify: more leading assignments than the scan reads leave the command word unknown"
   assert_equals "hold shape" "$(printf '%s' "$(class_command)" | FM_PERMISSION_ROUTE_MAX_BYTES=10 bash "$ROUTE" classify)" "classify: over the byte bound"
   pass "the command text is refused only for the closed, plain, unquoted heredoc class"
 }
@@ -356,6 +363,55 @@ test_pane_clear_closes_only_a_settled_ordinary_hold() {
   pass "a proven-clear pane closes only an ordinary hold that has had time to draw its prompt"
 }
 
+test_reserved_request_is_always_reported() {
+  local home i
+  # The ordinary key stops taking rows at its limit; the reserved key does not.
+  home=$(new_home limit)
+  for i in 1 2 3; do
+    FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "echo hello $i")"
+  done
+  assert_equals "2" "$(grep -c "^blocked .*key=$HELD\]" "$home/state/task.status")" "an ordinary request past the limit joins the open decision"
+  assert_equals "3" "$(grep -c . "$home/state/task.permission-route.tsv")" "it is still recorded"
+  for i in 1 2 3; do
+    FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "sudo ls $i")"
+  done
+  assert_equals "3" "$(grep -c "^blocked .*key=$HARDSTOP\]" "$home/state/task.status")" "every reserved request gets its line at the limit"
+  assert_equals "$HARDSTOP $HELD" "$(bash "$ROUTE" held-keys "$home/state" task | sort | tr '\n' ' ' | sed 's/ $//')" "held-keys names the reserved key"
+
+  # The same command asked again as a sandbox escape is a reserved request.
+  home=$(new_home sandbox)
+  request "$home" "$(bash_payload 'echo hello')"
+  request "$home" "$(bash_payload 'echo hello' '{"dangerouslyDisableSandbox": true}')"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "the sandbox escape opens the owner-reserved key beside the ordinary one"
+  settle "$home" tool-finished "$(finished_payload 'echo hello')"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "the finished ordinary call does not close the sandbox escape"
+
+  # A request first held as ordinary and asked again with a reserved input.
+  home=$(new_home rekey)
+  request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Write", tool_input: {file_path: "/tmp/notes.txt", content: "x"}}')"
+  assert_equals "$HELD" "$(open_keys "$home")" "a plain write is an ordinary hold"
+  request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Write", tool_input: {file_path: "/tmp/notes.txt", content: "x", password: null}}')"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "a reserved key name with a null value is still owner-reserved"
+  pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, and by a key name alone"
+}
+
+test_unreadable_payload_never_matches_a_finished_call() {
+  local home
+  home=$(new_home unreadable)
+  request "$home" 'not json'
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "an unreadable request is owner-reserved"
+  assert_equals "-" "$(cut -f2 "$home/state/task.permission-held")" "its row carries no request hash"
+  request "$home" '{"tool_input": {'
+  assert_equals "1" "$(grep -c '^blocked ' "$home/state/task.status")" "a second unreadable request joins the open decision"
+  settle "$home" tool-finished '{"tool_name": "Bash", "tool_inp'
+  settle "$home" tool-finished '{}'
+  settle "$home" tool-finished ''
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "an unreadable finished-tool payload closes nothing"
+  settle "$home" session-end
+  assert_equals "" "$(open_keys "$home")" "session end closes it"
+  pass "an unreadable payload is held for the owner and no finished tool call closes it"
+}
+
 test_bad_task_id_and_missing_state_touch_nothing() {
   local home out
   home=$(new_home badid)
@@ -386,4 +442,6 @@ fm_test_run \
   test_session_end_and_supervisor_answer_close_a_hold \
   test_each_key_closes_on_its_own \
   test_pane_clear_closes_only_a_settled_ordinary_hold \
+  test_reserved_request_is_always_reported \
+  test_unreadable_payload_never_matches_a_finished_call \
   test_bad_task_id_and_missing_state_touch_nothing

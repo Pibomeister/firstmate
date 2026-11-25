@@ -36,8 +36,10 @@
 #       FM_PERMISSION_ROUTE_PANE_CLEAR_SECS (default 15), because the hold is
 #       written a moment before the prompt is drawn, and it never closes the
 #       owner-reserved key. Always exits 0.
+#       A finished request closes its row under each key that holds one.
 #   fm-permission-route.sh held-keys <state-dir> <id>
 #       Prints each status key this route still holds open, one per row.
+#       Exits 1 when the status log cannot be folded.
 #   fm-permission-route.sh classify
 #       Reads one command on stdin and prints `refuse` or `hold <category>`
 #       for the command-text checks alone. Exits 0.
@@ -67,7 +69,10 @@
 #                 other form.
 #   computed      Outside the heredoc bodies, a word in command position holds
 #                 `$`, a backtick, or a glob character, so the text does not
-#                 show which command runs.
+#                 show which command runs. The same holds when a leading
+#                 assignment or redirection target is quoted, when a command
+#                 word ends in a line continuation, and when more than 64
+#                 words lead a command.
 #   wrapper       Outside the heredoc bodies, a word in command position runs
 #                 other text as a command (eval, source, sh, env, xargs, ...).
 #   repeat        The same command was already refused once.
@@ -82,9 +87,13 @@
 #       bytes, request hash. The command text is never written. The row is
 #       written before the answer is printed.
 #   <id>.permission-held       Present while a hold is open. One row per held
-#       request, tab-separated: its status key, its request hash (the SHA-256
-#       over the tool name and its command for Bash, or its whole input for
-#       any other tool), and the epoch it was held.
+#       request and key, tab-separated: its status key, its request hash (the
+#       SHA-256 over the tool name with, for Bash, its command and whether it
+#       asks to leave the sandbox, or with its whole input for any other
+#       tool; `-` for a payload that cannot be read), and the epoch it was
+#       held. The ordinary key takes at most FM_PERMISSION_ROUTE_MAX_HELD
+#       (default 20) rows; the owner-reserved key has no limit, so every such
+#       request is reported.
 #   <id>.permission-lock       Directory lock around the two records above.
 #   <id>.status                `blocked [at=<epoch>] [key=<key>]` for each newly
 #       held request, and `resolved` with the same key when the last request
@@ -99,11 +108,12 @@
 #       reserved category, over its whole tool input, so a file write to a
 #       credential path is owner-reserved too. One key covers every prompt
 #       waiting under it on that worker, because the payload carries no
-#       tool-use id. Without a watchdog in act mode, a prompt a person answers
-#       "no" stays open until the supervisor closes the key with its own
-#       answer, or the session ends: an open key that is stale costs one look,
-#       a closed key over a waiting prompt costs the wait this route exists to
-#       end.
+#       tool-use id. A prompt a person answers "no" reports no end. Its
+#       ordinary key stays open until a watchdog in act mode proves the pane
+#       clear, and its owner-reserved key until the supervisor closes it with
+#       its own answer, or the session ends: an open key that is stale costs
+#       one look, a closed key over a waiting prompt costs the wait this route
+#       exists to end.
 #
 # Unattended policy seam. The only policy this route reads is
 # AK_LIFECYCLE_POLICY=unattended, which agent-kit publishes for lifecycle
@@ -128,7 +138,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # The watchdog's two status keys (wd_permission_prompt in bin/fm-watchdog.sh).
 FM_PERMISSION_ROUTE_HELD_KEY='permission-prompt-held'
 FM_PERMISSION_ROUTE_HARDSTOP_KEY='permission-prompt-hardstop'
-FM_PERMISSION_ROUTE_MAX_HELD=20
+case "${FM_PERMISSION_ROUTE_MAX_HELD:-}" in
+  '' | *[!0-9]*) FM_PERMISSION_ROUTE_MAX_HELD=20 ;;
+esac
 FM_PERMISSION_ROUTE_MESSAGE="Firstmate permission route: refused, and the command did not run. No person will answer this prompt. The command holds an unquoted heredoc. The shell expands the body of such a heredoc, and a backtick in that body runs as a command, so the harness could not check the command. Correct the heredoc and run the command again: escape each backtick in the body as \\\` when the body needs shell expansion, or quote the delimiter (for example <<'EOF') when the body is literal text. Do not retry the command unchanged."
 
 usage() {
@@ -186,8 +198,10 @@ reserved_category() {  # <text>
     # shellcheck source=bin/fm-permission-prompt.sh
     . "$SCRIPT_DIR/fm-permission-prompt.sh" || { printf 'reserved'; return 0; }
   fi
-  view=$(fm_pp_hardstop_category "$1") || return 1
-  printf '%s' "$view"
+  for view in "$1" "$stripped"; do
+    if view=$(fm_pp_hardstop_category "$view"); then printf '%s' "$view"; return 0; fi
+  done
+  return 1
 }
 
 # Read the command as written, never the stripped projection, and print:
@@ -200,7 +214,10 @@ reserved_category() {  # <text>
 #   wrapper       a command-position word outside the bodies runs other text.
 #   class         the established class, with none of the above.
 # Command positions are found without reading quotes, so a separator inside a
-# quoted string also starts one. That only adds holds.
+# quoted string also starts one. That only adds holds. A space inside a quoted
+# leading assignment or redirection target would hide the command word, so a
+# quote or backslash in either one is `computed`, and so is a command word a
+# trailing backslash continues on the next line.
 command_shape() {  # <text>
   printf '%s\n' "$1" | awk -v quote="'" '
     function scan_segment(seg,    tok, base, guard) {
@@ -211,20 +228,32 @@ command_shape() {  # <text>
         sub(/[ \t].*$/, "", tok)
         seg = substr(seg, length(tok) + 1)
         if (tok ~ /^[0-9]*[<>]/) {
-          if (tok ~ /^[0-9]*[<>]+$/) { sub(/^[ \t]+/, "", seg); sub(/^[^ \t]+/, "", seg) }
+          if (tok ~ /^[0-9]*[<>]+$/) {
+            sub(/^[ \t]+/, "", seg)
+            tok = seg
+            sub(/[ \t].*$/, "", tok)
+            seg = substr(seg, length(tok) + 1)
+          }
+          if (tok ~ quoted) { computed = 1; return }
           continue
         }
-        if (tok ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) continue
+        if (tok ~ /^[A-Za-z_][A-Za-z0-9_]*\+?=/) {
+          if (tok ~ quoted) { computed = 1; return }
+          continue
+        }
         if (tok == "if" || tok == "then" || tok == "else" || tok == "elif" || tok == "do" || tok == "while" || tok == "until" || tok == "!" || tok == "time") continue
         if (tok == "for" || tok == "case" || tok == "select" || tok == "function" || tok == "in" || tok == "done" || tok == "fi" || tok == "esac" || tok == "[" || tok == "[[" || tok ~ /^#/) return
-        if (tok ~ /[$*?\[]/) { computed = 1; return }
+        if (tok ~ /[$*?\[]/ || tok ~ /\\$/) { computed = 1; return }
         base = tolower(tok)
         gsub("[\"" quote "\\\\]", "", base)
         sub(/^.*\//, "", base)
         if (base ~ /^(eval|exec|source|\.|command|builtin|env|xargs|sh|bash|zsh|dash|ksh|fish|nohup|nice|timeout|watch|find|parallel|open|nc|op)$/) wrapper = 1
         return
       }
+      # More leading words than this scan reads: the command word is unknown.
+      computed = 1
     }
+    BEGIN { quoted = "[\"" quote "\\\\]" }
     !inbody {
       line = $0
       out = ""
@@ -335,16 +364,22 @@ hold_key() {  # <category>
 }
 
 # The held set: one row per held request, `<key>\t<request hash>\t<epoch>`.
-marker_rows() {  # <key>
-  int_or "$(grep -c "^$1"$'\t' "$MARKER" 2>/dev/null)" 0
+marker_rows() {  # <key> [<request hash>]: the rows of that key, or that one row
+  awk -F '\t' -v key="$1" -v hash="${2-}" '
+    $1 == key && (hash == "" || $2 == hash) { n++ }
+    END { print n + 0 }' "$MARKER" 2>/dev/null || printf '0'
 }
 
-marker_drop() {  # key <key> | hash <request hash>: drop every row that carries it
-  local rest field=1
-  [ "$1" = key ] || field=2
-  rest=$(awk -F '\t' -v field="$field" -v value="$2" '$field != value' "$MARKER" 2>/dev/null)
+# Drop every row of a key, or its one row for a request. The file is replaced
+# by a rename, so a reader without the lock never sees a half-written set.
+marker_drop() {  # <key> [<request hash>]
+  local rest
+  rest=$(awk -F '\t' -v key="$1" -v hash="${2-}" '
+    !($1 == key && (hash == "" || $2 == hash))' "$MARKER" 2>/dev/null)
   if [ -n "$rest" ]; then
-    printf '%s\n' "$rest" >"$MARKER" 2>/dev/null || true
+    if printf '%s\n' "$rest" >"$MARKER.new" 2>/dev/null; then
+      mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null || rm -f -- "$MARKER.new" 2>/dev/null || true
+    fi
   else
     rm -f -- "$MARKER" 2>/dev/null || true
   fi
@@ -357,7 +392,7 @@ marker_prune() {
   [ -e "$MARKER" ] || return 0
   for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
     if [ "$(marker_rows "$key")" -gt 0 ] && ! key_open "$key"; then
-      marker_drop key "$key"
+      marker_drop "$key"
     fi
   done
 }
@@ -365,7 +400,7 @@ marker_prune() {
 # Drop every row of a key and close it in the status log when it is open.
 close_key() {  # <key> <why>
   [ "$(marker_rows "$1")" -gt 0 ] || return 0
-  marker_drop key "$1"
+  marker_drop "$1"
   if key_open "$1"; then
     status_append "resolved [at=$(date +%s)] [key=$1]: permission prompt no longer waiting: $2" || true
   fi
@@ -395,16 +430,22 @@ lock_release() {
 }
 
 # Record a hold and wake the supervisor for each newly held request. A wake
-# is still written when the lock or the ledger is unavailable.
-hold() {  # <category>
-  local held key note
+# is still written when the lock or the ledger is unavailable. A request is
+# new under a key when that key has no row for it, so a request first held as
+# ordinary and asked again as owner-reserved still gets its reserved line.
+# The ordinary key takes at most FM_PERMISSION_ROUTE_MAX_HELD rows, because a
+# declined request never reports that it ended; that key is open while it has
+# a row, so a request past the limit joins a decision that is already open.
+# The owner-reserved key has no limit: each such request gets its row and line.
+hold() {  # <category> [nolock]: nolock when the caller just failed to lock
+  local key note
   key=$(hold_key "$1")
-  lock_acquire || true
+  [ "${2-}" = nolock ] || lock_acquire || true
   ledger_row hold "$1" || true
   marker_prune
-  if ! awk -F '\t' -v hash="$REQUEST_HASH" '$2 == hash { f = 1 } END { exit !f }' "$MARKER" 2>/dev/null; then
-    held=$(int_or "$(grep -c . "$MARKER" 2>/dev/null)" 0)
-    if [ "$held" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
+  if [ "$(marker_rows "$key" "$REQUEST_HASH")" -eq 0 ]; then
+    if [ "$key" = "$FM_PERMISSION_ROUTE_HELD_KEY" ] \
+      && [ "$(marker_rows "$key")" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
       lock_release
       return 0
     fi
@@ -437,22 +478,32 @@ bind_task() {  # <state-dir> <id>
   SCAN_OK=0
 }
 
-# Read the tool name and the request hash from a hook payload. The hash covers
-# the command alone for Bash, so a changed description still names one request.
+# Read the tool name and the request hash from a hook payload. For Bash the
+# hash covers the command and whether it asks to leave the sandbox, so a
+# changed description still names one request and a sandbox escape names
+# another. A payload that cannot be read, or that names no tool, has the hash
+# `-`, which no finished tool call ever matches.
 bind_request() {  # <payload>
+  local canon
   TOOL=$(printf '%s' "$1" | jq -r '.tool_name // "" | tostring' 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64)
   [ -n "$TOOL" ] || TOOL=unknown
-  REQUEST_HASH=$(printf '%s' "$1" | jq -cS '
-    if .tool_name == "Bash" and (.tool_input.command | type) == "string"
-    then ["Bash", .tool_input.command]
-    else [.tool_name, .tool_input] end' 2>/dev/null | sha256_stdin)
-  [ -n "$REQUEST_HASH" ] || REQUEST_HASH=-
-  # Every scalar of the tool input, decoded, for the reserved scan that picks
-  # the status key. An input that cannot be read whole leaves SCAN_OK at 0.
+  REQUEST_HASH=-
+  if canon=$(printf '%s' "$1" | jq -cS '
+      if (.tool_name | type) != "string" or .tool_name == "" then error("no tool name")
+      elif .tool_name == "Bash" and (.tool_input.command | type) == "string"
+      then ["Bash", .tool_input.command, (.tool_input.dangerouslyDisableSandbox == true)]
+      else [.tool_name, .tool_input] end' 2>/dev/null) && [ -n "$canon" ]; then
+    REQUEST_HASH=$(printf '%s' "$canon" | sha256_stdin)
+    [ -n "$REQUEST_HASH" ] || REQUEST_HASH=-
+  fi
+  # Every key path of the tool input and every scalar under it, decoded, for
+  # the reserved scan that picks the status key. A false or null value still
+  # gives its key path. An input that cannot be read whole leaves SCAN_OK at 0.
   SCAN_OK=0
   if SCAN_TEXT=$(printf '%s' "$1" | jq -r '
       if (.tool_input | type) == "object"
-      then [.tool_input | paths(scalars) as $p | ($p | map(tostring) | join(".")), (getpath($p) | tostring)] | join("\n")
+      then [.tool_input | paths as $p | ($p | map(tostring) | join(".")),
+            (getpath($p) | if type == "object" or type == "array" then empty else tostring end)] | join("\n")
       else error("no tool input") end' 2>/dev/null) \
     && [ "${#SCAN_TEXT}" -le "$(int_or "${FM_PERMISSION_ROUTE_MAX_BYTES:-}" 65536)" ]; then
     SCAN_OK=1
@@ -493,7 +544,7 @@ claude_request() {  # <state-dir> <id>
     hold "${verdict:-record}"; return 0
   fi
   max=$(int_or "${FM_PERMISSION_ROUTE_MAX_REFUSALS:-}" 5)
-  lock_acquire || { hold record; return 0; }
+  lock_acquire || { hold record nolock; return 0; }
   verdict=$(awk -F '\t' -v sha="$COMMAND_SHA" -v max="$max" '
     $2 == "refuse" { n++; if ($5 == sha) again = 1 }
     END { if (again) print "repeat"; else if (n + 0 >= max + 0) print "ceiling"; else print "refuse" }' "$LEDGER" 2>/dev/null) || verdict=refuse
@@ -525,9 +576,9 @@ claude_settled() {  # <state-dir> <id> <event>
       # writer already resolved are dropped.
       quiet=$(int_or "${FM_PERMISSION_ROUTE_PANE_CLEAR_SECS:-}" 15)
       lock_acquire || return 0
-      marker_prune
       newest=$(awk -F '\t' '$3 + 0 > n { n = $3 + 0 } END { print n + 0 }' "$MARKER" 2>/dev/null)
       if [ "$(( $(date +%s) - $(int_or "$newest" 0) ))" -ge "$quiet" ]; then
+        marker_prune
         close_key "$FM_PERMISSION_ROUTE_HELD_KEY" 'the worker pane shows an empty composer and no permission prompt'
       fi
       ;;
@@ -536,14 +587,14 @@ claude_settled() {  # <state-dir> <id> <event>
       bind_request "$payload"
       [ "$REQUEST_HASH" != - ] || return 0
       lock_acquire || return 0
-      key=$(awk -F '\t' -v hash="$REQUEST_HASH" '$2 == hash { print $1; exit }' "$MARKER" 2>/dev/null)
-      if [ -n "$key" ]; then
+      for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
+        [ "$(marker_rows "$key" "$REQUEST_HASH")" -gt 0 ] || continue
         if [ "$(marker_rows "$key")" -gt 1 ]; then
-          marker_drop hash "$REQUEST_HASH"
+          marker_drop "$key" "$REQUEST_HASH"
         else
           close_key "$key" 'the held request was answered and finished'
         fi
-      fi
+      done
       ;;
     *) return 0 ;;
   esac
@@ -555,11 +606,18 @@ held_keys() {  # <state-dir> <id>
   local key
   bind_task "${1:-}" "${2:-}" || return 0
   [ -s "$MARKER" ] || return 0
+  # The status fold is loaded here, so a failed load exits non-zero and the
+  # caller does not read it as no hold.
+  if ! command -v status_open_decisions >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-classify-lib.sh
+    . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
+  fi
   for key in "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" "$FM_PERMISSION_ROUTE_HELD_KEY"; do
     if [ "$(marker_rows "$key")" -gt 0 ] && key_open "$key"; then
       printf '%s\n' "$key"
     fi
   done
+  return 0
 }
 
 main() {
@@ -576,7 +634,7 @@ main() {
       ;;
     held-keys)
       shift
-      held_keys "$@" 2>/dev/null || true
+      held_keys "$@" 2>/dev/null || return 1
       ;;
     classify) classify_command "$(cat)"; printf '\n' ;;
     -h | --help) usage ;;

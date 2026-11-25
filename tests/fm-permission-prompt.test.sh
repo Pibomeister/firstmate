@@ -307,6 +307,14 @@ test_hardstop_categories() {
     "the recorded 2.1.323 limit picker with the cursor on its add-funds answer is a spend stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n   1. Wait for reset\n   2. Add funds to keep going\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "a usage-limit picker with no readable cursor row is checked whole"
+  # A wrapped row of the answer under the cursor is read even when it starts
+  # with a number, because it is not the next answer in the picker's count.
+  assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Continue and raise the cap by\n      20. Add funds from your card\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "a wrapped row of the chosen answer that starts with a number still names the spend stop"
+  assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Continue\n      1) Add funds from your card\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "so does a wrapped row that repeats an answer number"
+  printf ' You have hit your limit\n   1. Add funds to keep going\n   2. Buy more credits\n ❯ 3. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit >/dev/null \
+    && fail "paid answers above the cursor answer took a usage-limit picker from the usage-limit path"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit. Add funds to continue?\n ❯ 1. Yes\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "a usage-limit picker whose title asks for paid usage stays a spend stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ Wait for reset\n   Add funds\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
@@ -826,6 +834,9 @@ test_codex_startup_pickers_classify() {
   assert_equals $'hold\tdaemon-settings' "$(printf '%s\n' "$moved" | classify codex)" "a cursor on the restart option does not hide it"
   assert_equals $'hardstop\trelease' "$(sed 's/^    hooks = false$/    deploy_to_production = true/' "$daemon" | classify codex)" "a hard-stop word in its settings rows is a stop"
   assert_equals $'hold\tdaemon-settings' "$(sed 's/other clients\./other clients, and deploy./' "$daemon" | classify codex)" "its fixed rows never name a stop"
+  assert_equals $'hardstop\treserved' "$(sed 's/^  Restart will use these shared feature settings:$/  Restart applies the following:/' "$daemon" | classify codex)" \
+    "a picker whose settings rows cannot be found is a hard stop"
+  assert_equals $'hardstop\treserved' "$(sed '/^    hooks = false$/d' "$daemon" | classify codex)" "so is one that lists no setting"
   assert_equals 'Codex background-server settings picker' "$(send_guard < "$daemon")" "a send is refused on the background-server picker, where Enter answers it"
   assert_equals 'Codex background-server settings picker' "$(printf '%s\n' "$moved" | send_guard)" "a send is refused wherever its cursor sits"
   { cat "$daemon"; printf '\nThe picker above was closed.\n'; } | classify codex >/dev/null \
@@ -848,8 +859,12 @@ Continue (y/n)?
 Continue (Y/N) :
 Is this ok [yes/no]:
 Apply the plan? (yes/no)
-Are you sure you want to continue connecting (yes/no/[fingerprint])? 
 ROWS
+  # OpenSSH's unknown-host-key question names no reserved word in its rows.
+  row='Are you sure you want to continue connecting (yes/no/[fingerprint])? '
+  assert_equals $'hardstop\treserved' "$(printf 'The authenticity of host build.example.org (203.0.113.7) can not be established.\nED25519 key fingerprint is SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG.\n%s\n' "$row" | classify codex none)" \
+    "a host-key trust question is a hard stop by its answer set alone"
+  assert_equals 'yes-no confirmation prompt' "$(printf 'Resolving packages...\n%s\n' "$row" | send_guard)" "a send is refused: $row"
   assert_equals $'hold\tgeneric-confirm' "$(printf 'Resolving packages...\nProceed? [y/N]\n' | classify claude)" "the dialog is computed from the screen when the caller passes none"
   assert_equals $'hold\tgeneric-confirm' "$(printf 'Resolving packages...\nProceed? [y/N]\n' | classify '')" "a worker with no recorded harness is held too"
   assert_equals $'hardstop\tdestructive' "$(printf 'This will delete the staging database.\n\nContinue? [y/N] \n' | classify codex none)" "a warning a blank row above the prompt names the stop"
@@ -964,10 +979,24 @@ test_hook_hold_and_pane_are_one_decision() {
   hook_request hq 'sudo ls'
   FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 500 once >/dev/null 2>&1
   assert_equals 0 "$(grep -c '^resolved ' "$H/state/hq.status")" "a clear pane alone never closes the owner-reserved hold"
-  # The watchdog saw that prompt on hr's pane, so its leaving the pane closes it.
+  # The watchdog saw that prompt on hr's pane. One read without the prompt
+  # does not prove an answer, so the hook's reservation stays, and the prompt
+  # is still not declined when the pane shows it again.
   repaint hr "$FIX/claude-2.1.325-after-escape.txt"
   FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 600 once >/dev/null 2>&1
-  assert_equals 1 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/hr.status")" "a reserved prompt the watchdog saw leave the pane is closed: $(cat "$H/state/hr.status")"
+  assert_equals 0 "$(grep -c '^resolved ' "$H/state/hr.status")" "a reserved hold is not closed when its prompt leaves the pane: $(cat "$H/state/hr.status")"
+  assert_equals permission-prompt-hardstop "$(bash "$ROOT/bin/fm-permission-route.sh" held-keys "$H/state" hr)" "the hook still holds it"
+  repaint hr "$FIX/claude-2.1.325-bash-prompt.txt"
+  FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 620 once >/dev/null 2>&1
+  assert_equals '' "$(typed hr)" "the reserved prompt gets no Escape after a read that missed it"
+  assert_equals 1 "$(status_rows hr blocked permission-prompt-hardstop)" "and no second blocked line"
+  # The hook closes its own key when the request finishes, and the watchdog
+  # adds no second close on its next pass.
+  jq -cn '{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {command: "sudo ls"}}' \
+    | bash "$ROOT/bin/fm-permission-route.sh" claude-settled "$H/state" hr tool-finished
+  repaint hr "$FIX/claude-2.1.325-after-escape.txt"
+  FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 640 once >/dev/null 2>&1
+  assert_equals 1 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/hr.status")" "the finished request closes the reserved hold exactly once: $(cat "$H/state/hr.status")"
   assert_equals '' "$(bash "$ROOT/bin/fm-permission-route.sh" held-keys "$H/state" hr)" "the hook no longer holds it"
 
   # An ordinary hook hold whose pane shows a hard stop becomes one hard stop.
