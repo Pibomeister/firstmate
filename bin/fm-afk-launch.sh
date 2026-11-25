@@ -15,6 +15,15 @@
 # (bin/fm-afk-contract.sh owns the record schema; the words are the whole
 # mandate and no script parses them), then the AFK preflight
 # (bin/fm-afk-preflight.sh). The record is the posture in every harness.
+# An away `enter` always records the requested posture: open blockers in
+# the previous return gate (state/.afk-return-catchup) move into the new
+# record as carried items with their task, key, and reason, and the gate
+# is consumed only after that entry succeeds and any retained recovery
+# evidence it held is preserved in state/.afk-carried-retained for the
+# next return to re-check. Unrelated blockers never
+# refuse the posture; only the entry action itself (a usage error, a
+# quiet entry over a live away record, an unreadable standing record)
+# refuses, with its exact reason, leaving the gate untouched.
 # On Pi and pi-signed the entry ENDS there: the away daemon is no longer launched
 # on Pi, the ordinary supervision session keeps running in both postures, and
 # `start` refuses on those harnesses. The same holds for away mode (not quiet
@@ -37,8 +46,8 @@
 # broken-session latch holds, that the session is paused and when it retries;
 # either way a quiet `enter` refuses (exit 3) before writing anything, so quiet
 # mode never leaves a record that would park a present captain's main. While
-# an away record (one without the quiet mode a quiet entry records) is live on
-# that home, whatever state/.afk says, `quiet-check` (exit 2) and a quiet
+# an away record (one without the quiet mode a quiet entry records) is live,
+# whatever state/.afk says, `quiet-check` (exit 2) and a quiet
 # `enter` (exit 3) refuse and name it: the captain's return
 # (bin/fm-afk-return.sh and its catch-up gate) comes first. Where the attended
 # host lacks one of those parts, `quiet-check` names it and quiet mode enters
@@ -274,7 +283,7 @@ fm_afk_launch_requested_mode() {
 }
 
 # Whether /quiet needs anything here (the header's QUIET MODE): 0 when it needs
-# nothing; 2 while an away record is live on a home that runs the host;
+# nothing; 2 while an away record is live;
 # otherwise 1, with FM_AFK_LAUNCH_QUIET_WHY naming what the attended host
 # lacks on a home that runs it, or empty where quiet mode is the daemon's as
 # it is without the host (no host, another primary, or quiet mode already
@@ -282,12 +291,14 @@ fm_afk_launch_requested_mode() {
 fm_afk_launch_quiet_needs_nothing() {
   local harness config
   FM_AFK_LAUNCH_QUIET_WHY=
+  if fm_afk_contract_present "$FM_AFK_LAUNCH_STATE"; then
+    fm_afk_launch_record_quiet || return 2
+  fi
   harness=$(fm_afk_launch_primary_harness)
   fm_afk_launch_host_primary "$harness" || return 1
   config=${FM_CONFIG_OVERRIDE:-$FM_HOME/config}
   fm_supervision_host_enabled "$config" "$harness" || return 1
   if fm_afk_contract_present "$FM_AFK_LAUNCH_STATE"; then
-    fm_afk_launch_record_quiet || return 2
     return 1
   fi
   [ ! -e "$FM_AFK_LAUNCH_STATE/.afk" ] || return 1
@@ -386,10 +397,76 @@ fm_afk_launch_checkpoint_note() {
 
 fm_afk_launch_catchup_pending() {
   if [ -e "$FM_AFK_LAUNCH_STATE/.afk-return-catchup" ]; then
-    fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+    if [ "${FM_AFK_MODE:-}" = quiet ]; then
+      fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before entering quiet mode"
+    else
+      fm_afk_launch_log "return catch-up is still pending; run bin/fm-afk-return.sh check before re-entering away mode"
+    fi
     return 0
   fi
   return 1
+}
+
+# Enter must not consume a return seed that has not yet scanned blockers.
+# Taking the return lock here would deadlock with stop, which the return
+# already holds that lock when it calls. Refusing the incomplete seed is
+# the smaller fail-closed option: the gate stays, and the next enter
+# after return finishes carries the completed blocker rows.
+fm_afk_launch_catchup_draining() {
+  local gate="$FM_AFK_LAUNCH_STATE/.afk-return-catchup"
+  [ -f "$gate" ] || return 1
+  [ "$(awk -F '\t' '$1 == "phase" { print $2; exit }' "$gate")" = stopping-and-draining ]
+}
+
+# Away entry (not quiet) never refuses for the previous return's open
+# blockers: they move into the new posture record as carried items, each
+# with its own task, key, and reason (bin/fm-afk-contract.sh owns the
+# record). Only the entry action itself can still refuse (a usage error, a
+# quiet entry over a live away record, an unreadable standing record),
+# with its exact reason, and then the gate is left untouched. Prints the
+# carried file's path in FM_AFK_LAUNCH_CARRIED_FILE (empty when the gate
+# held no blocker row); the caller removes the gate only after a
+# successful entry, which is what moves the blockers.
+fm_afk_launch_carried_from_gate() {
+  local gate="$FM_AFK_LAUNCH_STATE/.afk-return-catchup"
+  FM_AFK_LAUNCH_CARRIED_FILE=
+  [ -f "$gate" ] || return 0
+  mkdir -p "$FM_AFK_LAUNCH_STATE" || return 1
+  FM_AFK_LAUNCH_CARRIED_FILE=$(mktemp "$FM_AFK_LAUNCH_STATE/.afk-carried.XXXXXX") || return 1
+  awk -F '\t' '$1 == "blocker" && $2 != "" && $3 != "" {
+      reason = $4; for (i = 5; i <= NF; i++) reason = reason " " $i
+      printf "%s\t%s\t%s\n", $2, $3, reason
+    }' "$gate" > "$FM_AFK_LAUNCH_CARRIED_FILE" || { rm -f "$FM_AFK_LAUNCH_CARRIED_FILE"; FM_AFK_LAUNCH_CARRIED_FILE=; return 1; }
+  [ -s "$FM_AFK_LAUNCH_CARRIED_FILE" ] || { rm -f "$FM_AFK_LAUNCH_CARRIED_FILE"; FM_AFK_LAUNCH_CARRIED_FILE=; }
+}
+
+# Retained recovery evidence from the gate being consumed: every
+# evidence, superseded, or retained-record row the gate held (for example an unreadable
+# archived or superseded posture record that still owes recovery) is
+# merged, deduplicated, into state/.afk-carried-retained before the gate
+# is deleted, so the obligation survives entry and the next return
+# re-checks it (bin/fm-afk-return.sh seeds its gate from that file and
+# owns the re-check). Blocker rows are not retained here: they move
+# into the posture record itself as carried items.
+fm_afk_launch_retain_gate_evidence() {  # <gate>
+  local gate=$1 retained rows pending contract_epoch tab
+  retained="$FM_AFK_LAUNCH_STATE/.afk-carried-retained"
+  tab=$(printf '\t')
+  rows=$(grep -E "^(evidence|superseded|retained-record)${tab}" "$gate" 2>/dev/null || true)
+  # The gate's contract row names the previous window's final archived
+  # record; retain it as a record the next return must re-validate, so a
+  # missing or unreadable earlier archive is never dropped with the gate.
+  contract_epoch=$(awk -F '\t' '$1 == "contract" { print $2; exit }' "$gate" 2>/dev/null || true)
+  case "$contract_epoch" in
+    ''|*[!0-9]*) ;;
+    *) rows="${rows:+$rows
+}retained-record${tab}$(fm_afk_contract_archive_dir "$FM_AFK_LAUNCH_STATE")/$contract_epoch.afk-contract" ;;
+  esac
+  [ -n "$rows" ] || return 0
+  pending=$(mktemp "$FM_AFK_LAUNCH_STATE/.afk-carried-retained.pending.XXXXXX") || return 1
+  { [ ! -f "$retained" ] || cat "$retained"; printf '%s\n' "$rows"; } \
+    | awk '!seen[$0]++' > "$pending" || { rm -f "$pending"; return 1; }
+  mv "$pending" "$retained" || { rm -f "$pending"; return 1; }
 }
 
 fm_afk_launch_record_require() {
@@ -406,8 +483,11 @@ fm_afk_launch_record_require() {
 }
 
 fm_afk_launch_enter() {
-  fm_afk_launch_catchup_pending && return 1
+  local gate="$FM_AFK_LAUNCH_STATE/.afk-return-catchup" had_gate=0 rc=0
   if [ "${FM_AFK_MODE:-}" = quiet ]; then
+    # A quiet record holds nothing for a return, so it cannot carry the
+    # previous away return's blockers; that entry still refuses, exactly.
+    fm_afk_launch_catchup_pending && return 1
     fm_afk_launch_quiet_needs_nothing
     case $? in
       0)
@@ -417,8 +497,29 @@ fm_afk_launch_enter() {
         fm_afk_launch_log "quiet mode refuses while this home's away record (state/.afk-contract) is live; run the /afk return (bin/fm-afk-return.sh) and pass its catch-up gate, then run bin/fm-afk-launch.sh quiet-check"
         return 3 ;;
     esac
+    "$FM_AFK_CONTRACT_CMD" enter "$@" || return
+  else
+    if fm_afk_launch_catchup_draining; then
+      fm_afk_launch_log "return catch-up is still draining; wait for bin/fm-afk-return.sh to finish before entering away mode"
+      return 1
+    fi
+    [ ! -e "$gate" ] || had_gate=1
+    fm_afk_launch_carried_from_gate || return 1
+    if [ -n "${FM_AFK_LAUNCH_CARRIED_FILE:-}" ]; then
+      "$FM_AFK_CONTRACT_CMD" enter "$@" --carried-file "$FM_AFK_LAUNCH_CARRIED_FILE" || rc=$?
+      rm -f "$FM_AFK_LAUNCH_CARRIED_FILE"
+      FM_AFK_LAUNCH_CARRIED_FILE=
+    else
+      "$FM_AFK_CONTRACT_CMD" enter "$@" || rc=$?
+    fi
+    [ "$rc" -eq 0 ] || return "$rc"
+    # The blockers have moved into the record; the old gate is consumed,
+    # after its retained recovery evidence is preserved for the next return.
+    if [ "$had_gate" -eq 1 ]; then
+      fm_afk_launch_retain_gate_evidence "$gate" || return 1
+      rm -f "$gate" || return 1
+    fi
   fi
-  "$FM_AFK_CONTRACT_CMD" enter "$@" || return
   "$FM_AFK_LAUNCH_DIR/fm-afk-preflight.sh" 2>/dev/null || true
   fm_afk_launch_host_engine_note
   fm_afk_launch_checkpoint_note
