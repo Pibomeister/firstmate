@@ -1211,7 +1211,7 @@ import os, shlex, sys
 assert not os.path.exists(shlex.split(open(sys.argv[1]).read())[1])
 PYTEST
   line_is_empty || fail 'remote command leaked local ticket'
-  assert_equals 'remote:m3|9|7' "$(awk -F '\t' '$2 == "admit" { h = $4; l = $5 } $2 == "done" { print h "|" l "|" $6 }' "$FM_TEST_QUEUE_DIR/workloads.tsv" 2>/dev/null)" 'local record of an offloaded run'
+  assert_equals 'remote:m3|9|remote:m3|7' "$(awk -F '\t' '$2 == "admit" { h = $4; l = $5 } $2 == "done" { print h "|" l "|" $4 "|" $6 }' "$FM_TEST_QUEUE_DIR/workloads.tsv" 2>/dev/null)" 'local record of an offloaded run'
   assert_equals 'local|7' "$(awk -F '\t' '$2 == "done" { print $4 "|" $6 }' "$CASE/remote-spool/workloads.tsv" 2>/dev/null)" 'remote record of an offloaded run'
   pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
 }

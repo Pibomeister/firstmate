@@ -170,6 +170,7 @@
 #   - an admit with no later done for its ticket, a ticket number with neither
 #     admit nor leave, a done without its admit, or a malformed row: the
 #     outcome of that ticket is unknown.
+#   - no record file: nothing is established about any run.
 # Coverage is read from the rows and the counter, with no heartbeat row:
 #   - A ticket has at most two rows: one admit or one leave, and one done after
 #     an admit. admit rows are in ticket order; done and leave rows are not.
