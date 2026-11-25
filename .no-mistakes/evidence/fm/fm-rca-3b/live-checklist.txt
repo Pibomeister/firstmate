@@ -1,0 +1,244 @@
+Synthetic local clock: 2026-11-24T07:44:59
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/due fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/due
+{run-worktree}/.checklist-live-erq6jkwc/due
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/due fm-postmortem-checklist.sh collect
+[exit 0]
+Synthetic local clock: 2026-11-24T07:45:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/due fm-postmortem-checklist.sh collect
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/due fm-postmortem-checklist.sh collect
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+[exit 0]
+SCENARIO PASS: Local CLI creates four named missing rows at 07:45, never early, without duplicate opening
+Synthetic local clock: 2026-11-23T20:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/return
+{run-worktree}/.checklist-live-erq6jkwc/return
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-afk-contract.sh enter --words 'collect overnight postmortem receipts'
+Away posture recorded at 2026-11-24T02:00:00Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-24T02:00:00Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    collect overnight postmortem receipts
+[exit 0]
+Synthetic local clock: 2026-11-24T07:45:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.checklist-live-erq6jkwc/return/artifacts/M3.md --hash e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/return/artifacts/M3.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-inbox.sh note 'postmortem-receipt	2026-11-24	local	{run-worktree}/.checklist-live-erq6jkwc/return/artifacts/local.md	5416f4a5950ad1111685d0b608d64c72db09071e02d01cfe3884fb5e98471c76'
+queued 1795527900-IaWsDm
+  postmortem-receipt 2026-11-24 local {run-worktree}
+  firstmate will pick this up at its next check.
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-inbox.sh note 'postmortem-receipt	2026-11-24	Studio	{run-worktree}/.checklist-live-erq6jkwc/return/artifacts/Studio.md	0000000000000000000000000000000000000000000000000000000000000000'
+queued 1795527900-OkUU6u
+  postmortem-receipt 2026-11-24 Studio {run-worktree}
+  firstmate will pick this up at its next check.
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-afk-return.sh begin
+fm-afk-launch: away-posture record archived at {run-worktree}/.checklist-live-erq6jkwc/return/state/afk-contracts/1795485600.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+=== Return brief (away 2026-11-24T02:00:00Z -> 2026-11-24T13:45:00Z, 11h45m) ===
+Supervisor health:
+  - GAP: watcher downtime was detected during the away window (recovery marker present)
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+Your instructions:
+  your words at entry:
+    collect overnight postmortem receipts
+  the away session took no action under them.
+Waiting on you:
+  overnight postmortems not received:
+    - Studio: 2026-11-24: artifact hash mismatch for {run-worktree}/.checklist-live-erq6jkwc/return/artifacts/Studio.md
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: GAP: watcher downtime was detected during the away window (recovery marker present)
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up wake: 1795527900 1 check inbox:1795527900-IaWsDm check: captain inbox note 1795527900-IaWsDm - postmortem-receipt 2026-11-24 local {run-worktree}
+catch-up wake: 1795527900 2 check inbox:1795527900-OkUU6u check: captain inbox note 1795527900-OkUU6u - postmortem-receipt 2026-11-24 Studio {run-worktree}
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 19697.1795527900.9JjRuw
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+[exit 0]
+SCENARIO PASS: Real local return CLI consumes ledger and inbox receipts across midnight; brief names missing Hetzner and bad-hash Studio
+Synthetic local clock: 2026-11-24T08:30:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-afk-contract.sh enter --words 'continue supervision'
+Away posture recorded at 2026-11-24T14:30:00Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-24T14:30:00Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    continue supervision
+[exit 0]
+Synthetic local clock: 2026-11-24T09:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-afk-return.sh begin
+fm-afk-launch: away-posture record archived at {run-worktree}/.checklist-live-erq6jkwc/return/state/afk-contracts/1795530600.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+=== Return brief (away 2026-11-24T14:30:00Z -> 2026-11-24T15:00:00Z, 30m) ===
+Supervisor health:
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+  - a wake was being handled at return (recovery marker pending:handling); not a gap
+Your instructions:
+  your words at entry:
+    continue supervision
+  the away session took no action under them.
+Waiting on you:
+  overnight postmortems not received:
+    - Studio: 2026-11-24: artifact hash mismatch for {run-worktree}/.checklist-live-erq6jkwc/return/artifacts/Studio.md
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+catch-up wake: 1795527900 1 check inbox:1795527900-IaWsDm check: captain inbox note 1795527900-IaWsDm - postmortem-receipt 2026-11-24 local {run-worktree}
+catch-up wake: 1795527900 2 check inbox:1795527900-OkUU6u check: captain inbox note 1795527900-OkUU6u - postmortem-receipt 2026-11-24 Studio {run-worktree}
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 19697.1795527900.9JjRuw
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+[exit 0]
+Synthetic local clock: 2026-11-25T09:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/return fm-postmortem-checklist.sh collect --since 1795617000
+Studio	open	2026-11-24: artifact hash mismatch for {run-worktree}/.checklist-live-erq6jkwc/return/artifacts/Studio.md
+Hetzner	open	2026-11-24: no artifact receipt recorded
+M3	open	2026-11-25: no artifact receipt recorded
+Studio	open	2026-11-25: no artifact receipt recorded
+Hetzner	open	2026-11-25: no artifact receipt recorded
+local	open	2026-11-25: no artifact receipt recorded
+[exit 0]
+SCENARIO PASS: Local CLI retains unresolved machines across away re-entry and later mornings
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/verification
+{run-worktree}/.checklist-live-erq6jkwc/verification
+[exit 0]
+Synthetic local clock: 2026-11-24T08:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh receipt --machine M3 --path artifacts/M3.md --hash e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/M3.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh receipt --machine Studio --path artifacts/Studio.md --hash a3fc0ca8b8b86a098f125bd71177816539df85caa019ba230df94cd52c3c01b6
+Studio	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Studio.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh receipt --machine Hetzner --path artifacts/Hetzner.md --hash a595761ab2690e0cdf48fb3fad7979c5c3adf758a539b1222e3c3c1174dc923c
+Hetzner	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Hetzner.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh receipt --machine local --path artifacts/local.md --hash 5416f4a5950ad1111685d0b608d64c72db09071e02d01cfe3884fb5e98471c76
+local	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/local.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh check
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/M3.md
+Studio	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Studio.md
+Hetzner	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Hetzner.md
+local	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/local.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh open
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/verification fm-postmortem-checklist.sh check
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/M3.md
+Studio	open	artifact hash mismatch for {run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Studio.md
+Hetzner	open	artifact missing at recorded path: {run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/Hetzner.md
+local	closed	{run-worktree}/.checklist-live-erq6jkwc/verification/artifacts/local.md
+[exit 1]
+SCENARIO PASS: Local CLI closes only verified artifacts, preserves relative receipts across directories, and reopens missing or changed files
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/conflict
+{run-worktree}/.checklist-live-erq6jkwc/conflict
+[exit 0]
+Synthetic local clock: 2026-11-24T08:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-inbox.sh note 'postmortem-receipt	2026-11-24	M3	{run-worktree}/.checklist-live-erq6jkwc/conflict/artifacts/M3.md	e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57'
+queued 1795528800-rqocCE
+  postmortem-receipt 2026-11-24 M3 {run-worktree}
+  firstmate will pick this up at its next check.
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-inbox.sh note 'postmortem-receipt	2026-11-24	M3	{run-worktree}/.checklist-live-erq6jkwc/conflict/artifacts/M3.md	0000000000000000000000000000000000000000000000000000000000000000'
+queued 1795528800-1ROQYg
+  postmortem-receipt 2026-11-24 M3 {run-worktree}
+  firstmate will pick this up at its next check.
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-postmortem-checklist.sh open
+M3	open	artifact receipt could not be verified
+Studio	open	no artifact receipt recorded
+Hetzner	open	no artifact receipt recorded
+local	open	no artifact receipt recorded
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-inbox.sh drain --ack 1795528800-1ROQYg 1795528800-rqocCE
+acked 1795528800-1ROQYg
+acked 1795528800-rqocCE
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-postmortem-checklist.sh collect
+M3	open	2026-11-24: artifact receipt could not be verified
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+[exit 0]
+Synthetic local clock: 2026-11-24T08:00:01
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.checklist-live-erq6jkwc/conflict/artifacts/M3.md --hash e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/conflict/artifacts/M3.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/conflict fm-postmortem-checklist.sh collect
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+[exit 0]
+SCENARIO PASS: Real inbox CLI acknowledgement preserves conflicting ties; strictly newer valid receipt closes M3
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/invalid fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/invalid
+{run-worktree}/.checklist-live-erq6jkwc/invalid
+[exit 0]
+Synthetic local clock: 2026-11-24T08:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/invalid fm-postmortem-checklist.sh start --night 2026-11-31
+fm-postmortem-checklist: night must be YYYY-MM-DD, got: 2026-11-31
+[exit 2]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/invalid fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.checklist-live-erq6jkwc/invalid/artifacts/M3.md --hash e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57 --night 2026-02-29
+fm-postmortem-checklist: night must be YYYY-MM-DD, got: 2026-02-29
+[exit 2]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/invalid fm-postmortem-checklist.sh collect
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+[exit 0]
+SCENARIO PASS: Local CLI refuses calendar-invalid input and keeps valid collection visible despite invalid legacy history
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-lab-home.sh create {run-worktree}/.checklist-live-erq6jkwc/no-hash
+{run-worktree}/.checklist-live-erq6jkwc/no-hash
+[exit 0]
+Synthetic local clock: 2026-11-24T08:00:00
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/M3.md --hash e8241c7f677579611d1fe7e5cb83cc5165c7b271163e58b4bdb3f229e29c6e57
+M3	closed	{run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/M3.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-postmortem-checklist.sh receipt --machine Studio --path {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Studio.md --hash a3fc0ca8b8b86a098f125bd71177816539df85caa019ba230df94cd52c3c01b6
+Studio	closed	{run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Studio.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-postmortem-checklist.sh receipt --machine Hetzner --path {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Hetzner.md --hash a595761ab2690e0cdf48fb3fad7979c5c3adf758a539b1222e3c3c1174dc923c
+Hetzner	closed	{run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Hetzner.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-postmortem-checklist.sh receipt --machine local --path {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/local.md --hash 5416f4a5950ad1111685d0b608d64c72db09071e02d01cfe3884fb5e98471c76
+local	closed	{run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/local.md
+[exit 0]
+$ FM_HOME={run-worktree}/.checklist-live-erq6jkwc/no-hash fm-postmortem-checklist.sh check
+M3	open	artifact hash verification failed for {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/M3.md
+Studio	open	artifact hash verification failed for {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Studio.md
+Hetzner	open	artifact hash verification failed for {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/Hetzner.md
+local	open	artifact hash verification failed for {run-worktree}/.checklist-live-erq6jkwc/no-hash/artifacts/local.md
+[exit 1]
+SCENARIO PASS: Real checklist CLI fails open for all four machines when SHA tools are unavailable
+All listed local product scenarios passed. No harness or production fleet was accessed.
+Disposable worktree lab removed.

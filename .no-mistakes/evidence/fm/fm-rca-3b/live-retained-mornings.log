@@ -1,0 +1,59 @@
+Local collection backfills due mornings and retains unresolved machines across later away windows
+Revision: b9d741afed1767f49eaea97d32c3bad0a8fca2a8
+Real worktree CLI; disposable marked FM_HOME; synthetic artifacts and local native clock.
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.postmortem-live-e9lu2334/retained-mornings
+{run-worktree}/.postmortem-live-e9lu2334/retained-mornings
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/M3.md --hash 874967b473bb75caf09405f2c15ae9cb276a58135a328121f3239dfe9e7aab80 --night 2026-11-22
+M3	closed	{run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/M3.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine Studio --path {run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/Studio.md --hash 5f360f03189b3d08756f7d23ca731a74f49fe99dd24c4c3e8b266e676ccda94d --night 2026-11-22
+Studio	closed	{run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/Studio.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine local --path {run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/local.md --hash 0eace32966634b11b5577a80568122de7021a77764bf9ac31558b2a99b15f7e8 --night 2026-11-22
+local	closed	{run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/local.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh collect --since 1795399200
+Hetzner	open	2026-11-22: no artifact receipt recorded
+M3	open	2026-11-23: no artifact receipt recorded
+Studio	open	2026-11-23: no artifact receipt recorded
+Hetzner	open	2026-11-23: no artifact receipt recorded
+local	open	2026-11-23: no artifact receipt recorded
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh collect --since 1795583487
+Hetzner	open	2026-11-22: no artifact receipt recorded
+M3	open	2026-11-23: no artifact receipt recorded
+Studio	open	2026-11-23: no artifact receipt recorded
+Hetzner	open	2026-11-23: no artifact receipt recorded
+local	open	2026-11-23: no artifact receipt recorded
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine Hetzner --path {run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/Hetzner.md --hash 2d0411739dd9340e6b61d632f6d257b425c82ad011f8cbd4c8dad2e5db0b4f7c --night 2026-11-22
+Hetzner	closed	{run-worktree}/.postmortem-live-e9lu2334/retained-mornings/artifacts/Hetzner.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/retained-mornings {run-worktree}/bin/fm-postmortem-checklist.sh collect --since 1795583489
+M3	open	2026-11-23: no artifact receipt recorded
+Studio	open	2026-11-23: no artifact receipt recorded
+Hetzner	open	2026-11-23: no artifact receipt recorded
+local	open	2026-11-23: no artifact receipt recorded
+M3	open	2026-11-24: no artifact receipt recorded
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+EXIT 0
+

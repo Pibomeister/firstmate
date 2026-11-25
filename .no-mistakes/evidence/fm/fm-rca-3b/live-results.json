@@ -1,0 +1,58 @@
+[
+  {
+    "name": "Local collection after 07:45 creates all four missing-machine rows once",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-morning-checklist.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local receipts close matching artifacts across working directories and reopen changed or missing files",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-artifact-verification.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local inbox receipts survive acknowledgement; conflicting same-second receipts remain open until a newer valid receipt",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-inbox-arbitration.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local collection backfills due mornings and retains unresolved machines across later away windows",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-retained-mornings.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local checklist rejects impossible dates and isolates malformed historical state",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-calendar-validation.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local checklist keeps every machine open when SHA tools are unavailable",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-hash-unavailable.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local morning return names missing and bad-hash machines while preserving existing artifact content",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-return-brief.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  },
+  {
+    "name": "Local malformed-posture return stays gated without creating 1970 checklists or hiding retained rows",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M88ESZEM0X1FSQ08VFD3QR76/live-malformed-posture.log",
+    "reason": "Executed real CLI against isolated synthetic lab data."
+  }
+]

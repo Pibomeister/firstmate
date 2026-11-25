@@ -1,0 +1,90 @@
+Local morning return names missing and bad-hash machines while preserving existing artifact content
+Revision: b9d741afed1767f49eaea97d32c3bad0a8fca2a8
+Real worktree CLI; disposable marked FM_HOME; synthetic artifacts and local native clock.
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.postmortem-live-e9lu2334/return-brief
+{run-worktree}/.postmortem-live-e9lu2334/return-brief
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-afk-contract.sh enter --words 'Observe receipts; do not write postmortem content.'
+Away posture recorded at 2026-11-25T05:11:40Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-25T05:11:40Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    Observe receipts; do not write postmortem content.
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine M3 --path {run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/M3.md --hash 874967b473bb75caf09405f2c15ae9cb276a58135a328121f3239dfe9e7aab80 --night 2026-11-24
+M3	closed	{run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/M3.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-postmortem-checklist.sh receipt --machine Studio --path {run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/Studio.md --hash 0000000000000000000000000000000000000000000000000000000000000000 --night 2026-11-24
+Studio	open	artifact hash mismatch for {run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/Studio.md
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-inbox.sh note --json -- 'postmortem-receipt	2026-11-24	local	{run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/local.md	0eace32966634b11b5577a80568122de7021a77764bf9ac31558b2a99b15f7e8'
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1795583502-iVQmRd","request_id":null,"saved":true,"announced":true,"acknowledged":false,"path":"{run-worktree}/.postmortem-live-e9lu2334/return-brief/state/inbox/1795583502-iVQmRd.note"}
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-afk-return.sh begin
+fm-afk-launch: away-posture record archived at {run-worktree}/.postmortem-live-e9lu2334/return-brief/state/afk-contracts/1795583500.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+=== Return brief (away 2026-11-25T05:11:40Z -> 2026-11-25T05:12:15Z, 35s) ===
+Supervisor health:
+  - GAP: watcher downtime was detected during the away window (recovery marker present)
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+Your instructions:
+  your words at entry:
+    Observe receipts; do not write postmortem content.
+  the away session took no action under them.
+Waiting on you:
+  overnight postmortems not received:
+    - Studio: 2026-11-24: artifact hash mismatch for {run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/Studio.md
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: GAP: watcher downtime was detected during the away window (recovery marker present)
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up wake: 1795583503 1 check inbox:1795583502-iVQmRd check: captain inbox note 1795583502-iVQmRd - postmortem-receipt 2026-11-24 local {run-worktree}
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 72687.1795583505.ulmAFs
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/return-brief {run-worktree}/bin/fm-afk-return.sh check
+=== Return brief ===
+Supervisor health:
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+  - a wake was being handled at return (recovery marker pending:handling); not a gap
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  overnight postmortems not received:
+    - Studio: 2026-11-24: artifact hash mismatch for {run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/Studio.md
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up health: a wake was being handled at return (recovery marker pending:handling); not a gap
+catch-up wake: 1795583503 1 check inbox:1795583502-iVQmRd check: captain inbox note 1795583502-iVQmRd - postmortem-receipt 2026-11-24 local {run-worktree}
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 72687.1795583505.ulmAFs
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+EXIT 0
+
+Persisted checklist:
+2026-11-24	M3	receipt	{run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/M3.md	874967b473bb75caf09405f2c15ae9cb276a58135a328121f3239dfe9e7aab80	1795583501
+2026-11-24	Studio	receipt	{run-worktree}/.postmortem-live-e9lu2334/return-brief/artifacts/Studio.md	0000000000000000000000000000000000000000000000000000000000000000	1795583502

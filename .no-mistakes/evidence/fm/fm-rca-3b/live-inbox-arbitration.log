@@ -1,0 +1,45 @@
+Local inbox receipts survive acknowledgement; conflicting same-second receipts remain open until a newer valid receipt
+Revision: b9d741afed1767f49eaea97d32c3bad0a8fca2a8
+Real worktree CLI; disposable marked FM_HOME; synthetic artifacts and local native clock.
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.postmortem-live-e9lu2334/inbox-receipts
+{run-worktree}/.postmortem-live-e9lu2334/inbox-receipts
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-inbox.sh note --json -- 'postmortem-receipt	2026-11-24	M3	{run-worktree}/.postmortem-live-e9lu2334/inbox-receipts/artifacts/M3.md	874967b473bb75caf09405f2c15ae9cb276a58135a328121f3239dfe9e7aab80'
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1795583474-UNVgCG","request_id":null,"saved":true,"announced":true,"acknowledged":false,"path":"{run-worktree}/.postmortem-live-e9lu2334/inbox-receipts/state/inbox/1795583474-UNVgCG.note"}
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-postmortem-checklist.sh collect
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-inbox.sh drain --ack 1795583474-UNVgCG
+acked 1795583474-UNVgCG
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-postmortem-checklist.sh open
+Studio	open	no artifact receipt recorded
+Hetzner	open	no artifact receipt recorded
+local	open	no artifact receipt recorded
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-postmortem-checklist.sh open
+M3	open	artifact receipt could not be verified
+Studio	open	no artifact receipt recorded
+Hetzner	open	no artifact receipt recorded
+local	open	no artifact receipt recorded
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-inbox.sh note --json -- 'postmortem-receipt	2026-11-24	M3	{run-worktree}/.postmortem-live-e9lu2334/inbox-receipts/artifacts/M3.md	874967b473bb75caf09405f2c15ae9cb276a58135a328121f3239dfe9e7aab80'
+{"schema":"fm-inbox-note.v1","outcome":"created","id":"1795583480-FbHFRS","request_id":null,"saved":true,"announced":true,"acknowledged":false,"path":"{run-worktree}/.postmortem-live-e9lu2334/inbox-receipts/state/inbox/1795583480-FbHFRS.note"}
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/inbox-receipts {run-worktree}/bin/fm-postmortem-checklist.sh collect
+Studio	open	2026-11-24: no artifact receipt recorded
+Hetzner	open	2026-11-24: no artifact receipt recorded
+local	open	2026-11-24: no artifact receipt recorded
+EXIT 0
+

@@ -1,0 +1,16 @@
+{
+  "command": "FM_HOME=<disposable marked lab> bash bin/fm-afk-return.sh begin",
+  "input_posture": "version: 1\nentered: 2026-09-08T08:00:00Z\nentered_epoch: 123\nwords: |-\n  synthetic recovery words\n",
+  "elapsed_seconds": 42.85,
+  "exit_after_controlled_stop": -15,
+  "first_manufactured_ledger_rows": [
+    "1970-01-01\t-\topened\t\t\t1795582152",
+    "1970-01-02\t-\topened\t\t\t1795582152",
+    "1970-01-03\t-\topened\t\t\t1795582153"
+  ],
+  "last_manufactured_ledger_row": [
+    "1970-01-03\t-\topened\t\t\t1795582153"
+  ],
+  "observation": "The real return command began persisting January 1970 checklists from an invalid posture epoch. Stopped after three rows; it had not returned the recovery brief.",
+  "expected": "Malformed posture stays gated and presents recovery evidence without backfilling decades of unrelated mornings."
+}

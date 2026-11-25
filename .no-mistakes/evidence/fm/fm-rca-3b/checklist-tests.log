@@ -1,0 +1,14 @@
+ok - acknowledgement between listing and reading preserves receipt verification for every command
+ok - Gregorian input validation rejects impossible dates and isolates invalid legacy rows
+ok - each command reads every ledger and inbox input once while preserving historical verification
+ok - relative receipts identify the same artifact from another directory
+ok - missing or failing SHA tools keep every affected machine named and open
+ok - collection creates every due morning and consumes durable inbox receipts
+ok - unresolved machines remain visible across away windows and mornings until verified
+ok - conflicting receipts stay open across filename orders, inbox locations, and ledger boundaries
+ok - identical receipt ties and known ledger order retain the successful path
+ok - a missing machine is named open and a present artifact with a bad hash stays open
+ok - check passes only when every row verifies, and missing or changed artifacts reopen their rows
+ok - an unopened night and malformed receipt input are refused without recording anything
+ok - a receipt recorded before start still opens the night with the other machines named open
+all fm-postmortem-checklist tests passed

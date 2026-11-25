@@ -1,0 +1,107 @@
+Local malformed-posture return stays gated without creating 1970 checklists or hiding retained rows
+Revision: b9d741afed1767f49eaea97d32c3bad0a8fca2a8
+Real worktree CLI; disposable marked FM_HOME; synthetic artifacts and local native clock.
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/malformed-posture {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.postmortem-live-e9lu2334/malformed-posture
+{run-worktree}/.postmortem-live-e9lu2334/malformed-posture
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/malformed-posture {run-worktree}/bin/fm-postmortem-checklist.sh start --night 2000-01-01
+night=2000-01-01 machines=M3 Studio Hetzner local
+EXIT 0
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/malformed-posture {run-worktree}/bin/fm-afk-return.sh begin
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: away-posture record at {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract is invalid; refusing to archive
+fm-afk-launch: failed to archive the away-posture record; it still stands
+fm-afk-launch: away mode stopped; terminal teardown or the record archive remains recorded for retry
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+=== Return brief ===
+Supervisor health:
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+  - away-posture record unreadable: {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract; catch-up stays gated
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  overnight postmortems not received:
+    - M3: 2000-01-01: no artifact receipt recorded
+    - Studio: 2000-01-01: no artifact receipt recorded
+    - Hetzner: 2000-01-01: no artifact receipt recorded
+    - local: 2000-01-01: no artifact receipt recorded
+    - M3: 2026-11-24: no artifact receipt recorded
+    - Studio: 2026-11-24: no artifact receipt recorded
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+    - local: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up lifecycle: away-mode shutdown failed; lifecycle state preserved for retry
+catch-up lifecycle: away-posture record unreadable: {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+EXIT 3
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/malformed-posture {run-worktree}/bin/fm-afk-return.sh check
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-contract: away-posture record at {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract is invalid; refusing to archive
+fm-afk-launch: failed to archive the away-posture record; it still stands
+fm-afk-launch: away mode stopped; terminal teardown or the record archive remains recorded for retry
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+=== Return brief ===
+Supervisor health:
+  - GAP: the watcher beat was 999999s old at return (grace 300s)
+  - away-posture record unreadable: {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract; catch-up stays gated
+Your instructions:
+  (no away-posture record for this window; legacy away flag only)
+Waiting on you:
+  overnight postmortems not received:
+    - M3: 2000-01-01: no artifact receipt recorded
+    - Studio: 2000-01-01: no artifact receipt recorded
+    - Hetzner: 2000-01-01: no artifact receipt recorded
+    - local: 2000-01-01: no artifact receipt recorded
+    - M3: 2026-11-24: no artifact receipt recorded
+    - Studio: 2026-11-24: no artifact receipt recorded
+    - Hetzner: 2026-11-24: no artifact receipt recorded
+    - local: 2026-11-24: no artifact receipt recorded
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 0 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: GAP: the watcher beat was 999999s old at return (grace 300s)
+catch-up lifecycle: away-mode shutdown failed; lifecycle state preserved for retry
+catch-up lifecycle: away-posture record unreadable: {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract; catch-up stays gated
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+EXIT 3
+
+$ FM_HOME={run-worktree}/.postmortem-live-e9lu2334/malformed-posture {run-worktree}/bin/fm-afk-return.sh guard
+fm-afk-contract: record {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract has no valid expected_return
+fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work
+EXIT 3
+
+Persisted checklist (only seeded history plus current morning):
+2000-01-01	-	opened			1795583547
+2026-11-24	-	opened			1795583581
+Retained recovery gate:
+schema	fm-afk-return.v1
+started	1795583549
+phase	blocked
+evidence	health	GAP: the watcher beat was 999999s old at return (grace 300s)
+evidence	lifecycle	away-mode shutdown failed; lifecycle state preserved for retry
+evidence	lifecycle	away-posture record unreadable: {run-worktree}/.postmortem-live-e9lu2334/malformed-posture/state/.afk-contract; catch-up stays gated

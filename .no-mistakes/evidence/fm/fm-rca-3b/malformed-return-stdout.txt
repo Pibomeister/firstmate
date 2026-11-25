@@ -1,0 +1,6 @@
+fm-afk-contract: record {run-worktree}/.malformed-return-t9257rq9/state/.afk-contract has no valid expected_return
+fm-afk-contract: record {run-worktree}/.malformed-return-t9257rq9/state/.afk-contract has no valid expected_return
+fm-afk-contract: away-posture record at {run-worktree}/.malformed-return-t9257rq9/state/.afk-contract is invalid; refusing to archive
+fm-afk-launch: failed to archive the away-posture record; it still stands
+fm-afk-launch: away mode stopped; terminal teardown or the record archive remains recorded for retry
+fm-afk-contract: record {run-worktree}/.malformed-return-t9257rq9/state/.afk-contract has no valid expected_return
