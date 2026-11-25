@@ -366,6 +366,15 @@ assert_not_contains "$out" "order:$park" 'an order parked with its outcome is re
 assert_contains "$(tail -1 "$TEST_HOME/state/reset-audit.tsv")" "order:$lost" 'the audit row names the lost order'
 pass 'durable captain orders must stay open or finish with their done or parked record across a reset'
 
+new_home order-race
+mkdir -p "$TEST_HOME/data/orders/pending" "$TEST_HOME/data/orders/acked"
+printf 'id=1700000000-0123abcd\nkind=order\n--\nraced\n' > "$TEST_HOME/data/orders/pending/1700000000-0123abcd.order"
+cp "$TEST_HOME/data/orders/pending/1700000000-0123abcd.order" "$TEST_HOME/data/orders/acked/"
+snapshot raced
+out=$(node -e 'const m = require(process.argv[1]); console.log(JSON.stringify(m.orders))' "$TEST_HOME/raced.json")
+[ "$out" = '[{"id":"1700000000-0123abcd","state":"acked"}]' ] || fail "an order seen in two states was not kept once in its later state: $out"
+pass 'an order renamed between two directory reads is kept once, in its later state'
+
 new_home at-epoch
 snapshot before
 audit compare --before "$TEST_HOME/before.json" --kind handoff --at 12345 >/dev/null || fail 'compare --at'
@@ -413,7 +422,8 @@ assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" later-item '
 touch -t 202001010000 "$TEST_HOME/state/reset-audit-staged.json"
 at "$T" begin --kind handoff --if-staged || fail 'begin over an old staged snapshot'
 expect_code 0 "$(waiting handoff)" 'a handoff that never happened was recorded from its old snapshot'
-assert_absent "$TEST_HOME/state/reset-audit-staged.json" 'the old staged snapshot was left to be recorded later'
+at "$T" begin --kind handoff --if-staged || fail 'a second begin over an old staged snapshot'
+expect_code 0 "$(waiting handoff)" 'a later caller recorded a handoff that never happened'
 assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'the check was armed with nothing waiting'
 pass 'a staged snapshot older than 30 minutes is replaced by the launcher and never recorded as a handoff'
 
@@ -438,6 +448,30 @@ expect_code 2 "$rc" 'a non-numeric --for is refused'
 audit stage --for 600 >/dev/null 2>&1; rc=$?
 expect_code 2 "$rc" '--for without --if-absent is refused'
 pass 'the launcher keeps a staged snapshot only when it stays fresh through the whole launch budget'
+
+new_home long-launch
+seed
+now=$(date +%s)
+audit stage || fail 'stage'
+fm_touch_epoch $((now - 10 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+audit stage --if-absent --for 2400 || fail 'stage for a launch budget above 30 minutes'
+tasks add long-item 'filed while the launch waited' --queue >/dev/null || fail 'long item'
+fm_touch_epoch $((now - 35 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'the successor session start during a long launch'
+expect_code 0 "$(waiting handoff)" 'a session start recorded a snapshot older than 30 minutes'
+assert_present "$TEST_HOME/state/reset-audit-staged.json" 'a session start removed the snapshot the launch still needs'
+at "$T" begin --kind handoff --if-staged --for 2400 || fail 'the verified transfer of a long launch'
+expect_code 1 "$(waiting handoff)" 'a handoff verified 35 minutes into a 40-minute launch was not recorded'
+at $((T + 600)) settle >/dev/null 2>&1 || fail 'settle the long launch'
+expect_code 1 "$(rows)" 'a long launch did not produce exactly one row'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit.tsv")" "$T"$'\t'"handoff" 'the long launch row is a handoff'
+audit stage || fail 'restage'
+fm_touch_epoch $((now - 45 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged --for 2400 || fail 'begin over a snapshot older than the budget'
+expect_code 0 "$(waiting handoff)" 'a snapshot older than the launch budget was recorded'
+audit begin --kind handoff --for 2400 >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" '--for without --if-staged is refused'
+pass 'a launch longer than 30 minutes still records its verified handoff exactly once'
 
 new_home compaction-loss
 seed

@@ -7,7 +7,7 @@
 #                     [--kind compaction|handoff] [--at <epoch>]
 #                     [--strict|--no-strict]
 #   fm-reset-audit.sh stage [--if-absent [--for <seconds>]]
-#   fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]
+#   fm-reset-audit.sh begin --kind compaction|handoff [--if-staged [--for <seconds>]]
 #   fm-reset-audit.sh settle [--now]
 #   fm-reset-audit.sh sweep
 #   fm-reset-audit.sh arm [--if-needed] | disarm
@@ -62,7 +62,10 @@
 #            snapshot by rename, so of two --if-staged callers only one
 #            records it; --if-staged does nothing when none is staged. A
 #            staged snapshot older than 30 minutes belongs to a handoff that
-#            never happened and is removed, not recorded. A compaction, or a
+#            never happened and is not recorded; it stays until the next
+#            stage replaces it. --for <seconds> widens that age limit to the
+#            given time and a minute more, for the launcher's verified
+#            transfer of the snapshot its launch staged. A compaction, or a
 #            handoff with nothing staged, takes a snapshot now, bounded to 12
 #            seconds. The snapshot waits in
 #            state/reset-audit-pending/<epoch>-<kind>-<pid>.json, and begin
@@ -176,12 +179,12 @@ pending_count() {  # the resets settle will take up: <epoch>-*.json files
   printf '%s\n' "$count"
 }
 
-staged_fresh() {  # [seconds it must stay fresh for]
-  local keep=$STAGED_MAX_MIN
-  [ "${1:-0}" -eq 0 ] || keep=$((STAGED_MAX_MIN - (${1} + 59) / 60 - 1))
-  [ "$keep" -gt 0 ] && [ -f "$STAGED" ] && [ ! -L "$STAGED" ] \
-    && [ -z "$(find "$STAGED" -mmin +"$keep" 2>/dev/null)" ]
+staged_within() {  # <minutes>
+  [ "$1" -gt 0 ] && [ -f "$STAGED" ] && [ ! -L "$STAGED" ] \
+    && [ -z "$(find "$STAGED" -mmin +"$1" 2>/dev/null)" ]
 }
+
+budget_minutes() { printf '%s\n' $(( ($1 + 59) / 60 + 1 )); }
 
 late_successor_waits() {
   [ -n "$(env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --waiting 2>/dev/null | head -n 1)" ]
@@ -196,10 +199,10 @@ cmd_stage() {
   local usage='usage: fm-reset-audit.sh stage [--if-absent [--for <seconds>]]'
   case "$#:${1:-}:${2:-}:${3:-}" in
     0:::) ;;
-    1:--if-absent::) ! staged_fresh || return 0 ;;
+    1:--if-absent::) ! staged_within "$STAGED_MAX_MIN" || return 0 ;;
     3:--if-absent:--for:*)
       case "$3" in ''|*[!0-9]*) lifecycle_die "$usage" ;; esac
-      ! staged_fresh "$3" || return 0
+      ! staged_within $((STAGED_MAX_MIN - $(budget_minutes "$3"))) || return 0
       ;;
     *) lifecycle_die "$usage" ;;
   esac
@@ -207,31 +210,36 @@ cmd_stage() {
 }
 
 cmd_begin() {
-  local kind='' if_staged=0 dest
+  local kind="" if_staged=0 dest budget="" window=$STAGED_MAX_MIN
+  local usage='usage: fm-reset-audit.sh begin --kind compaction|handoff [--if-staged [--for <seconds>]]'
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --kind) kind=${2:-}; shift 2 2>/dev/null || shift ;;
       --if-staged) if_staged=1; shift ;;
-      *) lifecycle_die 'usage: fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]' ;;
+      --for) budget=${2:-}; shift 2 2>/dev/null || shift
+        case "$budget" in ''|*[!0-9]*) lifecycle_die "$usage" ;; esac ;;
+      *) lifecycle_die "$usage" ;;
     esac
   done
   case "$kind" in
     compaction|handoff) ;;
-    *) lifecycle_die 'usage: fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]' ;;
+    *) lifecycle_die "$usage" ;;
   esac
   [ "$if_staged" -eq 0 ] || [ "$kind" = handoff ] || lifecycle_die '--if-staged applies to a handoff only'
+  if [ -n "$budget" ]; then
+    [ "$if_staged" -eq 1 ] || lifecycle_die '--for applies to --if-staged only'
+    [ "$(budget_minutes "$budget")" -le "$window" ] || window=$(budget_minutes "$budget")
+  fi
   if [ "$if_staged" -eq 1 ] && [ ! -f "$STAGED" ]; then return 0; fi
   mkdir -p "$PENDING" || return 1
   dest="$PENDING/$(fm_now)-$kind-$$.json"
   if [ "$kind" = handoff ]; then
-    if staged_fresh; then
+    if staged_within "$window"; then
       # The rename is the claim: a second caller finds nothing to rename.
       if mv -- "$STAGED" "$dest" 2>/dev/null; then
         arm_quietly
         return 0
       fi
-    elif [ -f "$STAGED" ] && [ ! -L "$STAGED" ]; then
-      rm -f -- "$STAGED"
     fi
     [ "$if_staged" -eq 0 ] || return 0
   fi
@@ -619,7 +627,9 @@ try {
     });
     // bin/fm-order.sh owns the layout: data/orders/<state>/<id>.order, and a
     // finished order's done/ or parked/ <id>.outcome.
-    const orders = [], finished = [];
+    // States are read in lifecycle order, so an order renamed between two
+    // reads keeps only its later state.
+    const orders = new Map(), finished = new Map();
     const ordersDir = inside(path.join(home, 'data/orders'));
     for (const state of ['pending', 'acked', 'done', 'parked']) {
       let names;
@@ -628,14 +638,15 @@ try {
       for (const name of names) {
         const id = name.slice(0, -6);
         if (!name.endsWith('.order') || !/^[0-9]+-[0-9a-f]{8}$/.test(id)) continue;
-        if (['pending', 'acked'].includes(state)) orders.push({ id, state });
-        else if (fs.existsSync(path.join(ordersDir, state, id + '.outcome'))) finished.push({ id, state });
+        if (['pending', 'acked'].includes(state)) { orders.set(id, { id, state }); continue; }
+        orders.delete(id);
+        if (fs.existsSync(path.join(ordersDir, state, id + '.outcome'))) finished.set(id, { id, state });
       }
     }
     return { version: 1, home, goals: sorted([...goals.values()].filter(row => ['received', 'queued'].includes(row.event))),
       holds: sorted(holds), tasks: sorted(active), backlog: sorted(rows.filter(row => row.state !== 'done').map(({ id, state }) => ({ id, state }))),
-      orders: sorted(orders),
-      evidence: { goals: sorted(terminalGoals), orders: sorted(finished),
+      orders: sorted([...orders.values()]),
+      evidence: { goals: sorted(terminalGoals), orders: sorted([...finished.values()]),
         done: sorted([...done.map(row => ({ id: row.id, token: 'live:' + digest(JSON.stringify(row)) })),
           ...archived.map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
   }

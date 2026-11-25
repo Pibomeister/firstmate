@@ -353,7 +353,7 @@ record_completion() {
   HANDOFF_COMPLETE=1
   fm_failover_log "event=successor_ready pid=$(cat "$STATE/.lock") $SUCC_RECORD" || true
   # The transfer is verified: this handoff is a reset the audit must settle.
-  FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff --if-staged >/dev/null 2>&1 || true
+  FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff --if-staged --for "$TIMEOUT" >/dev/null 2>&1 || true
 }
 
 # The predecessor's own endpoint, for bin/fm-handoff-close.sh after a committed
