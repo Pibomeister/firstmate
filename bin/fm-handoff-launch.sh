@@ -63,7 +63,8 @@
 # how it releases a planned fresh start's Stop gate for the surviving session.
 # Before its budget starts, a launch runs bin/fm-handoff-reconcile.sh --apply,
 # which ends a late successor of an earlier failed attempt, and stages the
-# reset audit's snapshot when bin/fm-ledger.sh handoff did not; a verified
+# reset audit's snapshot when bin/fm-ledger.sh handoff did not or its snapshot
+# would go stale before this launch's budget ends; a verified
 # transfer records the handoff with bin/fm-reset-audit.sh begin. Those scripts
 # own the rules; the calls never fail a launch and spend none of its budget.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
@@ -316,7 +317,7 @@ rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
 # (bin/fm-handoff-reconcile.sh), and make sure the reset audit has this
 # handoff's "before" snapshot (bin/fm-reset-audit.sh). Neither fails the launch.
 fm_run_timed 8 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply >/dev/null 2>&1 || true
-FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" stage --if-absent >/dev/null 2>&1 || true
+FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" stage --if-absent --for "$TIMEOUT" >/dev/null 2>&1 || true
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 

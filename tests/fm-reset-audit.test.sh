@@ -331,6 +331,41 @@ waiting() { find "$TEST_HOME/state/reset-audit-pending" -maxdepth 1 -name "*-$1-
 rows() { if [ -f "$TEST_HOME/state/reset-audit.tsv" ]; then wc -l < "$TEST_HOME/state/reset-audit.tsv" | tr -d ' '; else echo 0; fi; }
 T=1700000000
 
+new_home orders
+ORDER="$ROOT/bin/fm-order.sh"
+order() { FM_HOME="$TEST_HOME" bash "$ORDER" "$@"; }
+order_id() { order send --from test -- "$1" 2>/dev/null | awk 'NR == 1 { print $2 }'; }
+kept=$(order_id 'keep this order open')
+lost=$(order_id 'this order will vanish')
+shut=$(order_id 'closed without an outcome')
+fin=$(order_id 'finished with an outcome')
+park=$(order_id 'parked with a reason')
+for id in "$kept" "$lost" "$shut" "$fin" "$park"; do
+  [ -n "$id" ] && [ -f "$TEST_HOME/data/orders/pending/$id.order" ] || fail "order send did not record an order: $id"
+done
+order ack "$shut" >/dev/null || fail 'ack'
+order ack "$fin" >/dev/null || fail 'ack'
+order ack "$park" >/dev/null || fail 'ack'
+snapshot before
+assert_contains "$(cat "$TEST_HOME/before.json")" "$kept" 'snapshot lists an open order'
+order finish "$fin" 'done' -- 'finished it' >/dev/null || fail 'finish done'
+order finish "$park" parked -- 'set aside' >/dev/null || fail 'finish parked'
+snapshot finished
+out=$(audit compare --before "$TEST_HOME/before.json" --after "$TEST_HOME/finished.json" --kind handoff) \
+  || fail "orders still open or finished with their record failed: $out"
+[ "$out" = 'PASS kind=handoff' ] || fail "unexpected verdict for orders still open or finished with their record: $out"
+rm -f "$TEST_HOME/data/orders/pending/$lost.order"
+mv "$TEST_HOME/data/orders/acked/$shut.order" "$TEST_HOME/data/orders/done/$shut.order"
+out=$(audit compare --before "$TEST_HOME/before.json" --kind handoff 2>&1); rc=$?
+expect_code 1 "$rc" 'a lost order fails the strict comparison'
+assert_contains "$out" "order:$lost" 'an open order missing after the reset is DRIFT'
+assert_contains "$out" "order:$shut" 'an order closed without its outcome record is DRIFT'
+assert_not_contains "$out" "order:$kept" 'an order still open is reported as drift'
+assert_not_contains "$out" "order:$fin" 'an order finished done with its outcome is reported as drift'
+assert_not_contains "$out" "order:$park" 'an order parked with its outcome is reported as drift'
+assert_contains "$(tail -1 "$TEST_HOME/state/reset-audit.tsv")" "order:$lost" 'the audit row names the lost order'
+pass 'durable captain orders must stay open or finish with their done or parked record across a reset'
+
 new_home at-epoch
 snapshot before
 audit compare --before "$TEST_HOME/before.json" --kind handoff --at 12345 >/dev/null || fail 'compare --at'
@@ -381,6 +416,28 @@ expect_code 0 "$(waiting handoff)" 'a handoff that never happened was recorded f
 assert_absent "$TEST_HOME/state/reset-audit-staged.json" 'the old staged snapshot was left to be recorded later'
 assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'the check was armed with nothing waiting'
 pass 'a staged snapshot older than 30 minutes is replaced by the launcher and never recorded as a handoff'
+
+new_home launch-budget
+seed
+now=$(date +%s)
+audit stage || fail 'stage'
+fm_touch_epoch $((now - 25 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+tasks add launch-item 'filed after the handoff was written' --queue >/dev/null || fail 'launch item'
+audit stage --if-absent --for 600 || fail 'stage --if-absent --for over a snapshot that would age out during the launch'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" launch-item '--for kept a snapshot that ages out before the launch budget ends'
+fm_touch_epoch $((now - 25 * 60 + 600)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'begin at the end of the launch budget'
+expect_code 1 "$(waiting handoff)" 'a handoff verified at the end of its launch budget was not recorded'
+audit stage || fail 'restage'
+tasks add kept-item 'filed after the second stage' --queue >/dev/null || fail 'kept item'
+fm_touch_epoch $((now - 18 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+audit stage --if-absent --for 600 || fail 'stage --if-absent --for over a snapshot that outlives the launch'
+assert_not_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" kept-item '--for replaced a snapshot that outlives the launch budget'
+audit stage --if-absent --for soon >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'a non-numeric --for is refused'
+audit stage --for 600 >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" '--for without --if-absent is refused'
+pass 'the launcher keeps a staged snapshot only when it stays fresh through the whole launch budget'
 
 new_home compaction-loss
 seed

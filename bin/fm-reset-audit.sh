@@ -6,7 +6,7 @@
 #   fm-reset-audit.sh compare --before <file> [--after <file>]
 #                     [--kind compaction|handoff] [--at <epoch>]
 #                     [--strict|--no-strict]
-#   fm-reset-audit.sh stage [--if-absent]
+#   fm-reset-audit.sh stage [--if-absent [--for <seconds>]]
 #   fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]
 #   fm-reset-audit.sh settle [--now]
 #   fm-reset-audit.sh sweep
@@ -19,9 +19,11 @@
 # A configured markdown Done archive must also resolve inside this home.
 #
 # snapshot emits deterministic version-1 JSON, with sorted open goal, captain
-# hold, task metadata (id, branch, pr, spawn_gen), and queued/in-flight item
-# inventories. It also includes terminal goal, Done, and hold-resolution evidence
-# so compare --after is entirely offline and does not consult live state.
+# hold, task metadata (id, branch, pr, spawn_gen), queued/in-flight item, and
+# open captain order (id and pending/acked state, bin/fm-order.sh) inventories.
+# It also includes terminal goal, Done, hold-resolution, and finished-order
+# (done or parked with its outcome record) evidence so compare --after is
+# entirely offline and does not consult live state.
 # Captures are point-in-time observations, not a transaction with fleet writers;
 # take snapshots at a quiet reset boundary, and retry a raced audit.
 #
@@ -30,6 +32,9 @@
 # newer recorded resolution, never merely Done or unhold. A missing task needs
 # Done evidence; a worker's done status alone is not teardown. Branch/PR updates
 # on a surviving task are allowed. Missing backlog work also produces DRIFT.
+# An open order must stay open or be finished with its outcome record; one that
+# is missing, or finished without that record, is DRIFT. An order that stays
+# open but is never acted on passes: the compare sees records, not work.
 # Existing markdown Done archives supply completion and resolution evidence.
 # Baseline occurrence totals prevent old closed lifecycles masking open work.
 #
@@ -48,8 +53,11 @@
 #   stage    saves a snapshot as the next handoff's "before" in
 #            state/reset-audit-staged.json, replacing an earlier one.
 #            bin/fm-ledger.sh handoff calls it once the document is written;
-#            --if-absent keeps one that is at most 30 minutes old
-#            (bin/fm-handoff-launch.sh).
+#            --if-absent keeps one that is at most 30 minutes old;
+#            --for <seconds> keeps it only when it stays that fresh for the
+#            given time and a minute more, so a launch that takes its whole
+#            budget still finds it fresh at the transfer
+#            (bin/fm-handoff-launch.sh passes its budget).
 #   begin    records that a reset happened now. A handoff takes the staged
 #            snapshot by rename, so of two --if-staged callers only one
 #            records it; --if-staged does nothing when none is staged. A
@@ -168,9 +176,11 @@ pending_count() {  # the resets settle will take up: <epoch>-*.json files
   printf '%s\n' "$count"
 }
 
-staged_fresh() {
-  [ -f "$STAGED" ] && [ ! -L "$STAGED" ] \
-    && [ -z "$(find "$STAGED" -mmin +"$STAGED_MAX_MIN" 2>/dev/null)" ]
+staged_fresh() {  # [seconds it must stay fresh for]
+  local keep=$STAGED_MAX_MIN
+  [ "${1:-0}" -eq 0 ] || keep=$((STAGED_MAX_MIN - (${1} + 59) / 60 - 1))
+  [ "$keep" -gt 0 ] && [ -f "$STAGED" ] && [ ! -L "$STAGED" ] \
+    && [ -z "$(find "$STAGED" -mmin +"$keep" 2>/dev/null)" ]
 }
 
 late_successor_waits() {
@@ -183,12 +193,16 @@ check_needed() { [ "$(pending_count)" -gt 0 ] || late_successor_waits; }
 arm_quietly() { ( install_check ) >/dev/null 2>&1 || true; }
 
 cmd_stage() {
-  case "${1:-}" in
-    '') ;;
-    --if-absent) ! staged_fresh || return 0 ;;
-    *) lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]' ;;
+  local usage='usage: fm-reset-audit.sh stage [--if-absent [--for <seconds>]]'
+  case "$#:${1:-}:${2:-}:${3:-}" in
+    0:::) ;;
+    1:--if-absent::) ! staged_fresh || return 0 ;;
+    3:--if-absent:--for:*)
+      case "$3" in ''|*[!0-9]*) lifecycle_die "$usage" ;; esac
+      ! staged_fresh "$3" || return 0
+      ;;
+    *) lifecycle_die "$usage" ;;
   esac
-  [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]'
   take_snapshot "$STAGED" 30 || { printf 'fm-reset-audit: could not take the snapshot to stage\n' >&2; return 1; }
 }
 
@@ -603,27 +617,46 @@ try {
       }));
       return { id, branch: values.branch || '', pr: values.pr || '', spawn_gen: values.spawn_gen || '' };
     });
+    // bin/fm-order.sh owns the layout: data/orders/<state>/<id>.order, and a
+    // finished order's done/ or parked/ <id>.outcome.
+    const orders = [], finished = [];
+    const ordersDir = inside(path.join(home, 'data/orders'));
+    for (const state of ['pending', 'acked', 'done', 'parked']) {
+      let names;
+      try { names = fs.readdirSync(path.join(ordersDir, state)); }
+      catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+      for (const name of names) {
+        const id = name.slice(0, -6);
+        if (!name.endsWith('.order') || !/^[0-9]+-[0-9a-f]{8}$/.test(id)) continue;
+        if (['pending', 'acked'].includes(state)) orders.push({ id, state });
+        else if (fs.existsSync(path.join(ordersDir, state, id + '.outcome'))) finished.push({ id, state });
+      }
+    }
     return { version: 1, home, goals: sorted([...goals.values()].filter(row => ['received', 'queued'].includes(row.event))),
       holds: sorted(holds), tasks: sorted(active), backlog: sorted(rows.filter(row => row.state !== 'done').map(({ id, state }) => ({ id, state }))),
-      evidence: { goals: sorted(terminalGoals),
+      orders: sorted(orders),
+      evidence: { goals: sorted(terminalGoals), orders: sorted(finished),
         done: sorted([...done.map(row => ({ id: row.id, token: 'live:' + digest(JSON.stringify(row)) })),
           ...archived.map(row => ({ id: row.id, token: row.token }))]), resolutions: sorted(resolutions) } };
   }
   function validate(value) {
     if (value?.version !== 1 || value.home !== home) fail('manifest version/home mismatch');
-    for (const name of ['goals', 'holds', 'tasks', 'backlog']) {
+    for (const name of ['goals', 'holds', 'tasks', 'backlog', 'orders']) {
       if (!Array.isArray(value[name]) || value[name].some(row => !slug(row?.id)) || new Set(value[name].map(row => row.id)).size !== value[name].length)
         fail(`invalid manifest ${name}`);
     }
     if (value.goals.some(row => !['received', 'queued'].includes(row.event)) ||
         value.backlog.some(row => !['queued', 'in_flight'].includes(row.state)) ||
+        value.orders.some(row => !['pending', 'acked'].includes(row.state)) ||
         value.tasks.some(row => ['branch', 'pr', 'spawn_gen'].some(key => typeof row[key] !== 'string')))
       fail('invalid manifest state');
     const evidence = value.evidence;
     if (!evidence || !Array.isArray(evidence.goals) || evidence.goals.some(row => !slug(row?.id) || typeof row.token !== 'string' || !['dispatched', 'blocked'].includes(row.event)) ||
         !Array.isArray(evidence.done) || evidence.done.some(row => !slug(row?.id) || typeof row.token !== 'string') || !Array.isArray(evidence.resolutions) ||
         evidence.resolutions.some(row => !slug(row?.id) || typeof row.token !== 'string' || !Number.isInteger(row.count) || row.count < 1) ||
-        value.holds.some(row => !Number.isInteger(row.resolutions) || row.resolutions < 0)) fail('invalid manifest evidence');
+        value.holds.some(row => !Number.isInteger(row.resolutions) || row.resolutions < 0) ||
+        !Array.isArray(evidence.orders) || evidence.orders.some(row => !slug(row?.id) || !['done', 'parked'].includes(row.state)))
+      fail('invalid manifest evidence');
     return value;
   }
   if (command === 'snapshot') {
@@ -653,6 +686,8 @@ try {
       if (!has(after.tasks, row.id) && !completed(row.id)) drift.push(`task:${row.id}`);
     for (const row of before.backlog)
       if (!has(after.backlog, row.id) && !completed(row.id)) drift.push(`backlog:${row.id}`);
+    for (const row of before.orders)
+      if (!has(after.orders, row.id) && !has(after.evidence.orders, row.id)) drift.push(`order:${row.id}`);
     drift.sort();
     const verdict = drift.length ? 'FAIL' : 'PASS';
     const state = inside(path.join(home, 'state'));
