@@ -36,7 +36,7 @@
 #   - planned:advance (strictly behind, clean): a decision held for the
 #     captain records `held`, and a hold that cannot be read records
 #     `hold-unknown`; otherwise request one relaunch.
-# A relaunch that returns but leaves the branch short of the PR head (the copy
+# A relaunch that returns with the branch not at or past the PR head (the copy
 # turned dirty, or a run took the branch, before the stop) records `unsynced`
 # and reports it once; that reopens the head for a later sweep.
 # A relaunch is requested at most once per new PR head and at most once per
@@ -134,12 +134,13 @@ note() {  # <event> <head> <key> <reason>
 steered_after() {  # <task-id> <status-line>: an inbox record is newer than the line
   local at f ts e
   at=$(status_line_at_epoch "$2") || return 1
-  for f in "$(fm_task_inbox_dir "$STATE" "$1")"/*.msg "$(fm_task_inbox_handled_dir "$STATE" "$1")"/*.msg; do
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     ts=$(sed -n '/^--$/q; s/^at=//p' "$f" 2>/dev/null | head -n 1)
     e=$(fm_utc_iso_to_epoch "$ts") || e=$(fm_path_mtime "$f") || continue
-    [ "$e" -le "$at" ] || return 0
-  done
+    [ "$e" -gt "$at" ]
+    return
+  done < <(ls -t "$(fm_task_inbox_dir "$STATE" "$1")"/*.msg "$(fm_task_inbox_handled_dir "$STATE" "$1")"/*.msg 2>/dev/null)
   return 1
 }
 
@@ -251,7 +252,7 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   case "$rc" in
     0)
       now_head=$(git -C "$wt" rev-parse -q --verify "refs/heads/$branch^{commit}" 2>/dev/null)
-      if [ "$now_head" = "$pub" ]; then
+      if [ -n "$now_head" ] && git -C "$wt" merge-base --is-ancestor "$pub" "$now_head" 2>/dev/null; then
         record relaunched "$pub" || true
         emit "pr-behind-relaunched-$id-$(short "$pub")" \
           "check: $id relaunched because its local branch $branch ($(short "$local_head")) was behind its PR head $(short "$pub") ($pr) - the relaunch resynced it; reconcile its current state rather than relaunching it again"

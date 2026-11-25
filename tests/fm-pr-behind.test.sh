@@ -31,6 +31,11 @@ if [ "$rc" -eq 0 ]; then
   case "${CTL_SYNC:-ff}" in
     ff) git -C "$CTL_WT" pull -q --ff-only origin "$(git -C "$CTL_WT" symbolic-ref --short HEAD)" ;;
     dirty) printf 'late edit\n' > "$CTL_WT/late.txt" ;;
+    advance)
+      printf 'late fix\n' > "$CTL_PIPE/late-fix"
+      git -C "$CTL_PIPE" add late-fix && git -C "$CTL_PIPE" commit -qm late-fix && git -C "$CTL_PIPE" push -q origin HEAD
+      git -C "$CTL_WT" pull -q --ff-only origin "$(git -C "$CTL_WT" symbolic-ref --short HEAD)"
+      ;;
   esac
 fi
 exit "$rc"
@@ -80,7 +85,7 @@ age_ledger() {  # move every ledger row past the probe interval
 
 scan() {
   OUT=$(PATH="$STUB_BIN:$PATH" FM_HOME="$D" FM_STATE_OVERRIDE="$S" FM_CONTROL_BIN="$STUB_BIN/fm-control" \
-    CTL_CALLS="$CTL_CALLS" CTL_WT="$WT" NM_CALLS="$NM_CALLS" NM_RESPONSE="$D/nm-response" bash "$SCAN" scan 2>&1)
+    CTL_CALLS="$CTL_CALLS" CTL_WT="$WT" CTL_PIPE="$D/pipe" NM_CALLS="$NM_CALLS" NM_RESPONSE="$D/nm-response" bash "$SCAN" scan 2>&1)
   RC=$?
   expect_code 0 "$RC" "scan exit"
 }
@@ -278,6 +283,33 @@ test_relaunch_that_left_the_branch_behind_is_reported() {
   pass "a relaunch that leaves the branch behind its PR head is reported honestly and retried"
 }
 
+test_relaunch_past_the_probed_head_counts_as_resynced() {
+  fixture advanced
+  publish fix1
+  CTL_SYNC=advance scan
+  assert_equals 1 "$(calls)" "advanced: one relaunch request"
+  assert_equals "$(git -C "$D/pipe" rev-parse HEAD)" "$(git -C "$WT" rev-parse HEAD)" "advanced: the branch reached the newer PR head"
+  assert_contains "$OUT" "the relaunch resynced it" "advanced: success reported"
+  case "$OUT" in *"not resynced"*) fail "advanced: reported a resync that happened as missing" ;; esac
+  pass "a relaunch that lands on a newer PR head than the probed one counts as resynced"
+}
+
+test_steer_check_reads_only_the_newest_record() {
+  local done_at
+  done_at=$(( $(date +%s) - 600 ))
+  fixture neweststeer
+  publish fix1
+  printf 'done [at=%s]: PR %s\n' "$done_at" "$PR" >> "$S/$TASK.status"
+  mkdir -p "$S/$TASK.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nolder\n' "$(iso $(( done_at + 60 )))" > "$S/$TASK.inbox/handled/001.msg"
+  touch -t 202001010000 "$S/$TASK.inbox/handled/001.msg"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nnewer\n' "$(iso $(( done_at - 60 )))" > "$S/$TASK.inbox/handled/002.msg"
+  scan
+  assert_equals 0 "$(calls)" "newest steer predates done: no relaunch"
+  assert_equals "" "$(events)" "newest steer predates done: never probed"
+  pass "the steer check stops at the newest record, which here predates the done line"
+}
+
 test_unreadable_captain_hold_does_not_relaunch() {
   fixture holdunknown
   publish fix1
@@ -338,5 +370,7 @@ fm_test_run \
   test_steer_after_done_is_probed \
   test_relaunch_that_left_the_branch_behind_is_reported \
   test_unreadable_captain_hold_does_not_relaunch \
+  test_relaunch_past_the_probed_head_counts_as_resynced \
+  test_steer_check_reads_only_the_newest_record \
   test_watcher_sweep_queues_the_relaunch \
   test_usage
