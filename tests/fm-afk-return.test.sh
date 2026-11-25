@@ -814,25 +814,35 @@ test_return_brief_keeps_refresh_history() {
 }
 
 test_malformed_posture_record_keeps_catchup_gated() {
-  local dir out rc gate record before
+  local dir out rc gate record before today mode
   dir="$TMP_ROOT/malformed-posture-record"
   install_runner "$dir"
+  # Recovery must retain existing missing-machine rows, but an invalid posture
+  # must not create historical checklists from its untrusted epoch.
+  FM_HOME="$dir/home" "$dir/bin/fm-postmortem-checklist.sh" start --night 2000-01-01 >/dev/null \
+    || fail "could not seed an unresolved historical checklist"
+  today=$(date +%F)
   gate="$dir/home/state/.afk-return-catchup"
   record="$dir/home/state/.afk-contract"
   printf 'version: 1\nentered: 2026-09-08T08:00:00Z\nentered_epoch: 123\nwords: |-\n  captain words survive\n' > "$record"
   before=$(cat "$record"; printf x)
   touch "$dir/home/state/.last-watcher-beat"
   : > "$dir/home/state/.fake-drain"
-  set +e
-  out=$(run_return "$dir" begin)
-  rc=$?
-  set -e
-  [ "$rc" -eq 3 ] || fail "a malformed posture record should keep catch-up gated (rc=$rc): $out"
-  [ -f "$gate" ] || fail "a malformed posture record did not retain the return gate"
-  [ -f "$record" ] || fail "a malformed posture record was archived or deleted"
-  [ "$(cat "$record"; printf x)" = "$before" ] || fail "a malformed posture record lost its captain words"
-  [ ! -e "$dir/home/state/afk-contracts/123.afk-contract" ] || fail "a malformed posture record was archived"
-  assert_contains "$out" "away-posture record unreadable: $record; catch-up stays gated" "return did not name the malformed posture record"
+  for mode in begin check; do
+    set +e
+    out=$(run_return "$dir" "$mode")
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "a malformed posture record should keep catch-up gated (rc=$rc): $out"
+    [ -f "$gate" ] || fail "a malformed posture record did not retain the return gate"
+    [ -f "$record" ] || fail "a malformed posture record was archived or deleted"
+    [ "$(cat "$record"; printf x)" = "$before" ] || fail "a malformed posture record lost its captain words"
+    [ ! -e "$dir/home/state/afk-contracts/123.afk-contract" ] || fail "a malformed posture record was archived"
+    assert_contains "$out" "away-posture record unreadable: $record; catch-up stays gated" "return did not name the malformed posture record"
+    assert_contains "$out" '    - Hetzner: 2000-01-01: no artifact receipt recorded' "recovery hid an existing unresolved checklist"
+    awk -F '\t' -v today="$today" '$1 != "2000-01-01" && $1 != today { exit 1 }' \
+      "$dir/home/state/postmortem-checklist.tsv" || fail "recovery manufactured historical checklists from an invalid posture"
+  done
   pass "a malformed posture record stays live and gates return catch-up"
 }
 

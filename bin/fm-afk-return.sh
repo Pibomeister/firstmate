@@ -169,7 +169,8 @@ window_start_epoch() {
   local epoch flag
   epoch=$(gate_window_epoch)
   case "$epoch" in ''|*[!0-9]*) epoch= ;; esac
-  if [ -z "$epoch" ] && fm_afk_contract_present "$STATE"; then
+  if [ -z "$epoch" ] && fm_afk_contract_present "$STATE" \
+     && fm_afk_contract_validate "$(fm_afk_contract_path "$STATE")"; then
     epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
   fi
   if [ -z "$epoch" ] && [ -f "$STATE/.afk" ]; then
@@ -1100,7 +1101,8 @@ main() {
   fi
   window_epoch=$(window_start_epoch)
   contract_epoch=$(gate_contract_epoch)
-  if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE"; then
+  if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE" \
+     && fm_afk_contract_validate "$(fm_afk_contract_path "$STATE")"; then
     contract_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
     case "$contract_epoch" in ''|*[!0-9]*) contract_epoch= ;; esac
   fi
