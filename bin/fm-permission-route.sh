@@ -88,8 +88,9 @@
 # Records, all in <state-dir>:
 #   <id>.permission-route.tsv  One row per routed request: epoch, verdict
 #       (refuse or hold), category, tool, SHA-256 of the command, command
-#       bytes, request hash. The command text is never written. The row is
-#       written before the answer is printed.
+#       bytes, request hash (for a hold, the hash its row in the held set is
+#       matched by). The command text is never written. The row is written
+#       before the answer is printed.
 #   <id>.permission-held       Present while a hold is open. One row per held
 #       request and key, tab-separated: its status key, its request hash (the
 #       SHA-256 over the tool name with, for Bash, its command and every
@@ -338,8 +339,8 @@ meta_value() {  # <meta-file> <key>
   sed -n "s/^$2=//p" "$1" 2>/dev/null | tail -n 1
 }
 
-ledger_row() {  # <verdict> <category>
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$2" "$TOOL" "$COMMAND_SHA" "$COMMAND_BYTES" "$REQUEST_HASH" >>"$LEDGER" 2>/dev/null
+ledger_row() {  # <verdict> <category> [<request hash>]
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$(date +%s)" "$1" "$2" "$TOOL" "$COMMAND_SHA" "$COMMAND_BYTES" "${3-$REQUEST_HASH}" >>"$LEDGER" 2>/dev/null
 }
 
 status_append() {  # <line>
@@ -395,16 +396,21 @@ marker_drop() {  # <key> [<request hash>]
   fi
 }
 
-# Put a request's row last in the set under the current time. The set with the
-# new row replaces the old set in one rename, so a reader without the lock
-# never sees the set without a row it had. A set that cannot be read or
-# replaced gets the row appended when it has no such row.
+# Put a request's row last in the set under the current time. A new row is one
+# append, which the append of another hook cannot lose, also when the lock
+# could not be taken. A row that is asked again moves: the set with the moved
+# row replaces the old set in one rename, so a reader without the lock never
+# sees the set without a row it had. A set that cannot be read or replaced
+# gets the row appended when it has no such row.
 marker_put() {  # <key> <request hash>
   local rest='' row
   row=$(printf '%s\t%s\t%s' "$1" "$2" "$(date +%s)")
+  if [ "$(marker_rows "$1" "$2")" -eq 0 ]; then
+    printf '%s\n' "$row" >>"$MARKER" 2>/dev/null && return 0
+  fi
   if [ -e "$MARKER" ] && rest=$(awk -F '\t' -v key="$1" -v hash="$2" \
       '!($1 == key && $2 == hash)' "$MARKER" 2>/dev/null) || [ ! -e "$MARKER" ]; then
-    if { [ -z "$rest" ] || printf '%s\n' "$rest"; printf '%s\n' "$row"; } >"$MARKER.new" 2>/dev/null \
+    if { { [ -z "$rest" ] || printf '%s\n' "$rest"; } && printf '%s\n' "$row"; } >"$MARKER.new" 2>/dev/null \
       && mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null; then
       return 0
     fi
@@ -475,7 +481,7 @@ hold() {  # <category> [nolock]: nolock when the caller just failed to lock
   key=$(hold_key "$1")
   [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
   [ "${2-}" = nolock ] || lock_acquire || true
-  ledger_row hold "$1" || true
+  ledger_row hold "$1" "$hash" || true
   marker_prune
   if [ "$(marker_rows "$key" "$hash")" -eq 0 ] && [ "$key" = "$FM_PERMISSION_ROUTE_HELD_KEY" ] \
     && [ "$(( $(marker_rows "$key") - $(marker_rows "$key" +) ))" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
@@ -545,14 +551,16 @@ bind_request() {  # <payload>
     [ -n "$REQUEST_FULL_HASH" ] || REQUEST_FULL_HASH=-
   fi
   # The tool name, every key path of the tool input, and every scalar under
-  # it, decoded, for the reserved scan that picks the status key. A false or
-  # null value still gives its key path. An input that cannot be read whole,
-  # an empty payload among them, leaves SCAN_OK at 0.
+  # it, decoded, for the reserved scan that picks the status key. The tool
+  # name is given a second time with each run of `_` as a space, so a listed
+  # word inside `mcp__server__some_tool` is read as a word. A false or null
+  # value still gives its key path. An input that cannot be read whole, an
+  # empty payload among them, leaves SCAN_OK at 0.
   SCAN_OK=0
   if SCAN_TEXT=$(printf '%s' "$1" | jq -rs '
       if length != 1 then error("not one value") else .[0] end
       | if (.tool_input | type) == "object"
-      then [(.tool_name | tostring),
+      then [(.tool_name | tostring), (.tool_name | tostring | gsub("_+"; " ")),
             (.tool_input | paths as $p | ($p | map(tostring) | join(".")),
              (getpath($p) | if type == "object" or type == "array" then empty else tostring end))] | join("\n")
       else error("no tool input") end' 2>/dev/null) \

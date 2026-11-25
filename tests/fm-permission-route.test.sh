@@ -383,7 +383,7 @@ test_pane_clear_closes_only_a_settled_ordinary_hold() {
 }
 
 test_reserved_request_is_always_reported() {
-  local home i
+  local home i name
   # The ordinary key stops taking rows at its limit; the reserved key does not.
   home=$(new_home limit)
   for i in 1 2 3; do
@@ -418,7 +418,39 @@ test_reserved_request_is_always_reported() {
   assert_equals "$HELD" "$(open_keys "$home")" "a tool with a plain name and input is an ordinary hold"
   request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "mcp__github__merge_pull_request", tool_input: {pull_number: 12}}')"
   assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "a reserved word in the tool name alone is owner-reserved"
+  # The record of requests tells two reserved requests apart as the held set does.
+  home=$(new_home ledger)
+  request "$home" "$(bash_payload 'sudo true')"
+  request "$home" "$(bash_payload 'sudo true' '{"description": "again, in other words"}')"
+  assert_equals 2 "$(grep -c "^$HARDSTOP	" "$home/state/task.permission-held")" "the same reserved command with another description is a second held request"
+  assert_equals 2 "$(awk -F '\t' '$2 == "hold" { print $7 }' "$home/state/task.permission-route.tsv" | sort -u | grep -c .)" "and the request record names two requests"
+  for name in mcp__db__drop_table mcp__aws__terminate_instances mcp__stripe__create_refund mcp__ssh__run_command; do
+    home=$(new_home "toolname-$name")
+    request "$home" "$(jq -cn --arg name "$name" '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: $name, tool_input: {id: "x"}}')"
+    assert_equals "$HARDSTOP" "$(open_keys "$home")" "a listed word between underscores in the tool name $name is owner-reserved"
+  done
   pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, by a key name alone, and by a tool name alone"
+}
+
+# The hook still holds when it cannot take the lock, and then two hooks write
+# the held set at the same time.
+test_holds_without_the_lock_keep_every_row() {
+  local home i pids='' round
+  for round in 1 2 3; do
+    home=$(new_home "nolock-$round")
+    mkdir "$home/state/task.permission-lock"
+    for i in 1 2 3 4 5 6 7 8; do
+      request "$home" "$(bash_payload "sudo true $i")" &
+      pids="$pids $!"
+    done
+    # shellcheck disable=SC2086  # pids is a word list by design
+    wait $pids
+    pids=''
+    assert_equals 8 "$(grep -c "^$HARDSTOP	" "$home/state/task.permission-held")" "round $round: each of eight requests held at the same time without the lock keeps its row"
+    assert_equals 8 "$(grep -c "^blocked .*key=$HARDSTOP" "$home/state/task.status")" "round $round: and its line"
+    rmdir "$home/state/task.permission-lock" 2>/dev/null || true
+  done
+  pass "requests held at the same time without the lock each keep their row"
 }
 
 test_asked_again_never_hides_the_held_set() {
@@ -485,7 +517,6 @@ test_held_set_follows_the_latest_requests() {
   settle "$home" tool-finished "$(jq -cn '{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {command: "echo hello", description: "another", mode: "x"}}')"
   assert_equals "" "$(open_keys "$home")" "the finished call with that field closes it"
 
-  # A held set that cannot be read is an error to the watchdog, never no hold.
   home=$(new_home overflow-again)
   for i in 1 2 3 3; do
     FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "echo hello $i")"
@@ -501,6 +532,13 @@ test_held_set_follows_the_latest_requests() {
     expect_code 1 "$?" "held-keys with a status log it cannot read"
     chmod 600 "$home/state/task.status"
   fi
+  home=$(new_home linked-status)
+  request "$home" "$(bash_payload 'echo hello')"
+  mv "$home/state/task.status" "$home/state/elsewhere.status"
+  ln -s elsewhere.status "$home/state/task.status"
+  bash "$ROUTE" held-keys "$home/state" task >/dev/null 2>&1
+  expect_code 1 "$?" "held-keys with a status log that is a symbolic link"
+  # A held set that cannot be read is an error to the watchdog, never no hold.
   if [ "$(id -u)" -ne 0 ]; then
     home=$(new_home unreadable-set)
     request "$home" "$(bash_payload 'echo hello')"
@@ -565,6 +603,7 @@ fm_test_run \
   test_each_key_closes_on_its_own \
   test_pane_clear_closes_only_a_settled_ordinary_hold \
   test_reserved_request_is_always_reported \
+  test_holds_without_the_lock_keep_every_row \
   test_asked_again_never_hides_the_held_set \
   test_held_set_follows_the_latest_requests \
   test_unreadable_payload_never_matches_a_finished_call \
