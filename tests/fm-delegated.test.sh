@@ -110,7 +110,7 @@ test_hidden_handoff_is_delivery_failure_until_mirrored() {
   register_task "$h" "$T0" hermes-1 || fail "register failed"
   hash=$(sha_of "$h/art/out.txt")
   del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location alt >/dev/null \
+    --hash "$hash" --alt-dir "$h/alt.inbox" --location alt >/dev/null \
     || fail "handoff failed"
   del "$h" "$T0" dispatch --task hermes-1 >/dev/null || fail "dispatch failed"
   out=$(del "$h" $((T0 + 400)) check) || fail "check failed"
@@ -139,7 +139,7 @@ test_handoff_in_read_location_and_broken_artifact() {
   register_task "$h" "$T0" hermes-1 || fail "register failed"
   hash=$(sha_of "$h/art/out.txt")
   del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null \
+    --hash "$hash" --alt-dir "$h/alt.inbox" --location read >/dev/null \
     || fail "handoff in read location failed"
   out=$(del "$h" $((T0 + 10)) check) || fail "check failed"
   case "$out" in
@@ -150,7 +150,7 @@ test_handoff_in_read_location_and_broken_artifact() {
   assert_contains "$(del "$h" $((T0 + 20)) view)" "handoff=hf1 state=delivery-failure" "a tampered artifact cannot receipt a read"
   rc=0
   del "$h" $((T0 + 30)) handoff --task hermes-1 --id hf2 --receiver worker --path "$h/art/out.txt" \
-    --hash "$hash" --read-dir "$h/state/worker.inbox" --alt-dir "$h/alt.inbox" --location read >/dev/null 2>&1 || rc=$?
+    --hash "$hash" --alt-dir "$h/alt.inbox" --location read >/dev/null 2>&1 || rc=$?
   assert_equals 1 "$rc" "a handoff with a mismatched artifact receipt is refused at filing"
   pass "a read-location handoff is no failure, and a tampered artifact receipts nothing"
 }
@@ -217,7 +217,7 @@ test_concurrent_mirror_and_ack() {
   register_task "$h" "$T0" hermes-1 || fail 'register failed'
   hash=$(sha_of "$h/art/out.txt")
   del "$h" "$T0" handoff --task hermes-1 --id hf1 --receiver worker \
-    --path "$h/art/out.txt" --hash "$hash" --read-dir "$h/state/worker.inbox" \
+    --path "$h/art/out.txt" --hash "$hash" \
     --alt-dir "$h/alt.inbox" --location alt >/dev/null || fail 'handoff failed'
   del "$h" "$T0" mirror --id hf1 >/dev/null & p1=$!
   del "$h" "$T0" mirror --id hf1 >/dev/null & p2=$!
@@ -561,11 +561,11 @@ test_inbox_writes_honor_lifecycle_lock() {
   while [ ! -f "$h/locked" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n+1)); done
   [ -f "$h/locked" ] || { kill "$holder"; wait "$holder"; fail 'metadata lock was not acquired'; }
   del "$h" "$T0" mirror --id answer >/dev/null 2>&1 && rc=1
-  del "$h" $((T0 + 400)) check >/dev/null 2>&1 && rc=1
+  del "$h" $((T0 + 400)) check >/dev/null 2>&1 || rc=1
   [ ! -e "$h/state/worker.inbox" ] || rc=1
   touch "$h/release"
   wait "$holder" || fail 'metadata lock holder failed'
-  assert_equals 0 "$rc" 'placement and notification refuse while retirement holds the metadata lock'
+  assert_equals 0 "$rc" 'placement refuses and checks defer while retirement holds the metadata lock'
   del "$h" "$T0" mirror --id answer >/dev/null || fail 'ordinary mirror failed after lifecycle lock release'
   del "$h" $((T0 + 400)) check >/dev/null || fail 'ordinary notification failed after lifecycle lock release'
   pass 'placements and supervisor notifications share the existing metadata lock protocol'
@@ -635,6 +635,99 @@ test_handoff_paths_are_independent_of_cwd() {
   pass 'handoffs reject relative paths and retain absolute receipts across working directories'
 }
 
+test_watcher_defers_contended_supervisor() {
+  local h hash holder watcher task n=0 status=0 out
+  h=$(new_home watcher-contention)
+  touch "$h/state/home-summary.json"
+  for task in pending-silence producer; do
+    del "$h" "$T0" register --task "$task" --deliverable report --artifact "$h/art/out.txt" \
+      --heartbeat-secs 60 --silence-secs 300 --supervisor worker >/dev/null || fail 'register failed'
+  done
+  register_task "$h" "$T0" unrelated || fail 'unrelated register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" handoff --task producer --id hidden --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location alt >/dev/null || fail 'handoff failed'
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '
+    . "$1"
+    lock=$(fm_meta_lock_path "$STATE/worker.meta")
+    fm_lock_try_acquire "$lock" || exit 1
+    release_meta() { fm_lock_release "$lock"; }
+    trap release_meta EXIT
+    touch "$2/locked"
+    while [ ! -f "$2/release" ]; do sleep 0.1; done
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$h" &
+  holder=$!
+  while [ ! -f "$h/locked" ] && [ "$n" -lt 100 ]; do sleep 0.1; n=$((n+1)); done
+  [ -f "$h/locked" ] || { kill "$holder"; wait "$holder"; fail 'metadata lock was not acquired'; }
+  FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" FM_CONFIG_OVERRIDE="$h/config" FM_DELEGATED_NOW=$((T0 + 400)) \
+    bash "$ROOT/bin/fm-watch.sh" > "$h/watch.out" 2> "$h/watch.err" &
+  watcher=$!
+  fm_test_track_watcher_state "$h/state"
+  n=0
+  while [ "$n" -lt 600 ] && kill -0 "$watcher" 2>/dev/null; do sleep 0.1; n=$((n+1)); done
+  if kill -0 "$watcher" 2>/dev/null; then kill "$watcher"; status=1; fi
+  wait "$watcher" || status=1
+  [ ! -e "$h/state/worker.inbox" ] || status=1
+  touch "$h/release"
+  wait "$holder" || fail 'metadata holder failed'
+  assert_equals 0 "$status" "normal contention stopped unrelated supervision: $(cat "$h/watch.err")"
+  assert_contains "$(cat "$h/state/.wake-queue")" 'escalation task=unrelated' 'unrelated supervision runs despite both deferred notification types'
+  out=$(del "$h" $((T0 + 500)) check) || fail 'deferred delivery did not resume'
+  assert_contains "$out" 'delivery-failure handoff=hidden' 'hidden delivery remains pending until it can be reported'
+  assert_contains "$out" 'escalation task=pending-silence' 'silence was not falsely marked delivered during contention'
+  out=$(del "$h" $((T0 + 600)) check) || fail 'repeat check failed'
+  case "$out" in *'escalation task=pending-silence'*) fail 'resumed escalation was duplicated' ;; esac
+  pass 'the real watcher defers contended notifications and continues unrelated supervision'
+}
+
+test_remote_routes_never_use_local_inboxes() {
+  local h hash out
+  h=$(new_home remote-route)
+  register_task "$h" "$T0" producer || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  printf 'remote_host=example.invalid\nkind=secondmate\n' > "$h/state/worker.meta"
+  if del "$h" "$T0" handoff --task producer --id rejected --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null 2>&1; then fail 'remote receiver accepted local placement'; fi
+  [ ! -e "$h/state/worker.inbox" ] || fail 'remote placement created a local inbox'
+  del "$h" "$T0" handoff --task producer --id hidden-remote --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location alt >/dev/null || fail 'hidden remote answer was not retained'
+  if del "$h" "$T0" mirror --id hidden-remote >/dev/null 2>&1; then fail 'remote mirror claimed local delivery'; fi
+  : > "$h/state/worker.meta"
+  del "$h" "$T0" handoff --task producer --id migrated --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'ordinary local placement failed'
+  printf 'remote_host=example.invalid\nkind=secondmate\n' > "$h/state/worker.meta"
+  assert_contains "$(del "$h" "$T0" view)" 'handoff=migrated state=delivery-failure' 'a local pending copy cannot prove delivery after remote routing'
+  mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'local copy acknowledgement failed'
+  del "$h" "$T0" receipt --receiver worker || fail 'receipt scan failed'
+  assert_contains "$(del "$h" "$T0" view)" 'handoff=migrated state=delivery-failure' 'local handled copies cannot receipt a remote receiver'
+  rm -rf "$h/state/worker.inbox"
+  del "$h" "$T0" register --task pending-remote --deliverable report --artifact "$h/art/out.txt" \
+    --heartbeat-secs 60 --silence-secs 300 --supervisor worker >/dev/null || fail 'remote supervisor register failed'
+  out=$(del "$h" $((T0 + 400)) check 2> "$h/remote.err") || fail 'unsupported route stopped other checks'
+  assert_contains "$out" 'delivery-deferred task=pending-remote' 'remote notification remains undelivered'
+  assert_contains "$out" 'delivery-failure handoff=hidden-remote' 'the hidden remote answer remains a delivery failure'
+  [ ! -e "$h/state/worker.inbox" ] || fail 'notification recreated an unread local remote inbox'
+  : > "$h/state/worker.meta"
+  out=$(del "$h" $((T0 + 500)) check) || fail 'local route recovery failed'
+  assert_contains "$out" 'escalation task=pending-remote' 'unsupported remote delivery did not close the pending escalation'
+  pass 'remote placement, mirrors, classification and notifications never claim local delivery'
+}
+
+test_read_channel_has_no_override() {
+  local h hash rc=0
+  h=$(new_home derived-channel)
+  register_task "$h" "$T0" producer || fail 'register failed'
+  hash=$(sha_of "$h/art/out.txt")
+  del "$h" "$T0" handoff --task producer --id overridden --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location read --read-dir "$h/state/worker.inbox" >/dev/null 2>&1 || rc=$?
+  assert_equals 2 "$rc" 'the removed read-dir option is rejected'
+  [ ! -f "$h/state/delegated/handoffs/overridden.record" ] || fail 'removed option produced a handoff'
+  del "$h" "$T0" handoff --task producer --id derived --receiver worker --path "$h/art/out.txt" \
+    --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'derived channel placement failed'
+  [ -f "$h/state/worker.inbox/001.msg" ] || fail 'receiver channel was not derived'
+  pass 'handoffs derive the receiver channel without a read-directory configuration surface'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -660,5 +753,8 @@ fm_test_run \
   test_retired_receivers_cannot_be_mirrored \
   test_inbox_writes_honor_lifecycle_lock \
   test_notification_scan_survives_ack_move \
-  test_handoff_paths_are_independent_of_cwd
+  test_handoff_paths_are_independent_of_cwd \
+  test_watcher_defers_contended_supervisor \
+  test_remote_routes_never_use_local_inboxes \
+  test_read_channel_has_no_override
 

@@ -27,7 +27,7 @@
 #                                 delivery-failure line naming the hidden
 #                                 item on every pass until it is mirrored.
 #   handoff --task <task> --id <id> --receiver <id> --path <path> --hash <sha256>
-#           [--read-dir <receiver-channel-dir>] --alt-dir <abs-dir>
+#           --alt-dir <abs-dir>
 #           --location read|alt
 #                                 File one cross-agent handoff carrying the
 #                                 artifact receipt (path plus hash) in the
@@ -198,6 +198,10 @@ handoff_body() {
   printf 'handoff=%s task=%s receiver=%s artifact=%s hash=%s' "$H_ID" "$H_TASK" "$H_RECEIVER" "$H_PATH" "$H_HASH"
 }
 
+receiver_uses_remote_transport() {
+  [ -n "$(fm_del_record_get "$STATE/$1.meta" remote_host)" ]
+}
+
 handoff_state() {
   local pending="$H_READ_DIR/${H_MESSAGE##*/}" handled="$H_READ_DIR/handled/${H_MESSAGE##*/}" body
   H_STATE=delivery-failure
@@ -215,6 +219,7 @@ handoff_state() {
       '($2 == "ack" || $2 == "consumed") && index($6, key) { found=1 } END { exit !found }' \
       "$STATE/wake-ledger.tsv" || return 0
   else
+    receiver_uses_remote_transport "$H_RECEIVER" && return 0
     if [ -f "$STATE/$H_RECEIVER.meta" ] && body=$(fm_task_inbox_body "$pending" 2>/dev/null) && [ "$body" = "$(handoff_body)" ]; then
       H_STATE=mirrored
       return
@@ -244,10 +249,15 @@ wake_once() {
 receiver_inbox_write() {
   local receiver=$1 text=$2 marker=${3:-} lock status=0 f body
   lock=$(fm_meta_lock_path "$STATE/$receiver.meta") || return 1
-  fm_lock_try_acquire "$lock" || return 1
+  fm_lock_try_acquire "$lock" || return 75
   if [ ! -f "$STATE/$receiver.meta" ]; then
     fm_lock_release "$lock"
-    return 1
+    return 75
+  fi
+  if receiver_uses_remote_transport "$receiver"; then
+    printf 'fm-delegated: receiver %s requires remote transport; local delivery refused\n' "$receiver" >&2
+    fm_lock_release "$lock"
+    return 75
   fi
   if [ -n "$marker" ]; then
     for f in "$STATE/$receiver.inbox/"*.msg "$STATE/$receiver.inbox/handled/"*.msg; do
@@ -309,7 +319,7 @@ closed_receipt() {
 notify_supervisor() {
   local text=$1 key="delegated:$T_SUPERVISOR:$2"
   if [ -f "$STATE/$T_SUPERVISOR.meta" ]; then
-    receiver_inbox_write "$T_SUPERVISOR" "$text" "delegated-notification=$key" >/dev/null || return 1
+    receiver_inbox_write "$T_SUPERVISOR" "$text" "delegated-notification=$key" >/dev/null || return $?
   fi
   case "$2" in
     silence:*) wake_once "$key" "$text" ;;
@@ -462,7 +472,7 @@ cmd_view() {
 
 cmd_check() {
   [ "$#" -eq 0 ] || usage_die 'check takes no flags'
-  local f now age hidden=' ' text
+  local f now age hidden=' ' text status
   now=$(now_epoch)
   for f in "$HANDOFF_DIR"/*.record; do
     [ -f "$f" ] || continue
@@ -472,7 +482,9 @@ cmd_check() {
     hidden="$hidden$H_TASK "
     load_task "$(task_file "$H_TASK")"
     text="delivery-failure handoff=$H_ID task=$H_TASK receiver=$H_RECEIVER artifact=$H_PATH hash=$H_HASH filed=$H_LOCATION read_dir=$H_READ_DIR"
-    notify_supervisor "$text" "handoff:$H_ID" || die "cannot report handoff: $H_ID"
+    status=0
+    notify_supervisor "$text" "handoff:$H_ID" || status=$?
+    case "$status" in 0|75) ;; *) die "cannot report handoff: $H_ID" ;; esac
     printf '%s\n' "$text"
   done
   for f in "$DELEGATED_DIR"/*.record; do
@@ -483,7 +495,13 @@ cmd_check() {
     [ -n "$T_ESCALATED" ] && continue
     if age=$(fm_del_silence_age "$now" "$(last_activity)" "$T_SILENCE"); then
       text="escalation task=$T_TASK age=$age last_receipt=$(last_receipt_label) deliverable=$T_DELIVERABLE supervisor=$T_SUPERVISOR"
-      notify_supervisor "$text" "silence:$T_TASK" || die "cannot report escalation: $T_TASK"
+      status=0
+      notify_supervisor "$text" "silence:$T_TASK" || status=$?
+      case "$status" in
+        75) printf 'delivery-deferred task=%s supervisor=%s\n' "$T_TASK" "$T_SUPERVISOR"; continue ;;
+        0) ;;
+        *) die "cannot report escalation: $T_TASK" ;;
+      esac
       T_ESCALATED=$now
       save_task "$f" || die "cannot record escalation: $T_TASK"
       printf '%s\n' "$text"
@@ -492,7 +510,7 @@ cmd_check() {
 }
 
 cmd_handoff() {
-  local task='' id='' receiver='' path='' hash='' read_dir='' alt_dir='' location='' lower verdict
+  local task='' id='' receiver='' path='' hash='' alt_dir='' location='' lower verdict
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --task) [ "$#" -ge 2 ] || usage_die '--task needs a value'; task=$2; shift 2 ;;
@@ -500,32 +518,27 @@ cmd_handoff() {
       --receiver) [ "$#" -ge 2 ] || usage_die '--receiver needs a value'; receiver=$2; shift 2 ;;
       --path) [ "$#" -ge 2 ] || usage_die '--path needs a value'; path=$2; shift 2 ;;
       --hash) [ "$#" -ge 2 ] || usage_die '--hash needs a value'; hash=$2; shift 2 ;;
-      --read-dir) [ "$#" -ge 2 ] || usage_die '--read-dir needs a value'; read_dir=$2; shift 2 ;;
       --alt-dir) [ "$#" -ge 2 ] || usage_die '--alt-dir needs a value'; alt_dir=$2; shift 2 ;;
       --location) [ "$#" -ge 2 ] || usage_die '--location needs a value'; location=$2; shift 2 ;;
       *) usage_die "unknown flag: $1" ;;
     esac
   done
   require_task "$task"
-  local channel="$STATE/$receiver.inbox"
+  local read_dir="$STATE/$receiver.inbox"
   if [ "$receiver" = firstmate ]; then
-    channel=$STATE
+    read_dir=$STATE
   else
     [ -f "$STATE/$receiver.meta" ] || die "receiver has no task inbox consumer: $receiver"
   fi
-  [ -n "$read_dir" ] || read_dir=$channel
-  [ "$read_dir" = "$channel" ] || usage_die 'read-dir must name the receiver channel'
   case "$path" in /*) ;; *) usage_die 'artifact path must be absolute' ;; esac
   single_line "$path" || usage_die 'artifact path must be one line'
   single_line "$alt_dir" || usage_die 'alt-dir must be one line'
   [ -n "$id" ] || usage_die 'handoff needs --id <id>'
   [ -n "$receiver" ] || usage_die 'handoff needs --receiver <id>'
   [ -n "$path" ] || usage_die 'handoff needs --path <path>'
-  [ -n "$read_dir" ] || usage_die 'handoff needs --read-dir <abs-dir>'
   [ -n "$alt_dir" ] || usage_die 'handoff needs --alt-dir <abs-dir>'
   fm_del_valid_id "$id" || usage_die "invalid handoff id: $id"
   fm_del_valid_id "$receiver" || usage_die "invalid receiver id: $receiver"
-  case "$read_dir" in /*) ;; *) usage_die '--read-dir must be an absolute path' ;; esac
   case "$alt_dir" in /*) ;; *) usage_die '--alt-dir must be an absolute path' ;; esac
   case "$location" in read|alt) ;; *) usage_die '--location must be read or alt' ;; esac
   lower=$(printf '%s' "$hash" | tr '[:upper:]' '[:lower:]')

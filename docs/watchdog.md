@@ -546,6 +546,9 @@ Silence notifications reuse their stable key and durable inbox, queued-wake, and
 Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
 Cleanup collects all applicable acknowledgements in each affected home before removing receiver inboxes or producer artifacts.
 Task-inbox placements hold the receiver metadata lock and refuse retired receivers.
+Notification checks defer unavailable receivers without stopping other supervision or recording an escalation as delivered.
+Remote receiver metadata cannot authorize local inbox placement or consumption; those routes require the existing remote transport.
+The handoff command derives the read channel from its receiver.
 Handoff artifact paths must be absolute so later consumers resolve the same file.
 Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
 Report completion does not prevent the worker from advancing or relaunching.
