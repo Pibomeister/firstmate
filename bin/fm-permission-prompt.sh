@@ -185,6 +185,13 @@ fm_pp_hardstop_category() {  # <text>
 _fm_pp_claude_tool_approval() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    function is_repeat_row(s, ch, min,    t, n) {
+      t = s
+      gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t == "") return 0
+      n = gsub(ch, "", t)
+      return (n >= min && t == "")
+    }
     { r[NR] = $0 }
     END {
       last = NR
@@ -194,7 +201,7 @@ _fm_pp_claude_tool_approval() {  # <screen>
       for (i = last; i >= floor; i--) if (r[i] ~ /^[ \t]*Do you want to (proceed|make this edit to [^?]+|create [^?]+)\?[ \t]*$/) { q = i; break }
       if (!q) exit 1
       ruled = 0
-      for (i = q - 1; i >= floor; i--) if (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/) { ruled = 1; break }
+      for (i = q - 1; i >= floor; i--) if (is_repeat_row(r[i], "─", 20) || is_repeat_row(r[i], "━", 20)) { ruled = 1; break }
       if (!ruled) exit 1
       yes = 0; no = 0
       for (i = q + 1; i < last; i++) {
@@ -218,6 +225,13 @@ _fm_pp_claude_tool_approval() {  # <screen>
 _fm_pp_trust_dialog() {  # <screen>
   local rows
   rows=$(printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    function is_repeat_row(s, ch, min,    t, n) {
+      t = s
+      gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t == "") return 0
+      n = gsub(ch, "", t)
+      return (n >= min && t == "")
+    }
     { r[NR] = $0 }
     END {
       last = NR
@@ -235,7 +249,7 @@ _fm_pp_trust_dialog() {  # <screen>
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?No, exit[ \t]*$/) no = 1
         if (r[i] ~ /^[ \t]*(❯|›|>)?[ \t]*([0-9]+\.[ \t]*)?Yes, I trust this folder[ \t]*$/) { yes = 1; after = 0 }
         else if (yes && r[i] ~ /[^ \t]/) after++
-        if (yes && (r[i] ~ /^[ \t]*(─|━){20,}[ \t]*$/ || r[i] ~ /\? for shortcuts/)) quoted = 1
+        if (yes && (is_repeat_row(r[i], "─", 20) || is_repeat_row(r[i], "━", 20) || r[i] ~ /\? for shortcuts/)) quoted = 1
       }
       # Claude: the answer rows end the screen above its footer, with no
       # composer or later picker below them.

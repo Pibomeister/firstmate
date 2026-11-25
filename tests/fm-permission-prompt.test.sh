@@ -198,6 +198,13 @@ test_real_claude_prompts_classify() {
   assert_equals $'hold\tunknown-harness' "$(bash_prompt | classify codex)" "the same prompt on another harness is held"
   assert_equals $'hold\tunknown-harness' "$(bash_prompt | classify '')" "the same prompt with no recorded harness is held"
   assert_equals $'trust\tworkspace' "$(classify claude < "$FIX/claude-2.1.325-trust.txt")" "the real trust dialog asks for a relaunch, and its fixed security-guide row names no stop"
+  local short_rule
+  short_rule=$(printf '─%.0s' $(seq 1 7))
+  assert_equals $'trust\tworkspace' "$(awk -v row="$short_rule" '
+    { print }
+    /Yes, I trust this folder/ { print row }
+  ' "$FIX/claude-2.1.325-trust.txt" | classify claude)" \
+    "a 7-character rule row after the trust answer is not a 20+ composer rule"
   assert_equals $'hardstop\trelease' "$(sed 's#/tmp/probe/#/srv/production/#' "$FIX/claude-2.1.325-trust.txt" | classify claude)" "a trust dialog's workspace path is read for a hard stop"
   assert_equals $'hardstop\trelease' "$({ sed 's#/tmp/probe/#/srv/production/#' "$FIX/claude-2.1.325-trust.txt" | head -18; for _ in $(seq 30); do echo ' '; done; } | classify claude)" "rows of spaces below a trust dialog never hide its workspace path"
   assert_equals $'hold\ttrust-unregistered' "$(classify codex < "$FIX/claude-2.1.325-trust.txt")" "a trust dialog on a harness with no pre-registration is held"
