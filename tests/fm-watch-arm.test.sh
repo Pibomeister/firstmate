@@ -134,9 +134,23 @@ wait_for_file_text() {  # <file> <fixed-text> [poll-limit]
 }
 
 ack_wakes() {  # <state>
-  local state=$1 sequence generation err
+  local state=$1 sequence generation err out attempt=0
   err="$state/.test-ack.err"
-  FM_STATE_OVERRIDE="$state" "$DRAIN" >/dev/null 2> "$err" || return 1
+  out="$state/.test-ack.out"
+  # A contended presentation is a successful CLI deferral, not an empty
+  # drain. Follow its retry instruction before looking for an acknowledgement.
+  while [ "$attempt" -lt 3 ]; do
+    FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" 2> "$err" || { cat "$err" >&2; return 1; }
+    if ! grep -q '^WAKE DRAIN SKIPPED:' "$out"; then
+      break
+    fi
+    attempt=$((attempt + 1))
+  done
+  if [ "$attempt" -eq 3 ]; then
+    cat "$out" >&2
+    return 1
+  fi
+  rm -f "$out"
   sequence=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through \([0-9][0-9]*\) --recovery-generation [A-Za-z0-9._-][A-Za-z0-9._-]*$/\1/p' "$err")
   generation=$(sed -n 's/^WAKE_ACK_REQUIRED:.*--ack-through [0-9][0-9]* --recovery-generation \([A-Za-z0-9._-][A-Za-z0-9._-]*\)$/\1/p' "$err")
   rm -f "$err"
@@ -372,11 +386,15 @@ test_attached_arm_hands_a_stalled_holder_to_its_replacement() {
   # The owner's retry: a fresh arm reaches the watcher's eviction path, and the
   # replacement surfaces an ordinary wake instead of the refusal that used to
   # end in the auto-arm FAILED notice.
+  # Only the first arm asserts the short stall boundary. Eviction checks both
+  # the beacon age and the lock age, so age both past the recovery bound. Give
+  # the replacement's cold start and first poll headroom on a loaded host.
+  fm_touch_epoch "$(( $(date +%s) - 121 ))" "$state/.last-watcher-beat" "$state/.watch.lock/pid"
   append_wake "$state" check stalled-work 'check: work queued behind the stalled holder' \
     || fail "could not queue work for the replacement"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_ARM_CONFIRM_TIMEOUT=10 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 "$WATCH_ARM" > "$rearmout" 2>&1 &
+    FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" FM_GUARD_GRACE=30 FM_WATCHER_STALL_BOUND=120 "$WATCH_ARM" > "$rearmout" 2>&1 &
   ARM_PID=$!
   wait_for_exit "$ARM_PID" 300
   status=$?
@@ -410,7 +428,7 @@ exec /bin/mv "$@"
 SH
   chmod +x "$fakebin/mv"
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=0 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_GUARD_GRACE=5 FM_WATCHER_STALL_BOUND=12 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_GUARD_GRACE=30 FM_WATCHER_STALL_BOUND=120 \
     FM_WATCHER_CLEANUP_LOCK_BOUND=30 FM_ARM_ATTACH_POLL=0.1 FM_WATCH_DELIVERY_MAX_BYTES=4096 \
     "$WATCH_ARM" > "$dir/owned.out" 2> "$dir/owned.err" &
   owned=$!
@@ -420,8 +438,8 @@ SH
   watcher=$(cat "$state/.watch.lock/pid")
   target=$owned
   if [ "$mode" = attached ]; then
-    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=5 \
-      FM_WATCHER_STALL_BOUND=12 FM_ARM_ATTACH_POLL=0.1 \
+    PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_GUARD_GRACE=30 \
+      FM_WATCHER_STALL_BOUND=120 FM_ARM_ATTACH_POLL=0.1 \
       "$WATCH_ARM" > "$dir/attached.out" 2> "$dir/attached.err" &
     attached=$!
     target=$attached
@@ -431,7 +449,7 @@ SH
   fi
   printf 'done: wake before stalled cleanup\n' > "$state/stalled.status"
   i=0
-  while [ ! -e "$dir/delivery-ready" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  while [ ! -e "$dir/delivery-ready" ] && [ "$i" -lt "$REARM_REPORT_POLLS" ]; do sleep 0.05; i=$((i + 1)); done
   [ -e "$dir/delivery-ready" ] || fail "watcher did not reach its delivery publication"
   FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
     . "$1"
@@ -446,12 +464,19 @@ SH
   while [ ! -e "$dir/cleanup-held" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
   [ -e "$dir/cleanup-held" ] || fail "stalled delivery fixture never held the recovery lock"
   : > "$dir/delivery-go"
+  # Delivery holds this lock through rotation. Only age the beacon once that
+  # publication finishes and the recovery lock above holds cleanup in place.
+  # Cold-start and poll latency must not trigger the stall we intend to inject.
+  i=0
+  while [ -e "$state/.watch-deliveries.lock" ] && [ "$i" -lt "$REARM_REPORT_POLLS" ]; do sleep 0.05; i=$((i + 1)); done
+  [ ! -e "$state/.watch-deliveries.lock" ] || fail "watcher did not finish its delivery publication"
   i=0
   while ! grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" 2>/dev/null \
     && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
   grep -qF "signal: $state/stalled.status" "$state/.watch-deliveries.log" \
     || fail "watcher did not publish its delivered reason before stalling"
   cp "$state/.wake-queue" "$dir/queued-before-stall"
+  fm_touch_epoch "$(( $(date +%s) - 121 ))" "$state/.last-watcher-beat" "$state/.watch.lock/pid"
   wait_for_exit "$target" 400 || status=$?
   : > "$dir/cleanup-release"
   wait_for_exit "$holder" 100 >/dev/null 2>&1 || fail "stalled delivery lock holder did not finish"
@@ -1093,6 +1118,49 @@ test_append_wakes_live_announced_watcher() {
   pass "watch-arm: appending work reopens an announced empty recovery"
 }
 
+# The drain CLI explicitly defers a presentation whose queue lock is busy.
+# Exercise that real response, then release the lock at the CLI boundary so
+# the retry can present and acknowledge the same durable row.
+test_ack_wakes_retries_skipped_presentation() {
+  local dir state holder old_drain i=0 status=0
+  dir=$(make_case ack-skipped-presentation)
+  state="$dir/state"
+  append_wake "$state" check inbox:fixture 'check: fixture awaiting acknowledgement'
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_wake_queue_lock_acquire || exit 1
+    : > "$FM_HOME/queue-held"
+    while [ ! -e "$FM_HOME/queue-release" ] && [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ]; do sleep 0.05; done
+    fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" &
+  holder=$!
+  while [ ! -e "$dir/queue-held" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -e "$dir/queue-held" ] || fail "ack fixture did not hold the queue"
+  cat > "$dir/drain" <<'SH'
+#!/usr/bin/env bash
+"$FM_TEST_REAL_DRAIN" "$@" > "$FM_TEST_ACK_DIR/drain.out"
+status=$?
+cat "$FM_TEST_ACK_DIR/drain.out"
+if grep -q '^WAKE DRAIN SKIPPED:' "$FM_TEST_ACK_DIR/drain.out"; then
+  : > "$FM_TEST_ACK_DIR/skipped"
+  : > "$FM_TEST_ACK_DIR/queue-release"
+fi
+exit "$status"
+SH
+  chmod +x "$dir/drain"
+  old_drain=$DRAIN
+  DRAIN="$dir/drain"
+  FM_HOME="$dir" FM_TEST_REAL_DRAIN="$old_drain" FM_TEST_ACK_DIR="$dir" \
+    FM_STATUS_PRESENTATION_LOCK_TIMEOUT=1 ack_wakes "$state" || status=$?
+  DRAIN=$old_drain
+  : > "$dir/queue-release"
+  wait_for_exit "$holder" 100 || fail "ack fixture did not release its queue lock"
+  [ -e "$dir/skipped" ] || fail "ack fixture did not exercise a skipped presentation"
+  expect_code 0 "$status" "a skipped presentation must be retried before acknowledging"
+  [ ! -s "$state/.wake-queue" ] || fail "retry did not acknowledge the queued wake"
+  pass "watch-arm: acknowledgement retries a skipped queue presentation"
+}
+
 test_append_wakes_handling_successor() {
   local phase=$1 seq_state=${2:-intact} repeat=${3:-fresh}
   local dir home state fakebin predecessor successor generation watcher_pid pair sequence
@@ -1384,8 +1452,14 @@ test_take_over_owns_a_fresh_cycle_and_keeps_queued_work_surfacing() {
   start_rearm_arm "$dir" "$state" "$fakebin" "$dir/owner.out" "$$"
   owner=$ARM_PID
   SEED_PID=$(cat "$state/.watch.lock/pid")
+  # Keep the owner from delivering this already-handled fixture wake before
+  # main acknowledges it. That delivery would close the cycle before takeover.
+  kill -STOP "$SEED_PID" || fail "fixture: could not pause the owned watcher"
   append_wake "$state" signal take-over "signal: fixture handled by main"
-  ack_wakes "$state" >/dev/null || fail "fixture: main could not acknowledge the handled wake"
+  status=0
+  ack_wakes "$state" >/dev/null || status=$?
+  kill -CONT "$SEED_PID" || fail "fixture: could not resume the owned watcher"
+  expect_code 0 "$status" "fixture: main could not acknowledge the handled wake"
   case "$(cat "$state/.watcher-down" 2>/dev/null)" in acked:*) ;; *) fail "fixture: the episode was not acknowledged" ;; esac
   PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
@@ -1468,7 +1542,7 @@ SH
 # which the supervision host passes straight back to main: a loop. The stopped
 # wait's reader scratch must not be left behind either.
 test_take_over_confirms_a_watcher_stopped_inside_its_event_wait() {
-  local dir state armout owner watcher fresh acknowledged before i leftover
+  local dir state armout owner watcher fresh acknowledged before i leftover status
   dir=$(make_case take-over-event-wait)
   state="$dir/state"
   armout="$dir/arm.out"
@@ -1493,8 +1567,14 @@ test_take_over_confirms_a_watcher_stopped_inside_its_event_wait() {
   wait_for_file_text "$dir/owner.out" 'watcher: started pid=' \
     || fail "fixture: the successor did not start: $(cat "$dir/owner.out")"
   watcher=$(cat "$state/.watch.lock/pid")
+  # Retire the fixture wake before the owner can deliver it and close the
+  # cycle whose event wait this case must interrupt.
+  kill -STOP "$watcher" || fail "fixture: could not pause the owned watcher"
   append_wake "$state" signal take-over "signal: fixture handled by main"
-  ack_wakes "$state" >/dev/null || fail "fixture: main could not acknowledge the handled wake"
+  status=0
+  ack_wakes "$state" >/dev/null || status=$?
+  kill -CONT "$watcher" || fail "fixture: could not resume the owned watcher"
+  expect_code 0 "$status" "fixture: main could not acknowledge the handled wake"
   acknowledged=$(cat "$state/.watcher-down")
   case "$acknowledged" in acked:*) ;; *) fail "fixture: the episode was not acknowledged: $acknowledged" ;; esac
   # Land the take-over a second into a fresh event wait (each begins with the
@@ -1757,12 +1837,13 @@ SH
 # in <arm-out> so the watcher's own exit reason is readable there.
 start_owned_watcher() {  # <home> <state> <fakebin> <arm-out>
   local home=$1 state=$2 fakebin=$3 armout=$4 i
+  # This prepares the root-removal case; cold-start latency is not its assertion.
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_ARM_CONFIRM_TIMEOUT=2 "$WATCH_ARM" > "$armout" 2>&1 &
+    FM_ARM_CONFIRM_TIMEOUT="$REARM_CONFIRM_SECONDS" "$WATCH_ARM" > "$armout" 2>&1 &
   ARM_PID=$!
   i=0
-  while [ "$i" -lt 100 ]; do
+  while [ "$i" -lt "$REARM_EXIT_POLLS" ]; do
     grep -q '^watcher: started pid=' "$armout" 2>/dev/null && break
     is_live_non_zombie "$ARM_PID" || break
     sleep 0.1
@@ -1858,15 +1939,16 @@ test_attached_arm_exits_when_its_root_is_removed() {
   owner=$ARM_PID
   [ -d "$state" ] || fail "the owning arm did not create the not-yet-existing state directory"
   PATH="$fakebin:$PATH" FM_HOME="$repo" FM_STATE_OVERRIDE="$state" FM_POLL=1 \
-    FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=60 "$repo/bin/fm-watch-arm.sh" > "$armout" 2>&1 &
+    FM_ARM_ATTACH_POLL=0.1 FM_ARM_CONFIRM_TIMEOUT=60 FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT=60 \
+    "$repo/bin/fm-watch-arm.sh" > "$armout" 2>&1 &
   attached=$!
   wait_for_file_text "$armout" "watcher: attached pid=$WATCH_PID" \
     || fail "second arm did not attach to the live watcher: $(cat "$armout")"
 
   rm -rf "$repo"
-  # One 0.1s attach poll plus the 0.2s recheck, with headroom for a busy host;
-  # far short of the 60s successor window the arm used to poll through.
-  wait_for_exit "$attached" 50
+  # Removal also closes the cycle ledger against a missing state directory.
+  # Give that bounded cleanup the recovery budget, below the 60s successor wait.
+  wait_for_exit "$attached" "$REARM_EXIT_POLLS"
   status=$?
   wait_for_exit "$owner" 400 >/dev/null 2>&1 || true
   expect_code 1 "$status" "an arm whose root was removed must exit 1: $(cat "$armout")"
@@ -2422,11 +2504,164 @@ test_detach_hold_refuses_away_mode_and_reports_failure() {
   pass "detach-hold: state/.afk refuses it, and a dead watcher exits with a FAILED line"
 }
 
+# --- managed-hold holder: an attached arm reports queued work -----------------
+# The watchdog's managed-hold watcher stays alive across wakes, so an arm that
+# attached to it (the Claude Stop hook's foreground arm) never sees the cycle
+# end. It must report main's queued rows itself, or the primary idles with the
+# queue full and the beacon fresh (the 2026-11-11/12 stall).
+
+# Start a real managed-hold watcher as the singleton holder, as the watchdog does.
+start_managed_seed_watcher() {  # <state> <fakebin> <watch-out>
+  local state=$1 fakebin=$2 out=$3 i
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 FM_WATCH_MANAGED_HOLD=1 \
+    "$WATCH" --managed-hold > "$out" &
+  SEED_PID=$!
+  i=0
+  while [ "$i" -lt 60 ]; do
+    [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$SEED_PID" ] \
+      && [ -e "$state/.last-watcher-beat" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$SEED_PID" ] \
+    || fail "managed-hold seed watcher did not take the lock"
+}
+
+queue_main_wake() {  # <state> <key> <payload>
+  FM_STATE_OVERRIDE="$1" bash -c '. "$1"; fm_wake_append check "$2" "$3"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$2" "$3" || fail "could not queue the fixture wake"
+}
+
+# Attach a real arm with extra environment (VAR=value ...) to the live holder.
+start_attached_arm_env() {  # <state> <fakebin> <arm-out> <env...>
+  local state=$1 fakebin=$2 armout=$3 i
+  shift 3
+  env "$@" PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_ARM_ATTACH_POLL=0.1 \
+    FM_ARM_CONFIRM_TIMEOUT=5 "$WATCH_ARM" > "$armout" &
+  ARM_PID=$!
+  i=0
+  while [ "$i" -lt 80 ]; do
+    grep -qF "watcher: attached pid=$SEED_PID" "$armout" 2>/dev/null && break
+    is_live_non_zombie "$ARM_PID" || break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  grep -qF "watcher: attached pid=$SEED_PID" "$armout" \
+    || fail "arm did not attach to the managed-hold watcher: $(cat "$armout")"
+}
+
+stop_seed() {
+  kill -TERM "$SEED_PID" 2>/dev/null || true
+  wait_for_exit "$SEED_PID" 50 >/dev/null 2>&1 || true
+}
+
+test_attached_arm_reports_queued_wake_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-queued)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  queue_main_wake "$state" fixture-queued 'check: fixture queued wake'
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+  # One attach poll is 0.1s; allow 5s for a loaded host.
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "an arm attached to a managed-hold holder must exit 0 once main has queued work: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "attached arm did not report the queued work: $(cat "$armout")"
+  is_live_non_zombie "$SEED_PID" \
+    || fail "reporting queued work must leave the managed-hold watcher running"
+  grep -q 'reason=attached-delivered-wake' "$state/.watch-cycle-exits.log" \
+    || fail "the managed-hold report was not classified in the lifecycle ledger"
+  stop_seed
+  pass "watch-arm: an arm attached to a managed-hold holder reports main's queued work and exits 0"
+}
+
+test_attached_arm_keeps_following_managed_hold_when_not_reportable() {
+  local dir state fakebin out armout variant
+  for variant in empty managed afk; do
+    dir=$(make_case "managed-hold-follow-$variant")
+    state="$dir/state"
+    fakebin="$dir/fakebin"
+    out="$dir/watch.out"
+    armout="$dir/arm.out"
+    start_managed_seed_watcher "$state" "$fakebin" "$out"
+    [ "$variant" = empty ] || queue_main_wake "$state" "fixture-$variant" 'check: fixture queued wake'
+    if [ "$variant" = managed ]; then
+      start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=1
+    else
+      [ "$variant" != afk ] || : > "$state/.afk"
+      start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+    fi
+    sleep 3
+    is_live_non_zombie "$ARM_PID" \
+      || fail "$variant: the attached arm must keep following the holder: $(cat "$armout")"
+    ! grep -qx 'check: rearm-resurface' "$armout" \
+      || fail "$variant: the attached arm reported work it must not report: $(cat "$armout")"
+    kill -TERM "$ARM_PID" 2>/dev/null || true
+    wait_for_exit "$ARM_PID" 50 >/dev/null 2>&1 || true
+    stop_seed
+  done
+  pass "watch-arm: an empty queue, the watchdog's own managed arm, and away mode keep following the managed-hold holder"
+}
+
+test_handling_successor_reports_only_newer_rows_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-successor)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  queue_main_wake "$state" fixture-delivered 'check: fixture delivered wake'
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD= FM_WATCH_PREDECESSOR_ARM_PID=999999
+  sleep 3
+  is_live_non_zombie "$ARM_PID" \
+    || fail "a handling successor must not re-report the row its predecessor delivered: $(cat "$armout")"
+  queue_main_wake "$state" fixture-newer 'check: fixture newer wake'
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "a handling successor must report a newer queued row: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "handling successor did not report the newer row: $(cat "$armout")"
+  stop_seed
+  pass "watch-arm: a handling successor under a managed-hold holder reports only rows newer than its attach"
+}
+
+test_attached_arm_reports_unsequenced_row_under_managed_hold() {
+  local dir state fakebin out armout status
+  dir=$(make_case managed-hold-unsequenced)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  out="$dir/watch.out"
+  armout="$dir/arm.out"
+  start_managed_seed_watcher "$state" "$fakebin" "$out"
+  # A truncated row has no sequence; only a main drain retires it, so an
+  # ordinary arm must still wake main for it.
+  printf 'truncated-row\n' >> "$state/.wake-queue"
+  start_attached_arm_env "$state" "$fakebin" "$armout" FM_WATCH_MANAGED_HOLD=
+  wait_for_exit "$ARM_PID" 50
+  status=$?
+  expect_code 0 "$status" "an arm attached to a managed-hold holder must report a queue holding only an unsequenced row: $(cat "$armout")"
+  grep -qx 'check: rearm-resurface' "$armout" \
+    || fail "attached arm did not report the unsequenced row: $(cat "$armout")"
+  stop_seed
+  pass "watch-arm: an arm attached to a managed-hold holder reports a queue holding only an unsequenced row"
+}
+
+test_attached_arm_reports_queued_wake_under_managed_hold
+test_attached_arm_reports_unsequenced_row_under_managed_hold
+test_attached_arm_keeps_following_managed_hold_when_not_reportable
+test_handling_successor_reports_only_newer_rows_under_managed_hold
 test_detach_hold_leaves_a_hold_behind_the_arm
 test_detach_hold_refuses_away_mode_and_reports_failure
 test_grok_one_stale_notice_leaves_the_watcher_holding_the_lock
 test_grok_hold_survives_a_wake_after_a_process_event_wake
 test_grok_successor_holds_across_quiet_polls_after_a_process_event
+test_ack_wakes_retries_skipped_presentation
 test_append_wakes_handling_successor after-ack
 test_append_wakes_handling_successor before-ack
 test_append_wakes_handling_successor after-ack missing

@@ -1,0 +1,13 @@
+● Background command "fixture health check" completed (exit code 0)
+
+  Waiting for worker · 49s
+  ⎿  $ sleep 30 (50s)
+     (ctrl+b to run in background)
+
+✽ Prestidigitating… (14m 27s · ↓ 5.6k tokens)
+  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt
