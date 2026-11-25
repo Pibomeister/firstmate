@@ -10,7 +10,7 @@
 #   fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]
 #   fm-reset-audit.sh settle [--now]
 #   fm-reset-audit.sh sweep
-#   fm-reset-audit.sh arm | disarm
+#   fm-reset-audit.sh arm [--if-needed] | disarm
 #
 # FM_HOME selects the home (default: the code root). Node and tasks-axi are
 # required. Directory overrides and inherited TASKS_AXI_* addressing are ignored:
@@ -48,43 +48,58 @@
 #   stage    saves a snapshot as the next handoff's "before" in
 #            state/reset-audit-staged.json, replacing an earlier one.
 #            bin/fm-ledger.sh handoff calls it once the document is written;
-#            --if-absent keeps an existing one (bin/fm-handoff-launch.sh).
+#            --if-absent keeps one that is at most 30 minutes old
+#            (bin/fm-handoff-launch.sh).
 #   begin    records that a reset happened now. A handoff takes the staged
-#            snapshot by rename, so of two callers only one records it;
-#            --if-staged does nothing when none is staged. A compaction, or a
-#            handoff with nothing staged, takes a snapshot now. The snapshot
-#            waits in state/reset-audit-pending/<epoch>-<kind>-<pid>.json.
-#            Callers: bin/fm-sessionstart-run.sh for a compact session open by
-#            the lock owner, bin/fm-bootstrap.sh for a new session that takes
-#            the helm, and bin/fm-handoff-launch.sh at a verified transfer.
+#            snapshot by rename, so of two --if-staged callers only one
+#            records it; --if-staged does nothing when none is staged. A
+#            staged snapshot older than 30 minutes belongs to a handoff that
+#            never happened and is removed, not recorded. A compaction, or a
+#            handoff with nothing staged, takes a snapshot now, bounded to 12
+#            seconds. The snapshot waits in
+#            state/reset-audit-pending/<epoch>-<kind>-<pid>.json, and begin
+#            arms the check. Callers: bin/fm-sessionstart-run.sh for a compact
+#            session open by the lock owner, bin/fm-bootstrap.sh for a new
+#            session that takes the helm, and bin/fm-handoff-launch.sh at a
+#            verified transfer. At most 20 resets wait: a further snapshot is
+#            refused (exit 1) until one settles; a staged handoff is always
+#            taken.
 #   settle   compares each waiting reset that is at least
 #            FM_RESET_AUDIT_SETTLE_SECS old (default 600) against one snapshot
 #            of the present, with --no-strict and --at, then removes it. The
 #            wait lets the session that came out of the reset act first: a
 #            reset loses nothing from disk by itself, the loss shows when that
 #            session drops work it no longer remembers. It prints one line per
-#            FAIL and nothing per PASS. A reset that still cannot be compared
-#            an hour after it was due is moved to
-#            state/reset-audit-pending/unreadable/ (newest 20 kept) and
-#            reported in one line; it gets no row. --now settles every waiting
-#            reset at once, prints every verdict, and exits 1 when one could
-#            not be compared. At most 20 resets wait: begin settles them all
-#            first when that many are waiting.
+#            FAIL and nothing per PASS. It waits for a later run while a task
+#            close is in progress (state/<id>.backlog-close), because a
+#            snapshot taken then can miss a task that is neither open nor yet
+#            Done. A reset that still cannot be compared an hour after it was
+#            due is moved to state/reset-audit-pending/unreadable/ (newest 20
+#            kept) and reported in one line; it gets no row. --now settles
+#            every waiting reset at once, prints every verdict, and exits 1
+#            when one could not be compared. A row lock that a killed compare
+#            left behind more than five minutes ago is removed first.
 #   sweep    is what the armed check runs: bin/fm-handoff-reconcile.sh --apply
 #            --report, then settle. It prints only lines the supervisor must
-#            read, and bounds its own work below the watcher's check timeout.
+#            read, bounds its own work below the watcher's check timeout and
+#            leaves the rest to the next run, and disarms the check once no
+#            reset and no late handoff successor waits.
 #   arm      installs and registers state/reset-audit.check.sh, the watcher
-#            check that runs sweep (bin/fm-bootstrap.sh arms it at each session
-#            start in every home whose backlog tasks-axi can read); disarm
-#            retires it. A check file of that name that this script did not
-#            write is left unchanged.
+#            check that runs sweep; disarm retires it. --if-needed arms only
+#            while a reset or a late handoff successor waits
+#            (bin/fm-bootstrap.sh at each session start, bin/fm-handoff-ack.sh
+#            when it refuses a successor), so an idle home keeps no check. A
+#            check file of that name that this script did not write is left
+#            unchanged.
 # These commands change nothing and exit 0 when FM_STATE_OVERRIDE,
 # FM_DATA_OVERRIDE or FM_CONFIG_OVERRIDE names a directory that is not this
 # home's own, because the audit reads this home's records only.
 # Not covered: a compaction on a harness with no tracked session-open source
 # (docs/sessionstart-nudge.md), a restart with no handoff written, a reset
-# whose snapshot could not be taken (a backlog tasks-axi cannot read, or a
-# missing tool), and work that existed only in chat.
+# whose snapshot could not be taken (a backlog tasks-axi cannot read, a
+# missing tool, or the time bound), and work that existed only in chat.
+# The comparison is the one compare owns, made ten minutes after the reset: a
+# task closed in that time without Done evidence is reported as DRIFT.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -101,6 +116,9 @@ CHECK_MARK='# fm-reset-audit: reset audit sweep check'
 PENDING_CAP=20          # resets that may wait for their settle time
 UNREADABLE_KEEP=20      # unreadable resets kept for inspection
 UNREADABLE_GRACE=3600   # seconds past due before a reset is given up on
+STAGED_MAX_MIN=30       # minutes a staged snapshot stays a handoff's "before"
+BEGIN_SNAPSHOT_SECS=12  # bound of the snapshot a session open waits for
+ROW_LOCK_STALE_MIN=5    # minutes before compare's row lock counts as orphaned
 
 lifecycle_die() { printf 'fm-reset-audit: %s\n' "$1" >&2; exit 2; }
 
@@ -139,18 +157,35 @@ take_snapshot() {  # <destination> <seconds>
   return 1
 }
 
-pending_count() {
-  local file count=0
+pending_count() {  # the resets settle will take up: <epoch>-*.json files
+  local file base count=0
   for file in "$PENDING"/*.json; do
-    [ -f "$file" ] && count=$((count + 1))
+    [ -f "$file" ] && [ ! -L "$file" ] || continue
+    base=${file##*/}
+    case "${base%%-*}" in ''|*[!0-9]*) continue ;; esac
+    count=$((count + 1))
   done
   printf '%s\n' "$count"
 }
 
+staged_fresh() {
+  [ -f "$STAGED" ] && [ ! -L "$STAGED" ] \
+    && [ -z "$(find "$STAGED" -mmin +"$STAGED_MAX_MIN" 2>/dev/null)" ]
+}
+
+late_successor_waits() {
+  [ -n "$(env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --waiting 2>/dev/null | head -n 1)" ]
+}
+
+check_needed() { [ "$(pending_count)" -gt 0 ] || late_successor_waits; }
+
+# A failed arm must not end the caller: lifecycle_die exits.
+arm_quietly() { ( install_check ) >/dev/null 2>&1 || true; }
+
 cmd_stage() {
   case "${1:-}" in
     '') ;;
-    --if-absent) [ ! -f "$STAGED" ] || return 0 ;;
+    --if-absent) ! staged_fresh || return 0 ;;
     *) lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]' ;;
   esac
   [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]'
@@ -173,20 +208,27 @@ cmd_begin() {
   [ "$if_staged" -eq 0 ] || [ "$kind" = handoff ] || lifecycle_die '--if-staged applies to a handoff only'
   if [ "$if_staged" -eq 1 ] && [ ! -f "$STAGED" ]; then return 0; fi
   mkdir -p "$PENDING" || return 1
-  if [ "$(pending_count)" -ge "$PENDING_CAP" ]; then
-    cmd_settle --now >/dev/null 2>&1 || true
-    if [ "$(pending_count)" -ge "$PENDING_CAP" ]; then
-      printf 'fm-reset-audit: %s resets already wait and cannot be settled; this reset is not recorded\n' "$PENDING_CAP" >&2
-      return 1
-    fi
-  fi
   dest="$PENDING/$(fm_now)-$kind-$$.json"
-  if [ "$kind" = handoff ] && [ -f "$STAGED" ]; then
-    # The rename is the claim: a second caller finds nothing staged.
-    if mv -- "$STAGED" "$dest" 2>/dev/null; then return 0; fi
+  if [ "$kind" = handoff ]; then
+    if staged_fresh; then
+      # The rename is the claim: a second caller finds nothing to rename.
+      if mv -- "$STAGED" "$dest" 2>/dev/null; then
+        arm_quietly
+        return 0
+      fi
+    elif [ -f "$STAGED" ] && [ ! -L "$STAGED" ]; then
+      rm -f -- "$STAGED"
+    fi
     [ "$if_staged" -eq 0 ] || return 0
   fi
-  take_snapshot "$dest" 30 || { printf 'fm-reset-audit: could not take the snapshot for this reset\n' >&2; return 1; }
+  if [ "$(pending_count)" -ge "$PENDING_CAP" ]; then
+    arm_quietly
+    printf 'fm-reset-audit: %s resets already wait to be settled; this reset is not recorded\n' "$PENDING_CAP" >&2
+    return 1
+  fi
+  take_snapshot "$dest" "$BEGIN_SNAPSHOT_SECS" \
+    || { printf 'fm-reset-audit: could not take the snapshot for this reset\n' >&2; return 1; }
+  arm_quietly
 }
 
 give_up() {  # <pending-file> <kind> <epoch> <why>
@@ -202,15 +244,17 @@ give_up() {  # <pending-file> <kind> <epoch> <why>
 }
 
 cmd_settle() {
-  local now_flag=0 window=${FM_RESET_AUDIT_SETTLE_SECS:-600} snap_secs=${SETTLE_SNAPSHOT_SECS:-30}
-  local now file base epoch rest kind after out rc failed=0 why
-  local -a due=()
   case "${1:-}" in
-    '') ;;
-    --now) now_flag=1 ;;
+    '') [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh settle [--now]'; settle_waiting 0 ;;
+    --now) [ "$#" -eq 1 ] || lifecycle_die 'usage: fm-reset-audit.sh settle [--now]'; settle_waiting 1 ;;
     *) lifecycle_die 'usage: fm-reset-audit.sh settle [--now]' ;;
   esac
-  [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh settle [--now]'
+}
+
+settle_waiting() {  # <1 for --now, else 0>
+  local now_flag=$1 window=${FM_RESET_AUDIT_SETTLE_SECS:-600} snap_secs=${SETTLE_SNAPSHOT_SECS:-30}
+  local now file base epoch rest kind after out rc failed=0 why closing=0 marker
+  local -a due=()
   case "$window" in ''|*[!0-9]*) window=600 ;; esac
   [ -d "$PENDING" ] || return 0
   now=$(fm_now)
@@ -226,12 +270,30 @@ cmd_settle() {
   # One settle at a time, so no reset is compared twice.
   fm_lock_try_acquire "$STATE/.reset-audit-settle.lock" 2>/dev/null || return "$now_flag"
   find "$STATE" -maxdepth 1 -name '.reset-audit-snap.*' -mmin +60 -exec rm -f -- {} + 2>/dev/null || true
+  # compare holds its row lock for one append; one this old has no holder.
+  find "$STATE" -maxdepth 1 -name '.reset-audit.lock' -mmin +"$ROW_LOCK_STALE_MIN" -exec rm -f -- {} + 2>/dev/null || true
   after="$STATE/.reset-audit-snap.after.$$"
   rc=0
+  # A task close in progress on either side of the snapshot makes it unsafe
+  # to judge (see settle in the header).
+  if [ "$now_flag" -eq 0 ]; then
+    for marker in "$STATE"/*.backlog-close; do
+      [ -e "$marker" ] || [ -L "$marker" ] || continue
+      closing=1
+    done
+  fi
   take_snapshot "$after" "$snap_secs" || rc=1
+  if [ "$now_flag" -eq 0 ]; then
+    for marker in "$STATE"/*.backlog-close; do
+      [ -e "$marker" ] || [ -L "$marker" ] || continue
+      closing=1
+    done
+  fi
   for file in "${due[@]}"; do
     [ -f "$file" ] || continue
+    [ -z "${SETTLE_DEADLINE:-}" ] || [ "$SECONDS" -lt "$SETTLE_DEADLINE" ] || break
     base=${file##*/}; base=${base%.json}; epoch=${base%%-*}; rest=${base#*-}; kind=${rest%%-*}
+    if [ "$closing" -eq 1 ] && [ $((now - epoch)) -lt $((window + UNREADABLE_GRACE)) ]; then continue; fi
     why='the present state could not be read'
     out=''
     if [ "$rc" -eq 0 ]; then
@@ -263,9 +325,16 @@ cmd_settle() {
 }
 
 cmd_sweep() {
+  local start=$SECONDS
   [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh sweep'
-  fm_run_timed 8 env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply --report 2>/dev/null || true
-  SETTLE_SNAPSHOT_SECS=15 cmd_settle || true
+  fm_run_timed 9 env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply --report 2>/dev/null || true
+  SETTLE_SNAPSHOT_SECS=10 SETTLE_DEADLINE=$((start + 24)) settle_waiting 0 || true
+  # Nothing waits: retire the check, then look again, because a reset
+  # recorded while it was being retired must not be left without one.
+  if ! check_needed; then
+    ( retire_check ) >/dev/null 2>&1 || true
+    ! check_needed || arm_quietly
+  fi
 }
 
 check_owned_or_absent() {
@@ -275,9 +344,18 @@ check_owned_or_absent() {
 }
 
 cmd_arm() {
+  case "${1:-}" in
+    '') ;;
+    --if-needed) check_needed || return 0 ;;
+    *) lifecycle_die 'usage: fm-reset-audit.sh arm [--if-needed]' ;;
+  esac
+  [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh arm [--if-needed]'
+  install_check
+}
+
+install_check() {
   local device staged
   local -a shim
-  [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh arm'
   # shellcheck source=bin/fm-pr-lib.sh disable=SC1091
   . "$SCRIPT_DIR/fm-pr-lib.sh"
   device=$(fm_pr_file_device "$STATE") || lifecycle_die "state directory is unavailable: $STATE"
@@ -301,6 +379,10 @@ cmd_arm() {
 
 cmd_disarm() {
   [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh disarm'
+  retire_check
+}
+
+retire_check() {
   if ! check_owned_or_absent; then
     printf 'fm-reset-audit: %s is not the reset audit check; left unchanged\n' "$STATE/$CHECK_ID.check.sh" >&2
     return 0

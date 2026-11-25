@@ -2,7 +2,8 @@
 # fm-handoff-ack.sh <nonce> <sha256-read-from-document>
 # Run by the successor after reading the handoff, BEFORE session-start.
 # Writes the ack owned by fm-handoff-lib.sh, then requests the serialized
-# one-time transfer in fm-lock.sh. Every rejection emits handoff_reject.
+# one-time transfer in fm-lock.sh. Every rejection emits handoff_reject and
+# arms the check that ends a late successor (bin/fm-reset-audit.sh arm).
 # A predecessor proven dead yields the ordinary stale takeover, recorded as
 # handoff_ack reason=stale_takeover rather than lock_transferred.
 # The ack also keeps the claim's handoff path and predecessor pid, start, and
@@ -24,6 +25,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 nonce=${1:-}
 reject() {
   fm_handoff_event handoff_reject "$nonce" 0 0 "$(fm_handoff_endpoint_handle || true)" "$1"
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-reset-audit.sh" arm --if-needed >/dev/null 2>&1 || true
   exit 1
 }
 case "$nonce" in ''|*[!a-f0-9]*) reject invalid_nonce ;; esac

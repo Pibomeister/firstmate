@@ -23,16 +23,18 @@ if ! command -v jq >/dev/null 2>&1 || ! command -v node >/dev/null 2>&1; then
   exit 0
 fi
 
-# A fake Orca: a terminal exists while $FAKE_ORCA/<handle>.screen exists.
+# A fake Orca. A terminal is open while $FAKE_ORCA/<handle>.screen exists and
+# closed while <handle>.closed exists; any other handle is one Orca no longer
+# knows. Marker files make single calls fail the way a real Orca can:
+#   down             no call answers at all
+#   <handle>.noread  the terminal is described, its screen cannot be read
+#   <handle>.odd     the description is refused for another reason
+#   <handle>.sticky  a close is accepted and does nothing
+#   <handle>.blip    the first description after a close gets no answer
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >> "$FAKE_ORCA/calls"
-if [ "${1:-} ${2:-}" = 'status --json' ]; then
-  [ ! -e "$FAKE_ORCA/down" ] || exit 1
-  printf '{"ok":true}\n'
-  exit 0
-fi
 [ "${1:-}" = terminal ] || exit 91
 action=${2:-}
 handle=
@@ -46,18 +48,44 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ ! -e "$FAKE_ORCA/down" ] || exit 1
+marks="${FAKE_ORCA:?}/${handle:?}"
 case "$action" in
-  read)
-    if [ -f "$FAKE_ORCA/$handle.screen" ]; then
-      jq -Rs '{ok: true, result: {terminal: {tail: split("\n")}}}' "$FAKE_ORCA/$handle.screen"
+  show)
+    if [ -e "$marks.blipped" ]; then
+      rm -f "${marks:?}.blipped"
+      exit 1
+    fi
+    if [ -e "$marks.odd" ]; then
+      printf '{"ok":false,"error":{"code":"runtime_unavailable"}}\n'
+      exit 1
+    fi
+    if [ -f "$marks.screen" ]; then
+      jq -n --arg h "$handle" '{ok: true, result: {terminal: {handle: $h, connected: true, writable: true}}}'
       exit 0
     fi
-    printf '{"ok":false,"error":{"message":"terminal not found"}}\n'
+    if [ -e "$marks.closed" ]; then
+      jq -n --arg h "$handle" \
+        '{ok: true, result: {terminal: {handle: $h, connected: false, writable: false, exitCause: {kind: "operator_close"}}}}'
+      exit 0
+    fi
+    printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n'
+    exit 1
+    ;;
+  read)
+    if [ -f "$marks.screen" ] && [ ! -e "$marks.noread" ]; then
+      jq -Rs '{ok: true, result: {terminal: {tail: split("\n")}}}' "$marks.screen"
+      exit 0
+    fi
+    printf '{"ok":false,"error":{"code":"terminal_read_failed"}}\n'
     exit 1
     ;;
   close)
     printf '%s\n' "$handle" >> "$FAKE_ORCA/closed"
-    [ -e "$FAKE_ORCA/$handle.sticky" ] || rm -f "$FAKE_ORCA/$handle.screen"
+    if [ ! -e "$marks.sticky" ]; then
+      rm -f "${marks:?}.screen"
+      : > "$marks.closed"
+    fi
+    [ ! -e "$marks.blip" ] || mv "$marks.blip" "$marks.blipped"
     printf '{"ok":true}\n'
     exit 0
     ;;
@@ -83,6 +111,7 @@ reconcile() {
 }
 apply() { ARGS=(--apply --report); reconcile "$@"; }
 dry() { ARGS=(); reconcile; }
+waiting() { ARGS=(--waiting); reconcile; }
 
 event() {  # <seconds ago> <event> <nonce> <handle> <reason>
   printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=0 handle=%s reason=%s\n' \
@@ -97,6 +126,7 @@ screen() {  # <handle> <nonce>
 
 outcomes() { cat "$HOME_DIR/state/handoff-reconcile.tsv" 2>/dev/null; }
 outcome_of() { outcomes | awk -F '\t' -v h="$1" '$3 == h { print $4 " " $5 }'; }
+nonce_of() { outcomes | awk -F '\t' -v h="$1" '$3 == h { print $2 }'; }
 closed() { cat "$FAKE_ORCA/closed" 2>/dev/null; }
 
 test_retires_a_proven_late_successor_once() {
@@ -106,6 +136,8 @@ test_retires_a_proven_late_successor_once() {
   event 100 handoff_failed "$N1" none deadline
   event 50 handoff_reject "$N1" term_late missing_claim
   screen term_late "$N1"
+  assert_equals "$N1${TAB}term_late" "$(waiting)" "the undecided terminal is listed as waiting"
+  assert_absent "$FAKE_ORCA/calls" "listing what waits asks Orca nothing"
   out=$(dry) || fail "dry run failed"
   assert_contains "$out" "retire term_late" "the dry run names the terminal it would end"
   assert_equals "" "$(closed)" "a dry run closes nothing"
@@ -123,6 +155,7 @@ test_retires_a_proven_late_successor_once() {
   assert_equals "" "$out" "a handled terminal is not reported again"
   assert_equals term_late "$(closed)" "a handled terminal is not closed again"
   assert_equals 1 "$(outcomes | awk 'END { print NR }')" "one outcome row for one terminal"
+  assert_equals "" "$(waiting)" "a decided terminal no longer waits"
   pass "a late refused successor is ended once, with its nonce proven on screen and the screen saved"
 }
 
@@ -136,12 +169,18 @@ test_never_ends_a_protected_terminal() {
   event 270 handoff_reject "$N1" term_task stale_nonce
   event 260 handoff_reject "$N1" term_window stale_nonce
   event 250 handoff_reject "$N1" term_party stale_nonce
+  event 248 handoff_reject "$N1" term_starter stale_nonce
+  event 246 handoff_reject "$N1" term_retrier stale_nonce
+  event 244 handoff_started "$N3" term_starter awaiting_ack
+  event 242 handoff_retry "$N3" term_retrier awaiting_ack
   event 240 handoff_started "$N2" term_owner awaiting_ack
   event 230 handoff_ack "$N2" term_party lock_transferred
   printf 'backend=orca\ntarget=term_captain\nat=1\n' > "$HOME_DIR/state/captain-handle"
   printf 'kind=ship\nterminal=term_task\n' > "$HOME_DIR/state/t-1.meta"
   printf 'kind=scout\nwindow=term_window\n' > "$HOME_DIR/state/t-2.meta"
-  for h in term_owner term_self term_captain term_task term_window term_party; do screen "$h" "$N1"; done
+  for h in term_owner term_self term_captain term_task term_window term_party term_starter term_retrier; do
+    screen "$h" "$N1"
+  done
   out=$(apply FM_SUPERVISOR_TARGET=term_self) || fail "apply failed"
   assert_equals "" "$(closed)" "no protected terminal is closed"
   assert_equals "" "$out" "a kept terminal is not reported"
@@ -151,6 +190,8 @@ test_never_ends_a_protected_terminal() {
   assert_equals "kept task_endpoint" "$(outcome_of term_task)" "a task terminal is kept"
   assert_equals "kept task_endpoint" "$(outcome_of term_window)" "a task window is kept"
   assert_equals "kept handoff_party" "$(outcome_of term_party)" "a terminal that acknowledged a handoff is kept"
+  assert_equals "kept handoff_party" "$(outcome_of term_starter)" "a terminal that started a handoff is kept"
+  assert_equals "kept handoff_party" "$(outcome_of term_retrier)" "a terminal that retried a handoff is kept"
   pass "the lock owner, the caller, the captain handle, task endpoints and handoff parties are never ended"
 }
 
@@ -163,6 +204,7 @@ test_does_nothing_while_a_handoff_is_in_progress() {
   printf '{"nonce":"%s"}\n' "$N2" > "$HOME_DIR/state/.handoff-pending"
   out=$(apply) || fail "apply during a claim failed"
   assert_equals "" "$(closed)$(outcomes)$out" "nothing happens while a claim is pending"
+  assert_equals "$N1${TAB}term_late" "$(waiting)" "the terminal still waits while a claim is pending"
   rm -f "$HOME_DIR/state/.handoff-pending"
   mkdir "$HOME_DIR/state/.lock.acquire"
   out=$(apply) || fail "apply during a lock change failed"
@@ -209,14 +251,88 @@ test_gone_and_unreachable_are_told_apart() {
   new_home gone
   event 300 handoff_started "$N1" term_owner awaiting_ack
   event 60 handoff_reject "$N1" term_gone missing_claim
+  event 55 handoff_reject "$N1" term_shut missing_claim
+  event 50 handoff_reject "$N1" term_odd missing_claim
+  event 45 handoff_reject "$N1" term_dark missing_claim
+  : > "$FAKE_ORCA/term_shut.closed"
+  : > "$FAKE_ORCA/term_odd.odd"
+  screen term_odd "$N1"
+  screen term_dark "$N1"
+  : > "$FAKE_ORCA/term_dark.noread"
   : > "$FAKE_ORCA/down"
   out=$(apply) || fail "apply with Orca down failed"
   assert_equals "" "$(outcomes)$out" "a terminal is not judged while Orca does not answer"
-  rm -f "$FAKE_ORCA/down"
+  mv "$FAKE_ORCA/down" "$FAKE_ORCA/was-down"
   out=$(apply) || fail "apply failed"
-  assert_equals "gone terminal_not_found" "$(outcome_of term_gone)" "a terminal Orca no longer has is recorded as gone"
-  assert_equals "" "$(closed)$out" "a gone terminal needs no close and no report"
-  pass "a terminal that is gone is recorded, and an unreachable Orca is tried again later"
+  assert_equals "gone terminal_stale" "$(outcome_of term_gone)" "a handle Orca no longer knows is recorded as gone"
+  assert_equals "gone terminal_closed" "$(outcome_of term_shut)" "a terminal Orca describes as closed is recorded as gone"
+  assert_equals "" "$(outcome_of term_odd)" "another refusal from Orca is not read as a closed terminal"
+  assert_equals "" "$(outcome_of term_dark)" "an open terminal whose screen cannot be read is not judged"
+  assert_equals "" "$(closed)$out" "nothing is closed and nothing is reported"
+  mv "$FAKE_ORCA/term_odd.odd" "$FAKE_ORCA/term_odd.was-odd"
+  mv "$FAKE_ORCA/term_dark.noread" "$FAKE_ORCA/term_dark.was-noread"
+  apply >/dev/null || fail "apply after Orca recovered failed"
+  assert_equals "retired nonce_proven" "$(outcome_of term_odd)" "the refused terminal is ended once Orca describes it"
+  assert_equals "retired nonce_proven" "$(outcome_of term_dark)" "the unread terminal is ended once its screen reads"
+  pass "only Orca's exact closed or unknown-handle answer is read as gone; every other failure is tried again"
+}
+
+test_a_close_cut_off_before_its_record_is_still_reported() {
+  local out
+  new_home cutoff
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  event 50 handoff_reject "$N1" term_late missing_claim
+  screen term_late "$N1"
+  : > "$FAKE_ORCA/term_late.blip"
+  out=$(apply) || fail "apply failed"
+  assert_equals term_late "$(closed)" "the close was sent"
+  assert_equals "" "$(outcomes)$out" "an unverified close is neither recorded nor reported"
+  assert_equals "$N1${TAB}term_late" "$(waiting)" "the terminal still waits for its verdict"
+  out=$(apply) || fail "second apply failed"
+  assert_equals term_late "$(closed)" "the close is not sent twice"
+  assert_equals "retired nonce_proven" "$(outcome_of term_late)" "the saved screen proves this command closed it"
+  assert_contains "$out" "ended the late successor terminal term_late" "the supervisor is still told"
+  pass "a run cut off between the close and its record is completed and reported by the next run"
+}
+
+test_the_newest_launched_attempt_decides_a_reused_handle() {
+  new_home reused
+  event 500 handoff_started "$N2" term_owner awaiting_ack
+  event 490 handoff_reject "$N2" term_late hash_mismatch
+  event 480 handoff_ack "$N2" term_other lock_transferred
+  event 400 handoff_reject "$N3" term_late stale_nonce
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  event 290 handoff_reject "$N1" term_late missing_claim
+  event 280 handoff_reject "$N3" term_late stale_nonce
+  screen term_late "$N1"
+  assert_equals "$N1${TAB}term_late" "$(waiting)" "the handle waits under its newest launched attempt"
+  apply >/dev/null || fail "apply failed"
+  assert_equals "retired nonce_proven" "$(outcome_of term_late)" "the terminal is ended"
+  assert_equals "$N1" "$(nonce_of term_late)" "an earlier acknowledged attempt and an unknown nonce do not hide it"
+  pass "a handle refused under several attempts is judged by the newest one this home launched"
+}
+
+# refuse <nonce>: a successor in term_late acknowledges with no claim on disk.
+refuse() {
+  env -u ORCA_TERMINAL_HANDLE -u TMUX -u TMUX_PANE -u ZELLIJ -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION \
+    -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META -u FM_STATE_OVERRIDE \
+    PATH="$FAKEBIN:$PATH" FAKE_ORCA="$FAKE_ORCA" FM_HOME="$HOME_DIR" FM_SUPERVISOR_TARGET=term_late \
+    bash "$ROOT/bin/fm-handoff-ack.sh" "$1" 0 >/dev/null 2>&1
+}
+
+test_a_refused_successor_arms_the_check_that_ends_it() {
+  local rc check
+  new_home refused
+  check="$HOME_DIR/state/reset-audit.check.sh"
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  refuse "$N3"; rc=$?
+  expect_code 1 "$rc" "an acknowledgement of an attempt this home never launched"
+  assert_absent "$check" "a refusal that names no late successor armed the check"
+  refuse "$N1"; rc=$?
+  expect_code 1 "$rc" "a late acknowledgement"
+  assert_equals "$N1${TAB}term_late" "$(waiting)" "the refused successor waits to be ended"
+  [ -x "$check" ] || fail "refusing a late successor did not arm the check that ends it"
+  pass "refusing a late successor arms the check that ends it, and no other refusal does"
 }
 
 test_ignores_rejects_that_are_not_late_successors() {
@@ -247,6 +363,8 @@ test_bad_arguments_are_refused() {
   expect_code 2 "$rc" "--report without --apply"
   ARGS=(--force); reconcile >/dev/null 2>&1; rc=$?
   expect_code 2 "$rc" "an unknown flag"
+  ARGS=(--waiting --apply); reconcile >/dev/null 2>&1; rc=$?
+  expect_code 2 "$rc" "--waiting with --apply"
   ARGS=(--apply --report)
   rm -rf "$HOME_DIR/state"
   reconcile >/dev/null 2>&1; rc=$?
@@ -261,5 +379,8 @@ fm_test_run \
   test_does_nothing_while_a_handoff_is_in_progress \
   test_unproven_and_foreign_terminals_are_left_and_reported_once \
   test_gone_and_unreachable_are_told_apart \
+  test_a_close_cut_off_before_its_record_is_still_reported \
+  test_the_newest_launched_attempt_decides_a_reused_handle \
+  test_a_refused_successor_arms_the_check_that_ends_it \
   test_ignores_rejects_that_are_not_late_successors \
   test_bad_arguments_are_refused

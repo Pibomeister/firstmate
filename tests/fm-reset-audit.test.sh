@@ -368,6 +368,20 @@ out=$(at "$T" begin --kind handoff --if-staged 2>&1) || fail 'begin with nothing
 expect_code 0 "$(waiting handoff)" '--if-staged recorded a handoff that nobody staged'
 pass 'a staged handoff becomes exactly one PASS row stamped with the time of the reset'
 
+new_home stale-stage
+seed
+audit stage || fail 'stage'
+touch -t 202001010000 "$TEST_HOME/state/reset-audit-staged.json"
+tasks add later-item 'filed long after that handoff was written' --queue >/dev/null || fail 'later item'
+audit stage --if-absent || fail 'stage --if-absent over an old snapshot'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" later-item '--if-absent kept a snapshot too old to be this handoff'
+touch -t 202001010000 "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'begin over an old staged snapshot'
+expect_code 0 "$(waiting handoff)" 'a handoff that never happened was recorded from its old snapshot'
+assert_absent "$TEST_HOME/state/reset-audit-staged.json" 'the old staged snapshot was left to be recorded later'
+assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'the check was armed with nothing waiting'
+pass 'a staged snapshot older than 30 minutes is replaced by the launcher and never recorded as a handoff'
+
 new_home compaction-loss
 seed
 at "$T" begin --kind compaction || fail 'begin compaction'
@@ -412,37 +426,88 @@ expect_code 2 "$(rows)" 'an unreadable reset recorded a row'
 pass 'settle --now prints every verdict, and an unreadable reset is kept, reported once, and never recorded'
 
 new_home many
+seed
 snapshot before
 mkdir -p "$TEST_HOME/state/reset-audit-pending"
 for ((i=1; i<=20; i++)); do cp "$TEST_HOME/before.json" "$TEST_HOME/state/reset-audit-pending/$((T + i))-compaction-$i.json"; done
-at $((T + 30)) begin --kind compaction || fail 'begin at the cap'
-expect_code 20 "$(rows)" 'begin at the cap did not settle the waiting resets'
-expect_code 1 "$(waiting compaction)" 'only the new reset waits after the cap settle'
-pass 'at most 20 resets wait: the next one settles them first'
+at $((T + 30)) begin --kind compaction >/dev/null 2>&1; rc=$?
+expect_code 1 "$rc" 'a snapshot beyond the cap'
+expect_code 20 "$(waiting compaction)" 'a reset beyond the cap was recorded'
+expect_code 0 "$(rows)" 'begin settled waiting resets itself'
+[ -x "$TEST_HOME/state/reset-audit.check.sh" ] || fail 'a refused reset did not arm the check that settles the others'
+audit stage || fail 'stage at the cap'
+at $((T + 31)) begin --kind handoff --if-staged || fail 'a staged handoff at the cap'
+expect_code 1 "$(waiting handoff)" 'a staged handoff was dropped at the cap'
+at $((T + 700)) settle >/dev/null 2>&1 || fail 'settle the waiting resets'
+expect_code 21 "$(rows)" 'the waiting resets did not each settle as one row'
+at $((T + 701)) begin --kind compaction || fail 'begin after the resets settled'
+expect_code 1 "$(waiting compaction)" 'a reset after the cap cleared was not recorded'
+pass 'at most 20 resets wait: a further snapshot is refused until one settles, and a staged handoff is still taken'
+
+new_home closing
+seed
+at "$T" begin --kind compaction || fail 'begin'
+: > "$TEST_HOME/state/t-1.backlog-close"
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle during a task close'
+[ -z "$out" ] || fail "settle during a task close printed: $out"
+expect_code 0 "$(rows)" 'a reset was judged while a task close was in progress'
+expect_code 1 "$(waiting compaction)" 'the reset no longer waits'
+mv "$TEST_HOME/state/t-1.backlog-close" "$TEST_HOME/closed-marker"
+at $((T + 660)) settle >/dev/null 2>&1 || fail 'settle after the close'
+expect_code 1 "$(rows)" 'the reset did not settle once the close finished'
+at "$T" begin --kind compaction || fail 'begin'
+printf 'held\n' > "$TEST_HOME/state/.reset-audit.lock"
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle beside a held row lock'
+[ -z "$out" ] || fail "settle beside a held row lock printed: $out"
+expect_code 1 "$(rows)" 'a row was written under a lock another writer holds'
+expect_code 1 "$(waiting compaction)" 'a reset that could not be recorded was dropped'
+touch -t 202001010000 "$TEST_HOME/state/.reset-audit.lock"
+at $((T + 660)) settle >/dev/null 2>&1 || fail 'settle past an orphaned row lock'
+expect_code 2 "$(rows)" 'an orphaned row lock still blocked the audit'
+pass 'settle waits out a task close in progress, respects a held row lock, and removes an orphaned one'
 
 new_home check
 seed
-audit arm >/dev/null || fail 'arm'
-[ -x "$TEST_HOME/state/reset-audit.check.sh" ] || fail 'arm did not install an executable check'
-assert_present "$TEST_HOME/state/reset-audit.check-trust" 'arm did not register the check'
-audit arm >/dev/null || fail 'arm is not repeatable'
+check="$TEST_HOME/state/reset-audit.check.sh"
+audit arm --if-needed >/dev/null || fail 'arm --if-needed'
+assert_absent "$check" 'the check was armed in a home where nothing waits'
 at "$T" begin --kind handoff || fail 'begin'
-out=$(FM_STATE_OVERRIDE="$TMP_ROOT/elsewhere" FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$TEST_HOME/state/reset-audit.check.sh" 2>&1); rc=$?
+[ -x "$check" ] || fail 'recording a reset did not install an executable check'
+assert_present "$TEST_HOME/state/reset-audit.check-trust" 'recording a reset did not register the check'
+audit arm >/dev/null || fail 'arm is not repeatable'
+out=$(FM_STATE_OVERRIDE="$TMP_ROOT/elsewhere" FM_TEST_SEAM=1 FM_NOW=$((T + 599)) "$check" 2>&1); rc=$?
+expect_code 0 "$rc" 'the check before the settle time'
+assert_present "$check" 'the check was retired while a reset still waits'
+out=$(FM_STATE_OVERRIDE="$TMP_ROOT/elsewhere" FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$check" 2>&1); rc=$?
 expect_code 0 "$rc" 'the check on a healthy home'
 [ -z "$out" ] || fail "the check printed on a healthy home: $out"
 [ "$(cat "$TEST_HOME/state/reset-audit.tsv")" = "$T"$'\t'"handoff"$'\t'"PASS"$'\t'"-" ] || fail 'the check did not settle the due reset'
+assert_absent "$check" 'the check stayed armed with nothing left to settle'
+assert_absent "$TEST_HOME/state/reset-audit.check-trust" 'the retired check stayed registered'
 at "$T" begin --kind compaction || fail 'begin'
 tasks rm queued-one >/dev/null || fail 'lose the queued item'
-out=$(FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$TEST_HOME/state/reset-audit.check.sh" 2>&1)
+out=$(FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$check" 2>&1)
 assert_contains "$out" 'reset audit: open work went missing across the compaction' 'the check reports a loss'
-audit disarm >/dev/null || fail 'disarm'
-assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'disarm left the check installed'
-printf '#!/usr/bin/env bash\necho task-owned\n' > "$TEST_HOME/state/reset-audit.check.sh"
+assert_absent "$check" 'the check stayed armed after its last reset settled'
+printf 'HANDOFF v1 ts=%s event=handoff_started nonce=0123456789abcdef0123456789abcdef attempt=1 pid=0 handle=%%1 reason=awaiting_ack\n' \
+  "$(date +%s)" > "$TEST_HOME/state/handoff-events.log"
+printf 'HANDOFF v1 ts=%s event=handoff_reject nonce=0123456789abcdef0123456789abcdef attempt=0 pid=0 handle=%%9 reason=expired_claim\n' \
+  "$(date +%s)" >> "$TEST_HOME/state/handoff-events.log"
+audit arm --if-needed >/dev/null || fail 'arm --if-needed for a late successor'
+[ -x "$check" ] || fail 'a refused late successor did not arm the check'
+out=$("$check" 2>&1); rc=$?
+expect_code 0 "$rc" 'the check with a late successor'
+assert_contains "$out" 'a late successor terminal %9 of a failed handoff attempt was left open (backend_not_orca)' 'the check reports the late successor'
+assert_absent "$check" 'the check stayed armed after the late successor was decided'
+printf '#!/usr/bin/env bash\necho task-owned\n' > "$check"
 audit arm >/dev/null 2>&1; rc=$?
 expect_code 2 "$rc" 'arm over a check it did not write'
+at "$T" begin --kind compaction || fail 'begin beside a foreign check'
+expect_code 1 "$(waiting compaction)" 'a foreign check stopped the reset from being recorded'
+audit sweep >/dev/null 2>&1 || fail 'sweep beside a foreign check'
 audit disarm >/dev/null 2>&1 || fail 'disarm beside a foreign check'
-assert_contains "$(cat "$TEST_HOME/state/reset-audit.check.sh")" task-owned 'a check this script did not write was changed'
-pass 'the armed check settles due resets, stays silent on PASS, and never touches a foreign check'
+assert_contains "$(cat "$check")" task-owned 'a check this script did not write was changed'
+pass 'the check is armed only while a reset or a late successor waits, stays silent on PASS, and never touches a foreign check'
 
 new_home foreign-dirs
 seed

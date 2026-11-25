@@ -1833,15 +1833,15 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
       "$SCRIPT_DIR/fm-ledger.sh" arm --if-enabled >/dev/null \
       || echo "MISSING: the mission ledger's ready-depth check could not be armed; thin night queues are not reported"
   fi
-  # The reset audit (bin/fm-reset-audit.sh): arm its check, and record the
-  # handoff this session came out of when the previous session staged one. It
-  # reads the tasks-axi backlog, so a manual or missing backend leaves it unarmed.
-  if local_phase && [ -d "$DATA" ] && [ -d "$STATE" ] && fm_tasks_axi_backend_available "$CONFIG"; then
-    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
-      "$SCRIPT_DIR/fm-reset-audit.sh" arm >/dev/null 2>&1 \
-      || echo "MISSING: the reset audit check could not be armed; handoffs and compactions are not audited"
+  # The reset audit (bin/fm-reset-audit.sh): record the handoff this session
+  # came out of when the previous session staged one, then keep its check
+  # armed only while a reset or a late handoff successor waits.
+  if local_phase && [ -d "$DATA" ] && [ -d "$STATE" ]; then
     FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
       "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff --if-staged >/dev/null 2>&1 || true
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-reset-audit.sh" arm --if-needed >/dev/null 2>&1 \
+      || echo "MISSING: the reset audit check could not be armed; handoffs and compactions are not audited"
   fi
   if [ -n "$fleet_sync_pid" ]; then
     wait "$fleet_sync_pid" || true

@@ -14,12 +14,16 @@
 #   fm-handoff-reconcile.sh --apply --report   act, then print each outcome
 #                                              not yet reported (the watcher
 #                                              check uses this form)
+#   fm-handoff-reconcile.sh --waiting          print "nonce<TAB>handle" for each
+#                                              candidate not yet decided; asks
+#                                              Orca nothing and changes nothing
 #
 # A candidate is the terminal handle of a handoff_reject line whose nonce
 # this home launched (a handoff_started or handoff_retry line carries it),
 # that no handoff_ack line ever accepted, and that is at most LATE_MAX_AGE
-# seconds old. A successor that never ran the acknowledgement leaves no
-# reject line and is not covered.
+# seconds old; the newest such line of a handle decides its nonce. A
+# successor that never ran the acknowledgement leaves no reject line and is
+# not covered.
 #
 # The command does nothing at all while a handoff claim or a lock change is
 # in progress (state/.handoff-pending, state/.lock.acquire).
@@ -34,20 +38,28 @@
 #
 # Only an Orca terminal (term_*) is ended, and only when all of these hold:
 #   - the lock owner's own terminal is known, so the first rule can be checked,
+#   - Orca describes the terminal as connected (orca terminal show),
 #   - a bounded read of the terminal's last lines contains the attempt's nonce
 #     (the launch prompt and the refused acknowledgement both print it),
 #   - the claim and lock guards above still hold just before the close.
 # The read is saved first under data/handoff-late/<nonce>.txt (owner-only, the
-# newest LATE_KEEP files are kept). After the close the terminal is read
-# again: the close command's exit status proves nothing. Any other backend,
-# and any terminal that fails a proof, is left open and reported once; a tmux
-# successor window cannot be told from another firstmate window by name.
+# newest LATE_KEEP files are kept). After the close Orca is asked again: the
+# terminal is retired only when Orca then describes it as closed, or no
+# longer knows its handle; the close command's exit status proves nothing.
+# Any other backend, and any terminal that fails a proof, is left open and
+# reported once; a tmux successor window cannot be told from another
+# firstmate window by name.
 #
 # Outcomes are appended to state/handoff-reconcile.tsv:
 #   epoch<TAB>nonce<TAB>handle<TAB>verdict<TAB>reason
 # with verdict retired, gone, left or kept. A handle with a row is never
-# looked at again. A terminal that cannot be read while Orca itself does not
-# answer gets no row and is tried again by a later run.
+# looked at again. A terminal that Orca describes as closed, or whose handle
+# Orca no longer knows, is gone; it is retired instead when its screen was
+# already saved, because an earlier run was cut off between the close and
+# the record. After an Orca restart a session can run on under a new handle;
+# that one is not found. Every answer other than those exact ones (a timeout,
+# an error, an unreadable screen) gets no row and is tried again by a later
+# run.
 #
 # The session lock, the claim, the acknowledgement and the HANDOFF v1 event
 # log are read and never written. Standard output carries only report lines;
@@ -85,23 +97,26 @@ TAB=$(printf '\t')
 
 APPLY=0
 REPORT=0
+WAITING=0
+USAGE='usage: fm-handoff-reconcile.sh [--apply [--report] | --waiting]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --report) REPORT=1 ;;
+    --waiting) WAITING=1 ;;
     -h | --help)
       sed -n '2,/^set -u$/p' "${BASH_SOURCE[0]}" | sed -e '$d' -e 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
-      printf 'usage: fm-handoff-reconcile.sh [--apply [--report]]\n' >&2
+      printf '%s\n' "$USAGE" >&2
       exit 2
       ;;
   esac
   shift
 done
-if [ "$REPORT" = 1 ] && [ "$APPLY" != 1 ]; then
-  printf 'usage: fm-handoff-reconcile.sh [--apply [--report]]\n' >&2
+if { [ "$REPORT" = 1 ] && [ "$APPLY" != 1 ]; } || { [ "$WAITING" = 1 ] && [ "$APPLY" = 1 ]; }; then
+  printf '%s\n' "$USAGE" >&2
   exit 2
 fi
 
@@ -112,7 +127,8 @@ handle_valid() {
 
 # A handoff or a lock change is in progress: this is not the time to act.
 handoff_busy() {
-  [ -e "$STATE/.handoff-pending" ] || [ -L "$STATE/.handoff-pending" ] || [ -e "$STATE/.lock.acquire" ]
+  [ -e "$STATE/.handoff-pending" ] || [ -L "$STATE/.handoff-pending" ] \
+    || [ -e "$STATE/.lock.acquire" ] || [ -L "$STATE/.lock.acquire" ]
 }
 
 owner_terminal() {
@@ -185,13 +201,15 @@ candidates() {
       else if (event == "handoff_reject") {
         if (handle == "" || handle == "none" || reason == "predecessor_ack" || reason == "lock_held_unbound") next
         if (ts !~ /^[0-9]+$/ || now - ts > max) next
-        if (!(handle in first)) { order[++n] = handle; first[handle] = nonce }
+        if (!launched[nonce]) next
+        if (!(handle in first)) order[++n] = handle
+        first[handle] = nonce
       }
     }
     END {
       for (i = 1; i <= n; i++) {
         handle = order[i]; nonce = first[handle]
-        if (launched[nonce] && !acked[nonce] && !(handle in done)) printf "%s\t%s\n", nonce, handle
+        if (!acked[nonce] && !(handle in done)) printf "%s\t%s\n", nonce, handle
       }
     }' "$EVENTS"
   rm -f "$handled"
@@ -201,20 +219,37 @@ record() {  # <nonce> <handle> <verdict> <reason>
   printf '%s\t%s\t%s\t%s\t%s\n' "$(fm_now)" "$1" "$2" "$3" "$4" >> "$OUTCOMES"
 }
 
+# terminal_state <handle>: prints open, closed or stale, from Orca's own
+# description of the terminal. Returns 2 on any other answer, so a timeout or
+# an error is never read as a closed terminal. bin/backends/orca.sh
+# (fm_backend_orca_terminal_facts) owns what the three answers mean.
+terminal_state() {
+  local handle=$1 out
+  command -v orca >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 || return 2
+  # A refused lookup exits non-zero and still prints its JSON answer.
+  out=$(fm_run_timed "$CALL_SECS" orca terminal show --terminal "$handle" --json 2>/dev/null) || true
+  printf '%s' "$out" | jq -er --arg h "$handle" '
+    if .ok == false then (if .error.code == "terminal_handle_stale" then "stale" else empty end)
+    elif .result.terminal.handle != $h then empty
+    elif .result.terminal.connected == true then "open"
+    elif .result.terminal.connected == false and .result.terminal.writable == false then "closed"
+    else empty end' 2>/dev/null || return 2
+}
+
 # orca_read <handle> <file>: write the terminal's last lines to <file>.
-# Returns 0 on a read, 1 when the terminal is gone while Orca answers, and 2
-# when Orca itself cannot be asked.
 orca_read() {
   local handle=$1 file=$2 out
-  command -v orca >/dev/null 2>&1 || return 2
-  fm_backend_source orca || return 2
-  if out=$(fm_run_timed "$CALL_SECS" orca terminal read --terminal "$handle" --limit "$READ_LINES" --json 2>/dev/null) \
-    && fm_backend_orca_json_text "$out" > "$file" 2>/dev/null; then
-    return 0
+  fm_backend_source orca || return 1
+  out=$(fm_run_timed "$CALL_SECS" orca terminal read --terminal "$handle" --limit "$READ_LINES" --json 2>/dev/null) \
+    && fm_backend_orca_json_text "$out" > "$file" 2>/dev/null
+}
+
+orca_close() {  # <handle>: ask for the close; the caller verifies it
+  if command -v fm_orca_cli_mutation >/dev/null 2>&1; then
+    fm_orca_cli_mutation fm_run_timed "$CALL_SECS" orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
+  else
+    fm_run_timed "$CALL_SECS" orca terminal close --terminal "$1" --json >/dev/null 2>&1 || true
   fi
-  : > "$file"
-  fm_run_timed "$CALL_SECS" orca status --json >/dev/null 2>&1 || return 2
-  return 1
 }
 
 # The 32 hex characters of the nonce survive any line wrap or box border once
@@ -236,7 +271,7 @@ prune_saved() {
 # reconcile_one <nonce> <handle>: one candidate. Prints a dry-run line when
 # not applying. Returns 75 when the candidate must be tried again later.
 reconcile_one() {
-  local nonce=$1 handle=$2 reason read rc=0 saved
+  local nonce=$1 handle=$2 reason read saved state
   if reason=$(protected_reason "$handle"); then
     if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" kept "$reason"; else printf 'keep %s (%s)\n' "$handle" "$reason"; fi
     return 0
@@ -252,20 +287,25 @@ reconcile_one() {
     if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" left owner_terminal_unknown; else printf 'leave %s (owner_terminal_unknown)\n' "$handle"; fi
     return 0
   fi
+  saved="$LATE_DIR/$nonce.txt"
+  state=$(terminal_state "$handle") || return 75
+  if [ "$state" != open ]; then
+    # Its screen is saved only just before a close, so a saved screen means
+    # an earlier run closed this terminal and was cut off before recording.
+    if [ "$APPLY" != 1 ]; then
+      printf 'gone %s\n' "$handle"
+    elif [ -f "$saved" ]; then
+      record "$nonce" "$handle" retired nonce_proven
+    else
+      record "$nonce" "$handle" gone "terminal_$state"
+    fi
+    return 0
+  fi
   read=$(mktemp "$STATE/.handoff-reconcile-read.XXXXXX") || return 75
-  orca_read "$handle" "$read" || rc=$?
-  case "$rc" in
-    0) ;;
-    1)
-      rm -f "$read"
-      if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" gone terminal_not_found; else printf 'gone %s\n' "$handle"; fi
-      return 0
-      ;;
-    *)
-      rm -f "$read"
-      return 75
-      ;;
-  esac
+  if ! orca_read "$handle" "$read"; then
+    rm -f "$read"
+    return 75
+  fi
   if ! read_names_nonce "$read" "$nonce"; then
     rm -f "$read"
     if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" left nonce_not_visible; else printf 'leave %s (nonce_not_visible)\n' "$handle"; fi
@@ -281,21 +321,16 @@ reconcile_one() {
     rm -f "$read"
     return 75
   fi
-  saved="$LATE_DIR/$nonce.txt"
   if ! mkdir -p "$LATE_DIR" || ! mv -f -- "$read" "$saved"; then
     rm -f "$read"
     return 75
   fi
   prune_saved
-  fm_run_timed "$CALL_SECS" orca terminal close --terminal "$handle" --json >/dev/null 2>&1 || true
-  read=$(mktemp "$STATE/.handoff-reconcile-read.XXXXXX") || return 75
-  rc=0
-  orca_read "$handle" "$read" || rc=$?
-  rm -f "$read"
-  case "$rc" in
-    1) record "$nonce" "$handle" retired "nonce_proven" ;;
-    0) record "$nonce" "$handle" left close_not_verified ;;
-    *) return 75 ;;
+  orca_close "$handle"
+  state=$(terminal_state "$handle") || return 75
+  case "$state" in
+    open) record "$nonce" "$handle" left close_not_verified ;;
+    *) record "$nonce" "$handle" retired nonce_proven ;;
   esac
   return 0
 }
@@ -328,6 +363,10 @@ report() {
 main() {
   local now start nonce handle list
   [ -d "$STATE" ] || return 0
+  if [ "$WAITING" = 1 ]; then
+    [ ! -f "$EVENTS" ] || [ -L "$EVENTS" ] || candidates "$(fm_now)"
+    return 0
+  fi
   if [ -f "$EVENTS" ] && [ ! -L "$EVENTS" ] && ! handoff_busy; then
     now=$(fm_now)
     start=$(date +%s)
