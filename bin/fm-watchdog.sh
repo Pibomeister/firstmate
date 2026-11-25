@@ -2216,9 +2216,11 @@ wd_permission_prompt() {
   case "$kind" in hardstop|hold|trust|route) ;; *) wd_pp_unlock "$id"; return 2 ;; esac
   # A request the worker's permission hook reserved for the owner is never
   # declined and never reported under the held key, whatever the pane rows
-  # say: the hook read the whole request, the pane shows a part of it.
+  # say: the hook read the whole request, the pane shows a part of it. A
+  # workspace-trust dialog over such a hold is not relaunched and opens no
+  # second decision either.
   case "$kind" in
-    hold|route)
+    hold|route|trust)
       if wd_pp_hook_keys "$id" | grep -qx permission-prompt-hardstop; then
         kind=hardstop
         reason=reserved

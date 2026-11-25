@@ -46,10 +46,13 @@ bash_payload() {  # <command> [<extra tool_input json>]
     permission_suggestions: [], cwd: "/x", session_id: "s"}'
 }
 
-finished_payload() {  # <command> [<event>]
-  jq -cn --arg command "$1" --arg event "${2:-PostToolUse}" '{
+# The finished call of a request bash_payload made. Its description differs
+# unless one is given: the ordinary key matches a request without it, the
+# owner-reserved key only with the same whole input.
+finished_payload() {  # <command> [<event>] [<description>]
+  jq -cn --arg command "$1" --arg event "${2:-PostToolUse}" --arg description "${3:-another}" '{
     hook_event_name: $event, permission_mode: "bypassPermissions",
-    tool_name: "Bash", tool_input: {command: $command, description: "another"}}'
+    tool_name: "Bash", tool_input: {command: $command, description: $description}}'
 }
 
 # request <home> <payload>: run the hook as an unattended worker. Sets OUT, RC.
@@ -286,14 +289,14 @@ test_hold_opens_once_and_closes_when_the_request_finishes() {
   assert_equals "2" "$(grep -c '^blocked ' "$home/state/task.status")" "a second waiting request wakes the supervisor again"
   settle "$home" tool-finished "$(finished_payload 'echo unrelated')"
   key_is_open "$home" || fail "an unrelated finished tool call must not close the hold"
-  settle "$home" tool-finished "$(finished_payload "$held")"
+  settle "$home" tool-finished "$(finished_payload "$held" PostToolUse d)"
   key_is_open "$home" || fail "the hold stays open while another held request waits"
-  settle "$home" tool-finished "$(finished_payload "$other" PostToolUseFailure)"
+  settle "$home" tool-finished "$(finished_payload "$other" PostToolUseFailure d)"
   ! key_is_open "$home" || fail "the hold closes when the last held request finishes"
   assert_absent "$home/state/task.permission-held" "a closed hold leaves no held set"
   assert_absent "$home/state/task.permission-lock" "the lock is released"
   assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "the hold closes once"
-  settle "$home" tool-finished "$(finished_payload "$held")"
+  settle "$home" tool-finished "$(finished_payload "$held" PostToolUse d)"
   assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "a later tool call adds no second close"
   pass "a hold wakes once per waiting request and closes when the last one finishes"
 }
@@ -334,9 +337,23 @@ test_each_key_closes_on_its_own() {
   assert_equals "$HARDSTOP" "$(open_keys "$home")" "the finished request closes its own key and leaves the owner-reserved one"
   assert_equals "$HARDSTOP" "$(bash "$ROUTE" held-keys "$home/state" task)" "held-keys names the one still open"
   settle "$home" tool-finished "$(finished_payload "$reserved")"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "a finished call with another description does not close the owner-reserved key"
+  settle "$home" tool-finished "$(finished_payload "$reserved" PostToolUse d)"
   assert_equals "" "$(open_keys "$home")" "the second finished request closes the owner-reserved key"
   assert_equals "" "$(bash "$ROUTE" held-keys "$home/state" task)" "held-keys prints nothing when nothing is held"
   assert_absent "$home/state/task.permission-held" "no held set is left"
+
+  # The reserved scan reads the description, so the same command with a plain
+  # description is another request, and its finished call closes only itself.
+  home=$(new_home description)
+  request "$home" "$(bash_payload "$plain" '{"description": "read the production password"}')"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "a reserved word in the description alone is owner-reserved"
+  request "$home" "$(bash_payload "$plain")"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "the same command with a plain description is an ordinary request beside it"
+  settle "$home" tool-finished "$(finished_payload "$plain" PostToolUse d)"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "its finished call does not close the reserved request with the same command"
+  settle "$home" tool-finished "$(finished_payload "$plain" PostToolUse 'read the production password')"
+  assert_equals "" "$(open_keys "$home")" "the reserved request closes when its own call finishes"
   pass "each waiting request closes only the key it was held under"
 }
 
@@ -394,7 +411,31 @@ test_reserved_request_is_always_reported() {
   assert_equals "$HELD" "$(open_keys "$home")" "a plain write is an ordinary hold"
   request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Write", tool_input: {file_path: "/tmp/notes.txt", content: "x", password: null}}')"
   assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "a reserved key name with a null value is still owner-reserved"
-  pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, and by a key name alone"
+
+  # A tool whose name alone states a reserved action.
+  home=$(new_home toolname)
+  request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "mcp__github__list_issues", tool_input: {repo: "x"}}')"
+  assert_equals "$HELD" "$(open_keys "$home")" "a tool with a plain name and input is an ordinary hold"
+  request "$home" "$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "mcp__github__merge_pull_request", tool_input: {pull_number: 12}}')"
+  assert_equals "$HARDSTOP $HELD" "$(open_keys "$home")" "a reserved word in the tool name alone is owner-reserved"
+  pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, by a key name alone, and by a tool name alone"
+}
+
+test_asked_again_never_hides_the_held_set() {
+  local home pid i missing=0
+  home=$(new_home refresh)
+  request "$home" "$(bash_payload 'echo hello')"
+  assert_present "$home/state/task.permission-held" "the request is held"
+  ( for i in 1 2 3 4 5; do request "$home" "$(bash_payload 'echo hello')"; done ) &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null; do
+    [ -s "$home/state/task.permission-held" ] || missing=$((missing + 1))
+  done
+  wait "$pid"
+  assert_equals 0 "$missing" "a reader without the lock always finds the held set while its one request is asked again"
+  assert_equals 1 "$(grep -c . "$home/state/task.permission-held")" "and the request keeps one row"
+  assert_equals 1 "$(grep -c '^blocked ' "$home/state/task.status")" "and one line"
+  pass "a request asked again never leaves the held set absent or empty"
 }
 
 test_held_set_follows_the_latest_requests() {
@@ -445,6 +486,21 @@ test_held_set_follows_the_latest_requests() {
   assert_equals "" "$(open_keys "$home")" "the finished call with that field closes it"
 
   # A held set that cannot be read is an error to the watchdog, never no hold.
+  home=$(new_home overflow-again)
+  for i in 1 2 3 3; do
+    FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "echo hello $i")"
+  done
+  assert_equals "3" "$(grep -c . "$home/state/task.permission-held")" "a request past the limit asked again keeps the one shared row"
+  for i in 1 2; do settle "$home" tool-finished "$(finished_payload "echo hello $i")"; done
+  assert_equals "$HELD" "$(open_keys "$home")" "and the key stays open for it"
+  if [ "$(id -u)" -ne 0 ]; then
+    home=$(new_home unreadable-status)
+    request "$home" "$(bash_payload 'echo hello')"
+    chmod 000 "$home/state/task.status"
+    bash "$ROUTE" held-keys "$home/state" task >/dev/null 2>&1
+    expect_code 1 "$?" "held-keys with a status log it cannot read"
+    chmod 600 "$home/state/task.status"
+  fi
   if [ "$(id -u)" -ne 0 ]; then
     home=$(new_home unreadable-set)
     request "$home" "$(bash_payload 'echo hello')"
@@ -488,6 +544,8 @@ test_bad_task_id_and_missing_state_touch_nothing() {
   assert_equals "task.meta" "$(ls -A "$home/state")" "nothing is written for a bad task id"
   bash "$ROUTE" claude-settled "$home/state" '../task' session-end </dev/null
   expect_code 0 "$?" "bad id settle exit"
+  bash "$ROUTE" held-keys "$home/state" '../task' >/dev/null 2>&1
+  expect_code 1 "$?" "a bad task id is never read as no hold"
   bash "$ROUTE" --help | grep -q 'claude-request <state-dir> <id>' || fail "--help prints the usage"
   bash "$ROUTE" nonsense >/dev/null 2>&1
   expect_code 2 "$?" "unknown subcommand exit"
@@ -507,6 +565,7 @@ fm_test_run \
   test_each_key_closes_on_its_own \
   test_pane_clear_closes_only_a_settled_ordinary_hold \
   test_reserved_request_is_always_reported \
+  test_asked_again_never_hides_the_held_set \
   test_held_set_follows_the_latest_requests \
   test_unreadable_payload_never_matches_a_finished_call \
   test_bad_task_id_and_missing_state_touch_nothing

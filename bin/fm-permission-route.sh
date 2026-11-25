@@ -36,11 +36,12 @@
 #       FM_PERMISSION_ROUTE_PANE_CLEAR_SECS (default 15), because the hold is
 #       written a moment before the prompt is drawn, and it never closes the
 #       owner-reserved key. Always exits 0.
-#       A finished request closes its row under each key that holds one.
+#       A finished request closes its row under each key that holds one:
+#       under the owner-reserved key only a call with the same whole input.
 #   fm-permission-route.sh held-keys <state-dir> <id>
 #       Prints each status key this route still holds open, one per row.
-#       Exits 1 when a held set exists and it, or the status log, cannot be
-#       read or folded.
+#       Exits 1 when the task cannot be named, or when a held set exists and
+#       it, or the status log, cannot be read or folded.
 #   fm-permission-route.sh classify
 #       Reads one command on stdin and prints `refuse` or `hold <category>`
 #       for the command-text checks alone. Exits 0.
@@ -93,7 +94,8 @@
 #       request and key, tab-separated: its status key, its request hash (the
 #       SHA-256 over the tool name with, for Bash, its command and every
 #       other input field except the description, the timeout, and the
-#       background flag, or with its whole input for any other tool; `-` for
+#       background flag, or with its whole input for any other tool or under
+#       the owner-reserved key; `-` for
 #       a payload that cannot be read, which every such request shares), and
 #       the epoch it was last asked. The ordinary key takes at most
 #       FM_PERMISSION_ROUTE_MAX_HELD (default 20, never below 1) request rows,
@@ -111,8 +113,8 @@
 #             this key for the owner, so no council or judge seat rules on it.
 #         permission-prompt-held      every other hold.
 #       A request that is held for another reason is still scanned for a
-#       reserved category, over its whole tool input, so a file write to a
-#       credential path is owner-reserved too. One key covers every prompt
+#       reserved category, over its tool name and its whole tool input, so a
+#       file write to a credential path is owner-reserved too. One key covers every prompt
 #       waiting under it on that worker, because the payload carries no
 #       tool-use id. A prompt a person answers "no" reports no end. Its
 #       ordinary key stays open until a watchdog in act mode proves the pane
@@ -386,12 +388,29 @@ marker_drop() {  # <key> [<request hash>]
   rest=$(awk -F '\t' -v key="$1" -v hash="${2-}" '
     !($1 == key && (hash == "" || $2 == hash))' "$MARKER" 2>/dev/null) || return 1
   if [ -n "$rest" ]; then
-    if printf '%s\n' "$rest" >"$MARKER.new" 2>/dev/null; then
-      mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null || rm -f -- "$MARKER.new" 2>/dev/null || true
-    fi
+    printf '%s\n' "$rest" >"$MARKER.new" 2>/dev/null && mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null \
+      || rm -f -- "$MARKER.new" 2>/dev/null || true
   else
     rm -f -- "$MARKER" 2>/dev/null || true
   fi
+}
+
+# Put a request's row last in the set under the current time. The set with the
+# new row replaces the old set in one rename, so a reader without the lock
+# never sees the set without a row it had. A set that cannot be read or
+# replaced gets the row appended when it has no such row.
+marker_put() {  # <key> <request hash>
+  local rest='' row
+  row=$(printf '%s\t%s\t%s' "$1" "$2" "$(date +%s)")
+  if [ -e "$MARKER" ] && rest=$(awk -F '\t' -v key="$1" -v hash="$2" \
+      '!($1 == key && $2 == hash)' "$MARKER" 2>/dev/null) || [ ! -e "$MARKER" ]; then
+    if { [ -z "$rest" ] || printf '%s\n' "$rest"; printf '%s\n' "$row"; } >"$MARKER.new" 2>/dev/null \
+      && mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null; then
+      return 0
+    fi
+    rm -f -- "$MARKER.new" 2>/dev/null || true
+  fi
+  [ "$(marker_rows "$1" "$2")" -gt 0 ] || printf '%s\n' "$row" >>"$MARKER" 2>/dev/null
 }
 
 # Drop the rows of a key that another writer already resolved, such as the
@@ -454,6 +473,7 @@ lock_release() {
 hold() {  # <category> [nolock]: nolock when the caller just failed to lock
   local key note hash=$REQUEST_HASH wake=1
   key=$(hold_key "$1")
+  [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
   [ "${2-}" = nolock ] || lock_acquire || true
   ledger_row hold "$1" || true
   marker_prune
@@ -461,13 +481,10 @@ hold() {  # <category> [nolock]: nolock when the caller just failed to lock
     && [ "$(( $(marker_rows "$key") - $(marker_rows "$key" +) ))" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
     hash=+
   fi
-  if [ "$(marker_rows "$key" "$hash")" -gt 0 ]; then
-    marker_drop "$key" "$hash" || true
-    wake=0
-  elif [ "$hash" = + ]; then
+  if [ "$(marker_rows "$key" "$hash")" -gt 0 ] || [ "$hash" = + ]; then
     wake=0
   fi
-  printf '%s\t%s\t%s\n' "$key" "$hash" "$(date +%s)" >>"$MARKER" 2>/dev/null || true
+  marker_put "$key" "$hash" || true
   if [ "$wake" -eq 1 ]; then
     note='a person or the supervisor must answer it in the worker terminal'
     [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] \
@@ -493,16 +510,21 @@ bind_task() {  # <state-dir> <id>
   COMMAND_SHA=-
   COMMAND_BYTES=0
   REQUEST_HASH=-
+  REQUEST_FULL_HASH=-
   SCAN_TEXT=
   SCAN_OK=0
 }
 
-# Read the tool name and the request hash from a hook payload. For Bash the
-# hash covers the command and every other input field except the description,
+# Read the tool name and the two request hashes from a hook payload. The full
+# hash covers the tool name and the whole tool input, and names a request
+# under the owner-reserved key, so only a finished call with that same input
+# closes such a row: the reserved scan reads every field, the description
+# among them. The other hash names a request under the ordinary key. For Bash
+# it covers the command and every other input field except the description,
 # the timeout, and the background flag, so a changed description still names
-# one request, and a sandbox escape or a field this route does not know names
-# another. A payload that cannot be read, or that names no tool, has the hash
-# `-`, which no finished tool call ever matches.
+# one request there, and a sandbox escape or a field this route does not know
+# names another. A payload that cannot be read, or that names no tool, has
+# the hash `-` for both, which no finished tool call ever matches.
 bind_request() {  # <payload>
   local canon
   TOOL=$(printf '%s' "$1" | jq -r '.tool_name // "" | tostring' 2>/dev/null | tr -cd 'A-Za-z0-9_.-' | cut -c1-64)
@@ -516,16 +538,23 @@ bind_request() {  # <payload>
     REQUEST_HASH=$(printf '%s' "$canon" | sha256_stdin)
     [ -n "$REQUEST_HASH" ] || REQUEST_HASH=-
   fi
-  # Every key path of the tool input and every scalar under it, decoded, for
-  # the reserved scan that picks the status key. A false or null value still
-  # gives its key path. An input that cannot be read whole, an empty payload
-  # among them, leaves SCAN_OK at 0.
+  REQUEST_FULL_HASH=-
+  if [ "$REQUEST_HASH" != - ] && canon=$(printf '%s' "$1" | jq -cS '[.tool_name, .tool_input]' 2>/dev/null) \
+    && [ -n "$canon" ]; then
+    REQUEST_FULL_HASH=$(printf '%s' "$canon" | sha256_stdin)
+    [ -n "$REQUEST_FULL_HASH" ] || REQUEST_FULL_HASH=-
+  fi
+  # The tool name, every key path of the tool input, and every scalar under
+  # it, decoded, for the reserved scan that picks the status key. A false or
+  # null value still gives its key path. An input that cannot be read whole,
+  # an empty payload among them, leaves SCAN_OK at 0.
   SCAN_OK=0
   if SCAN_TEXT=$(printf '%s' "$1" | jq -rs '
       if length != 1 then error("not one value") else .[0] end
       | if (.tool_input | type) == "object"
-      then [.tool_input | paths as $p | ($p | map(tostring) | join(".")),
-            (getpath($p) | if type == "object" or type == "array" then empty else tostring end)] | join("\n")
+      then [(.tool_name | tostring),
+            (.tool_input | paths as $p | ($p | map(tostring) | join(".")),
+             (getpath($p) | if type == "object" or type == "array" then empty else tostring end))] | join("\n")
       else error("no tool input") end' 2>/dev/null) \
     && [ "${#SCAN_TEXT}" -le "$(int_or "${FM_PERMISSION_ROUTE_MAX_BYTES:-}" 65536)" ]; then
     SCAN_OK=1
@@ -582,7 +611,7 @@ claude_request() {  # <state-dir> <id>
 }
 
 claude_settled() {  # <state-dir> <id> <event>
-  local event=${3:-} payload key newest quiet
+  local event=${3:-} payload key hash newest quiet
   bind_task "${1:-}" "${2:-}" || return 0
   [ -e "$MARKER" ] || return 0
   case "$event" in
@@ -610,9 +639,11 @@ claude_settled() {  # <state-dir> <id> <event>
       [ "$REQUEST_HASH" != - ] || return 0
       lock_acquire || return 0
       for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
-        [ "$(marker_rows "$key" "$REQUEST_HASH")" -gt 0 ] || continue
+        hash=$REQUEST_HASH
+        [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
+        [ "$hash" != - ] && [ "$(marker_rows "$key" "$hash")" -gt 0 ] || continue
         if [ "$(marker_rows "$key")" -gt 1 ]; then
-          marker_drop "$key" "$REQUEST_HASH"
+          marker_drop "$key" "$hash"
         else
           close_key "$key" 'the held request was answered and finished'
         fi
@@ -625,18 +656,22 @@ claude_settled() {  # <state-dir> <id> <event>
 
 # The keys this route still holds open, one per row, for the watchdog.
 held_keys() {  # <state-dir> <id>
-  local key
-  bind_task "${1:-}" "${2:-}" || return 0
+  local key held open
+  # A task that cannot be named, a held set or a status log that cannot be
+  # read, or a status fold that cannot be loaded or run, exits non-zero, so
+  # the caller never reads it as no hold.
+  bind_task "${1:-}" "${2:-}" || return 1
   [ -s "$MARKER" ] || return 0
-  # A held set or a status log that cannot be read, or a status fold that
-  # cannot be loaded, exits non-zero, so the caller never reads it as no hold.
-  [ -r "$MARKER" ] && [ -r "$STATUS" ] || return 1
+  [ -r "$MARKER" ] && [ -f "$STATUS" ] && [ ! -L "$STATUS" ] && [ -r "$STATUS" ] || return 1
   if ! command -v status_open_decisions >/dev/null 2>&1; then
     # shellcheck source=bin/fm-classify-lib.sh
     . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
   fi
+  held=$(awk -F '\t' '{ print $1 }' "$MARKER" 2>/dev/null) || return 1
+  open=$(status_open_decisions "$STATUS" 2>/dev/null) || return 1
+  open=$(printf '%s\n' "$open" | cut -f1)
   for key in "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" "$FM_PERMISSION_ROUTE_HELD_KEY"; do
-    if [ "$(marker_rows "$key")" -gt 0 ] && key_open "$key"; then
+    if printf '%s\n' "$held" | grep -qx "$key" && printf '%s\n' "$open" | grep -qx "$key"; then
       printf '%s\n' "$key"
     fi
   done

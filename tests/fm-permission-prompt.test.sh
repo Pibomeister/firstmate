@@ -994,10 +994,13 @@ test_hook_hold_and_pane_are_one_decision() {
   FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 620 once >/dev/null 2>&1
   assert_equals '' "$(typed hr)" "the reserved prompt gets no Escape after a read that missed it"
   assert_equals 1 "$(status_rows hr blocked permission-prompt-hardstop)" "and no second blocked line"
-  # Another dialog on the pane does not close the reservation either.
+  # Another dialog on the pane does not close the reservation either, and
+  # it opens no second decision beside it.
   repaint hr "$FIX/claude-2.1.325-trust.txt"
   FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 625 once >/dev/null 2>&1
   assert_equals 0 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/hr.status")" "a different dialog on the pane does not close the reserved hold: $(cat "$H/state/hr.status")"
+  assert_equals 0 "$(status_rows hr blocked permission-prompt-held)" "the dialog opens no second decision beside the reserved hold: $(cat "$H/state/hr.status")"
+  assert_equals 1 "$(status_rows hr blocked permission-prompt-hardstop)" "and no second reserved line"
   assert_equals '' "$(typed hr)" "and it gets no key"
   # A held set that cannot be read is a reservation, never no hold.
   if [ "$(id -u)" -ne 0 ]; then

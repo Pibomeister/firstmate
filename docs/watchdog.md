@@ -241,9 +241,10 @@ Every distinct request under `permission-prompt-hardstop` gets its own line, and
 The hook and the watchdog report one prompt as one open decision:
 
 - The watchdog writes no second `blocked` line for a key the hook already holds open.
-- While the hook holds a request under `permission-prompt-hardstop`, the watchdog never declines a prompt on that worker and reports a held or declinable prompt there as a hard stop; a hold that exists but cannot be read counts as such a hold.
+- While the hook holds a request under `permission-prompt-hardstop`, the watchdog never declines a prompt on that worker, starts no trust relaunch there, and reports a held or declinable prompt or a workspace-trust dialog there as a hard stop; a hold that exists but cannot be read counts as such a hold.
 - A hard stop on the pane closes an open `permission-prompt-held` line for the same worker.
 - The hook closes its own line when the held request finishes or the session ends.
+  Under `permission-prompt-hardstop` a finished tool call closes a request only when its whole input is the same; under `permission-prompt-held` a Bash call with another description, timeout, or background flag is still the same request.
 - The watchdog closes the hook's `permission-prompt-held` line when the pane shows an empty composer, no dialog, no prompt, and no human-only step, and the newest hold is at least 15 seconds old (`FM_PERMISSION_ROUTE_PANE_CLEAR_SECS`).
 - The watchdog never closes the hook's `permission-prompt-hardstop` line, whatever the pane shows; it closes when the held request finishes, the session ends, or the supervisor answers it.
   A request a person answers "no" reports no end, so that line, and the hard stop it puts on the worker's other prompts, stays until the supervisor closes the key.
