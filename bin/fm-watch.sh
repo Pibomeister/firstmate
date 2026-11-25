@@ -5281,9 +5281,10 @@ fi
 #
 # The poll loop owns the liveness beacon below, and fm-guard.sh reads that
 # beacon's freshness as proof that supervision is alive. Publication is a
-# side-band nicety bounded by FM_HOME_SUMMARY_TIMEOUT, but that bound is far
-# larger than one poll, so running it inline puts up to a full publication
-# deadline between two beacon touches and can starve the guard's grace. Nothing
+# side-band nicety with bounds owned by fm-home-summary-refresh.sh's header.
+# An eligible attempt can take far longer than one poll, even with failure
+# backoff, so running it inline can put a full publication deadline between
+# two beacon touches and starve the guard's grace. Nothing
 # in the poll depends on the ledger, so start it and move on: the beacon keeps
 # advancing no matter how slow the publication is.
 #
@@ -5293,10 +5294,10 @@ fi
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
 #
-# A status signal starts a refresh at once. Without one, a refresh starts only
+# A status signal launches the helper at once. Without one, it launches only
 # when both the ledger and this watcher's last launch are older than the idle
-# gap drawn at that launch, so a home whose publication keeps failing retries
-# once per idle gap rather than on every poll.
+# gap drawn at that launch, so a stale ledger cannot cause launches on every
+# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
