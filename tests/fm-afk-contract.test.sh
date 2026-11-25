@@ -664,6 +664,82 @@ test_entry_without_spend_records_the_live_worker_count_never_below_the_floor() {
   pass "entry without --spend records the live worker count, never below the default floor, and an explicit --spend still wins"
 }
 
+test_enter_records_carried_items_and_plain_entry_has_none() {
+  local home out carried
+  home=$(make_home carried)
+  carried="$home/carried.tsv"
+  printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason\n' > "$carried"
+  out=$(contract "$home" enter --words 'watch the fleet' --carried-file "$carried" 2>&1) \
+    || fail "carried entry failed: $out"
+  [ "$(contract "$home" carried)" = "$(printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason')" ] \
+    || fail "carried items did not round-trip with task, key, and reason"
+  [ "$(contract "$home" field carried_blockers)" = 2 ] || fail "carried count not recorded"
+  assert_contains "$out" 'carried from the previous return' 'read-back names the carried items'
+  assert_contains "$out" 'task-a [key=key-a] first reason' 'read-back lists the first carried item'
+  assert_contains "$out" 'task-b [key=key-b] second reason' 'read-back lists the second carried item'
+  contract "$home" validate || fail "a record with carried items does not validate"
+  # A replacement keeps the carried items, and a refresh that only adds a
+  # carried item rewrites in place without archiving a superseded record.
+  out=$(contract "$home" enter --words 'new mandate' 2>&1) || fail "replacement over carried record failed: $out"
+  [ "$(contract "$home" carried)" = "$(printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason')" ] \
+    || fail "a replacement lost the carried items"
+  printf 'task-c\tkey-c\tthird reason\n' > "$carried"
+  contract "$home" enter --carried-file "$carried" >/dev/null 2>&1 || fail "carry-only refresh failed"
+  [ "$(contract "$home" carried)" = "$(printf 'task-a\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason\ntask-c\tkey-c\tthird reason')" ] \
+    || fail "a carry-only refresh did not merge the new item"
+  [ "$(contract "$home" words)" = 'new mandate' ] || fail "a carry-only refresh changed the words"
+
+  home=$(make_home carried-plain)
+  out=$(contract "$home" enter --words 'plain' 2>&1) || fail "plain entry failed: $out"
+  [ -z "$(contract "$home" carried)" ] || fail "a plain entry recorded carried items"
+  assert_not_contains "$out" 'carried from the previous return' 'a plain entry lists carried items'
+  [ -z "$(contract "$home" field carried_blockers)" ] || fail "a plain entry recorded a carried count"
+  pass "entry records carried items with key and reason, replacements and carry-only refreshes keep them, and plain entry carries none"
+}
+
+# A leftover unprefixed row in the carried section, or an empty task field,
+# is a malformed section: validate and read_carried refuse rather than
+# counting only ^carried: lines.
+test_carried_section_refuses_truncated_or_empty_task_rows() {
+  local home record out rc tab
+  tab=$(printf '\t')
+  home=$(make_home carried-garbled)
+  printf 'task-a\tkey-a\tfirst reason\n' > "$home/carried.tsv"
+  contract "$home" enter --words 'watch the fleet' --carried-file "$home/carried.tsv" >/dev/null 2>&1 \
+    || fail "carried fixture entry failed"
+  record="$home/state/.afk-contract"
+  awk -v row="task-b${tab}key-b${tab}leftover" '
+    /^words: / { print row; print; next }
+    { print }
+  ' "$record" > "$home/garbled"
+  mv "$home/garbled" "$record"
+  set +e
+  out=$(contract "$home" validate 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "validation accepted a leftover unprefixed carried row: $out"
+  assert_contains "$out" 'malformed carried section' "validation did not name the garbled carried section"
+
+  home=$(make_home carried-empty-task)
+  printf 'task-a\tkey-a\tfirst reason\n' > "$home/carried.tsv"
+  contract "$home" enter --words 'watch the fleet' --carried-file "$home/carried.tsv" >/dev/null 2>&1 \
+    || fail "empty-task fixture entry failed"
+  record="$home/state/.afk-contract"
+  awk -v tab="$tab" '
+    /^carried: / { print "carried: " tab "key-a" tab "reason"; next }
+    { print }
+  ' "$record" > "$home/empty-task"
+  mv "$home/empty-task" "$record"
+  set +e
+  out=$(contract "$home" validate 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "validation accepted an empty carried task: $out"
+  assert_contains "$out" 'malformed carried section' "validation did not name the empty-task carried row"
+  pass "validate and read_carried refuse a truncated carried section and an empty task"
+}
+
+test_enter_records_carried_items_and_plain_entry_has_none
 test_readback_renders_words_verbatim_with_the_record_scalars
 test_words_preserve_final_newline_shape
 test_enter_writes_a_v2_record_in_one_step_and_announces_hold_for_return
@@ -685,3 +761,4 @@ test_version_1_record_is_replaced_by_a_version_2_record
 test_record_changes_refuse_while_a_reader_holds_the_lock
 test_quiet_record_reads_as_a_present_captain_holding_nothing
 test_away_entry_over_quiet_mode_becomes_away_and_quiet_never_masks_away
+test_carried_section_refuses_truncated_or_empty_task_rows

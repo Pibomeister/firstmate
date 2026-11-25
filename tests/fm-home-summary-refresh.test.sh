@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Behavioral coverage for per-home summary publication through the real
 # producer, writer, watcher-carried status trigger, and snapshot ledger consumer.
-# Optional arguments select the scheduler test functions below.
+# Optional arguments select the test functions below.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -19,11 +19,16 @@ LARGE_HOME="$TMP_ROOT/large-home"
 STATELESS_HOME="$TMP_ROOT/stateless-home"
 LARGE_CHILD_HOME="$TMP_ROOT/large-child-home"
 LARGE_PARENT_HOME="$TMP_ROOT/large-parent-home"
+# Parent consumers reject child homes beneath their declared code root. Keep
+# that root beside the fixture homes, including when TMPDIR is in the worktree.
+PARENT_CODE_ROOT="$TMP_ROOT/parent-code-root"
+mkdir -p "$PARENT_CODE_ROOT"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT")
 WATCH_PID=
 SLOW_WRITER_PID=
 SLOW_WORKER_PGID=
 SLOW_NM_PID=
+SLOW_VALIDATOR_PID=
 LOCK_HOLDER_PID=
 
 cleanup() {
@@ -32,7 +37,7 @@ cleanup() {
     ''|*[!0-9]*) ;;
     *) kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 || true ;;
   esac
-  for pid in "$WATCH_PID" "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$LOCK_HOLDER_PID"; do
+  for pid in "$WATCH_PID" "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$SLOW_VALIDATOR_PID" "$LOCK_HOLDER_PID"; do
     [ -n "$pid" ] || continue
     kill -KILL "$pid" >/dev/null 2>&1 || true
   done
@@ -43,6 +48,12 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
+
+# Resolve delegates before PATH interposition; command-cache warmth can mask self-delegation.
+REAL_JQ=$(command -v jq)
+REAL_TAIL=$(command -v tail)
+
+if [ "${1:-}" != --backoff ]; then
 
 cat > "$FAKEBIN/tmux" <<'SH'
 #!/usr/bin/env bash
@@ -148,6 +159,328 @@ test_summary_jitter_shortens_idle_launches() {
 test_failed_summary_refresh_waits_for_idle() {
   assert_summary_idle_launches failure
   pass "persistent summary refresh failures retry once per idle gap while watcher beats continue"
+}
+
+test_locked_deadlines_record_backoff() {
+  local code home stalls operation attempts expected lib actual
+  code="$TMP_ROOT/locked-deadline-code"
+  stalls="$TMP_ROOT/locked-deadline-hooks.sh"
+  mkdir -p "$code/bin"
+  ln -s "$WRITER" "$code/bin/fm-home-summary-refresh.sh"
+  for lib in fm-timeout-lib.sh fm-clock-lib.sh fm-wake-lib.sh fm-bash-compat-lib.sh fm-path-lib.sh; do
+    ln -s "$ROOT/bin/$lib" "$code/bin/$lib"
+  done
+  cat > "$code/bin/fm-fleet-snapshot.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'attempt\n' >> "$FM_TEST_ATTEMPTS"
+[ "$FM_TEST_STALL_AT" != log ] || exit 7
+cat "$FM_TEST_SUMMARY"
+SH
+  chmod +x "$code/bin/fm-fleet-snapshot.sh"
+  cat > "$stalls" <<'SH'
+fm_test_stall() {
+  [ "${HOME_SUMMARY_LOCK_HELD:-0}" -eq 1 ] || return 0
+  [ ! -e "$FM_TEST_STALLED" ] || return 0
+  case "$FM_TEST_STALL_AT:$1" in
+    mkdir:mkdir|rm:rm|chmod:chmod) ;;
+    ledger-temp:mktemp) case "$2" in */.home-summary.json.*) ;; *) return 0 ;; esac ;;
+    error-temp:mktemp) case "$2" in */.home-summary-error.*) ;; *) return 0 ;; esac ;;
+    replace:mv) case "${@: -1}" in */home-summary.json) ;; *) return 0 ;; esac ;;
+    stage:printf) [ "${3:-}" = producer ] || return 0 ;;
+    log:printf) [ -n "${HOME_SUMMARY_ERROR:-}" ] || return 0 ;;
+    *) return 0 ;;
+  esac
+  builtin printf 'operation=%s worker=%s seconds=%s\n' "$1" "$$" "$SECONDS" > "$FM_TEST_STALLED"
+  sleep 60
+}
+mkdir() { fm_test_stall mkdir "$@"; command mkdir "$@"; }
+mktemp() { fm_test_stall mktemp "$@"; command mktemp "$@"; }
+rm() { fm_test_stall rm "$@"; command rm "$@"; }
+chmod() { fm_test_stall chmod "$@"; command chmod "$@"; }
+mv() { fm_test_stall mv "$@"; command mv "$@"; }
+printf() { fm_test_stall printf "$@"; builtin printf "$@"; }
+SH
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  for operation in stage mkdir ledger-temp error-temp rm chmod replace log; do
+    home="$TMP_ROOT/locked-deadline-$operation"
+    attempts="$home/attempts"
+    mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+    : > "$attempts"
+    jq -n --arg home "$home" '{
+      schema:"fm-secondmate-home-summary.v1", hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home, generated:"2026-08-28T10:00:00Z", generated_epoch:1787911200,
+      valid:true, state:"no_active_work", invalidity:{}, active_children:[], decisions_open:[],
+      holds:[], queued:[], landed:[], endpoints:[], counts:{}, omitted:[]
+    }' > "$home/summary.json"
+    BASH_ENV="$stalls" FM_TEST_STALL_AT="$operation" FM_TEST_STALLED="$home/stalled" \
+      FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_HOME_SUMMARY_TIMEOUT=8 \
+      FM_TEST_SEAM=1 FM_NOW=1000 \
+      fm_run_timed 30 "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+      2> "$home/refresh.err" || {
+        cat "$home/refresh.err" >&2
+        fail "$operation deadline escaped its bound or changed the caller result"
+      }
+    [ -e "$home/stalled" ] || fail "$operation fixture never reached its lock-held stall"
+    actual=$(cat "$home/state/.home-summary-refresh.backoff" 2>/dev/null)
+    if [ "$actual" != "$(printf 'failures=1\nnext=1030')" ]; then
+      printf 'backoff after %s deadline: <%s>\n' "$operation" "$actual" >&2
+      cat "$home/stalled" "$home/refresh.err" "$home/state/.home-summary-refresh.log" >&2
+      ls -la "$home/state" >&2
+      fail "$operation deadline did not record exactly one failure before unlock"
+    fi
+    expected=$(wc -l < "$attempts" | tr -d ' ')
+    FM_TEST_STALL_AT=none FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=1001 \
+      "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+      || fail "$operation retry changed the caller result"
+    [ "$(wc -l < "$attempts" | tr -d ' ')" -eq "$expected" ] \
+      || fail "$operation deadline allowed an immediate producer retry"
+    FM_TEST_STALL_AT=none FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+      "$code/bin/fm-home-summary-refresh.sh" \
+      || fail "$operation recovery did not publish"
+    cmp -s "$home/summary.json" "$home/state/home-summary.json" \
+      || fail "$operation recovery did not publish the complete document"
+    [ ! -e "$home/state/.home-summary-refresh.backoff" ] || fail "$operation recovery did not reset backoff"
+  done
+  FM_TEST_STALL_AT=log FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=2000 \
+    "$code/bin/fm-home-summary-refresh.sh" --best-effort \
+    || fail "an ordinary producer failure changed the best-effort result"
+  [ "$(cat "$home/state/.home-summary-refresh.backoff")" = "$(printf 'failures=1\nnext=2030')" ] \
+    || fail "an ordinary best-effort failure was not recorded exactly once"
+  if FM_TEST_STALL_AT=log FM_TEST_ATTEMPTS="$attempts" FM_TEST_SUMMARY="$home/summary.json" \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_TEST_SEAM=1 FM_NOW=2030 \
+      "$code/bin/fm-home-summary-refresh.sh"; then
+    fail "a direct producer failure returned success"
+  fi
+  [ "$(cat "$home/state/.home-summary-refresh.backoff")" = "$(printf 'failures=2\nnext=2090')" ] \
+    || fail "a direct failure did not advance backoff exactly once"
+  pass "every lock-held deadline records bounded backoff before admission resumes"
+}
+
+test_refresh_without_external_timer() {
+  local home no_timer_env
+  home="$TMP_ROOT/no-external-timer-home"
+  no_timer_env="$TMP_ROOT/no-external-timer.sh"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  home=$(cd "$home" && pwd -P)
+  printf '# Seeded Firstmate home\n' > "$home/AGENTS.md"
+  printf 'fallback\n' > "$home/.fm-secondmate-home"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  cat > "$no_timer_env" <<'SH'
+command() {
+  case "${1:-}:${2:-}" in -v:perl) return 1 ;; esac
+  builtin command "$@"
+}
+type() {
+  case "${1:-}:${2:-}" in -P:timeout|-P:gtimeout) return 1 ;; esac
+  builtin type "$@"
+}
+SH
+  BASH_ENV="$no_timer_env" PATH="$FAKEBIN:$PATH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+    || fail "refresh failed without Perl or an external timeout"
+  jq -e --arg home "$home" '
+    .schema == "fm-secondmate-home-summary.v1" and .home == $home and .valid == true
+  ' "$home/state/home-summary.json" >/dev/null \
+    || fail "the bounded Bash fallback did not publish a complete summary"
+  [ ! -d "$home/state/.home-summary-refresh.lock" ] \
+    || fail "the bounded Bash fallback retained the publication lock"
+  pass "refresh publishes through the bounded Bash fallback without an external timer"
+}
+
+test_worker_termination_status() {
+  local mode home marker release prior worker expected rc i
+  for mode in direct best-effort; do
+    home="$TMP_ROOT/worker-termination-$mode"
+    marker="$home/validator.pid"
+    release="$home/release"
+    prior="$home/prior.json"
+    mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$home/bin"
+    home=$(cd "$home" && pwd -P)
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+      || fail "could not seed the worker-termination ledger"
+    cp "$home/state/home-summary.json" "$prior"
+    cat > "$home/bin/jq" <<'SH'
+#!/usr/bin/env bash
+last=
+for arg in "$@"; do last=$arg; done
+case "$last" in
+  "$FM_HOME/state/.home-summary.json."*)
+    "$FM_TEST_REAL_JQ" "$@" || exit "$?"
+    printf '%s\n' "$$" > "$FM_TEST_CANCEL_MARKER"
+    while [ ! -f "$FM_TEST_CANCEL_RELEASE" ]; do sleep 0.05; done
+    exit 0 ;;
+esac
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+    chmod +x "$home/bin/jq"
+    set --
+    [ "$mode" != best-effort ] || set -- --best-effort
+    PATH="$home/bin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+      FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_TEST_REAL_JQ="$REAL_JQ" \
+      FM_TEST_CANCEL_MARKER="$marker" FM_TEST_CANCEL_RELEASE="$release" \
+      "$WRITER" "$@" > "$home/writer.out" 2> "$home/writer.err" &
+    SLOW_WRITER_PID=$!
+    i=0
+    while [ ! -s "$marker" ] && [ "$i" -lt 400 ]; do
+      kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+      sleep 0.05
+      i=$((i + 1))
+    done
+    [ -s "$marker" ] || fail "$mode worker never reached real validation"
+    SLOW_VALIDATOR_PID=$(cat "$marker")
+    worker=$(cat "$home/state/.home-summary-refresh.lock/pid")
+    kill -TERM "$worker" || fail "could not terminate the lock-owning worker"
+    : > "$release"
+    if wait "$SLOW_WRITER_PID"; then rc=0; else rc=$?; fi
+    SLOW_WRITER_PID=
+    expected=143
+    [ "$mode" != best-effort ] || expected=0
+    [ "$rc" -eq "$expected" ] || fail "$mode worker TERM returned $rc instead of $expected"
+    if [ "$mode" = best-effort ]; then
+      grep -F 'refresh worker failed with exit 143' "$home/state/.home-summary-refresh.log" >/dev/null \
+        || fail "real worker TERM was not logged at the public parent boundary"
+    fi
+    ! kill -0 "$SLOW_VALIDATOR_PID" 2>/dev/null || fail "terminated worker retained its validator"
+    SLOW_VALIDATOR_PID=
+    cmp -s "$prior" "$home/state/home-summary.json" || fail "terminated worker replaced the prior ledger"
+    [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "terminated worker retained its lock"
+    ls "$home/state"/.home-summary-stage.* >/dev/null 2>&1 \
+      && fail "terminated worker leaked its stage file"
+  done
+  pass "real Bash worker TERM preserves direct status and best-effort diagnostics"
+}
+
+test_parent_cancellation() {
+  local mechanism signal home cancel_bin marker release prior expected i validator real_ps
+  real_ps=$(command -v ps)
+  for mechanism in default bash; do
+    for signal in TERM HUP; do
+      home="$TMP_ROOT/cancel-$mechanism-$signal"
+      cancel_bin="$home/bin"
+      marker="$home/validator.pid"
+      release="$home/release"
+      prior="$home/prior.json"
+      mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$cancel_bin"
+      home=$(cd "$home" && pwd -P)
+      printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+      FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_SNAPSHOT_NOW_EPOCH=1000 \
+        "$WRITER" || fail "could not seed the cancellation ledger"
+      cp "$home/state/home-summary.json" "$prior"
+      cat > "$cancel_bin/jq" <<'SH'
+#!/usr/bin/env bash
+last=
+for arg in "$@"; do last=$arg; done
+case "$last" in
+  "$FM_HOME/state/.home-summary.json."*)
+    "$FM_TEST_REAL_JQ" "$@" || exit "$?"
+    printf '%s\n' "$$" > "$FM_TEST_CANCEL_MARKER"
+    while [ ! -f "$FM_TEST_CANCEL_RELEASE" ]; do sleep 0.05; done
+    exit 0 ;;
+esac
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+      # A slow descendant snapshot must not leave independently timed work
+      # alive after the parent's bounded cleanup helper expires.
+      cat > "$cancel_bin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -A ] && [ -s "$FM_TEST_CANCEL_MARKER" ]; then sleep 5; fi
+exec "$FM_TEST_REAL_PS" "$@"
+SH
+      chmod +x "$cancel_bin/jq" "$cancel_bin/ps"
+      PATH="$cancel_bin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+        FM_SNAPSHOT_NOW_EPOCH=2000 FM_TIMEOUT_MECHANISM_OVERRIDE="$mechanism" \
+        FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_PS="$real_ps" FM_TEST_CANCEL_MARKER="$marker" \
+        FM_TEST_CANCEL_RELEASE="$release" "$WRITER" --best-effort >/dev/null 2>&1 &
+      SLOW_WRITER_PID=$!
+      i=0
+      while [ ! -s "$marker" ] && [ "$i" -lt 400 ]; do
+        kill -0 "$SLOW_WRITER_PID" 2>/dev/null || break
+        sleep 0.05
+        i=$((i + 1))
+      done
+      [ -s "$marker" ] || fail "$mechanism cancellation did not reach real validation"
+      validator=$(cat "$marker")
+      SLOW_VALIDATOR_PID=$validator
+      kill -"$signal" "$SLOW_WRITER_PID" || fail "could not cancel the public refresh"
+      i=0
+      while kill -0 "$SLOW_WRITER_PID" 2>/dev/null && [ "$i" -lt 100 ]; do
+        sleep 0.05
+        i=$((i + 1))
+      done
+      ! kill -0 "$SLOW_WRITER_PID" 2>/dev/null \
+        || fail "$mechanism $signal cancellation waited for the refresh deadline"
+      expected=143
+      [ "$signal" != HUP ] || expected=129
+      if wait "$SLOW_WRITER_PID"; then i=0; else i=$?; fi
+      SLOW_WRITER_PID=
+      [ "$i" -eq "$expected" ] || fail "$signal cancellation returned $i instead of $expected"
+      i=0
+      while { kill -0 "$validator" 2>/dev/null || [ -d "$home/state/.home-summary-refresh.lock" ]; } \
+          && [ "$i" -lt 100 ]; do
+        sleep 0.05
+        i=$((i + 1))
+      done
+      ! kill -0 "$validator" 2>/dev/null || fail "$mechanism cancellation retained its validator"
+      SLOW_VALIDATOR_PID=
+      [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "cancellation retained the publication lock"
+      : > "$release"
+      sleep 0.2
+      cmp -s "$prior" "$home/state/home-summary.json" || fail "a cancelled refresh published late"
+      ls "$home/state"/.home-summary-stage.* >/dev/null 2>&1 \
+        && fail "cancellation leaked the attempt stage file"
+    done
+  done
+  pass "TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers"
+}
+
+test_unreadable_stage_diagnostic() {
+  local home="$TMP_ROOT/unreadable-stage" dep_bin real_mkdir
+  dep_bin="$home/bin"
+  real_mkdir=$(command -v mkdir)
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects" "$dep_bin"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" "$WRITER" \
+    || fail "could not seed the unreadable-stage ledger"
+  cp "$home/state/home-summary.json" "$home/prior.json"
+  cat > "$dep_bin/jq" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in */.home-summary.json.*) sleep 120 ;; esac
+done
+exec "$FM_TEST_REAL_JQ" "$@"
+SH
+  cat > "$dep_bin/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in */.home-summary-stage.*) echo 'tail: read error' >&2; exit 1 ;; esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+  # The existing state directory can be written even when redundant directory
+  # initialization stalls. Logging must reach its append within its own bound.
+  cat > "$dep_bin/mkdir" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_HOME_SUMMARY_PARENT_ERROR:-}" ] || sleep 5
+exec "$FM_TEST_REAL_MKDIR" "$@"
+SH
+  chmod +x "$dep_bin/jq" "$dep_bin/tail" "$dep_bin/mkdir"
+  PATH="$dep_bin:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$REAL_TAIL" \
+    FM_TEST_REAL_MKDIR="$real_mkdir" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
+    || fail "an unreadable stage file changed the best-effort caller result"
+  grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$home/state/.home-summary-refresh.log" >/dev/null \
+    || fail "an immediately failing stage read was not reported as unreadable"
+  if grep -F 'before its first stage' "$home/state/.home-summary-refresh.log" >/dev/null; then
+    fail "an immediately failing stage read was reported as a deadline before the first stage"
+  fi
+  cmp -s "$home/prior.json" "$home/state/home-summary.json" \
+    || fail "an unreadable-stage failure replaced the prior ledger"
+  pass "an unreadable stage file is reported as unreadable"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -346,7 +679,7 @@ printf '%s\n' '## In flight' '' '## Queued' '' '## Done' \
   > "$LARGE_PARENT_HOME/data/backlog.md"
 fm_write_secondmate_meta "$LARGE_PARENT_HOME/state/large-child.meta" \
   "$LARGE_CHILD_HOME" "fmtest:fm-large-child" firstmate claude
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$LARGE_PARENT_HOME" \
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$PARENT_CODE_ROOT" FM_HOME="$LARGE_PARENT_HOME" \
   FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
   "$SNAPSHOT" --json > "$TMP_ROOT/large-parent-snapshot.json" \
   || fail "parent fleet snapshot failed for a large child ledger"
@@ -412,6 +745,10 @@ pass "live watcher cadence bounds publication staleness without signals"
 
 test_summary_jitter_shortens_idle_launches
 test_failed_summary_refresh_waits_for_idle
+test_locked_deadlines_record_backoff
+test_refresh_without_external_timer
+test_parent_cancellation
+test_worker_termination_status
 
 # Consumer boundary: first serialize behind any watcher-started publication,
 # then replace the ledger with a structurally complete but semantically false
@@ -435,7 +772,7 @@ EOF
 fm_write_secondmate_meta "$PARENT_HOME/state/mate.meta" "$HOME_DIR" \
   "fmtest:fm-mate" firstmate claude
 PATH="$FAKEBIN:$PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$PARENT_HOME" \
+  FM_ROOT_OVERRIDE="$PARENT_CODE_ROOT" FM_HOME="$PARENT_HOME" \
   FM_SNAPSHOT_NOW="$NOW_TWO" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_TWO" \
   "$SNAPSHOT" --json > "$TMP_ROOT/parent-snapshot.json" \
   || fail "parent fleet snapshot failed"
@@ -449,18 +786,38 @@ jq -e '
   || fail "fleet snapshot did not consume the published local ledger: $(jq -c '.secondmate_current.records[0]' "$TMP_ROOT/parent-snapshot.json")"
 pass "fleet snapshot consumes the published local ledger by default"
 
-# Restore the established ledger, then stop a real writer while its real producer
-# is blocked in a current-state read. The prior ledger must remain byte-identical
-# and valid because no partial producer output is ever published at its path.
+# Stop the writer after real validation accepts the old document.
+# The prior ledger must stay complete, and replacement publication must survive
+# the old attempt finishing after its lock owner is killed.
 run_writer "$NOW_TWO" "$EPOCH_TWO" || fail "could not restore the real ledger"
 printf 'working: replacement summary is being computed\n' \
   >> "$HOME_DIR/state/ledger-task.status"
 cp "$HOME_DIR/state/home-summary.json" "$TMP_ROOT/prior-ledger.json"
-SLOW_MARKER="$TMP_ROOT/slow-no-mistakes.pid"
-PATH="$FAKEBIN:$PATH" \
+SLOW_MARKER="$TMP_ROOT/slow-validator.pid"
+VALIDATION_RELEASE="$TMP_ROOT/validation-release"
+VALIDATION_BIN="$TMP_ROOT/validation-bin"
+mkdir -p "$VALIDATION_BIN"
+cat > "$VALIDATION_BIN/jq" <<'SH'
+#!/usr/bin/env bash
+jq_rc=0
+"$FM_TEST_REAL_JQ" "$@" || jq_rc=$?
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary.json.*)
+      [ "$jq_rc" -eq 0 ] || exit "$jq_rc"
+      printf '%s\n' "$$" > "$FM_TEST_VALIDATOR_MARKER"
+      while [ ! -e "$FM_TEST_VALIDATION_RELEASE" ]; do sleep 0.1; done
+      ;;
+  esac
+done
+exit "$jq_rc"
+SH
+chmod +x "$VALIDATION_BIN/jq"
+PATH="$VALIDATION_BIN:$FAKEBIN:$PATH" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
-  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_TEST_NM_MARKER="$SLOW_MARKER" FM_TEST_NM_SLEEP=30 \
+  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
+  FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_VALIDATOR_MARKER="$SLOW_MARKER" \
+  FM_TEST_VALIDATION_RELEASE="$VALIDATION_RELEASE" FM_HOME_SUMMARY_TIMEOUT=120 \
   "$WRITER" > "$TMP_ROOT/killed-writer.out" 2> "$TMP_ROOT/killed-writer.err" &
 SLOW_WRITER_PID=$!
 i=0
@@ -469,38 +826,41 @@ while [ ! -s "$SLOW_MARKER" ] && [ "$i" -lt 100 ]; do
   sleep 0.05
   i=$((i + 1))
 done
-[ -s "$SLOW_MARKER" ] || fail "the real producer did not reach the controlled slow current-state read"
-SLOW_NM_PID=$(cat "$SLOW_MARKER" 2>/dev/null || true)
+[ -s "$SLOW_MARKER" ] || fail "the writer did not reach controlled validation of a valid document"
+SLOW_VALIDATOR_PID=$(cat "$SLOW_MARKER")
 writer_pgid=$(ps -o pgid= -p "$SLOW_WRITER_PID" 2>/dev/null | tr -d '[:space:]')
-ancestor=$SLOW_NM_PID
-child_pgid=
+ancestor=$SLOW_VALIDATOR_PID
+slow_ancestors=
+# The lock owner is the process whose death this regression exercises. Async
+# runner subshells can share the caller's group, so do not infer the bounded
+# group from a fixed number of layers above the validator.
+lock_owner=$(cat "$HOME_DIR/state/.home-summary-refresh.lock/pid")
+lock_owner_seen=0
+worker_pgid=$(ps -o pgid= -p "$lock_owner" 2>/dev/null | tr -d '[:space:]')
 i=0
 while [ "$i" -lt 20 ]; do
-  ancestor_pgid=$(ps -o pgid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
+  slow_ancestors="${slow_ancestors:+$slow_ancestors,}$ancestor"
+  [ "$ancestor" != "$lock_owner" ] || lock_owner_seen=1
   parent=$(ps -o ppid= -p "$ancestor" 2>/dev/null | tr -d '[:space:]')
   if [ "$parent" = "$SLOW_WRITER_PID" ]; then
-    if [ "$ancestor_pgid" != "$writer_pgid" ]; then
-      SLOW_WORKER_PGID=$ancestor_pgid
-    else
-      SLOW_WORKER_PGID=$child_pgid
-    fi
     break
   fi
-  child_pgid=$ancestor_pgid
   ancestor=$parent
   i=$((i + 1))
 done
-case "$SLOW_WORKER_PGID" in
+[ "$parent" = "$SLOW_WRITER_PID" ] && [ "$lock_owner_seen" -eq 1 ] \
+  || fail "the lock owner was not in the public writer's validator ancestry"
+case "$worker_pgid" in
   ''|*[!0-9]*) fail "the bounded writer did not expose its worker process group" ;;
 esac
-[ "$SLOW_WORKER_PGID" != "$writer_pgid" ] \
+[ "$worker_pgid" != "$writer_pgid" ] \
   || fail "the bounded worker did not have an isolated process group"
+SLOW_WORKER_PGID=$worker_pgid
 kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 \
   || fail "the bounded writer process group could not be terminated"
 wait "$SLOW_WRITER_PID" >/dev/null 2>&1 || true
 SLOW_WRITER_PID=
 SLOW_WORKER_PGID=
-SLOW_NM_PID=
 jq -e . "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "killing the writer exposed invalid JSON at the ledger path"
 cmp -s "$TMP_ROOT/prior-ledger.json" "$HOME_DIR/state/home-summary.json" \
@@ -532,7 +892,20 @@ jq -e --arg now "$NOW_THREE" --argjson epoch "$EPOCH_THREE" '
   .generated == $now and .generated_epoch == $epoch
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "the successful replacement did not publish the new complete document"
-pass "writer kill and replacement preserve an atomic JSON ledger"
+: > "$VALIDATION_RELEASE"
+i=0
+while ps -p "$slow_ancestors" -o stat= 2>/dev/null \
+    | awk '$1 !~ /^Z/ { alive=1 } END { exit !alive }'; do
+  [ "$i" -lt 600 ] || fail "the interrupted attempt did not finish within its controlled delay"
+  sleep 0.1
+  i=$((i + 1))
+done
+SLOW_VALIDATOR_PID=
+jq -e --arg now "$NOW_THREE" --argjson epoch "$EPOCH_THREE" '
+  .generated == $now and .generated_epoch == $epoch
+' "$HOME_DIR/state/home-summary.json" >/dev/null \
+  || fail "an interrupted attempt overwrote the newer replacement ledger"
+pass "writer interruption cannot overwrite a later atomic replacement"
 
 # Best-effort mode is the contract used by every lifecycle trigger. A failed
 # producer records the failure and returns success without touching the ledger.
@@ -555,12 +928,15 @@ grep -F 'summary producer failed' "$HOME_DIR/state/.home-summary-refresh.log" >/
 pass "best-effort publication logs and continues"
 
 LOCK_MARKER="$TMP_ROOT/lock-held"
-rm -f "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" bash -c '
   . "$1/bin/fm-wake-lib.sh"
   fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"
   : > "$3"
-  sleep 30
+  # Held until killed below: on a loaded host the timed steps that need the
+  # lock busy can together outlast any short fixed hold.
+  exec sleep 600
 ' _ "$ROOT" "$HOME_DIR" "$LOCK_MARKER" &
 LOCK_HOLDER_PID=$!
 i=0
@@ -576,6 +952,7 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "lock timeout changed the best-effort caller result"
 elapsed=$(( $(date +%s) - started ))
 [ "$elapsed" -lt 4 ] || fail "best-effort refresh waited $elapsed seconds on its lock"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_HOME_SUMMARY_TIMEOUT=1 "$WRITER" --best-effort \
   || fail "repeated lock timeout changed the best-effort caller result"
@@ -583,12 +960,21 @@ PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   || fail "repeated publication lock timeouts vanished from failure reporting"
 # A deadline hit while queued behind another refresh must name the lock wait.
 : > "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_HOME_SUMMARY_TIMEOUT=3 "$WRITER" --best-effort \
   || fail "a lock-wait timeout changed the best-effort caller result"
 grep -F 'refresh exceeded its 3-second deadline in stage lock-wait' \
   "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
   || fail "the lock wait was not named in the failure log: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
+[ ! -e "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
+  || fail "a lock-wait timeout changed another owner's backoff"
+printf 'failures=2\nnext=0\n' > "$HOME_DIR/state/.home-summary-refresh.backoff"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
+  FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME_SUMMARY_TIMEOUT=30 "$WRITER" \
+  || fail "an if-idle refresh behind a held lock did not skip cleanly"
+[ -f "$HOME_DIR/state/.home-summary-refresh.backoff" ] \
+  || fail "an if-idle refresh that skipped a held lock cleared the backoff"
 kill "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
 LOCK_HOLDER_PID=
@@ -629,7 +1015,7 @@ pass "a deadline failure names the slow stage and keeps the last good summary"
 # Signalling the parent while its worker is still running must not leak the
 # per-attempt stage file in state/.
 SIGNAL_MARKER="$TMP_ROOT/signal-no-mistakes.pid"
-rm -f "$SIGNAL_MARKER"
+rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.backoff"
 printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
@@ -688,7 +1074,8 @@ pass "the producer never recreates a deleted stage log"
 # with no reader) stands in for a stalled filesystem, and only a refresh whose
 # parent never touches that path inside its own process returns in time.
 STALL_PATH="$HOME_DIR/state/.home-summary-stage.stalled"
-rm -f "$STALL_PATH"
+# Cancellation above records a failure; this case must attempt a refresh.
+rm -f "$STALL_PATH" "$HOME_DIR/state/.home-summary-refresh.backoff"
 mkfifo "$STALL_PATH"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 started=$(date +%s)
@@ -705,7 +1092,6 @@ grep -F 'refresh exceeded its 2-second deadline before its first stage' \
 pass "stage-file open is bounded by the refresh deadline"
 
 HANGBIN="$TMP_ROOT/hangbin"
-REAL_JQ=$(command -v jq)
 mkdir -p "$HANGBIN"
 cat > "$HANGBIN/jq" <<'SH'
 #!/usr/bin/env bash
@@ -717,6 +1103,7 @@ done
 exec "$FM_TEST_REAL_JQ" "$@"
 SH
 chmod +x "$HANGBIN/jq"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=1 \
@@ -735,7 +1122,7 @@ pass "best-effort refresh bounds validation and publication"
 # during task observation on a loaded host, before the blocked validation this
 # case needs to exercise. Keep validation blocked beyond that whole budget.
 ORPHAN_PATH="$HOME_DIR/state/.home-summary-stage.orphan"
-rm -f "$ORPHAN_PATH"
+rm -f "$ORPHAN_PATH" "$HOME_DIR/state/.home-summary-refresh.backoff"
 : > "$HOME_DIR/state/.home-summary-refresh.log"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_HOME_SUMMARY_STAGE_PATH="$ORPHAN_PATH" \
@@ -768,7 +1155,7 @@ exec "$real" "\$@"
 SH
   chmod +x "$STALLFS/$shim"
 done
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$STALLFS:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
@@ -786,37 +1173,12 @@ fi
 "$REAL_RM" -f "$HOME_DIR/state"/.home-summary-stage.*
 pass "parent-side stage-file reads and removals are bounded"
 
-# A stage file that cannot be read at all (not stalled, failing at once) is
-# reported as unreadable, never as a worker that recorded no stage.
-FAILTAIL="$TMP_ROOT/fail-tail-bin"
-mkdir -p "$FAILTAIL"
-cat > "$FAILTAIL/tail" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    */.home-summary-stage.*) echo "tail: read error" >&2; exit 1 ;;
-  esac
-done
-exec "$FM_TEST_REAL_TAIL" "$@"
-SH
-chmod +x "$FAILTAIL/tail"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
-PATH="$FAILTAIL:$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" FM_TEST_REAL_TAIL="$(command -v tail)" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=3 \
-  "$WRITER" --best-effort \
-  || fail "an unreadable stage file changed the best-effort caller result"
-grep -F 'refresh exceeded its 3-second deadline (stage unreadable)' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null \
-  || fail "an immediately failing stage read was not reported as unreadable: $(cat "$HOME_DIR/state/.home-summary-refresh.log")"
-if grep -F 'before its first stage' "$HOME_DIR/state/.home-summary-refresh.log" >/dev/null; then
-  fail "an immediately failing stage read was reported as a deadline before the first stage"
-fi
-pass "an unreadable stage file is reported as unreadable"
+# A failed read must still be diagnosed when unrelated setup would stall.
+test_unreadable_stage_diagnostic
 
-# A worker whose parent is killed right before the worker opens the stage file
-# creates it after the parent's cleanup ran. The worker removes its own file when
-# its parent is gone. mkdir stalls once inside the worker, before the open, so the
-# kill lands in that window, and a slow validation keeps the worker alive long
-# enough to see the file exist before it must vanish.
+# Kill the parent before the worker opens its stage file. The timeout runner may
+# cancel the worker before that open, or the worker may finish and clean up its
+# own stage file. Neither path may leave a running worker or a stage file behind.
 SLOWBIN="$TMP_ROOT/slow-orphan-bin"
 REAL_MKDIR=$(command -v mkdir)
 mkdir -p "$SLOWBIN"
@@ -824,23 +1186,14 @@ cat > "$SLOWBIN/mkdir" <<'SH'
 #!/usr/bin/env bash
 if [ -n "${FM_HOME_SUMMARY_STAGE_FILE:-}" ] && [ -n "${FM_TEST_MKDIR_MARK:-}" ] \
     && [ ! -e "$FM_TEST_MKDIR_MARK" ]; then
-  : > "$FM_TEST_MKDIR_MARK"
+  printf '%s\n' "$PPID" > "$FM_TEST_MKDIR_MARK"
   sleep 3
 fi
 exec "$FM_TEST_REAL_MKDIR" "$@"
 SH
-cat > "$SLOWBIN/jq" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  case "$arg" in
-    */.home-summary.json.*) sleep 4 ;;
-  esac
-done
-exec "$FM_TEST_REAL_JQ" "$@"
-SH
-chmod +x "$SLOWBIN/mkdir" "$SLOWBIN/jq"
+chmod +x "$SLOWBIN/mkdir"
 ORPHAN_MARK="$TMP_ROOT/orphan-mkdir.mark"
-rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.*
+rm -f "$ORPHAN_MARK" "$HOME_DIR/state"/.home-summary-stage.* "$HOME_DIR/state/.home-summary-refresh.backoff"
 printf 'working: a status change forces a recompute\n' >> "$HOME_DIR/state/ledger-task.status"
 PATH="$SLOWBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_TEST_MKDIR_MARK="$ORPHAN_MARK" \
@@ -850,21 +1203,28 @@ ORPHAN_PARENT=$!
 i=0
 while [ ! -e "$ORPHAN_MARK" ] && [ "$i" -lt 200 ]; do sleep 0.05; i=$((i + 1)); done
 [ -e "$ORPHAN_MARK" ] || fail "the worker never reached its state-directory step"
+ORPHAN_WORKER_PID=$(cat "$ORPHAN_MARK")
+SLOW_WORKER_PGID=$(ps -o pgid= -p "$ORPHAN_WORKER_PID" 2>/dev/null | tr -d '[:space:]')
+test_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d '[:space:]')
+case "$SLOW_WORKER_PGID" in
+  ''|*[!0-9]*) fail "the orphan fixture did not record its worker process group" ;;
+esac
+[ "$SLOW_WORKER_PGID" != "$test_pgid" ] \
+  || fail "the orphan fixture worker did not have an isolated process group"
 kill -KILL "$ORPHAN_PARENT" >/dev/null 2>&1 || true
 wait "$ORPHAN_PARENT" >/dev/null 2>&1 || true
 i=0
-until ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
-  [ "$i" -lt 150 ] || fail "the worker never created its stage file after its parent was killed"
+while ps -p "$ORPHAN_WORKER_PID" -o stat= 2>/dev/null \
+    | awk '$1 !~ /^Z/ { alive=1 } END { exit !alive }'; do
+  [ "$i" -lt 900 ] || fail "a refresh worker outlived its parent's death and refresh deadline"
   sleep 0.1
   i=$((i + 1))
 done
-i=0
-while ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; do
-  [ "$i" -lt 300 ] || fail "a worker outliving its parent left its stage file behind"
-  sleep 0.1
-  i=$((i + 1))
-done
-pass "a worker whose parent is gone removes its own stage file"
+SLOW_WORKER_PGID=
+if ls "$HOME_DIR/state"/.home-summary-stage.* >/dev/null 2>&1; then
+  fail "a worker whose parent is gone left its stage file behind"
+fi
+pass "parent loss leaves no running refresh worker or stage file"
 
 # A fresh home has no state directory when the refresh starts. The wake library
 # creates it in the worker before the stage file is opened, so a deadline hit on a
@@ -902,7 +1262,7 @@ pass "a stray stage path override never touches an unrelated file"
 # rather than blaming the producer's last stage, and the offsets must share one
 # timeline that includes the worker's own stages.
 # As above, allow the normal collection budget before requiring a late stage.
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$HANGBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
@@ -926,7 +1286,7 @@ done
 exec "$FM_TEST_REAL_MV" "$@"
 SH
 chmod +x "$PUBBIN/mv"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$PUBBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" FM_HOME_SUMMARY_TIMEOUT=60 \
   "$WRITER" --best-effort \
@@ -950,7 +1310,7 @@ done
 exec "$FM_TEST_REAL_JQ" "$@"
 SH
 chmod +x "$JQFAILBIN/jq"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$JQFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_JQ="$REAL_JQ" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   "$WRITER" --best-effort \
@@ -970,7 +1330,7 @@ done
 exec "$FM_TEST_REAL_MV" "$@"
 SH
 chmod +x "$MVFAILBIN/mv"
-: > "$HOME_DIR/state/.home-summary-refresh.log"
+: > "$HOME_DIR/state/.home-summary-refresh.log"; rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$MVFAILBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MV="$REAL_MV" \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
   "$WRITER" --best-effort \
@@ -994,6 +1354,8 @@ pass "a failure the worker handles itself names its stage"
 # fake gives up, and the event order below fails. The assertion counts reads and
 # their overlap, never elapsed time. Give the intentionally blocked read enough
 # budget for all four peer reads, rather than the production per-read timeout.
+# Endpoint observations must also finish before comparing windows. Short liveness
+# deadlines can expire under host load and change otherwise identical task rows.
 SLIDE_HOME="$TMP_ROOT/slide-home"
 mkdir -p "$SLIDE_HOME/state" "$SLIDE_HOME/data" "$SLIDE_HOME/config" "$SLIDE_HOME/projects"
 SLIDE_HOME=$(cd "$SLIDE_HOME" && pwd -P)
@@ -1039,6 +1401,7 @@ run_slide() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_ENDPOINT_TIMEOUT=90 FM_CREW_STATE_PANE_TIMEOUT=90 \
     FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --secondmate-home-summary
 }
@@ -1109,6 +1472,7 @@ run_rows() {  # <concurrency> [log]
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$SLIDE_HOME" \
     FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
     FM_SNAPSHOT_LOCAL_READ_CONCURRENCY="$1" \
+    FM_SNAPSHOT_ENDPOINT_TIMEOUT=90 FM_CREW_STATE_PANE_TIMEOUT=90 \
     FM_SNAPSHOT_CREW_STATE_TIMEOUT=120 FM_CREW_STATE_NM_TIMEOUT=90 \
     "$SNAPSHOT" --json
 }
@@ -1128,12 +1492,18 @@ run_rows 16 > "$TMP_ROOT/rows-wide.json" || fail "the wide row run failed"
 jq -S '.tasks' "$TMP_ROOT/rows-serial.json" > "$TMP_ROOT/rows-serial.norm"
 jq -S '.tasks' "$TMP_ROOT/rows-window.json" > "$TMP_ROOT/rows-window.norm"
 jq -S '.tasks' "$TMP_ROOT/rows-wide.json" > "$TMP_ROOT/rows-wide.norm"
-[ "$(jq 'length' "$TMP_ROOT/rows-serial.norm")" -eq 5 ] \
-  || fail "the serial run did not produce five task rows"
+# The fake tmux inventory has no windows. A timed-out probe is not an equivalent
+# observation, even if every run happened to time out in the same way.
+for row_run in serial window wide; do
+  jq -e '(.tasks | length) == 5 and all(.tasks[];
+    .endpoint.exists == false and .endpoint.status == "absent")' \
+    "$TMP_ROOT/rows-$row_run.json" >/dev/null \
+    || fail "the $row_run run did not observe all five absent fixture endpoints"
+done
 cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" \
   || fail "overlapping row composition changed a task row: $(diff "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-window.norm" | head -5)"
 cmp -s "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" \
-  || fail "a wide window changed a task row"
+  || fail "a wide window changed a task row: $(diff -u "$TMP_ROOT/rows-serial.norm" "$TMP_ROOT/rows-wide.norm" | head -40)"
 pass "row composition overlaps behind the window and keeps every task row identical"
 
 # Task ids may contain dots, so a task named like another task's row file ("ship"
@@ -1181,6 +1551,7 @@ done
 exec "$FM_TEST_REAL_MKDIR" "$@"
 SH
 chmod +x "$MKBIN/mkdir"
+rm -f "$HOME_DIR/state/.home-summary-refresh.backoff"
 started=$(date +%s)
 PATH="$MKBIN:$FAKEBIN:$PATH" FM_TEST_REAL_MKDIR="$REAL_MKDIR" \
   FM_TEST_STALLED_STATE="$HOME_DIR/state" FM_ROOT_OVERRIDE="$ROOT" \
@@ -1205,7 +1576,8 @@ fi
 exec "$FM_TEST_REAL_ENV" "$@"
 SH
 chmod +x "$SIGNALBIN/env"
-rm -f "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 PATH="$SIGNALBIN:$FAKEBIN:$PATH" FM_TEST_REAL_ENV="$REAL_ENV" \
   FM_TEST_SIGNAL_MARKER="$SIGNAL_MARKER" FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" "$WRITER" --best-effort \
@@ -1215,7 +1587,8 @@ grep -F 'refresh worker failed with exit 143' \
   || fail "worker termination was not logged at the parent boundary"
 pass "best-effort refresh logs worker termination"
 
-rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.log"
+rm -f "$SIGNAL_MARKER" "$HOME_DIR/state/.home-summary-refresh.log" \
+  "$HOME_DIR/state/.home-summary-refresh.backoff"
 mkdir "$HOME_DIR/state/.home-summary-refresh.log"
 if ! PATH="$SIGNALBIN:$FAKEBIN:$PATH" FM_TEST_REAL_ENV="$REAL_ENV" \
   FM_TEST_SIGNAL_MARKER="$SIGNAL_MARKER" FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
@@ -1737,3 +2110,240 @@ case "$report_out" in
     ;;
 esac
 pass "repeated publication failure is reported at session start until it clears"
+
+fi
+
+# A failed refresh must wait longer before the next side-band attempt instead
+# of costing a full producer run on every watcher poll. The delay doubles
+# after each failure and is capped; a success resets it.
+BACKOFF_HOME="$TMP_ROOT/backoff-home"
+mkdir -p "$BACKOFF_HOME/state" "$BACKOFF_HOME/data" "$BACKOFF_HOME/config" \
+  "$BACKOFF_HOME/projects"
+printf '# Seeded Firstmate home\n' > "$BACKOFF_HOME/AGENTS.md"
+printf 'backoff\n' > "$BACKOFF_HOME/.fm-secondmate-home"
+cat > "$BACKOFF_HOME/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+FAILBIN="$TMP_ROOT/backoff-failbin"
+mkdir -p "$FAILBIN"
+cat > "$FAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+exit 7
+SH
+chmod +x "$FAILBIN/jq"
+backoff_failures() {
+  grep -c 'summary producer failed' "$BACKOFF_HOME/state/.home-summary-refresh.log" 2>/dev/null || true
+}
+backoff_attempt() {  # <now-epoch>
+  PATH="$FAILBIN:$FAKEBIN:$PATH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+    FM_TEST_SEAM=1 FM_NOW="$1" \
+    "$WRITER" --best-effort \
+    || fail "backed-off refresh changed the best-effort caller result"
+}
+backoff_epoch=1000
+backoff_count=0
+for backoff_delay in 30 60 120 240 480 960 1800 1800; do
+  backoff_attempt "$backoff_epoch"
+  backoff_count=$((backoff_count + 1))
+  [ "$(backoff_failures)" -eq "$backoff_count" ] || fail "an eligible refresh did not retry"
+  backoff_epoch=$((backoff_epoch + backoff_delay))
+  backoff_attempt "$((backoff_epoch - 1))"
+  [ "$(backoff_failures)" -eq "$backoff_count" ] || fail "a refresh retried before its fixed backoff elapsed"
+done
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_SEAM=1 FM_NOW=1000 \
+  "$WRITER" || fail "a direct refresh did not run and clear the backoff"
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "publication did not clear backoff"
+backoff_attempt 1001
+[ "$(backoff_failures)" -eq 9 ] || fail "a successful refresh did not reset the backoff"
+pass "failed refresh backs off from 30 to 1800 seconds and resets on publication"
+
+. "$ROOT/bin/fm-timeout-lib.sh"
+QUEUEDBIN="$TMP_ROOT/queued-bin"
+mkdir -p "$QUEUEDBIN"
+cat > "$QUEUEDBIN/jq" <<'SH'
+#!/usr/bin/env bash
+printf 'attempt\n' >> "$FM_TEST_ATTEMPTS"
+if [ ! -e "$FM_TEST_READY" ]; then
+  : > "$FM_TEST_READY"
+  read -r _ < "$FM_TEST_RELEASE"
+fi
+exit 7
+SH
+chmod +x "$QUEUEDBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+RELEASE="$TMP_ROOT/queued-release"
+READY="$TMP_ROOT/queued-ready"
+ATTEMPTS="$TMP_ROOT/queued-attempts"
+QUEUED_STAGE="$BACKOFF_HOME/state/.home-summary-stage.queued"
+mkfifo "$RELEASE"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_WRITER_PID=$!
+i=0
+while [ ! -e "$READY" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$READY" ] || fail "the first producer did not start"
+printf 'failures=2\nnext=900\n' > "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_SEAM=1 FM_NOW=1000 FM_HOME_SUMMARY_IF_IDLE=1 "$WRITER" --best-effort \
+  || fail "an if-idle refresh did not skip a busy publication lock"
+[ "$(cat "$BACKOFF_HOME/state/.home-summary-refresh.backoff")" = "$(printf 'failures=2\nnext=900')" ] \
+  || fail "an if-idle skip changed the existing backoff record"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_HOME_SUMMARY_STAGE_PATH="$QUEUED_STAGE" \
+  FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_NM_PID=$!
+i=0
+until grep -q '^lock-wait' "$QUEUED_STAGE" 2>/dev/null; do
+  [ "$i" -lt 600 ] || fail "the second refresh never queued for the publication lock"
+  sleep 0.05
+  i=$((i + 1))
+done
+printf 'release\n' > "$RELEASE"
+wait "$SLOW_WRITER_PID" || fail "the first best-effort refresh failed"
+SLOW_WRITER_PID=
+wait "$SLOW_NM_PID" || fail "the queued best-effort refresh failed"
+SLOW_NM_PID=
+[ "$(wc -l < "$ATTEMPTS" | tr -d ' ')" -eq 1 ] || fail "a queued refresh bypassed the preceding failure's backoff"
+PATH="$QUEUEDBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_ATTEMPTS="$ATTEMPTS" FM_TEST_READY="$READY" FM_TEST_RELEASE="$RELEASE" \
+  FM_TEST_SEAM=1 FM_NOW=1030 "$WRITER" --best-effort \
+  || fail "an eligible refresh failed after contention"
+[ "$(wc -l < "$ATTEMPTS" | tr -d ' ')" -eq 2 ] || fail "the queued skip changed the retry time"
+pass "a queued refresh checks backoff after taking the lock"
+
+TIMEOUTBIN="$TMP_ROOT/timeout-backoff-bin"
+TIMEOUT_FAILBIN="$TMP_ROOT/timeout-backoff-failbin"
+mkdir -p "$TIMEOUTBIN" "$TIMEOUT_FAILBIN"
+cat > "$TIMEOUTBIN/jq" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_TIMEOUT_READY"
+sleep 60
+exit 7
+SH
+cat > "$TIMEOUTBIN/tail" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-stage.timeout-race)
+      # Worker failure reporting reads this path too. Pause only the parent's
+      # diagnostics; stopping it twice would strand the test after its resume.
+      if [ -z "${FM_HOME_SUMMARY_STAGE_FILE:-}" ]; then
+        kill -STOP "$(cat "$FM_TEST_TIMEOUT_PARENT_FILE")"
+        : > "$FM_TEST_TIMEOUT_PARENT_STOPPED"
+      fi
+      ;;
+  esac
+done
+exec "$FM_TEST_REAL_TAIL" "$@"
+SH
+cat > "$TIMEOUT_FAILBIN/jq" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_QUEUED_PRODUCER"
+exit 7
+SH
+chmod +x "$TIMEOUTBIN/jq" "$TIMEOUTBIN/tail" "$TIMEOUT_FAILBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+TIMEOUT_PARENT_FILE="$TMP_ROOT/timeout-parent.pid"
+TIMEOUT_PARENT_STOPPED="$TMP_ROOT/timeout-parent-stopped"
+TIMEOUT_READY="$TMP_ROOT/timeout-ready"
+QUEUED_PRODUCER="$TMP_ROOT/timeout-queued-producer"
+TIMEOUT_QUEUED_STAGE="$BACKOFF_HOME/state/.home-summary-stage.timeout-queued"
+PATH="$TIMEOUTBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_TIMEOUT_READY="$TIMEOUT_READY" FM_TEST_TIMEOUT_PARENT_FILE="$TIMEOUT_PARENT_FILE" \
+  FM_TEST_TIMEOUT_PARENT_STOPPED="$TIMEOUT_PARENT_STOPPED" FM_TEST_REAL_TAIL="$REAL_TAIL" \
+  FM_HOME_SUMMARY_STAGE_PATH="$BACKOFF_HOME/state/.home-summary-stage.timeout-race" \
+  FM_HOME_SUMMARY_TIMEOUT=10 FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_WRITER_PID=$!
+printf '%s\n' "$SLOW_WRITER_PID" > "$TIMEOUT_PARENT_FILE"
+i=0
+while [ ! -e "$TIMEOUT_READY" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$TIMEOUT_READY" ] || fail "the timeout producer did not start"
+PATH="$TIMEOUT_FAILBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_QUEUED_PRODUCER="$QUEUED_PRODUCER" FM_HOME_SUMMARY_STAGE_PATH="$TIMEOUT_QUEUED_STAGE" \
+  FM_HOME_SUMMARY_TIMEOUT=60 FM_TEST_SEAM=1 FM_NOW=1000 "$WRITER" --best-effort &
+SLOW_NM_PID=$!
+i=0
+until grep -q '^lock-wait' "$TIMEOUT_QUEUED_STAGE" 2>/dev/null; do
+  [ "$i" -lt 600 ] || fail "the timeout sibling did not queue for the lock"
+  sleep 0.05
+  i=$((i + 1))
+done
+i=0
+while [ ! -e "$TIMEOUT_PARENT_STOPPED" ] && [ "$i" -lt 600 ]; do sleep 0.05; i=$((i + 1)); done
+[ -e "$TIMEOUT_PARENT_STOPPED" ] || fail "the timed-out caller did not reach stage diagnostics"
+wait "$SLOW_NM_PID" || fail "the timeout sibling changed its best-effort result"
+SLOW_NM_PID=
+[ ! -e "$QUEUED_PRODUCER" ] || fail "a queued producer started before timeout backoff was recorded"
+[ "$(cat "$BACKOFF_HOME/state/.home-summary-refresh.backoff")" = "$(printf 'failures=1\nnext=1030')" ] \
+  || fail "the timeout was not recorded exactly once before the lock was released"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" "$WRITER" \
+  || fail "direct publication failed while the older caller was finishing diagnostics"
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "direct publication did not reset timeout backoff"
+kill -CONT "$SLOW_WRITER_PID"
+wait "$SLOW_WRITER_PID" || fail "the timed-out caller changed its best-effort result"
+SLOW_WRITER_PID=
+[ ! -e "$BACKOFF_HOME/state/.home-summary-refresh.backoff" ] || fail "an older timeout restored backoff after publication"
+jq -e '.schema == "fm-secondmate-home-summary.v1"' "$BACKOFF_HOME/state/home-summary.json" >/dev/null \
+  || fail "finishing an older timeout changed the newly published ledger"
+pass "timeout backoff precedes admission and cannot undo a later publication"
+
+STALLBIN="$TMP_ROOT/backoff-stall-bin"
+mkdir -p "$STALLBIN"
+REAL_MV=$(command -v mv)
+cat > "$STALLBIN/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */.home-summary-refresh.backoff)
+      : > "$FM_TEST_BACKOFF_STALLED"
+      sleep 60
+      ;;
+  esac
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+cat > "$STALLBIN/jq" <<'SH'
+#!/usr/bin/env bash
+: > "$FM_TEST_BACKOFF_PRODUCER_STARTED"
+sleep 60
+exit 7
+SH
+chmod +x "$STALLBIN/mv" "$STALLBIN/jq"
+rm -f "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+PATH="$STALLBIN:$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_TEST_REAL_MV="$REAL_MV" FM_TEST_BACKOFF_STALLED="$TMP_ROOT/backoff-write-stalled" \
+  FM_TEST_BACKOFF_PRODUCER_STARTED="$TMP_ROOT/backoff-producer-started" \
+  FM_HOME_SUMMARY_TIMEOUT=10 fm_run_timed 30 "$WRITER" --best-effort \
+  || fail "stalled backoff publication escaped its bound or changed best-effort status"
+[ -e "$TMP_ROOT/backoff-producer-started" ] || fail "the stalled-write fixture never started its producer"
+[ -e "$TMP_ROOT/backoff-write-stalled" ] || fail "the lock owner did not attempt to record its timeout"
+pass "a stalled timeout backoff write remains bounded while holding the lock"
+
+cat > "$TMP_ROOT/stall-backoff-read.sh" <<'SH'
+read() {
+  case "${HOME_SUMMARY_MODE:-}" in
+    parent|worker)
+      : > "$FM_TEST_BACKOFF_STALLED"
+      sleep 60
+      ;;
+  esac
+  builtin read "$@"
+}
+SH
+printf 'failures=1\nnext=0\n' > "$BACKOFF_HOME/state/.home-summary-refresh.backoff"
+BASH_ENV="$TMP_ROOT/stall-backoff-read.sh" \
+  FM_TEST_BACKOFF_STALLED="$TMP_ROOT/backoff-read-stalled" \
+  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BACKOFF_HOME" \
+  FM_HOME_SUMMARY_TIMEOUT=1 fm_run_timed 20 "$WRITER" --best-effort \
+  || fail "a stalled backoff read escaped its bound or changed best-effort status"
+[ -e "$TMP_ROOT/backoff-read-stalled" ] || fail "the stalled backoff read was not reached"
+pass "backoff eligibility and failure reads cannot hold a lifecycle caller"
