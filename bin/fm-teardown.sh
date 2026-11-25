@@ -481,7 +481,7 @@ teardown_remove_artifacts() {
     paths+=("$path")
   done
   [ "${#paths[@]}" -gt 0 ] || return 0
-  teardown_receipt_handoffs "$FM_HOME" "$state" "${paths[@]}" || exit 1
+  teardown_receipt_handoffs "$FM_HOME" "$state" "${paths[@]}" || return 1
   rm "$mode" -- "${paths[@]}"
 }
 
@@ -1306,7 +1306,7 @@ remote_secondmate_teardown() {
   fm_backlog_atomic_transition remove "$STATE/$ID.meta" "task record" "$STATE" || return 1
   teardown_remove_artifacts "$STATE" -f -- "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
     "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \
-    "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
+    "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" || return 1
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
   return "$rc"
 }
@@ -1610,7 +1610,7 @@ remove_harness_worktree_wiring() {  # <worktree>
   while IFS= read -r path; do
     case "$path" in "$wt"/*) ;; *) continue ;; esac
     git -C "$wt" ls-files --error-unmatch -- "$path" >/dev/null 2>&1 && continue
-    teardown_remove_artifacts "$STATE" -f "$path"
+    teardown_remove_artifacts "$STATE" -f "$path" || return 1
   done <<EOF
 $(fm_control_harness_wiring_paths "$(meta_value "$META" harness)" "$wt" "$STATE" "$ID")
 EOF
@@ -2141,7 +2141,7 @@ cleanup_stale_lock_for_safety_check() {
   fi
 
   if fm_lock_is_provably_stale "$lock" "$dir" "$STALE_WORKTREE_LOCK_AGE_SECS"; then
-    teardown_remove_artifacts "$STATE" -f "$lock"
+    teardown_remove_artifacts "$STATE" -f "$lock" || return 1
     echo "teardown: removed provably-stale git lock $lock (age >= ${STALE_WORKTREE_LOCK_AGE_SECS}s, no live holder) and retrying worktree safety checks" >&2
     return 0
   fi
@@ -2202,7 +2202,7 @@ teardown_treehouse_return() {
   if [ -n "$lock" ] && [ -e "$lock" ]; then
     lock_desc=$lock
     if fm_lock_is_provably_stale "$lock" "$dir" "$STALE_WORKTREE_LOCK_AGE_SECS"; then
-      teardown_remove_artifacts "$STATE" -f "$lock"
+      teardown_remove_artifacts "$STATE" -f "$lock" || return 1
       echo "teardown: removed provably-stale git lock $lock (age >= ${STALE_WORKTREE_LOCK_AGE_SECS}s, no live holder) and retrying $label return" >&2
       if [ -n "$post_cleanup_check" ]; then
         if ! "$post_cleanup_check"; then
@@ -3705,7 +3705,7 @@ cleanup_firstmate_home_children() {
       if [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
         teardown_remove_artifacts "$STATE" -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
-          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend" || return 1
       fi
       child_remove_error=
       if child_remove_error=$(fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" "$child_wt" 2>&1); then
@@ -3732,11 +3732,11 @@ cleanup_firstmate_home_children() {
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
         teardown_remove_artifacts "$STATE" -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
           "$child_wt/.opencode/plugins/fm-busy-state.js" \
-          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
+          "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend" || return 1
         if [ "$child_backend" = t3code ]; then
           "$SCRIPT_DIR/fm-t3code-codex-env.sh" cleanup "$child_wt" || return 1
           git -C "$child_wt" ls-files --error-unmatch CLAUDE.local.md >/dev/null 2>&1 \
-            || teardown_remove_artifacts "$STATE" -f "$child_wt/CLAUDE.local.md"
+            || teardown_remove_artifacts "$STATE" -f "$child_wt/CLAUDE.local.md" || return 1
         fi
         if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
           teardown_scrub_scratch_copy "$child_wt" || return 1
@@ -3750,10 +3750,10 @@ cleanup_firstmate_home_children() {
             if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
               return "$child_return_rc"
             fi
-            safe_rm_rf_child_worktree "$child_wt" "$child_proj"
+            safe_rm_rf_child_worktree "$child_wt" "$child_proj" || return 1
           fi
         else
-          safe_rm_rf_child_worktree "$child_wt" "$child_proj"
+          safe_rm_rf_child_worktree "$child_wt" "$child_proj" || return 1
         fi
       fi
     fi
@@ -3783,14 +3783,14 @@ cleanup_firstmate_home_children() {
       "$sub_state/$child_id.droid-submit-receipts" \
       "$sub_state/$child_id.polytoken-busy.sh" \
       "$sub_state/$child_id.budget" "$sub_state/$child_id.budget-diagnostic" \
-      "$sub_state/.$child_id.branch-outcome-index"
-    teardown_remove_artifacts "$sub_state" -rf "$sub_state/$child_id.kiro-home"
+      "$sub_state/.$child_id.branch-outcome-index" || return 1
+    teardown_remove_artifacts "$sub_state" -rf "$sub_state/$child_id.kiro-home" || return 1
     chmod u+w "$sub_state/$child_id.git-hooks" 2>/dev/null || true
     teardown_remove_artifacts "$sub_state" -rf "$sub_state/$child_id.git-hooks" "$sub_state/$child_id.push-guard" \
       "$sub_state/$child_id.cortex-plugin" "$sub_state/$child_id.hermes-hooks" \
       "$sub_state/$child_id.polytoken-config" \
       "$sub_state/$child_id.polytoken-sessions" \
-      "$sub_state/$child_id.polytoken-sessions-v1"
+      "$sub_state/$child_id.polytoken-sessions-v1" || return 1
   done
 }
 
@@ -4042,7 +4042,7 @@ fi
 
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
   if [ "$(fm_backend_herdr_pane_agent_state "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_PANE")" = dead ]; then
-    teardown_remove_artifacts "$STATE" -f "$HERDR_PRESENTATION_JOURNAL"
+    teardown_remove_artifacts "$STATE" -f "$HERDR_PRESENTATION_JOURNAL" || exit 1
   else
     echo "warning: exact herdr task-pane close could not be confirmed for $ID; retaining the presentation journal and attempting no workspace cleanup" >&2
   fi
@@ -4199,8 +4199,8 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     fi
     teardown_remove_artifacts "$STATE" -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
       "$WT/.opencode/plugins/fm-busy-state.js" \
-      "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-    remove_harness_worktree_wiring "$WT"
+      "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend" || exit 1
+    remove_harness_worktree_wiring "$WT" || exit 1
   fi
   # The shared helper keeps the recorded Orca branch unless an exact
   # remote-tracking containment proof permits deleting it.
@@ -4250,11 +4250,11 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   # signals for a dead task or hand a t3code env block or channel statement to
   # its next holder.
   teardown_remove_artifacts "$STATE" -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  remove_harness_worktree_wiring "$WT"
+    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend" || exit 1
+  remove_harness_worktree_wiring "$WT" || exit 1
   if [ "$BACKEND" = t3code ]; then
     "$SCRIPT_DIR/fm-t3code-codex-env.sh" cleanup "$WT" || exit 1
-    git -C "$WT" ls-files --error-unmatch CLAUDE.local.md >/dev/null 2>&1 || teardown_remove_artifacts "$STATE" -f "$WT/CLAUDE.local.md"
+    git -C "$WT" ls-files --error-unmatch CLAUDE.local.md >/dev/null 2>&1 || teardown_remove_artifacts "$STATE" -f "$WT/CLAUDE.local.md" || exit 1
   fi
   # Kills remaining processes in the worktree (including the agent), resets, returns
   # to pool. treehouse resolves the pool from the working directory, so run it from
@@ -4339,7 +4339,9 @@ esac
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && teardown_remove_artifacts "$STATE" -rf "$TASK_TMP"
+if [ -n "$TASK_TMP" ]; then
+  teardown_remove_artifacts "$STATE" -rf "$TASK_TMP" || exit 1
+fi
 # Retire only this Firstmate home's launch namespace. Its never-reused per-spawn
 # files leave the equal task-id namespace of every other home untouched.
 teardown_launch_home_token() {
@@ -4359,7 +4361,7 @@ teardown_launch_home_token() {
 }
 LAUNCH_HOME_TOKEN=$(teardown_launch_home_token "$FM_HOME") || LAUNCH_HOME_TOKEN=
 if [ -n "$LAUNCH_HOME_TOKEN" ]; then
-  teardown_remove_artifacts "$STATE" -rf "/tmp/fm-$ID+$LAUNCH_HOME_TOKEN"
+  teardown_remove_artifacts "$STATE" -rf "/tmp/fm-$ID+$LAUNCH_HOME_TOKEN" || exit 1
 fi
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
@@ -4388,11 +4390,11 @@ teardown_remove_artifacts "$STATE" -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-s
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" \
   "$STATE/.crew-relaunch-$ID" "$STATE/.crew-stopped-$ID" "$STATE/$ID.agent-exit" \
   "$STATE/$ID.provider-error" "$STATE/.failover-$ID" \
-  "$STATE/$ID.failover-seen" "$STATE/$ID.failover-judged"
+  "$STATE/$ID.failover-seen" "$STATE/$ID.failover-judged" || exit 1
 # kiro's per-task home is a directory (its relocated KIRO_HOME holds the hook
 # agent config, the trust setting, and this task's sessions), so it needs a
 # recursive removal rather than the file rm above.
-teardown_remove_artifacts "$STATE" -rf "$STATE/$ID.kiro-home"
+teardown_remove_artifacts "$STATE" -rf "$STATE/$ID.kiro-home" || exit 1
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
@@ -4409,7 +4411,7 @@ chmod u+w "$STATE/$ID.git-hooks" 2>/dev/null || true
 teardown_remove_artifacts "$STATE" -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks" "$STATE/$ID.push-guard" \
   "$STATE/$ID.cortex-plugin" "$STATE/$ID.hermes-hooks" \
   "$STATE/$ID.polytoken-config" \
-  "$STATE/$ID.polytoken-sessions" "$STATE/$ID.polytoken-sessions-v1"
+  "$STATE/$ID.polytoken-sessions" "$STATE/$ID.polytoken-sessions-v1" || exit 1
 # A presentation journal the close path left behind is orphaned once the
 # recorded pane is proven gone (the Herdr gate above) unless it still names a
 # live projected workspace - a version 2 binding of some other pane, or a
@@ -4417,7 +4419,7 @@ teardown_remove_artifacts "$STATE" -rf "$STATE/$ID.inbox" "$STATE/$ID.git-hooks"
 # session-start sweep alone may judge (header).
 if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
   if teardown_herdr_journal_orphaned; then
-    teardown_remove_artifacts "$STATE" -f "$HERDR_PRESENTATION_JOURNAL"
+    teardown_remove_artifacts "$STATE" -f "$HERDR_PRESENTATION_JOURNAL" || exit 1
   else
     echo "warning: retaining herdr presentation journal for $ID; it still names a projected workspace the session-start sweep owns, not the closed endpoint" >&2
   fi

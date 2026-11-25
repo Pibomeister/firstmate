@@ -1636,6 +1636,33 @@ test_delegated_runtime_artifacts_survive_until_read() {
   pass 'real teardown retains status, archived status, progress and runtime-directory evidence until acknowledgement'
 }
 
+test_unread_archive_pruning_is_best_effort() {
+  local dir id=unrelated archive hash
+  dir=$(make_case optional-archive-retention)
+  mark_case_as_treehouse_pool "$dir"
+  fm_write_meta "$dir/home/state/$id.meta" "window=firstmate:fm-$id" "endpoint_task_id=$id" \
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  touch "$dir/home/config/status-archive" "$dir/home/state/receiver.meta"
+  mkdir -p "$dir/home/data/older-task"
+  archive="$dir/home/data/older-task/status.log"
+  printf 'done: earlier producer evidence\n' > "$archive"
+  touch -t 202001010000 "$archive"
+  hash=$(shasum -a 256 "$archive" | awk '{ print $1 }')
+  printf 'done: unrelated task completed\n' > "$dir/home/state/$id.status"
+  FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" register --task earlier --deliverable report \
+    --artifact "$dir/home/data/earlier-report.md" --heartbeat-secs 60 --silence-secs 300 >/dev/null || fail 'register failed'
+  FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" handoff --task earlier --id old-archive --receiver receiver \
+    --path "$archive" --hash "$hash" --alt-dir "$dir/hosted" --location read >/dev/null || fail 'archive handoff failed'
+  run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || fail "optional archive retention aborted unrelated teardown: $(cat "$dir/stderr")"
+  [ -f "$archive" ] || fail 'optional pruning removed unread evidence'
+  [ ! -e "$dir/home/state/$id.meta" ] || fail 'unrelated teardown did not finalize its task record'
+  [ ! -e "$dir/home/state/$id.status" ] || fail 'unrelated status was not retired'
+  assert_contains "$(cat "$dir/stderr")" "warning: could not prune status archive: $archive" 'optional pruning reports retention as a warning'
+  mv "$dir/home/state/receiver.inbox/001.msg" "$dir/home/state/receiver.inbox/handled/" || fail 'ack failed'
+  FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" receipt --before-remove "$archive" || fail 'acknowledged archive could not be retired'
+  pass 'unread archive evidence is retained with a warning while unrelated teardown completes'
+}
+
 test_invalid_endpoint_records_refuse_before_mutation
 test_worktree_identity_refusal_names_the_repair_path
 test_control_lock_contention_refuses_before_mutation
@@ -1667,3 +1694,5 @@ test_remote_seeded_home_still_refuses_a_slot_its_child_holds
 test_remote_layout_homes_serialize_on_one_project_lock
 
 test_delegated_runtime_artifacts_survive_until_read
+
+test_unread_archive_pruning_is_best_effort
