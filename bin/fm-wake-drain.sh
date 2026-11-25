@@ -7,10 +7,8 @@
 # a supervision-host home the supervision session's new and unprocessed
 # outcomes (BRANCH OUTCOMES), then assert liveness.
 #
-# Usage: fm-wake-drain.sh [--phases]
-#        fm-wake-drain.sh [--phases] --ack-through <sequence> --recovery-generation <token>
-# --phases prints PID/start-bound progress and a terminal exit receipt to stderr;
-# stdout remains the wake/status presentation channel.
+# Usage: fm-wake-drain.sh
+#        fm-wake-drain.sh --ack-through <sequence> --recovery-generation <token>
 # FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds only the OPEN DECISIONS fold
 # (default 30s, positive whole seconds). That fold saves its progress every 64
 # lines, so each bounded attempt resumes where the last one stopped. Past the
@@ -83,11 +81,8 @@ ACK_NOTICE_FINGERPRINTS=
 PRESENTATION_LOCK_TIMEOUT=${FM_STATUS_PRESENTATION_LOCK_TIMEOUT:-10}
 DRAIN_PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-30}
 _FM_STATUS_SCRATCH_DIR=
-DRAIN_TRACE=0
 DRAIN_PARENT_PID=
 fm_current_pid DRAIN_PARENT_PID || exit 1
-DRAIN_STARTED_SECONDS=$SECONDS
-DRAIN_STARTED_EPOCH=$(date +%s)
 case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10 ;; esac
 case "$DRAIN_PRESENTATION_TIMEOUT" in
   ''|0*|*[!0-9]*)
@@ -95,17 +90,6 @@ case "$DRAIN_PRESENTATION_TIMEOUT" in
     DRAIN_PRESENTATION_TIMEOUT=30
     ;;
 esac
-case "${1:-}" in --phases) DRAIN_TRACE=1; shift ;; esac
-
-drain_phase() {  # <phase> [detail]
-  local phase=$1 detail=${2:-}
-  if [ "$DRAIN_TRACE" -eq 1 ]; then
-    printf 'wake drain: pid=%s started=%s phase=%s elapsed=%ss%s\n' \
-      "$DRAIN_PARENT_PID" "$DRAIN_STARTED_EPOCH" "$phase" \
-      "$((SECONDS - DRAIN_STARTED_SECONDS))" "${detail:+ $detail}" >&2 || true
-  fi
-}
-
 # --- per-actor consume (docs/watcher-continuity.md "Per-actor acknowledgement") --
 # main (FM_SUPERVISION_ACTOR unset or "main", via fm-lease-lib.sh's fm_lease_actor
 # - the same actor identity fm-send.sh/fm-control.sh/fm-teardown.sh already use)
@@ -849,13 +833,12 @@ print_status_sections() {
   local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared sections_rc=0
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
-  drain_phase status-classify
   prepared=$(mktemp "$_FM_STATUS_SCRATCH_DIR/.status-presentation.prepared.XXXXXX") || return 1
   {
-    drain_phase status-unread && print_unread_status_section "$snapshot" \
-      && drain_phase status-outcome-backstop && print_status_outcome_backstop_section "$snapshot" \
-      && drain_phase status-open-decisions && print_open_decisions_section "$snapshot" \
-      && drain_phase status-record-divergence && print_record_divergence_section
+    print_unread_status_section "$snapshot" \
+      && print_status_outcome_backstop_section "$snapshot" \
+      && print_open_decisions_section "$snapshot" \
+      && print_record_divergence_section
   } > "$prepared" || sections_rc=$?
   if [ "$sections_rc" -ne 0 ]; then
     rm -f -- "$prepared"
@@ -869,14 +852,12 @@ $STATUS_UNREAD_PRESENTED") || { rm -f -- "$prepared"; return 1; }
   # Prepare every section before presentation, but do not commit its receipt
   # until the prepared bytes reach stdout. If the consumer closes or fails,
   # leave the receipt behind so the next drain can recover the presentation.
-  drain_phase status-output
   # Bash 3.2 can exec-optimize `command cat` in the asynchronous timeout
   # worker. Isolate that transfer so receipt publication still runs afterward.
   if ! (command cat "$prepared"); then
     rm -f -- "$prepared"
     return 1
   fi
-  drain_phase status-receipt
   if ! status_commit_presentation_snapshot "$STATE" "$acknowledged"; then
     rm -f -- "$prepared"
     return 1
@@ -887,7 +868,6 @@ $STATUS_UNREAD_PRESENTED") || { rm -f -- "$prepared"; return 1; }
 print_status_presentation() {  # [<deduped-raw-rows>]
   local rows=${1:-} lock="$STATE/.status-presentation-lock" snapshot annotation_manifest fully_presented='' rc=0
   local lock_rc holder_pid
-  drain_phase status-lock
   if fm_lock_acquire_wait_bounded "$lock" "$PRESENTATION_LOCK_TIMEOUT"; then
     :
   else
@@ -901,13 +881,11 @@ print_status_presentation() {  # [<deduped-raw-rows>]
     fi
     return 1
   fi
-  drain_phase status-snapshot
   snapshot=$(status_presentation_snapshot "$STATE") || {
     printf 'STATUS PRESENTATION INCOMPLETE: status snapshot could not be read.\n'
     rc=1
   }
   if [ "$rc" -eq 0 ] && [ -n "$rows" ]; then
-    drain_phase status-annotations
     fm_wake_print_annotations "$rows" "$snapshot" || rc=1
     if [ "$rc" -eq 0 ]; then
       annotation_manifest=$(fm_wake_annotation_manifest "$rows") || rc=1
@@ -930,9 +908,7 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
     printf 'STATUS PRESENTATION INCOMPLETE: status scratch could not be created; retry unfinished presentation.\n'
     branch_rc=1
   fi
-  drain_phase branch-outcomes
   print_branch_outcomes_section || branch_rc=1
-  drain_phase liveness
   assert_watcher_liveness
   [ "$status_rc" -ne 124 ] || return 124
   return "$branch_rc"
@@ -958,7 +934,6 @@ sweep_orphan_presentation_scratch() {
 
 run_drain_presentation() {  # [<deduped-raw-rows>]
   local rc=0
-  drain_phase presentation-setup
   sweep_orphan_presentation_scratch
   _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.$DRAIN_PARENT_PID.XXXXXX" 2>/dev/null) \
     || _FM_STATUS_SCRATCH_DIR=
@@ -984,7 +959,6 @@ cleanup() {
     fm_cancel_bash_timeout
     [ -z "$_FM_STATUS_SCRATCH_DIR" ] || rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
     _FM_STATUS_SCRATCH_DIR=
-    drain_phase finished "exit=$status"
   fi
   exit "$status"
 }
@@ -993,9 +967,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-drain_phase queue-read
 if [ -n "$ACK_THROUGH" ]; then
-  drain_phase queue-acknowledge
   fm_wake_queue_lock_acquire || exit 1
 elif fm_lock_acquire_wait_bounded "$FM_WAKE_QUEUE_LOCK" "$PRESENTATION_LOCK_TIMEOUT"; then
   :

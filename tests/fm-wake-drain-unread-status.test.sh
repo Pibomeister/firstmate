@@ -515,12 +515,10 @@ SH
   chmod +x "$dir/slow-fold-reader"
   fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
     FM_STATUS_SPAN_READER="$dir/slow-fold-reader" \
-    "$BASH" "$DRAIN" --phases > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+    "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
   assert_equals 124 "$rc" "a fold past its bound must report incomplete execution: $(cat "$dir/timed.err")"
   assert_grep 'WAKE DRAIN INCOMPLETE:' "$dir/timed.err" 'product did not report its own deadline'
   assert_grep 'phase=status-open-decisions exceeded' "$dir/timed.err" 'deadline did not identify the decision fold'
-  assert_grep 'phase=branch-outcomes' "$dir/timed.err" 'a fold deadline skipped branch outcomes'
-  assert_grep 'phase=liveness' "$dir/timed.err" 'a fold deadline skipped the liveness check'
   assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
   cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
@@ -662,7 +660,7 @@ case = pathlib.Path(directory)
 with (case / 'timed.out').open('wb') as out, (case / 'timed.err').open('wb') as err:
     # A background test runner may inherit SIGINT ignored. Bash cannot install
     # its INT trap unless the disposition is restored before it starts.
-    child = subprocess.Popen([bash, drain, '--phases'], stdout=out, stderr=err,
+    child = subprocess.Popen([bash, drain], stdout=out, stderr=err,
                              preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
     try:
         deadline = time.monotonic() + 20
@@ -691,9 +689,7 @@ PY_SIGNAL
       fail 'presentation exited before stopping its reader'
     fi
     [ -s "$dir/drain.pid" ] || fail "timeout did not reach $stage"
-    if [ "$stage" = preparation ]; then
-      assert_grep 'phase=status-unread' "$dir/timed.err" "preparation did not block inside prepared output: $(cat "$dir/timed.err")"
-    else
+    if [ "$mode" = timeout ]; then
       assert_grep 'phase=status-open-decisions' "$dir/timed.err" "fold timeout did not reach open decisions: $(cat "$dir/timed.err")"
     fi
     for scratch in "$state"/.wake-drain-presentation.* "$state"/.status-presentation.prepared.* \
@@ -748,12 +744,10 @@ case "$*" in *.wake-drain-presentation.*) exit 1 ;; esac
 exec %s "$@"\n' "$real" > "$fake/mktemp"
   chmod +x "$fake/mktemp"
   printf 'note: scratch failure fixture\n' > "$state/task-scratch.status"
-  PATH="$fake:$PATH" FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" --phases \
+  PATH="$fake:$PATH" FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" \
     > "$dir/drain.out" 2> "$dir/drain.err" || rc=$?
   assert_equals 1 "$rc" 'a drain without presentation scratch did not report failure'
   assert_grep 'STATUS PRESENTATION INCOMPLETE:' "$dir/drain.out" 'a scratch failure was silent'
-  assert_grep 'phase=branch-outcomes' "$dir/drain.err" 'a scratch failure skipped branch outcomes'
-  assert_grep 'phase=liveness' "$dir/drain.err" 'a scratch failure skipped the liveness check'
   pass 'a presentation scratch failure still presents branch outcomes and liveness'
 }
 
@@ -772,22 +766,6 @@ test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
   [ -d "$state/.wake-drain-presentation.$$.live001" ] || fail 'a live owner lost its presentation scratch'
   [ -d "$state/.wake-drain-presentation.legacy1" ] || fail 'scratch without an owner pid was removed'
   pass 'presentation scratch of a dead owner is removed and live scratch is kept'
-}
-
-test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
-  local dir state
-  dir=$(make_case explicit-phase-trace)
-  state="$dir/state"
-  printf 'note: phase trace fixture\n' > "$state/task-trace.status"
-  append_wake "$state" check trace 'phase trace wake' || fail 'could not seed traced wake'
-  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" --phases > "$dir/trace.out" 2> "$dir/trace.err" \
-    || fail 'phase-traced drain failed'
-  assert_grep 'phase=queue-read' "$dir/trace.err" 'trace did not identify queue collection'
-  assert_grep 'phase=status-classify' "$dir/trace.err" 'trace did not identify informational classification'
-  grep -Eq 'phase=finished .*exit=0' "$dir/trace.err" || fail 'trace lacked an identity-bound terminal receipt'
-  assert_no_grep 'phase=' "$dir/trace.out" 'phase diagnostics polluted the raw wake/output channel'
-  assert_grep "$(printf '\tcheck\ttrace\t')" "$dir/trace.out" 'trace hid the authoritative wake row'
-  pass 'an explicit phase trace reports progress and completion on stderr'
 }
 
 test_mixed_tasks_preserve_routine_presentation_ownership() {
@@ -848,7 +826,7 @@ test_warm_routine_history_is_bounded_without_acknowledging_it() {
   # latency target. The outer guard leaves room for setup and timeout cleanup
   # under host contention; it does not extend the drain's own deadline.
   fm_run_timed 75 env -u FM_WAKE_DRAIN_PRESENTATION_TIMEOUT FM_STATE_OVERRIDE="$state" \
-    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" "$BASH" "$DRAIN" --phases \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" "$BASH" "$DRAIN" \
     > "$dir/warm.out" 2> "$dir/warm.err" || rc=$?
   assert_equals 0 "$rc" "a warm routine-only history still held the full drain past its presentation budget: $(cat "$dir/warm.err")"
   cmp "$dir/history.before" "$status" || fail 'fast presentation rewrote history'
@@ -889,7 +867,7 @@ test_cold_decision_fold_progresses_across_presentation_deadlines() {
   while :; do
     rc=0
     fm_run_timed 60 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=2 \
-      "$BASH" "$DRAIN" --phases > "$dir/attempt.out" 2> "$dir/attempt.err" || rc=$?
+      "$BASH" "$DRAIN" > "$dir/attempt.out" 2> "$dir/attempt.err" || rc=$?
     attempt=$((attempt + 1))
     offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_cursor_offset "$2"' \
       _ "$ROOT/bin/fm-classify-lib.sh" "$status")
@@ -941,7 +919,6 @@ test_large_unpresented_span_completes_without_a_presentation_deadline
 test_timeout_cleans_only_attempt_owned_presentation_scratch
 test_term_cleans_only_attempt_owned_presentation_scratch
 test_int_cleans_only_attempt_owned_presentation_scratch
-test_explicit_phase_trace_keeps_raw_wakes_on_stdout
 test_mixed_tasks_preserve_routine_presentation_ownership
 test_warm_routine_history_is_bounded_without_acknowledging_it
 test_invalid_presentation_bound_falls_back_to_the_default
