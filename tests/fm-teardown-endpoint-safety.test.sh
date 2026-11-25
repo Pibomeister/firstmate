@@ -623,7 +623,9 @@ test_reused_pool_slot_refuses_before_touching_the_other_task() {
   # Staged in this shell, not a command substitution: a background child of a
   # $(...) subshell does not outlive it, and the point of this worker is to be
   # alive in the slot while teardown runs.
-  ( cd "$dir/worktree" && exec sleep 30 ) &
+  # Keep the sentinel alive until explicitly stopped. Its fixture-path argument
+  # also lets the suite's EXIT cleanup find it if an assertion fails.
+  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
   worker=$!
 
   set +e
@@ -732,7 +734,7 @@ test_sole_slot_record_still_tears_down() {
   fm_write_meta "$dir/home/state/neighbour.meta" \
     "window=firstmate:fm-neighbour" "endpoint_task_id=neighbour" \
     "worktree=$dir/other-worktree" "project=$dir/project" "kind=scout"
-  ( cd "$dir/other-worktree" && exec sleep 30 ) &
+  ( cd "$dir/other-worktree" && exec perl -e 'sleep' "$dir/other-worktree" ) &
   worker=$!
 
   run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" \
@@ -1056,7 +1058,7 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
   # Staged in this shell, not a command substitution: a background child of a
   # $(...) subshell does not outlive it, and the point of this worker is to be
   # alive in the slot while teardown runs.
-  ( cd "$dir/worktree" && exec sleep 30 ) &
+  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
   worker=$!
 
   set +e
@@ -1087,7 +1089,7 @@ test_reassigned_pool_slot_finishes_own_cleanup_without_touching_the_slot() {
     "window=firstmate:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=ship"
   claim_pool_slot "$dir" "$other" "$dir/other-home"
-  ( cd "$dir/worktree" && exec sleep 30 ) &
+  ( cd "$dir/worktree" && exec perl -e 'sleep' "$dir/worktree" ) &
   worker=$!
 
   set +e

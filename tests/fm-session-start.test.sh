@@ -1614,11 +1614,11 @@ EOF
   pass "locked session start freezes trace context and lock refusal leaves it unchanged"
 }
 
-# Wait until <dir> holds <count> entries. Forty workers poll this at once, so
+# Wait until <dir> holds <count> entries. Concurrent workers poll this at once, so
 # the count is a builtin glob rather than a find pipeline (no process per
 # poll), and the wait ends early once the directory is gone, the suite has
 # died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed with no new entry, so an
-# interrupted run cannot leave forty pollers spinning under init. Any new entry
+# interrupted run cannot leave pollers spinning under init. Any new entry
 # restarts that limit: on a loaded machine the workers can need longer than one
 # limit in total, and a winner that stopped waiting would die and hand a later
 # worker a legitimately stale lock.
@@ -1633,13 +1633,15 @@ lock_concurrency_barrier() {  # <dir> <count>
       seen=${#entries[@]}
       start=$SECONDS
     fi
-    sleep 0.05
+    sleep 1
   done
   return 1
 }
 
 test_session_lock_concurrent_single_winner() {
-  local rec root home fakebin ready completed winners stalled pids i pid count
+  local rec root home fakebin ready completed winners stalled pids i pid count workers=8
+  # Eight simultaneous contenders exercise mutual exclusion without turning
+  # the shell-based lock retries into a forty-process fork storm on macOS.
   rec=$(new_world lock-concurrency)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -1674,7 +1676,13 @@ case "$*" in
       printf '%s\n' bash
     fi
     ;;
-  *"ppid="*) printf '%s\n' "$FM_FAKE_HARNESS_PID" ;;
+  *"ppid="*)
+    if [ "$pid" = "$FM_FAKE_HARNESS_PID" ]; then
+      printf '%s\n' 1
+    else
+      printf '%s\n' "$FM_FAKE_HARNESS_PID"
+    fi
+    ;;
   *) exit 1 ;;
 esac
 SH
@@ -1682,19 +1690,19 @@ SH
 
   pids=
   i=1
-  while [ "$i" -le 40 ]; do
+  while [ "$i" -le "$workers" ]; do
     (
       harness_pid=$(sh -c 'printf "%s\n" "$PPID"')
       : > "$home/state/harness-$harness_pid"
       : > "$ready/$i"
-      lock_concurrency_barrier "$ready" 40 || : > "$stalled"
+      lock_concurrency_barrier "$ready" "$workers" || : > "$stalled"
       if FM_HOME="$home" FM_FAKE_LOCK_STATE="$home/state" \
         FM_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
         "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1; then
         printf '%s\n' "$harness_pid" >> "$winners"
       fi
       : > "$completed/$i"
-      lock_concurrency_barrier "$completed" 40 || : > "$stalled"
+      lock_concurrency_barrier "$completed" "$workers" || : > "$stalled"
     ) &
     pids="$pids $!"
     i=$((i + 1))
