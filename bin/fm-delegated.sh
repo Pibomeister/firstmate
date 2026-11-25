@@ -261,7 +261,6 @@ receiver_inbox_write() {
   fi
   if [ -n "$marker" ]; then
     for f in "$STATE/$receiver.inbox/"*.msg "$STATE/$receiver.inbox/handled/"*.msg; do
-      [ -f "$f" ] || continue
       if ! body=$(fm_task_inbox_body "$f" 2>/dev/null); then
         f="$STATE/$receiver.inbox/handled/${f##*/}"
         body=$(fm_task_inbox_body "$f" 2>/dev/null) || continue

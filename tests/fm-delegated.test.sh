@@ -728,6 +728,50 @@ test_read_channel_has_no_override() {
   pass 'handoffs derive the receiver channel without a read-directory configuration surface'
 }
 
+test_notification_move_before_existence_check() {
+  local h real_mv rc=0 body
+  h=$(new_home notification-precheck-race)
+  real_mv=$(command -v mv)
+  touch "$h/state/supervisor.meta"
+  del "$h" "$T0" register --task hermes-1 --deliverable report --artifact "$h/art/out.txt" \
+    --heartbeat-secs 60 --silence-secs 300 --supervisor supervisor >/dev/null || fail 'register failed'
+  mkdir "$h/fakebin"
+  cat > "$h/fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for destination in "$@"; do :; done
+case "$destination" in */delegated/hermes-1.record) [ "${FM_TEST_REFUSE_RECORD:-}" != 1 ] || exit 1 ;; esac
+exec "$REAL_MV_FOR_DELEGATED" "$@"
+SH
+  cat > "$h/fakebin/[" <<'SH'
+#!/usr/bin/env bash
+if builtin [ "$#" -eq 3 ] && builtin [ "$1" = -f ] && builtin [ "$2" = "$FM_ACK_RACE_INPUT" ] && builtin [ ! -e "$FM_ACK_RACE_MARKER" ]; then
+  "$REAL_MV_FOR_DELEGATED" "$2" "${2%/*}/handled/" || exit 1
+  : > "$FM_ACK_RACE_MARKER"
+fi
+builtin [ "$@"
+SH
+  chmod +x "$h/fakebin/mv" "$h/fakebin/["
+  PATH="$h/fakebin:$PATH" REAL_MV_FOR_DELEGATED="$real_mv" FM_TEST_REFUSE_RECORD=1 \
+    del "$h" $((T0 + 400)) check >/dev/null 2>&1 || rc=$?
+  assert_equals 1 "$rc" 'the initial notification is delivered before its task marker fails'
+  PATH="$h/fakebin:$PATH" REAL_MV_FOR_DELEGATED="$real_mv" FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" \
+    FM_ACK_RACE_INPUT="$h/state/supervisor.inbox/001.msg" FM_ACK_RACE_MARKER="$h/moved" \
+    FM_TEST_SEAM=1 FM_DELEGATED_NOW=$((T0 + 500)) bash -c '
+      enable -n "["
+      script=$1
+      shift
+      . "$script"
+    ' _ "$BIN" check >/dev/null || fail 'moving the notification before the existence probe aborted replay'
+  [ -f "$h/moved" ] && [ -f "$h/state/supervisor.inbox/handled/001.msg" ] || fail 'the pre-existence-check race did not occur'
+  [ ! -e "$h/state/supervisor.inbox/002.msg" ] || fail 'acknowledgement before the existence check duplicated the notification'
+  body=$(FM_HOME="$h" FM_STATE_OVERRIDE="$h/state" bash -c '. "$1"; fm_task_inbox_body "$2"' _ \
+    "$ROOT/bin/fm-task-inbox-lib.sh" "$h/state/supervisor.inbox/handled/001.msg")
+  assert_contains "$body" 'age=400' 'replay preserves the original notification payload rather than the later age'
+  del "$h" $((T0 + 600)) check > "$h/after" || fail 'later supervision failed'
+  [ ! -s "$h/after" ] || fail 'the completed escalation was reported again'
+  pass 'notification replay follows acknowledgements that precede the existence probe'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -756,5 +800,6 @@ fm_test_run \
   test_handoff_paths_are_independent_of_cwd \
   test_watcher_defers_contended_supervisor \
   test_remote_routes_never_use_local_inboxes \
-  test_read_channel_has_no_override
+  test_read_channel_has_no_override \
+  test_notification_move_before_existence_check
 
