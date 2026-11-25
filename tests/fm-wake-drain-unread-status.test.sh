@@ -481,6 +481,20 @@ test_routine_working_and_covered_done_stay_silent_on_the_empty_queue() {
   pass "routine working and branch-covered done lines print nothing on an empty-queue drain"
 }
 
+# Opt one case's home into the supervision host, record one visible routine
+# outcome, which the drain presents once in BRANCH OUTCOMES and then marks read,
+# and give the liveness guard an in-flight task to supervise.
+seed_routine_branch_outcome() {  # <case-dir> <task>
+  local dir=$1 task=$2
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  # An in-flight task makes the liveness guard report the unwatched queue.
+  printf 'kind=ship\n' > "$dir/state/inflight.meta"
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-branch-outcome.sh" append \
+    --task "$task" --verdict routine --summary 'routine outcome fixture' >/dev/null \
+    || fail 'could not record a routine branch outcome'
+}
+
 test_presentation_deadline_preserves_pending_data_and_recovers() {
   local dir state status rc=0
   dir=$(make_case presentation-deadline)
@@ -492,6 +506,7 @@ test_presentation_deadline_preserves_pending_data_and_recovers() {
   cp "$status" "$dir/status.before"
   append_wake "$state" check deadline 'unhandled deadline fixture' || fail 'could not seed deadline wake'
   cp "$state/.wake-queue" "$dir/queue.before"
+  seed_routine_branch_outcome "$dir" deadline
   # Only the decision fold's span read is slow, so the fold - the one bounded
   # phase - passes its one-second bound before its first checkpoint.
   cat > "$dir/slow-fold-reader" <<'SH'
@@ -514,16 +529,21 @@ exec perl -e '
 SH
   chmod +x "$dir/slow-fold-reader"
   fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
-    FM_STATUS_SPAN_READER="$dir/slow-fold-reader" \
+    FM_STATUS_SPAN_READER="$dir/slow-fold-reader" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_TEST_SEAM=1 FM_TEST_HARNESS=claude \
     "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
   assert_equals 124 "$rc" "a fold past its bound must report incomplete execution: $(cat "$dir/timed.err")"
   assert_grep 'WAKE DRAIN INCOMPLETE:' "$dir/timed.err" 'product did not report its own deadline'
   assert_grep 'phase=status-open-decisions exceeded' "$dir/timed.err" 'deadline did not identify the decision fold'
   assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
+  assert_grep '[seq 1] deadline: routine outcome fixture' "$dir/timed.out" 'a fold deadline skipped branch outcomes'
+  assert_grep 'WARNING: queued wakes pending' "$dir/timed.err" 'a fold deadline skipped the liveness check'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
   cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
-  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" \
+  FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" FM_TEST_SEAM=1 FM_TEST_HARNESS=claude \
+    "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" \
     || fail "a drain after the failed presentation could not recover: $(cat "$dir/retry.err")"
+  assert_no_grep 'routine outcome fixture' "$dir/retry.out" 'a fold deadline left presented branch outcomes unread'
   assert_grep 'answer must remain unread until presented' "$dir/retry.out" 'failed presentation advanced the unread receipt'
   assert_grep '[key=held]' "$dir/retry.out" 'failed presentation lost an open decision'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'recovery acknowledged a still-unhandled wake'
@@ -744,10 +764,19 @@ case "$*" in *.wake-drain-presentation.*) exit 1 ;; esac
 exec %s "$@"\n' "$real" > "$fake/mktemp"
   chmod +x "$fake/mktemp"
   printf 'note: scratch failure fixture\n' > "$state/task-scratch.status"
-  PATH="$fake:$PATH" FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" \
+  append_wake "$state" check scratch 'unhandled scratch fixture' || fail 'could not seed scratch wake'
+  seed_routine_branch_outcome "$dir" scratch
+  PATH="$fake:$PATH" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_TEST_SEAM=1 FM_TEST_HARNESS=claude "$BASH" "$DRAIN" \
     > "$dir/drain.out" 2> "$dir/drain.err" || rc=$?
   assert_equals 1 "$rc" 'a drain without presentation scratch did not report failure'
   assert_grep 'STATUS PRESENTATION INCOMPLETE:' "$dir/drain.out" 'a scratch failure was silent'
+  assert_grep '[seq 1] scratch: routine outcome fixture' "$dir/drain.out" 'a scratch failure skipped branch outcomes'
+  assert_grep 'WARNING: queued wakes pending' "$dir/drain.err" 'a scratch failure skipped the liveness check'
+  FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" FM_TEST_SEAM=1 FM_TEST_HARNESS=claude \
+    "$BASH" "$DRAIN" > "$dir/repeat.out" 2> "$dir/repeat.err" \
+    || fail "a drain after the scratch failure did not complete: $(cat "$dir/repeat.err")"
+  assert_no_grep 'routine outcome fixture' "$dir/repeat.out" 'a scratch failure left presented branch outcomes unread'
   pass 'a presentation scratch failure still presents branch outcomes and liveness'
 }
 
