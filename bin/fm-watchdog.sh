@@ -1058,7 +1058,8 @@ wd_council_record() {
             prefix=(i == 1 ? "seat" i "=" : i "=")
             if (index(votes[i], prefix) != 1) exit 1
             vote=substr(votes[i],length(prefix)+1)
-            if (vote !~ /^(PROCEED [A-Za-z0-9]{1,3}( (APPROVE_PARK|DEFER_PARK))?|HOLD|FAILED)$/) exit 1
+            # mawk 1.3.4 panics on the nested optional group in one pattern.
+            if (vote !~ /^(HOLD|FAILED)$/ && vote !~ /^PROCEED [A-Za-z0-9]{1,3}$/ && vote !~ /^PROCEED [A-Za-z0-9]{1,3} (APPROVE_PARK|DEFER_PARK)$/) exit 1
             if (vote != "FAILED") answered++
             if (i == 1) first=vote; else if (vote != first) agreed=0
             choice=vote; sub(/ (APPROVE_PARK|DEFER_PARK)$/, "", choice)
