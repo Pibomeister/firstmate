@@ -48,7 +48,7 @@
 #
 # Ledger: state/.pr-behind-<id>, rows `<epoch>\t<event>\t<head>`, newest last,
 # trimmed to the last 64 rows. Events: probe current dirty held active diverged
-# refused requested relaunched unsynced deferred failed unreadable held
+# refused requested relaunched unsynced deferred failed unreadable
 # hold-unknown.
 #
 # Output: one `<wake-key>\t<check reason>` line per event the supervisor should
