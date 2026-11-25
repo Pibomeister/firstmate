@@ -468,15 +468,16 @@ watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   fm_watch_now now
   echo $(( now - m ))
 }
-# The liveness beacon is touched at the start of each cycle, when a
-# pane-staleness record begins after the previous record has returned, and
-# when that scan returns. A subordinate that has not returned does not refresh
-# it, so a stuck capture still ages past grace. After the scan, the beacon can
-# still age through the rest of the cycle and the terminal wait, up to one
-# in-flight record plus POLL seconds. fm_poll_derived_grace
-# (bin/fm-wake-lib.sh, already sourced transitively above) is the single owner
-# of the max(300, poll+60) derivation - see docs/turnend-guard.md
-# "Guard grace and the poll cadence".
+# The liveness beacon is touched at the start of each cycle, when a later
+# pane-staleness record begins (the previous pane record has returned), and
+# when that scan returns. The first pane record does not extra-beat: the cycle
+# start already marked that the prior poll work returned. A subordinate that
+# has not returned does not refresh it, so a stuck capture still ages past
+# grace. After the scan, the beacon can still age through the rest of the
+# cycle and the terminal wait, up to one in-flight record plus POLL seconds.
+# fm_poll_derived_grace (bin/fm-wake-lib.sh, already sourced transitively
+# above) is the single owner of the max(300, poll+60) derivation - see
+# docs/turnend-guard.md "Guard grace and the poll cadence".
 # This recomputes the library default above now that the real configured
 # POLL is known.
 WATCHER_STALE_GRACE=${FM_WATCHER_STALE_GRACE:-${FM_GUARD_GRACE:-$(fm_poll_derived_grace "$POLL")}}
@@ -4596,6 +4597,30 @@ watch_record_progress_beat() {
   touch "$STATE/.last-watcher-beat"
 }
 
+# Cycle count for helpers that wait on a completed poll. Progress beats refresh
+# the liveness mtime above; they must not advance this file, or a same-poll
+# touch in the next second looks like the next cycle's top.
+watch_record_poll_top() {
+  local n
+  n=$(cat "$STATE/.last-watcher-poll" 2>/dev/null || echo 0)
+  case "$n" in
+    ''|*[!0-9]*) n=0 ;;
+  esac
+  printf '%s\n' "$((n + 1))" > "$STATE/.last-watcher-poll"
+  touch "$STATE/.last-watcher-beat"
+}
+
+# Same count as the cycle that just finished its work, written before the
+# terminal wait so a helper can return without sleeping out FM_POLL.
+watch_record_poll_done() {
+  local n
+  n=$(cat "$STATE/.last-watcher-poll" 2>/dev/null || echo 0)
+  case "$n" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  printf '%s\n' "$n" > "$STATE/.last-watcher-poll-done"
+}
+
 # watch_stage <name>: record which part of its poll this watcher is in, as one
 # line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
 # watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
@@ -5728,7 +5753,8 @@ while :; do
 
   # Liveness beacon for fm-guard.sh: a fresh mtime here means a watcher is
   # alive. Supervision scripts warn when this goes stale with tasks in flight.
-  touch "$STATE/.last-watcher-beat"
+  # .last-watcher-poll advances only here.
+  watch_record_poll_top
 
   captain_provider_failover_check || true
 
@@ -6171,8 +6197,13 @@ EOF
   # crossed turn bound already handed to the away-mode daemon).
   watch_stage pane-staleness
   parked_gate_scan_begin
+  pane_record_seen=0
   while IFS= read -r w; do
-    watch_record_progress_beat
+    # First record: the cycle-start beat already covers prior poll work.
+    if [ "$pane_record_seen" -eq 1 ]; then
+      watch_record_progress_beat
+    fi
+    pane_record_seen=1
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
     # Steering-inbox loss detection runs before the secondmate stale
@@ -6539,6 +6570,7 @@ EOF
 
   # Terminal wait: a bounded native-event wait for push-capable homes (herdr, rex),
   # else the blind poll sleep. See event_wait_or_sleep.
+  watch_record_poll_done
   [ "${FM_WATCH_ONCE:-0}" = 1 ] && break
   event_wait_or_sleep
 done

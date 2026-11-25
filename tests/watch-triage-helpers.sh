@@ -56,27 +56,34 @@ watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
 # machine a short fixed budget can reap a round before the cycle it asserts on
 # ever ran - and then every "no wake, no marker" assertion passes vacuously
 # while every "marker written" assertion fails spuriously.
-# The liveness beacon is touched at the TOP of every poll, so this drops any
-# beacon left by an earlier round, waits for THIS watcher to write a fresh one
-# (some poll's top), then waits for that one to advance (the next poll's top) -
-# and the whole cycle in between is what the caller's assertions describe.
+# The poll-top counter advances only at cycle start (state/.last-watcher-poll).
+# Progress beats refresh the liveness beacon mtime without counting as a new
+# cycle, so waiting on second-resolution beacon mtime can return mid-poll.
+# Drop any counter left by an earlier round, wait for THIS watcher to write a
+# fresh top count, then wait for the matching .last-watcher-poll-done (work
+# finished, before the terminal wait).
 # 0 if the watcher is still alive after a completed cycle, 1 if it exited.
 wait_poll_cycle() {  # <state> <pid> [limit-ticks]
-  local state=$1 pid=$2 limit=${3:-300} beat first now i=0
-  beat="$state/.last-watcher-beat"
-  rm -f "$beat"
+  local state=$1 pid=$2 limit=${3:-300} gen_file done_file first finished i=0
+  gen_file="$state/.last-watcher-poll"
+  done_file="$state/.last-watcher-poll-done"
+  rm -f "$gen_file" "$done_file"
   first=""
   while [ "$i" -lt "$limit" ]; do
     kill -0 "$pid" 2>/dev/null || return 1
-    first=$(file_mtime "$beat")
-    [ -n "$first" ] && break
+    first=$(cat "$gen_file" 2>/dev/null || true)
+    case "$first" in
+      ''|*[!0-9]*) ;;
+      *) break ;;
+    esac
     sleep 0.1
     i=$((i + 1))
   done
+  [ -n "$first" ] || return 1
   while [ "$i" -lt "$limit" ]; do
     kill -0 "$pid" 2>/dev/null || return 1
-    now=$(file_mtime "$beat")
-    if [ -n "$now" ] && [ "$now" != "$first" ]; then
+    finished=$(cat "$done_file" 2>/dev/null || true)
+    if [ "$finished" = "$first" ]; then
       return 0
     fi
     sleep 0.1
