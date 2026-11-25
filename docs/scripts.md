@@ -204,7 +204,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-failover-lib.sh` | Shared provider failover order parsing and refusal records |
 | `fm-stall-watch.sh` | Opt-in built-in stall check: read and redact a worker's or the captain's screen, judge it by rule first and by Jev only when ambiguous, and fail over, nudge, or notify ([configuration](configuration.md#stall-watch-configstall-watch)) |
 | `fm-typesafe-lib.sh` | Shared TypeSafe base setting and validation and the bounded `/v1/systemone` POST used by `fm-dispatch-resolve.sh` and `fm-stall-watch.sh` |
-| `fm-handoff-ack.sh` | Successor-side acknowledgement of a handoff document that requests the nonce-bound lock transfer |
+| `fm-handoff-ack.sh` | Successor-side acknowledgement of a handoff document that requests the nonce-bound lock transfer, then closes the predecessor's terminal after a verified transfer |
+| `fm-handoff-close.sh` | Close the predecessor's recorded tmux pane or Orca terminal after a committed verified handoff, only when that terminal is proven to host the predecessor, and record one event row naming the handoff, terminal, and result |
 | `fm-handoff-lib.sh` | Shared verified-handoff contract: pending claim, acknowledgement, completion record, and the `HANDOFF v1` watchdog event lines |
 | `fm-captain-locate.sh` | Read-only: print the verified session-lock holder's pid and terminal handle as one `CAPTAIN v1` line for supervisor discovery |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
