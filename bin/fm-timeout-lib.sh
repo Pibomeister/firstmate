@@ -41,6 +41,13 @@
 #       contract (124 when the bound fired). Variables the call sets do not
 #       reach the caller.
 #
+#   fm_run_cancellable_fn <function-or-command> [args...]
+#       fm_run_timed_fn with no deadline: the call runs in a subshell in its
+#       own process group until it returns, with its own status. A trap in the
+#       calling shell stops and reaps it through fm_cancel_bash_timeout, and
+#       the group also ends within about two seconds of the calling shell's
+#       death.
+#
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
 #       last command of a subshell: the bound kills the command, not the
@@ -226,6 +233,7 @@ fm_run_bash_timeout() {
   (
     set +m
     case "$seconds" in
+      none) while kill -0 "$caller" 2>/dev/null; do command -p sleep 1; done ;;
       *[!0-9]*) command -p sleep "$seconds" ;;
       *)
         i=0
@@ -267,10 +275,14 @@ fm_run_bash_timeout() {
   return "$command_rc"
 }
 
+# Only signals the caller left at their default disposition carry a forwarding
+# trap, so restoring resets exactly those and is a no-op once already done.
 _fm_external_timeout_restore_traps() {
-  trap - INT TERM HUP
-  [ -z "${_FM_EXTERNAL_TIMEOUT_TRAPS:-}" ] || eval "$_FM_EXTERNAL_TIMEOUT_TRAPS"
-  _FM_EXTERNAL_TIMEOUT_TRAPS=
+  local signal
+  for signal in ${_FM_EXTERNAL_TIMEOUT_SIGNALS:-}; do
+    trap - "$signal"
+  done
+  _FM_EXTERNAL_TIMEOUT_SIGNALS=
   _FM_EXTERNAL_TIMEOUT_PID=
   _FM_EXTERNAL_TIMEOUT_STATUS=
 }
@@ -290,7 +302,7 @@ _fm_external_timeout_forward() {  # <signal>
 }
 
 fm_run_external_timeout() {
-  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc
+  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc signal
   shift 2
   status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
   # Run the executable path asynchronously (never a bare name: that is the omp
@@ -311,19 +323,28 @@ fm_run_external_timeout() {
     exit "$command_rc"
   ' _ "$status_file" "$@"
   runner_pid=$!
-  # Like the perl path, a TERM, INT or HUP sent to the caller stops the
-  # runner's group before the caller re-raises it, so no command outlives it.
-  _FM_EXTERNAL_TIMEOUT_TRAPS=$(trap -p INT TERM HUP)
+  # Like the perl path, a TERM, INT or HUP that would end the caller first
+  # stops the runner's group and is then re-raised, so no command outlives it.
+  # A signal the caller already traps or ignores is the caller's deliberate
+  # choice: its trap stays in place, the command keeps running to its own
+  # bound, and the wait resumes after that trap returns.
+  _FM_EXTERNAL_TIMEOUT_SIGNALS=
   _FM_EXTERNAL_TIMEOUT_PID=$runner_pid
   _FM_EXTERNAL_TIMEOUT_STATUS=$status_file
-  trap '_fm_external_timeout_forward INT' INT
-  trap '_fm_external_timeout_forward TERM' TERM
-  trap '_fm_external_timeout_forward HUP' HUP
-  if wait "$runner_pid"; then
-    runner_rc=0
-  else
-    runner_rc=$?
-  fi
+  for signal in INT TERM HUP; do
+    [ -z "$(trap -p "$signal")" ] || continue
+    _FM_EXTERNAL_TIMEOUT_SIGNALS="$_FM_EXTERNAL_TIMEOUT_SIGNALS $signal"
+    # shellcheck disable=SC2064  # The signal name is fixed when the trap is set.
+    trap "_fm_external_timeout_forward $signal" "$signal"
+  done
+  while :; do
+    if wait "$runner_pid"; then
+      runner_rc=0
+    else
+      runner_rc=$?
+    fi
+    [ "$runner_rc" -gt 128 ] && kill -0 "$runner_pid" 2>/dev/null || break
+  done
   _fm_external_timeout_restore_traps
   command_rc=$(cat "$status_file" 2>/dev/null || true)
   rm -f "$status_file" 2>/dev/null || true
@@ -439,6 +460,10 @@ $caller_trap"
 
 fm_run_timed_fn() {  # <seconds> <function-or-command> [args...]
   fm_run_bash_timeout "$@"
+}
+
+fm_run_cancellable_fn() {  # <function-or-command> [args...]
+  fm_run_bash_timeout none "$@"
 }
 
 fm_timed_out() {  # <status>

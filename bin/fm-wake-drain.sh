@@ -11,16 +11,17 @@
 #        fm-wake-drain.sh [--phases] --ack-through <sequence> --recovery-generation <token>
 # --phases prints PID/start-bound progress and a terminal exit receipt to stderr;
 # stdout remains the wake/status presentation channel.
-# FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds the combined optional status,
-# branch-outcome and liveness presentation after queue collection (default 30s,
-# positive whole seconds). A timeout returns 124 and names its last phase; any
-# other worker failure, a 137 included, keeps its own status.
+# FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds only the OPEN DECISIONS fold
+# (default 30s, positive whole seconds). That fold saves its progress every 64
+# lines, so each bounded attempt resumes where the last one stopped. Past the
+# bound it stops at its next checkpoint; the drain still presents branch
+# outcomes and liveness, then returns 124 naming phase status-open-decisions.
+# Every other presentation phase runs to completion without a bound, so a
+# large unpresented span finishes slowly rather than never.
 # Already completed sections keep their receipts; incomplete status output never
 # commits its presentation receipt. This command never acknowledges queue rows
 # without the explicit sequence/generation acknowledgement arguments.
-# The bound covers the optional worker, not runner setup, a caller that stops
-# reading stdout, or filesystem I/O before queue-lock release. Queue-lock waits
-# retain their existing bound.
+# Queue-lock waits retain their existing bound.
 #
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
@@ -44,10 +45,6 @@
 # INCOMPLETE, still presents branch outcomes and liveness, and exits 1.
 # An invalid FM_WAKE_DRAIN_PRESENTATION_TIMEOUT falls back to 30 seconds with a
 # stderr note, so acknowledgement never fails on a bad presentation bound.
-# A separate per-attempt phase file under TMPDIR is removed by the invoking
-# process after the bounded presentation or from its exit trap. Descriptor 18
-# stays open while the worker writes, so caller death cannot turn a later phase
-# update into a pathname replacement race.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
@@ -85,9 +82,7 @@ ACK_FINGERPRINTS=
 ACK_NOTICE_FINGERPRINTS=
 PRESENTATION_LOCK_TIMEOUT=${FM_STATUS_PRESENTATION_LOCK_TIMEOUT:-10}
 DRAIN_PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-30}
-DRAIN_PHASE_FILE=
 _FM_STATUS_SCRATCH_DIR=
-DRAIN_PHASE_FD_OPEN=0
 DRAIN_TRACE=0
 DRAIN_PARENT_PID=
 fm_current_pid DRAIN_PARENT_PID || exit 1
@@ -104,9 +99,6 @@ case "${1:-}" in --phases) DRAIN_TRACE=1; shift ;; esac
 
 drain_phase() {  # <phase> [detail]
   local phase=$1 detail=${2:-}
-  if [ "$DRAIN_PHASE_FD_OPEN" -eq 1 ]; then
-    printf '%s\n' "$phase" >&18 2>/dev/null || true
-  fi
   if [ "$DRAIN_TRACE" -eq 1 ]; then
     printf 'wake drain: pid=%s started=%s phase=%s elapsed=%ss%s\n' \
       "$DRAIN_PARENT_PID" "$DRAIN_STARTED_EPOCH" "$phase" \
@@ -562,13 +554,17 @@ EOF
 # common case.
 print_open_decisions_section() {
   local snapshot=${1:-} open task key verb note line item_bytes=220 global_bytes=4000
-  local output='' used=0 shown=0 omitted=0 bytes
+  local output='' used=0 shown=0 omitted=0 bytes fold_rc=0
+  # The one bounded presentation phase; fm-classify-lib.sh's fold reads this.
+  local _FM_OPEN_DECISIONS_DEADLINE=$((SECONDS + DRAIN_PRESENTATION_TIMEOUT))
 
   if [ -n "$snapshot" ]; then
-    open=$(scan_open_decisions_snapshot "$STATE" "$snapshot") || return 1
+    open=$(scan_open_decisions_snapshot "$STATE" "$snapshot") || fold_rc=$?
   else
-    open=$(scan_open_decisions_incremental "$STATE") || return 1
+    open=$(scan_open_decisions_incremental "$STATE") || fold_rc=$?
   fi
+  [ "$fold_rc" -ne 124 ] || return 124
+  [ "$fold_rc" -eq 0 ] || return 1
   [ -n "$open" ] || return 0
 
   while IFS=$(printf '\t') read -r task key verb note; do
@@ -850,19 +846,22 @@ cap_outcome_line() {  # <line> <max-bytes>
 }
 
 print_status_sections() {
-  local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
+  local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared sections_rc=0
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
   drain_phase status-classify
   prepared=$(mktemp "$_FM_STATUS_SCRATCH_DIR/.status-presentation.prepared.XXXXXX") || return 1
-  if ! {
+  {
     drain_phase status-unread && print_unread_status_section "$snapshot" \
       && drain_phase status-outcome-backstop && print_status_outcome_backstop_section "$snapshot" \
       && drain_phase status-open-decisions && print_open_decisions_section "$snapshot" \
       && drain_phase status-record-divergence && print_record_divergence_section
-  } > "$prepared"; then
+  } > "$prepared" || sections_rc=$?
+  if [ "$sections_rc" -ne 0 ]; then
     rm -f -- "$prepared"
-    return 1
+    # 124 is the open-decisions fold reaching its bound; anything else failed.
+    [ "$sections_rc" -eq 124 ] || sections_rc=1
+    return "$sections_rc"
   fi
   # Reuse the unread scan instead of reading and classifying the span twice.
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented
@@ -915,17 +914,18 @@ print_status_presentation() {  # [<deduped-raw-rows>]
       fully_presented=$(printf '%s\n' "$annotation_manifest" | awk -F '\t' '$2 == "direct" { sub(/\.status$/, "", $1); print $1 }') || rc=1
     fi
   fi
-  if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=1; fi
+  if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=$?; fi
   fm_lock_release "$lock"
   return "$rc"
 }
 
-# This already ran in a subshell before it was bounded. No child variables are
-# needed by queue acknowledgement, which has its own separate locked path.
+# Runs in its own cancellable subshell. No child variables are needed by queue
+# acknowledgement, which has its own separate locked path. A status failure
+# other than the fold bound stays silent in the exit status, as it always has.
 drain_presentation_worker() {  # [<deduped-raw-rows>]
-  local branch_rc=0
+  local branch_rc=0 status_rc=0
   if [ -n "$_FM_STATUS_SCRATCH_DIR" ]; then
-    print_status_presentation "${1:-}" || true
+    print_status_presentation "${1:-}" || status_rc=$?
   else
     printf 'STATUS PRESENTATION INCOMPLETE: status scratch could not be created; retry unfinished presentation.\n'
     branch_rc=1
@@ -934,6 +934,7 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
   print_branch_outcomes_section || branch_rc=1
   drain_phase liveness
   assert_watcher_liveness
+  [ "$status_rc" -ne 124 ] || return 124
   return "$branch_rc"
 }
 
@@ -956,28 +957,16 @@ sweep_orphan_presentation_scratch() {
 }
 
 run_drain_presentation() {  # [<deduped-raw-rows>]
-  local rc=0 phase=optional-presentation phase_line
+  local rc=0
   drain_phase presentation-setup
   sweep_orphan_presentation_scratch
   _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.$DRAIN_PARENT_PID.XXXXXX" 2>/dev/null) \
     || _FM_STATUS_SCRATCH_DIR=
-  DRAIN_PHASE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-wake-drain-phase.XXXXXX" 2>/dev/null) || DRAIN_PHASE_FILE=
-  if [ -n "$DRAIN_PHASE_FILE" ] && { exec 18>> "$DRAIN_PHASE_FILE"; } 2>/dev/null; then
-    DRAIN_PHASE_FD_OPEN=1
-  fi
-  fm_run_timed_fn "$DRAIN_PRESENTATION_TIMEOUT" drain_presentation_worker "${1:-}" || rc=$?
+  fm_run_cancellable_fn drain_presentation_worker "${1:-}" || rc=$?
   if [ "$rc" -eq 124 ]; then
-    if [ -n "$DRAIN_PHASE_FILE" ] && [ -r "$DRAIN_PHASE_FILE" ]; then
-      while IFS= read -r phase_line; do phase=$phase_line; done < "$DRAIN_PHASE_FILE"
-    fi
-    printf 'WAKE DRAIN INCOMPLETE: pid=%s phase=%s exceeded %ss presentation bound; retry unfinished presentation.\n' \
-      "$DRAIN_PARENT_PID" "$phase" "$DRAIN_PRESENTATION_TIMEOUT" >&2
-    rc=124
+    printf 'WAKE DRAIN INCOMPLETE: pid=%s phase=status-open-decisions exceeded %ss decision-fold bound; retry unfinished presentation.\n' \
+      "$DRAIN_PARENT_PID" "$DRAIN_PRESENTATION_TIMEOUT" >&2
   fi
-  [ "$DRAIN_PHASE_FD_OPEN" -eq 0 ] || exec 18>&-
-  DRAIN_PHASE_FD_OPEN=0
-  [ -z "$DRAIN_PHASE_FILE" ] || rm -f -- "$DRAIN_PHASE_FILE"
-  DRAIN_PHASE_FILE=
   return "$rc"
 }
 
@@ -995,10 +984,6 @@ cleanup() {
     fm_cancel_bash_timeout
     [ -z "$_FM_STATUS_SCRATCH_DIR" ] || rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
     _FM_STATUS_SCRATCH_DIR=
-    [ "$DRAIN_PHASE_FD_OPEN" -eq 0 ] || exec 18>&-
-    DRAIN_PHASE_FD_OPEN=0
-    [ -z "$DRAIN_PHASE_FILE" ] || rm -f -- "$DRAIN_PHASE_FILE" 2>/dev/null || true
-    DRAIN_PHASE_FILE=
     drain_phase finished "exit=$status"
   fi
   exit "$status"

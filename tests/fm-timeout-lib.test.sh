@@ -451,6 +451,41 @@ test_run_timed_external_forwards_a_caller_term() {
   pass "fm_run_timed forwards a caller TERM through its external runner"
 }
 
+test_run_timed_external_keeps_a_caller_trap_that_defers_term() {
+  local dir fb tool caller rc=0 out
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed keeps a caller's deferring TERM trap under its external runner (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term-deferred"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  # The caller absorbs TERM the way a cleanup handler does. A TERM during the
+  # bounded command must neither stop that command nor drop the caller's trap.
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    # shellcheck disable=SC2064  # The event path is fixed when the trap is set.
+    trap "echo absorbed >> '$dir/events'" TERM
+    PATH=$fb fm_run_timed 30 bash -c 'echo $$ > "$1/pid"; sleep 2; echo finished >> "$1/events"' _ "$dir"
+    echo "rc=$?" >> "$dir/events"
+    trap -p TERM >> "$dir/events"
+  ) &
+  caller=$!
+  wait_for_file "$dir/pid"
+  kill -TERM "$caller"
+  wait "$caller" 2>/dev/null || rc=$?
+  out=$(cat "$dir/events" 2>/dev/null || true)
+  [ "$rc" -eq 0 ] || fail "a caller that absorbs TERM exited $rc under the external runner: $out"
+  printf '%s\n' "$out" | grep -qx absorbed || fail "the caller's TERM trap did not run: $out"
+  printf '%s\n' "$out" | grep -qx finished || fail "a deferred TERM stopped the bounded command: $out"
+  printf '%s\n' "$out" | grep -qx 'rc=0' || fail "the bounded command did not report its own status after a deferred TERM: $out"
+  printf '%s\n' "$out" | grep -q "^trap -- .*absorbed.* SIGTERM$" || fail "the caller's TERM trap was dropped after the bounded command: $out"
+  pass "fm_run_timed keeps a caller's deferring TERM trap under its external runner"
+}
+
 test_timed_out_names_exactly_the_bound_statuses() {
   local status verdict
   for status in 124 137 0 1 125 127 143 ''; do
@@ -1068,4 +1103,5 @@ test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
 test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
 test_run_timed_external_forwards_a_caller_term
+test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_timed_out_names_exactly_the_bound_statuses

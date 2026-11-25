@@ -482,52 +482,113 @@ test_routine_working_and_covered_done_stay_silent_on_the_empty_queue() {
 }
 
 test_presentation_deadline_preserves_pending_data_and_recovers() {
-  local dir state status rc=0 reader_pid
+  local dir state status rc=0
   dir=$(make_case presentation-deadline)
   state="$dir/state"
   status="$state/task-deadline.status"
   printf 'note: answer must remain unread until presented\nneeds-decision [key=held]: retain this decision\n' > "$status"
+  # More than one 64-line fold checkpoint, so the fold has a place to stop.
+  awk 'BEGIN { for (i=0;i<200;i++) print "working: routine deadline context" }' >> "$status"
   cp "$status" "$dir/status.before"
   append_wake "$state" check deadline 'unhandled deadline fixture' || fail 'could not seed deadline wake'
   cp "$state/.wake-queue" "$dir/queue.before"
-  cat > "$dir/blocked-reader" <<'SH'
+  # Only the decision fold's span read is slow, so the fold - the one bounded
+  # phase - passes its one-second bound before its first checkpoint.
+  cat > "$dir/slow-fold-reader" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$$" > "$FM_DRAIN_READER_PID"
-exec sleep 90
+for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*; do
+  for chunk in "$base"/.*.open-decisions-cursor.read.*; do
+    [ -f "$chunk" ] || continue
+    sleep 3
+    break 2
+  done
+done
+exec perl -e '
+  my ($path, $start, $length) = @ARGV;
+  open my $f, "<", $path or die $!;
+  binmode $f;
+  seek $f, $start, 0 or die $!;
+  read($f, my $bytes, $length) == $length or die "short read";
+  print $bytes;
+' "$@"
 SH
-  chmod +x "$dir/blocked-reader"
-  # The outer test bound is independent: the product must report its own
-  # shorter presentation deadline rather than merely be killed by this guard.
-  # Use the normal presentation budget so loaded hosts can reach the reader.
-  fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=30 \
-    FM_STATUS_SPAN_READER="$dir/blocked-reader" FM_DRAIN_READER_PID="$dir/reader.pid" \
-    "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
-  assert_equals 124 "$rc" 'presentation deadline must report incomplete execution'
+  chmod +x "$dir/slow-fold-reader"
+  fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
+    FM_STATUS_SPAN_READER="$dir/slow-fold-reader" \
+    "$BASH" "$DRAIN" --phases > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+  assert_equals 124 "$rc" "a fold past its bound must report incomplete execution: $(cat "$dir/timed.err")"
   assert_grep 'WAKE DRAIN INCOMPLETE:' "$dir/timed.err" 'product did not report its own deadline'
-  assert_grep 'phase=status-' "$dir/timed.err" 'deadline did not identify the blocked product phase'
+  assert_grep 'phase=status-open-decisions exceeded' "$dir/timed.err" 'deadline did not identify the decision fold'
+  assert_grep 'phase=branch-outcomes' "$dir/timed.err" 'a fold deadline skipped branch outcomes'
+  assert_grep 'phase=liveness' "$dir/timed.err" 'a fold deadline skipped the liveness check'
   assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
   cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
-  [ -s "$dir/reader.pid" ] || fail 'deadline did not reach the blocked reader'
-  reader_pid=$(cat "$dir/reader.pid")
-  if /bin/bash -c '. "$1"; fm_pid_alive "$2"' _ "$ROOT/bin/fm-wake-lib.sh" "$reader_pid"; then
-    fail 'presentation deadline left its reader running'
-  fi
   FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/retry.out" 2> "$dir/retry.err" \
-    || fail 'a drain after the failed presentation could not recover'
+    || fail "a drain after the failed presentation could not recover: $(cat "$dir/retry.err")"
   assert_grep 'answer must remain unread until presented' "$dir/retry.out" 'failed presentation advanced the unread receipt'
   assert_grep '[key=held]' "$dir/retry.out" 'failed presentation lost an open decision'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'recovery acknowledged a still-unhandled wake'
-  pass 'a bounded presentation names its phase, preserves pending data, reaps readers and recovers'
+  pass 'a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers'
+}
+
+test_large_unpresented_span_completes_without_a_presentation_deadline() {
+  local dir state status rc=0 i
+  dir=$(make_case large-unpresented-span)
+  state="$dir/state"
+  status="$state/task-span.status"
+  printf 'kind=ship\n' > "$state/task-span.meta"
+  : > "$status"
+  i=0
+  while [ "$i" -lt 20 ]; do
+    printf 'note: unpresented answer %03d\n' "$i" >> "$status"
+    i=$((i + 1))
+  done
+  awk 'BEGIN { for (i=0;i<3000;i++) print "working: unpresented routine context" }' >> "$status"
+  # Warm only the decision fold, so the one bounded phase has nothing left to
+  # do and all remaining work is the unbounded presentation of the span.
+  FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_incremental "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$status" > /dev/null || fail 'could not warm the decision fold'
+  # Every span read takes longer than the whole one-second bound, the way a
+  # loaded host makes a large span slow to classify.
+  cat > "$dir/slow-reader" <<'SH'
+#!/usr/bin/env bash
+sleep 3
+exec perl -e '
+  my ($path, $start, $length) = @ARGV;
+  open my $f, "<", $path or die $!;
+  binmode $f;
+  seek $f, $start, 0 or die $!;
+  read($f, my $bytes, $length) == $length or die "short read";
+  print $bytes;
+' "$@"
+SH
+  chmod +x "$dir/slow-reader"
+  fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
+    FM_STATUS_SPAN_READER="$dir/slow-reader" "$BASH" "$DRAIN" \
+    > "$dir/slow.out" 2> "$dir/slow.err" || rc=$?
+  assert_equals 0 "$rc" "a slow unpresented span did not complete under a one-second bound: $(cat "$dir/slow.err")"
+  i=0
+  while [ "$i" -lt 20 ]; do
+    assert_grep "$(printf 'unpresented answer %03d' "$i")" "$dir/slow.out" "the slow span lost note $i"
+    i=$((i + 1))
+  done
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/repeat.out" 2> "$dir/repeat.err" \
+    || fail "the drain after the slow span failed: $(cat "$dir/repeat.err")"
+  assert_no_grep 'unpresented answer' "$dir/repeat.out" 'the slow span did not commit its presentation receipt'
+  pass 'a large unpresented span completes and commits even when it takes longer than the bound'
 }
 
 check_attempt_owned_presentation_scratch() {
-  local mode=$1 expected_rc=124 dir state stage rc scratch peer_pid peer_shell i peer_scratch reader_pid
+  local mode=$1 expected_rc=124 dir state stage stages='preparation fold' rc scratch peer_pid peer_shell i peer_scratch reader_pid
   case "$mode" in TERM) expected_rc=143 ;; INT) expected_rc=130 ;; esac
-  for stage in preparation fold; do
+  # Only the decision fold carries a deadline, so a timeout can occur only there.
+  [ "$mode" != timeout ] || stages=fold
+  for stage in $stages; do
     dir=$(make_case "scratch-$mode-$stage")
     state="$dir/state"
     printf 'note: retained note\nneeds-decision [key=held]: retained decision\n' > "$state/task.status"
+    awk 'BEGIN { for (i=0;i<200;i++) print "working: retained routine context" }' >> "$state/task.status"
     cp "$state/task.status" "$dir/status.before"
     if [ "$mode" = timeout ]; then
       : > "$state/.wake-queue"
@@ -551,7 +612,10 @@ for base in "$FM_STATE_OVERRIDE" "$FM_STATE_OVERRIDE"/.wake-drain-presentation.*
     [ -f "$scratch" ] || continue
     [ "${FM_INTERRUPT_TEST:-0}" != 1 ] || trap '' TERM
     printf '%s\n' "$$" > "$FM_READER_PID"
-    exec sleep 90
+    # A timeout needs a slow fold that reaches its next checkpoint, not a stuck one.
+    [ "${FM_SLOW_FOLD:-0}" = 1 ] || exec sleep 90
+    sleep 3
+    break 2
   done
 done
 exec perl -e '
@@ -581,9 +645,9 @@ SH
     rm "$state/peer.status"
     rc=0
     if [ "$mode" = timeout ]; then
-      fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=30 \
+      fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
         FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" FM_READER_PID="$dir/drain.pid" \
-        "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+        FM_SLOW_FOLD=1 "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
     else
       FM_STATE_OVERRIDE="$state" FM_STATUS_SPAN_READER="$dir/reader" FM_BLOCK_STAGE="$stage" \
         FM_READER_PID="$dir/drain.pid" FM_INTERRUPT_TEST=1 \
@@ -644,7 +708,7 @@ PY_SIGNAL
     assert_grep 'retained note' "$dir/retry.out" 'scratch cleanup lost unread status'
     assert_grep '[key=held]' "$dir/retry.out" 'scratch cleanup lost an open decision'
   done
-  pass "$mode during preparation and folding cleans owned scratch and preserves a concurrent reader"
+  pass "$mode during $(printf '%s' "$stages" | sed 's/ / and /') cleans owned scratch and preserves a concurrent reader"
 }
 
 test_timeout_cleans_only_attempt_owned_presentation_scratch() {
@@ -873,6 +937,7 @@ test_open_decisions_fold_is_unchanged
 test_empty_queue_does_not_swallow_later_signal_annotation
 test_routine_working_and_covered_done_stay_silent_on_the_empty_queue
 test_presentation_deadline_preserves_pending_data_and_recovers
+test_large_unpresented_span_completes_without_a_presentation_deadline
 test_timeout_cleans_only_attempt_owned_presentation_scratch
 test_term_cleans_only_attempt_owned_presentation_scratch
 test_int_cleans_only_attempt_owned_presentation_scratch
