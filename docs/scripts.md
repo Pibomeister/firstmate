@@ -57,7 +57,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `fm-lab-*` sessions in the Herdr CI lane       |
 | `fm-rex-marks.sh`        | Opt-in: turn each Rex task's latest status into one badge and notification on its pane, plus validation progress and an optional tint (`plan`, `sync`, `clear`); the watcher runs `sync` each poll while the option or a cached record exists, and cleanup runs `clear` |
 | `fm-test-run.sh`         | Behavior-test runner: selection, portable lanes, bounded concurrency, budgets, coverage guard, timing/JSON; refuses to execute in the repository primary checkout when `FM_TASK_ID` marks a task worker |
-| [`fm-test-queue.sh`](../bin/fm-test-queue.sh) | Machine-wide FIFO admission for heavy test runs, with opt-in SSH offload above a load threshold through the sourced `fm-test-queue-remote.sh` |
+| [`fm-test-queue.sh`](../bin/fm-test-queue.sh) | Machine-wide FIFO admission for heavy test runs, with opt-in SSH offload above a load threshold through the sourced `fm-test-queue-remote.sh`, and an append-only record of each run's admission, returned status, and load readings |
 | `fm-test-isolation-proof.sh` | Concurrent isolation harness and portable candidate set owner |
 | `fm-ensure-agents-md.sh` | Manually initialize project agent-memory files (see the helper's header and help) |
 | `fm-capacity.sh`         | Report of open lanes against the optional `config/lane-capacity` target and host headroom for queued-work dispatch; `--publish` writes this home's `state/lane-capacity.json`; `--admit` is the full advisory verdict; `--spawn-gate` is the lane-cap and load-ceiling verdict `fm-spawn.sh` enforces |

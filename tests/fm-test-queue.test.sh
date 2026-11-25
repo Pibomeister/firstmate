@@ -1211,6 +1211,8 @@ import os, shlex, sys
 assert not os.path.exists(shlex.split(open(sys.argv[1]).read())[1])
 PYTEST
   line_is_empty || fail 'remote command leaked local ticket'
+  assert_equals 'remote:m3|9|7' "$(awk -F '\t' '$2 == "admit" { h = $4; l = $5 } $2 == "done" { print h "|" l "|" $6 }' "$FM_TEST_QUEUE_DIR/workloads.tsv" 2>/dev/null)" 'local record of an offloaded run'
+  assert_equals 'local|7' "$(awk -F '\t' '$2 == "done" { print $4 "|" $6 }' "$CASE/remote-spool/workloads.tsv" 2>/dev/null)" 'remote record of an offloaded run'
   pass 'fm-test-queue.sh: high load offloads current source and preserves arguments and failure status'
 }
 
@@ -1445,6 +1447,183 @@ test_remote_offload_hardening() {
 
 test_remote_incremental_manifest_and_uncertain_run
 test_remote_offload_hardening
+
+# --- the workload record ----------------------------------------------------
+record_file() { printf '%s\n' "$FM_TEST_QUEUE_DIR/workloads.tsv"; }
+
+# rows <event> [ticket]: the matching record rows.
+rows() {
+  awk -F '\t' -v e="$1" -v t="${2:-}" '$2 == e && (t == "" || $3 == t)' "$(record_file)" 2>/dev/null
+}
+
+# field <row> <n>: one tab-separated field of a row.
+field() {
+  printf '%s\n' "$1" | awk -F '\t' -v n="$2" '{ print $n }'
+}
+
+record_tickets() {  # <event>: the ticket numbers of that event, in file order
+  rows "$1" | awk -F '\t' '{ printf "%s%s", sep, $3; sep = " " }'
+}
+
+assert_record_shape() {  # every row has nine fields and an integer epoch
+  local bad
+  bad=$(awk -F '\t' 'NF != 9 || $1 !~ /^[0-9]+$/' "$(record_file)")
+  [ -z "$bad" ] || fail "malformed record row: $bad"
+}
+
+test_record_pairs_admit_with_done() {
+  local rc row mode out
+  new_case record
+  echo 3.25 > "$CASE/load"
+  FM_TASK_ID=task-a q run --label ok -- true 2>/dev/null; rc=$?
+  expect_code 0 "$rc" "a recorded passing run"
+  FM_TASK_ID='' q run --label bad -- sh -c 'exit 7' 2>/dev/null; rc=$?
+  expect_code 7 "$rc" "a recorded failing run"
+  assert_present "$(record_file)" "an admitted run wrote no workload record"
+  assert_equals 4 "$(wc -l < "$(record_file)" | tr -d ' ')" "two runs must write two rows each"
+  assert_record_shape
+  assert_equals "1 2" "$(record_tickets admit)" "admit rows are not one per ticket in ticket order"
+  row=$(rows admit 1)
+  assert_equals "local|3.25|-|-|task-a|ok" "$(field "$row" 4)|$(field "$row" 5)|$(field "$row" 6)|$(field "$row" 7)|$(field "$row" 8)|$(field "$row" 9)" \
+    "admit row does not hold the host, the admission reading, the task and the label"
+  row=$(rows 'done' 1)
+  assert_equals "local|3.25|0|-|task-a|ok" "$(field "$row" 4)|$(field "$row" 5)|$(field "$row" 6)|$(field "$row" 7)|$(field "$row" 8)|$(field "$row" 9)" \
+    "done row does not hold the status the caller received"
+  [ "$(field "$row" 1)" -ge "$(field "$(rows admit 1)" 1)" ] || fail "done is earlier than its admit"
+  row=$(rows 'done' 2)
+  assert_equals "7|-|bad" "$(field "$row" 6)|$(field "$row" 8)|$(field "$row" 9)" "a failing run's done row lost its status or an empty task is not '-'"
+  mode=$(stat -c %a "$(record_file)" 2>/dev/null || stat -f %Lp "$(record_file)")
+  assert_equals 600 "$mode" "the workload record is not private"
+  echo unknown > "$CASE/load"
+  q run --label blind -- true 2>/dev/null
+  assert_equals "unknown|unknown" "$(field "$(rows admit 3)" 5)|$(field "$(rows 'done' 3)" 5)" "a failed load probe was not recorded as unknown"
+  echo 1 > "$CASE/load"
+  out=$(q run --label outer -- "$QBASH" "$QUEUE" run --label inner -- sh -c 'echo inner; exit 3' 2>/dev/null); rc=$?
+  expect_code 3 "$rc" "a nested recorded run"
+  assert_equals 8 "$(wc -l < "$(record_file)" | tr -d ' ')" "a nested run wrote its own rows"
+  assert_equals "3|outer" "$(field "$(rows 'done' 4)" 6)|$(field "$(rows 'done' 4)" 9)" "the outer run did not record the nested status"
+  assert_contains "$(q --help)" "workloads.tsv" "help omitted the workload record"
+  pass "fm-test-queue.sh: each admitted run records one admit and one done with the returned status"
+}
+
+test_record_signals_and_leaves() {
+  local holder p p2 rc row
+  new_case record-signals
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  start_held holder; holder=$HELD_PID
+  wait_until "holder served" status_has '^serving .*label=holder$'
+  # Each wait below is on the run's own report, so its admission check is
+  # complete before the signal arrives.
+  qbg run --label head -- true 2>"$CASE/head.err" & p=$!
+  track_pids "$p"
+  wait_until "head waiting for a slot" grep -Fq "position 1: all 1 slot(s) busy" "$CASE/head.err"
+  qbg run --label behind -- true 2>"$CASE/behind.err" & p2=$!
+  track_pids "$p2"
+  wait_until "behind waiting in line" grep -Fq "position 2: waiting behind 1 earlier ticket(s)" "$CASE/behind.err"
+  kill -HUP "$p2"; wait "$p2"; rc=$?
+  expect_code 129 "$rc" "a waiting run ended by HUP"
+  kill -TERM "$p"; wait "$p"; rc=$?
+  expect_code 143 "$rc" "a waiting run ended by TERM"
+  row=$(rows leave 3)
+  assert_equals "-|129|line|behind" "$(field "$row" 4)|$(field "$row" 6)|$(field "$row" 7)|$(field "$row" 9)" "a run that left behind the line was not recorded"
+  row=$(rows leave 2)
+  assert_equals "-|143|slots|head" "$(field "$row" 4)|$(field "$row" 6)|$(field "$row" 7)|$(field "$row" 9)" "a run that left waiting for a slot was not recorded"
+  [ -z "$(rows admit 2)$(rows 'done' 2)$(rows admit 3)$(rows 'done' 3)" ] || fail "a run that never started has an admit or done row"
+  # A waiting ticket that disappears is a queue error, recorded as it is returned.
+  qbg run --label vanished -- true 2>"$CASE/vanished.err" & p=$!
+  track_pids "$p"
+  wait_until "vanished waiting for a slot" grep -Fq "position 1: all 1 slot(s) busy" "$CASE/vanished.err"
+  rm -f "$FM_TEST_QUEUE_DIR/tickets/0000000004"
+  wait "$p"; rc=$?
+  expect_code 125 "$rc" "a run whose ticket vanished"
+  assert_equals "125|slots" "$(field "$(rows leave 4)" 6)|$(field "$(rows leave 4)" 7)" "a queue error before admission was not recorded as returned"
+  # A signal to the wrapper of a served run is recorded when the command exits.
+  wait_until "holder workload started" file_exists "$CASE/started-holder"
+  kill -TERM "$holder"
+  release holder
+  wait "$holder"; rc=$?
+  expect_code 143 "$rc" "a served run whose wrapper got TERM"
+  assert_equals 143 "$(field "$(rows 'done' 1)" 6)" "done does not hold the status the caller received after a signal"
+  # Held by load: the reason and the reading at the time it left. The
+  # reserved slot serves the first run at any load, so a second slot is the
+  # one the ceiling holds.
+  echo slots=2 > "$FM_TEST_QUEUE_DIR/config"
+  echo 20.5 > "$CASE/load"
+  start_held keeper; holder=$HELD_PID
+  wait_until "keeper served at high load" status_has '^serving .*label=keeper$'
+  assert_equals 20.5 "$(field "$(rows admit 5)" 5)" "an admission above the ceiling did not record its reading"
+  qbg run --label hot -- true 2>"$CASE/hot.err" & p=$!
+  track_pids "$p"
+  wait_until "load wait reported" grep -Fq "load 20.5 is not below 16" "$CASE/hot.err"
+  kill -TERM "$p"; wait "$p"; rc=$?
+  expect_code 143 "$rc" "a run held by load and ended by TERM"
+  row=$(rows leave 6)
+  assert_equals "20.5|143|load" "$(field "$row" 5)|$(field "$row" 6)|$(field "$row" 7)" "a run that left under load was not recorded with the reason and the reading"
+  release keeper
+  wait "$holder"
+  assert_record_shape
+  assert_equals 8 "$(wc -l < "$(record_file)" | tr -d ' ')" "a ticket wrote more rows than its lifecycle has"
+  pass "fm-test-queue.sh: signals and queue errors are recorded with the status the caller received"
+}
+
+test_record_never_invents_a_status() {
+  local p p2 rc out
+  new_case record-killed
+  start_held killed; p=$HELD_PID
+  wait_until "killed workload started" file_exists "$CASE/started-killed"
+  kill -KILL "$p"; wait "$p" 2>/dev/null
+  start_held untrapped; p2=$HELD_PID
+  wait_until "untrapped workload started" file_exists "$CASE/started-untrapped"
+  kill -USR1 "$p2"; wait "$p2" 2>/dev/null; rc=$?
+  [ "$rc" -gt 128 ] || fail "the wrapper survived an untrapped signal (status $rc)"
+  release killed; release untrapped
+  wait_until "orphaned workloads finished" line_is_empty
+  assert_equals "1 2" "$(record_tickets admit)" "the admitted runs were not recorded"
+  assert_equals "" "$(rows 'done')" "a wrapper that died without returning a status has a done row"
+  # A record that cannot be written changes neither the run nor its status.
+  new_case record-unwritable
+  mkdir -p "$FM_TEST_QUEUE_DIR/workloads.tsv"
+  out=$(q run -- sh -c 'echo ran; exit 9' 2>"$CASE/err"); rc=$?
+  expect_code 9 "$rc" "a run whose record cannot be written"
+  assert_equals ran "$out" "a run did not execute when its record could not be written"
+  pass "fm-test-queue.sh: a killed wrapper records no status and an unwritable record changes nothing"
+}
+
+test_record_fields_cannot_break_rows() {
+  local row long
+  new_case record-fields
+  FM_TASK_ID=$'ta\tsk\nid' q run --label $'la\tbel\nmore\rend' -- true 2>/dev/null
+  assert_equals 2 "$(wc -l < "$(record_file)" | tr -d ' ')" "a newline in a field added a row"
+  assert_record_shape
+  row=$(rows 'done' 1)
+  assert_equals "ta sk id|la bel more end" "$(field "$row" 8)|$(field "$row" 9)" "tabs and newlines were not replaced by spaces"
+  long=$(printf '%0300d' 0)
+  q run --label "$long" -- true 2>/dev/null
+  assert_equals 200 "$(field "$(rows admit 2)" 9 | tr -d '\n' | wc -c | tr -d ' ')" "the label was not cut to 200 bytes"
+  pass "fm-test-queue.sh: task and label text cannot add fields or rows to the record"
+}
+
+test_lost_counter_leaves_a_visible_gap() {
+  local holder ghost p
+  new_case record-counter
+  echo slots=1 > "$FM_TEST_QUEUE_DIR/config"
+  start_held first; holder=$HELD_PID
+  wait_until "first served" status_has '^serving .*label=first$'
+  qbg run --label ghost -- true 2>/dev/null & ghost=$!
+  track_pids "$ghost"
+  wait_until "ghost waiting" status_has '^waiting position=1 .*label=ghost$'
+  kill -KILL "$ghost"; wait "$ghost" 2>/dev/null
+  rm -f "$FM_TEST_QUEUE_DIR/next"
+  qbg run --label after -- true 2>/dev/null & p=$!
+  track_pids "$p"
+  wait_until "after waiting" status_has '^waiting .*label=after$'
+  release first
+  wait "$holder" "$p"
+  assert_equals "1 4" "$(record_tickets admit)" "a lost counter reissued a dead ticket's number or left no gap"
+  assert_equals 5 "$(cat "$FM_TEST_QUEUE_DIR/next")" "the counter does not bound the issued tickets"
+  pass "fm-test-queue.sh: a lost counter leaves a gap and never reissues a ticket number"
+}
+
 test_help_and_usage
 test_remote_offload_snapshot_and_failure
 test_unreachable_remote_waits_locally_and_threshold_is_configurable
@@ -1480,3 +1659,8 @@ test_lost_counter_cannot_jump_the_line
 test_locale_and_umask_are_preserved
 test_private_metadata_and_failed_probe_warning
 test_terminal_execution_modes
+test_record_pairs_admit_with_done
+test_record_signals_and_leaves
+test_record_never_invents_a_status
+test_record_fields_cannot_break_rows
+test_lost_counter_leaves_a_visible_gap

@@ -48,8 +48,9 @@
 # Spool: one per user, shared by every firstmate home on the machine:
 #   ${XDG_STATE_HOME:-$HOME/.local/state}/firstmate/test-queue
 # FM_TEST_QUEUE_DIR overrides it. The spool holds tickets/<N> (one key=value
-# file per ticket), next (the ticket counter), and lock (an atomically published
-# owner directory that serializes every change to the line).
+# file per ticket), next (the ticket counter), lock (an atomically published
+# owner directory that serializes every change to the line), and workloads.tsv
+# (the workload record below).
 #
 # Configuration: slots=<N> / load_ceiling=<X> lines in $SPOOL/config.
 # Blank lines and # comments are ignored. All callers use this shared file;
@@ -142,6 +143,52 @@
 # FM_TEST_QUEUE_LOAD_FILE names a file whose
 # first word stands in for the 1-minute load, read at every check.
 #
+# Workload record: run appends what the queue itself observed about each ticket
+# to $SPOOL/workloads.tsv (mode 600, append only, never rotated), one row per
+# event, nine tab-separated fields:
+#   epoch  event  ticket  host  load1  status  reason  task  label
+#   epoch   integer Unix seconds; on admit, the time the ticket was served
+#   event   admit (the run was admitted), done (the wrapper ended after
+#           admission), or leave (the wrapper ended before admission)
+#   ticket  the ticket number, decimal
+#   host    local, or remote:<ssh-alias> for an offloaded run; - on leave
+#   load1   this host's 1-minute load as the queue read it: at the admission
+#           check on admit, a fresh reading on done and leave; unknown when the
+#           probe failed. It never describes a remote host.
+#   status  - on admit; on done and leave, the status run returned to its caller
+#   reason  - on admit and done; on leave, what the last admission check found:
+#           line, slots, load, or none
+#   task    FM_TASK_ID, or - when empty
+#   label   the run's label, cut to 200 bytes
+# Tabs, carriage returns, and newlines in task and label become spaces.
+# The record holds observations only. It never says why a run failed:
+#   - done with status 0: run returned 0 for that workload.
+#   - done with a nonzero status: run returned that status between the two
+#     epochs, with this host's two readings. No cause follows from it, whatever
+#     the readings; a status of 128+N does not say what sent the signal.
+#   - leave: the run never started; reason is one check, not the whole wait.
+#   - an admit with no later done for its ticket, a ticket number with neither
+#     admit nor leave, a done without its admit, or a malformed row: the
+#     outcome of that ticket is unknown.
+# Coverage is read from the rows and the counter, with no heartbeat row:
+#   - A ticket has at most two rows: one admit or one leave, and one done after
+#     an admit. admit rows are in ticket order; done and leave rows are not.
+#   - next holds the number the next ticket takes. Every number below it, and
+#     above the earliest recorded one, has an admit or a leave, or that ticket
+#     is unaccounted.
+#   - done and leave are written only when run ends through its own exits (the
+#     command's status, one of the four signals above, or a queue error). A
+#     wrapper that dies any other way, for example by SIGKILL, writes no row.
+#   - A row that cannot be appended is skipped without changing the run or its
+#     status, so a recorder failure shows as a missing row.
+#   - A repeated admit or leave number, or an admit number below an earlier
+#     admit, means the counter restarted; coverage across it is unknown. When
+#     the counter is lost while tickets exist, the next ticket skips one
+#     number, so the loss shows as a gap and no number is issued twice.
+# A nested run takes no ticket and writes no row. An offloaded run also writes
+# the remote user's record on the remote host; that file is not copied back.
+# Runs that do not go through this queue are not in the record.
+#
 # Portable to macOS Bash 3.2: no flock(1), no associative arrays.
 #
 # Exit status: run exits with the command's status, 128+N when a signal N ends
@@ -160,9 +207,18 @@ usage() {
   exit 2
 }
 
+# FINAL_STATUS is the status run returns, set only by the wrapper's own exits.
+# The exit handler records it and never reads $?: a wrapper killed by a signal
+# it does not trap still runs the handler, with a $? that is not its status.
+FINAL_STATUS=""
+finish() {  # <status>
+  FINAL_STATUS=$1
+  exit "$1"
+}
+
 die() {  # <message>: the queue itself cannot proceed
   echo "fm-test-queue: $1" >&2
-  exit 125
+  finish 125
 }
 
 is_uint() {
@@ -606,11 +662,30 @@ reclaim_dead() {
   done < <(ticket_files)
 }
 
+# --- the workload record ----------------------------------------------------
+# The header owns the row contract.
+RECORD="$SPOOL/workloads.tsv"
+REC_TASK="-" REC_LABEL="-" REC_HOST="-"
+TICKET_ISSUED=0 ADMITTED=0
+
+record_text() {  # <text>: sets REC_TEXT to one field's worth of it, never empty
+  REC_TEXT=${1//$'\t'/ }
+  REC_TEXT=${REC_TEXT//$'\n'/ }
+  REC_TEXT=${REC_TEXT//$'\r'/ }
+  [ -n "$REC_TEXT" ] || REC_TEXT=-
+}
+
+record_append() {  # <epoch> <event> <host> <load1> <status> <reason>
+  (umask 077; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$1" "$2" "$MY_NUMBER" "$3" "${4:-unknown}" "$5" "$6" "$REC_TASK" "$REC_LABEL" >> "$RECORD") 2>/dev/null || true
+}
+
 # --- run --------------------------------------------------------------------
 MY_TICKET=""
 HOLDER_PID="" HOLDER_START=""
 
 cleanup() {
+  local load now
   remote_cleanup
   if [ -n "$MY_TICKET" ]; then
     if ticket_read "$MY_TICKET"; then
@@ -630,11 +705,25 @@ cleanup() {
   fi
   lock_release
   [ -z "$LOCK_CANDIDATE" ] || rm -rf "$LOCK_CANDIDATE"
+  # The row is the last act, and only for a status this wrapper chose. A signal
+  # before this point ends the wrapper with 128+N and no row; from here the
+  # signals are ignored, so the status cannot change after the row is written.
+  if [ -n "$FINAL_STATUS" ] && [ "$TICKET_ISSUED" = 1 ]; then
+    load=$(load1) || load=""
+    now=$(date +%s)
+    trap '' INT TERM HUP QUIT PIPE
+    if [ "$ADMITTED" = 1 ]; then
+      record_append "$now" 'done' "$REC_HOST" "$load" "$FINAL_STATUS" -
+    else
+      record_append "$now" leave - "$load" "$FINAL_STATUS" "$CHECK_REASON"
+    fi
+  fi
 }
 
 # Sets MY_NUMBER and MY_TICKET. The number is never below an existing
 # ticket's, even when the counter file is lost, so a new ticket cannot jump
-# the line.
+# the line. The highest ticket is read before dead tickets are reclaimed, so a
+# dead ticket's number is not issued again, and a lost counter skips one number.
 MY_NUMBER=""
 take_ticket() {  # <label>
   local n f last=""
@@ -642,14 +731,19 @@ take_ticket() {  # <label>
   chmod 700 "$SPOOL" "$TICKETS" || die "cannot protect $SPOOL"
   { [ -w "$SPOOL" ] && [ -w "$TICKETS" ]; } || die "cannot write to $SPOOL"
   lock_acquire
+  while IFS= read -r f; do last=$f; done < <(ticket_files)
   reclaim_dead
   n=""
   [ -f "$SPOOL/next" ] && read -r n < "$SPOOL/next"
-  is_uint "$n" || n=1
-  n=$((10#$n))
-  while IFS= read -r f; do last=$f; done < <(ticket_files)
-  if [ -n "$last" ] && [ $((10#${last##*/})) -ge "$n" ]; then
-    n=$((10#${last##*/} + 1))
+  if is_uint "$n"; then
+    n=$((10#$n))
+    if [ -n "$last" ] && [ $((10#${last##*/})) -ge "$n" ]; then
+      n=$((10#${last##*/} + 1))
+    fi
+  elif [ -n "$last" ]; then
+    n=$((10#${last##*/} + 2))
+  else
+    n=1
   fi
   T_PID=$$
   T_START=$(pid_start "$$")
@@ -676,16 +770,19 @@ take_ticket() {  # <label>
   MY_TICKET=$f
   MY_NUMBER=$n
   (umask 077; printf '%s\n' $((n + 1)) > "$SPOOL/next") || die "cannot write $SPOOL/next"
+  TICKET_ISSUED=1
   lock_release
 }
 
-# Under the lock: decide whether this ticket may be served now. Prints the
-# reason it must wait (empty when admitted) and the position.
-WAIT_REASON="" POSITION=0 WANT_REMOTE=0 OFFLOAD_LISTED=0
+# Under the lock: decide whether this ticket may be served now. Sets the
+# reason it must wait (empty when admitted) and the position, and for the
+# record the class of that reason and the load reading, when one was taken.
+WAIT_REASON="" POSITION=0 WANT_REMOTE=0 OFFLOAD_LISTED=0 CHECK_REASON=none CHECK_LOAD=""
 admission_check() {
   local f serving=0 head="" pos=0 load=""
   POSITION=0
   WANT_REMOTE=0
+  CHECK_LOAD=""
   while IFS= read -r f; do
     ticket_read "$f" || continue
     if [ -n "$T_SERVED" ]; then
@@ -698,10 +795,13 @@ admission_check() {
   done < <(ticket_files)
   if [ "$head" != "$MY_TICKET" ]; then
     WAIT_REASON="waiting behind $((POSITION - 1)) earlier ticket(s)"
+    CHECK_REASON=line
   elif [ "$serving" -ge "$SLOTS" ]; then
     WAIT_REASON="all $SLOTS slot(s) busy"
+    CHECK_REASON=slots
   else
     load=$(load1) || load=""
+    CHECK_LOAD=$load
     if [ -z "$REMOTE_HOST" ] && [ "$OFFLOAD_LISTED" = 1 ] &&
       [ -n "$load" ] && awk -v l="$load" -v c="$OFFLOAD_THRESHOLD" 'BEGIN { exit !(l + 0 > c + 0) }'; then
       WANT_REMOTE=1
@@ -710,12 +810,14 @@ admission_check() {
     # served; every further slot still obeys the ceiling.
     if [ "$serving" -ge 1 ] && [ -z "$REMOTE_HOST" ] && [ -n "$load" ] && ! awk -v l="$load" -v c="$LOAD_CEILING" 'BEGIN { exit !(l + 0 < c + 0) }'; then
       WAIT_REASON="load $load is not below $LOAD_CEILING"
+      CHECK_REASON=load
       return
     fi
     if [ -z "$load" ]; then
       echo "fm-test-queue: warning: load probe failed; enforcing slot limit only" >&2
     fi
     WAIT_REASON=""
+    CHECK_REASON=none
   fi
 }
 
@@ -748,12 +850,16 @@ cmd_run() {
 
   [ -n "$label" ] || label="$*"
   label=$(printf '%s' "$label" | tr '\n\r' '  ')
+  record_text "${FM_TASK_ID:-}"
+  REC_TASK=$REC_TEXT
+  record_text "$label"
+  REC_LABEL=${REC_TEXT:0:200}
 
   trap cleanup EXIT
-  trap 'exit 130' INT
-  trap 'exit 143' TERM
-  trap 'exit 129' HUP
-  trap 'exit 131' QUIT
+  trap 'finish 130' INT
+  trap 'finish 143' TERM
+  trap 'finish 129' HUP
+  trap 'finish 131' QUIT
 
   if [ -n "$REMOTE_HOSTS" ] && [ "${FM_TEST_QUEUE_REMOTE_DISABLE:-}" != 1 ] && remote_project_listed; then
     OFFLOAD_LISTED=1
@@ -780,6 +886,10 @@ cmd_run() {
       ticket_read "$MY_TICKET"
       T_SERVED=$(date +%s)
       ticket_write "$MY_TICKET" || { lock_release; die "cannot update ticket $n"; }
+      ADMITTED=1
+      REC_HOST=local
+      [ -z "$REMOTE_HOST" ] || REC_HOST="remote:$REMOTE_HOST"
+      record_append "$T_SERVED" admit "$REC_HOST" "$CHECK_LOAD" - -
       lock_release
       break
     fi
@@ -820,6 +930,7 @@ cmd_run() {
     fi
     command_exec "$@"
   )
+  finish $?
 }
 
 # --- status -----------------------------------------------------------------
