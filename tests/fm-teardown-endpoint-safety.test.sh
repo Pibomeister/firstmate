@@ -1603,6 +1603,39 @@ test_already_gone_endpoint_still_completes_without_a_refusal() {
   pass "fm-teardown: an already-exited endpoint, and a server that is already gone, still complete cleanup silently"
 }
 
+test_delegated_runtime_artifacts_survive_until_read() {
+  local dir id=producer artifact kind hash rc
+  for kind in status archived-status progress directory; do
+    dir=$(make_case "delegated-runtime-$kind")
+    mark_case_as_treehouse_pool "$dir"
+    fm_write_meta "$dir/home/state/$id.meta" "window=firstmate:fm-$id" "endpoint_task_id=$id" \
+      "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+    touch "$dir/home/state/receiver.meta"
+    case "$kind" in
+      status|archived-status) artifact="$dir/home/state/$id.status" ;;
+      progress) artifact="$dir/home/state/$id.progress" ;;
+      directory) mkdir "$dir/home/state/$id.kiro-home"; artifact="$dir/home/state/$id.kiro-home/evidence" ;;
+    esac
+    printf 'done: completed producer evidence\n' > "$artifact"
+    [ "$kind" != archived-status ] || touch "$dir/home/config/status-archive"
+    hash=$(shasum -a 256 "$artifact" | awk '{ print $1 }')
+    FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" register --task producer --deliverable report \
+      --artifact "$dir/home/data/final-report.md" --heartbeat-secs 60 --silence-secs 300 >/dev/null || fail 'delegated register failed'
+    FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" handoff --task producer --id evidence --receiver receiver \
+      --path "$artifact" --hash "$hash" --alt-dir "$dir/hosted" --location read >/dev/null || fail 'runtime handoff failed'
+    rc=0
+    run_case "$dir" "$id" > "$dir/stdout" 2> "$dir/stderr" || rc=$?
+    assert_equals 1 "$rc" 'real teardown defers unconsumed runtime artifacts'
+    assert_contains "$(cat "$dir/stderr")" 'cleanup deferred: handoff evidence' 'retention refusal names the outstanding receipt'
+    [ -f "$artifact" ] || fail 'teardown invalidated the bound runtime artifact path'
+    mv "$dir/home/state/receiver.inbox/001.msg" "$dir/home/state/receiver.inbox/handled/" || fail 'late receiver acknowledgement failed'
+    run_case "$dir" "$id" > "$dir/resumed.out" 2> "$dir/resumed.err" || fail "teardown did not resume after acknowledgement: $(cat "$dir/resumed.err")"
+    [ ! -e "$artifact" ] || fail 'resumed teardown did not retire the runtime artifact'
+    assert_contains "$(FM_HOME="$dir/home" bash "$ROOT/bin/fm-delegated.sh" view)" 'handoff=evidence state=read' 'runtime removal preserves its durable read receipt'
+  done
+  pass 'real teardown retains status, archived status, progress and runtime-directory evidence until acknowledgement'
+}
+
 test_invalid_endpoint_records_refuse_before_mutation
 test_worktree_identity_refusal_names_the_repair_path
 test_control_lock_contention_refuses_before_mutation
@@ -1632,3 +1665,5 @@ test_project_lock_anchors_at_the_local_root_across_home_layouts
 test_remote_seeded_home_returns_its_uncontested_slot
 test_remote_seeded_home_still_refuses_a_slot_its_child_holds
 test_remote_layout_homes_serialize_on_one_project_lock
+
+test_delegated_runtime_artifacts_survive_until_read

@@ -320,16 +320,28 @@ write_placement() {
 artifact_under() {
   perl -MCwd=abs_path -MFile::Basename=dirname,basename -e '
     my ($path, $root) = @ARGV;
-    $root = abs_path($root);
-    exit 1 unless defined $root;
-    $root =~ s{/$}{} unless $root eq "/";
-    my $parent = abs_path(dirname($path));
-    exit 1 unless defined $parent;
-    my $entry = $parent . "/" . basename($path);
-    my $target = abs_path($path);
-    for my $candidate ($entry, $target) {
-      next unless defined $candidate;
-      exit 0 if $candidate eq $root || index($candidate, ($root eq "/" ? "" : $root) . "/") == 0;
+    my $parent = abs_path(dirname($root));
+    my @roots = (abs_path($root), defined($parent) ? $parent . "/" . basename($root) : undef);
+    @roots = grep { defined } @roots;
+    for (@roots) { s{/$}{} unless $_ eq "/"; }
+    my @parts = split m{/+}, $path;
+    my $cursor = "/";
+    my $links = 0;
+    while (@parts) {
+      my $part = shift @parts;
+      next if $part eq "" || $part eq ".";
+      if ($part eq "..") { $cursor = dirname($cursor); next; }
+      $cursor = ($cursor eq "/" ? "" : $cursor) . "/" . $part;
+      for my $candidate (@roots) {
+        exit 0 if $cursor eq $candidate || index($cursor, ($candidate eq "/" ? "" : $candidate) . "/") == 0;
+      }
+      if (-l $cursor) {
+        exit 2 if ++$links > 40;
+        my $target = readlink($cursor);
+        exit 2 unless defined $target;
+        $cursor = $target =~ m{^/} ? "/" : dirname($cursor);
+        unshift @parts, split m{/+}, $target;
+      }
     }
     exit 1;
   ' "$1" "$2"

@@ -868,6 +868,36 @@ SH
   pass 'closed history adds no external parser processes while live supervision and history views remain intact'
 }
 
+test_cleanup_preserves_symlink_ancestor_dependencies() {
+  local h hash route path rc
+  for route in ancestor chain; do
+    h=$(new_home "ancestor-$route")
+    register_task "$h" "$T0" producer || fail 'register failed'
+    mkdir "$h/worktree" "$h/persistent"
+    printf 'persistent report\n' > "$h/persistent/report.md"
+    ln -s "$h/persistent" "$h/worktree/evidence"
+    path="$h/worktree/evidence/report.md"
+    if [ "$route" = chain ]; then
+      ln -s "$h/worktree/evidence" "$h/outside-link"
+      path="$h/outside-link/report.md"
+    fi
+    hash=$(sha_of "$path")
+    del "$h" "$T0" handoff --task producer --id report --receiver worker --path "$path" \
+      --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'ancestor handoff failed'
+    rc=0
+    del "$h" "$T0" receipt --before-remove "$h/worktree" > "$h/refusal" 2>&1 || rc=$?
+    assert_equals 1 "$rc" 'removal of a lookup dependency must defer even when the final bytes resolve outside the root'
+    assert_contains "$(cat "$h/refusal")" 'cleanup deferred: handoff report' 'the guard recognizes symlink traversal dependencies'
+    mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+    del "$h" "$T0" receipt --before-remove "$h/worktree" || fail 'acknowledged dependency cleanup was refused'
+    rm -rf "$h/worktree"
+    [ -f "$h/persistent/report.md" ] || fail 'fixture removed the persistent target instead of the dependency'
+    [ ! -e "$path" ] || fail 'fixture did not invalidate the original lookup path'
+    assert_contains "$(del "$h" "$T0" view)" 'handoff=report state=read' 'receipted consumption survives removal of symlinked ancestors'
+  done
+  pass 'artifact retention follows every symlink ancestor and intermediate link dependency'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -900,5 +930,6 @@ fm_test_run \
   test_notification_move_before_existence_check \
   test_cleanup_retains_artifact_until_receipted \
   test_record_loaders_preserve_serialized_values \
-  test_closed_history_has_constant_process_cost
+  test_closed_history_has_constant_process_cost \
+  test_cleanup_preserves_symlink_ancestor_dependencies
 
