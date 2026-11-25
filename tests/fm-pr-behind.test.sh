@@ -317,6 +317,7 @@ test_refused_check_is_retried_on_a_later_sweep() {
   real_git=$(command -v git)
   gitstub=$D/git-stub
   mkdir -p "$gitstub"
+  # shellcheck disable=SC2016 # the stub body must not expand here
   printf '#!/usr/bin/env bash\nif [ -e "%s" ]; then for a; do [ "$a" != fetch ] || exit 128; done; fi\nexec "%s" "$@"\n' "$D/fail-fetch" "$real_git" > "$gitstub/git"
   chmod +x "$gitstub/git"
   : > "$D/fail-fetch"
