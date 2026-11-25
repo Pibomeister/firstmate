@@ -158,9 +158,19 @@ FACTS
 }
 # 0 when the endpoint is proven gone.
 endpoint_gone() {
-  local facts
+  local facts out rc=0
   case "$backend" in
-    tmux) ! fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_id}' >/dev/null 2>&1 ;;
+    tmux)
+      # tmux answers a gone pane with exit 0 and an empty line, or reports it
+      # missing; only an answer naming the pane, or no answer, keeps it present.
+      out=$(fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_id}' 2>&1) || rc=$?
+      if [ "$rc" = 0 ]; then
+        ! printf '%s\n' "$out" | grep -Fqx -- "$terminal"
+        return
+      fi
+      case "$out" in *"can't find"*|*"no server running"*|*"error connecting"*) return 0 ;; esac
+      return 1
+      ;;
     orca)
       facts=$(fm_backend_orca_terminal_facts "$terminal") || return 1
       case "$facts" in stale$'\x1f'*|ok$'\x1f'false$'\x1f'*) return 0 ;; esac

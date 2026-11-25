@@ -24,9 +24,12 @@ ln -s /bin/bash "$FAKEBIN/claude"
 # the close and hangs up the root's whole tree, as a real close does.
 cat > "$FAKEBIN/fake-kill-tree" <<'EOF'
 #!/usr/bin/env bash
+# One process-table snapshot: a ps per node can outlast the close's 5 s bound
+# on a loaded host, which stops this fake before it signals anything.
+table=$(ps -axo pid=,ppid=)
 kill_tree() {
   local child
-  for child in $(ps -axo pid=,ppid= | awk -v r="$1" '$2 == r { print $1 }'); do kill_tree "$child"; done
+  for child in $(awk -v r="$1" '$2 == r { print $1 }' <<<"$table"); do kill_tree "$child"; done
   kill -HUP "$1" 2>/dev/null || true
 }
 [ -e "$FAKE/close-ignored" ] || kill_tree "$1"
@@ -38,7 +41,8 @@ echo "$*" >> "$FAKE/tmux.calls"
 case "$1" in
   display-message)
     [ "$2 $3" = '-p -t' ] || exit 96
-    [ -f "$FAKE/pane$4" ] || { echo "can't find pane: $4" >&2; exit 1; }
+    # Real tmux (3.6a) answers a gone pane id with exit 0 and an empty line.
+    [ -f "$FAKE/pane$4" ] || { echo; exit 0; }
     case "$5" in
       '#{pane_pid}') cat "$FAKE/pane$4" ;;
       '#{pane_id}') printf '%s\n' "$4" ;;
