@@ -233,7 +233,7 @@ receiver_uses_remote_transport() {
 handoff_state() {
   local pending="$H_READ_DIR/${H_MESSAGE##*/}" handled="$H_READ_DIR/handled/${H_MESSAGE##*/}" body
   H_STATE=delivery-failure
-  if [ "$H_READ_RECEIPT" = "$H_PATH@$H_HASH" ]; then H_STATE=read; return; fi
+  if [ "$H_READ_RECEIPT" = "$H_PATH@$H_HASH" ]; then H_STATE='read'; return; fi
   fm_del_verify_artifact "$H_PATH" "$H_HASH" >/dev/null || return 0
   [ -n "$H_MESSAGE" ] && [ "$H_MIRRORED" = 1 ] || return 0
   if [ "$H_RECEIVER" = firstmate ]; then
@@ -256,7 +256,7 @@ handoff_state() {
   fi
   H_READ_RECEIPT="$H_PATH@$H_HASH"
   save_handoff "$H_FILE" || die "cannot record read receipt: $H_ID"
-  H_STATE=read
+  H_STATE='read'
 }
 
 wake_once() {
