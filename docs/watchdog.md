@@ -544,7 +544,8 @@ Handoffs may carry supporting artifacts distinct from the task's final deliverab
 Only current delivery failures take precedence over task silence; delivered handoffs do not exempt a task from its silence window.
 Silence notifications reuse their stable key and durable inbox, queued-wake, and acknowledgement evidence across partial failures.
 Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
-Cleanup collects all applicable acknowledgements in each affected home before removing receiver inboxes or producer artifacts.
+Cleanup collects applicable acknowledgements across the affected homes and refuses artifact removal while a handoff under a removal path still awaits its durable read receipt.
+This retains the artifact for a receiver that acknowledges it after an earlier collection pass.
 Task-inbox placements hold the receiver metadata lock and refuse retired receivers.
 Notification checks defer unavailable receivers without stopping other supervision or recording an escalation as delivered.
 Remote receiver metadata cannot authorize local inbox placement or consumption; those routes require the existing remote transport.
@@ -556,6 +557,7 @@ The spawn path registers ship and scout report deliverables with a 300-second he
 Worker briefs provide heartbeat and delivery commands; watcher passes check the records and route reports through the wake queue and the stored supervisor's inbox when it has task metadata.
 Session-start output includes the delegated supervisor view.
 All delegated commands serialize their full transactions under one home-local lock.
+Record loaders parse each file in one shell pass; watcher checks select unfinished records in a batch before loading them.
 The contract only reports; it never instructs, pushes, restarts, or stops a named external agent.
 
 ## Verification

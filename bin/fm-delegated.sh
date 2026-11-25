@@ -35,8 +35,11 @@
 #   mirror --id <id>             Mirror a hidden handoff into the read
 #                                 location its receiver actually reads.
 #
-#   receipt [--receiver <id>]   Persist verified consumption before cleanup.
+#   receipt [--receiver <id>] [--before-remove <absolute-path>]
+#                                 Persist verified consumption before cleanup.
 #                                 Without a filter, collect all acknowledgements.
+#                                 Refuse removal of unreceipted artifacts under
+#                                 each supplied removal path.
 #
 # Files, all under the owner home FM_HOME:
 #   state/delegated/<task>.record       one key=value record per task.
@@ -95,24 +98,33 @@ require_task() {  # <id>: fills T_FILE or dies
   [ -f "$T_FILE" ] || die "no delegated task recorded: $1"
 }
 
-load_task() {  # <file>
-  T_TASK=$(fm_del_record_get "$1" task)
-  T_DELIVERABLE=$(fm_del_record_get "$1" deliverable)
-  T_ARTIFACT=$(fm_del_record_get "$1" artifact_path)
-  T_HEARTBEAT=$(fm_del_record_get "$1" heartbeat_secs)
-  T_SILENCE=$(fm_del_record_get "$1" silence_secs)
-  T_SUPERVISOR=$(fm_del_record_get "$1" supervisor)
-  T_REGISTERED=$(fm_del_record_get "$1" registered_at)
-  T_DISPATCHED=$(fm_del_record_get "$1" dispatched_at)
-  T_LAST_KIND=$(fm_del_record_get "$1" last_receipt_kind)
-  T_LAST_AT=$(fm_del_record_get "$1" last_receipt_at)
-  T_LAST_PATH=$(fm_del_record_get "$1" last_receipt_path)
-  T_LAST_HASH=$(fm_del_record_get "$1" last_receipt_hash)
-  T_HAS_PROGRESS=$(fm_del_record_get "$1" has_progress)
-  T_CLOSED=$(fm_del_record_get "$1" closed)
-  T_CLOSED_AT=$(fm_del_record_get "$1" closed_at)
-  T_ESCALATED=$(fm_del_record_get "$1" escalated_at)
-  T_ATTEMPT=$(fm_del_record_get "$1" last_attempt)
+load_task() {
+  local line key value
+  T_TASK='' T_DELIVERABLE='' T_ARTIFACT='' T_HEARTBEAT='' T_SILENCE='' T_SUPERVISOR='' T_REGISTERED='' T_DISPATCHED='' T_LAST_KIND='' T_LAST_AT='' T_LAST_PATH='' T_LAST_HASH='' T_HAS_PROGRESS='' T_CLOSED='' T_CLOSED_AT='' T_ESCALATED='' T_ATTEMPT=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *=*) ;; *) continue ;; esac
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      task) T_TASK=$value ;;
+      deliverable) T_DELIVERABLE=$value ;;
+      artifact_path) T_ARTIFACT=$value ;;
+      heartbeat_secs) T_HEARTBEAT=$value ;;
+      silence_secs) T_SILENCE=$value ;;
+      supervisor) T_SUPERVISOR=$value ;;
+      registered_at) T_REGISTERED=$value ;;
+      dispatched_at) T_DISPATCHED=$value ;;
+      last_receipt_kind) T_LAST_KIND=$value ;;
+      last_receipt_at) T_LAST_AT=$value ;;
+      last_receipt_path) T_LAST_PATH=$value ;;
+      last_receipt_hash) T_LAST_HASH=$value ;;
+      has_progress) T_HAS_PROGRESS=$value ;;
+      closed) T_CLOSED=$value ;;
+      closed_at) T_CLOSED_AT=$value ;;
+      escalated_at) T_ESCALATED=$value ;;
+      last_attempt) T_ATTEMPT=$value ;;
+    esac
+  done < "$1"
   [ -n "$T_HAS_PROGRESS" ] || T_HAS_PROGRESS=0
   [ -n "$T_CLOSED" ] || T_CLOSED=0
 }
@@ -159,19 +171,28 @@ last_receipt_label() {
   fi
 }
 
-load_handoff() {  # <file>
-  H_TASK=$(fm_del_record_get "$1" task)
+load_handoff() {
+  local line key value
   H_FILE=$1
-  H_READ_RECEIPT=$(fm_del_record_get "$1" read_receipt)
-  H_MESSAGE=$(fm_del_record_get "$1" message)
-  H_ID=$(fm_del_record_get "$1" id)
-  H_RECEIVER=$(fm_del_record_get "$1" receiver)
-  H_PATH=$(fm_del_record_get "$1" artifact_path)
-  H_HASH=$(fm_del_record_get "$1" artifact_hash)
-  H_READ_DIR=$(fm_del_record_get "$1" read_dir)
-  H_ALT_DIR=$(fm_del_record_get "$1" alt_dir)
-  H_LOCATION=$(fm_del_record_get "$1" location)
-  H_MIRRORED=$(fm_del_record_get "$1" mirrored)
+  H_TASK='' H_READ_RECEIPT='' H_MESSAGE='' H_ID='' H_RECEIVER='' H_PATH='' H_HASH='' H_READ_DIR='' H_ALT_DIR='' H_LOCATION='' H_MIRRORED=''
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in *=*) ;; *) continue ;; esac
+    key=${line%%=*}
+    value=${line#*=}
+    case "$key" in
+      task) H_TASK=$value ;;
+      read_receipt) H_READ_RECEIPT=$value ;;
+      message) H_MESSAGE=$value ;;
+      id) H_ID=$value ;;
+      receiver) H_RECEIVER=$value ;;
+      artifact_path) H_PATH=$value ;;
+      artifact_hash) H_HASH=$value ;;
+      read_dir) H_READ_DIR=$value ;;
+      alt_dir) H_ALT_DIR=$value ;;
+      location) H_LOCATION=$value ;;
+      mirrored) H_MIRRORED=$value ;;
+    esac
+  done < "$1"
   [ -n "$H_MIRRORED" ] || H_MIRRORED=0
 }
 
@@ -296,19 +317,75 @@ write_placement() {
   fi
 }
 
+artifact_under() {
+  perl -MCwd=abs_path -MFile::Basename=dirname,basename -e '
+    my ($path, $root) = @ARGV;
+    $root = abs_path($root);
+    exit 1 unless defined $root;
+    $root =~ s{/$}{} unless $root eq "/";
+    my $parent = abs_path(dirname($path));
+    exit 1 unless defined $parent;
+    my $entry = $parent . "/" . basename($path);
+    my $target = abs_path($path);
+    for my $candidate ($entry, $target) {
+      next unless defined $candidate;
+      exit 0 if $candidate eq $root || index($candidate, ($root eq "/" ? "" : $root) . "/") == 0;
+    }
+    exit 1;
+  ' "$1" "$2"
+}
+
 cmd_receipt() {
-  local f receiver=''
-  if [ "$#" -gt 0 ]; then
-    [ "$#" -eq 2 ] && [ "$1" = --receiver ] || usage_die 'receipt accepts --receiver <id>'
-    fm_del_valid_id "$2" || usage_die 'invalid receiver'
-    receiver=$2
-  fi
+  local f receiver='' root status
+  local -a removal_roots=()
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --receiver)
+        [ "$#" -ge 2 ] || usage_die 'receipt needs --receiver <id>'
+        fm_del_valid_id "$2" || usage_die 'invalid receiver'
+        receiver=$2; shift 2 ;;
+      --before-remove)
+        [ "$#" -ge 2 ] || usage_die 'receipt needs --before-remove <absolute-path>'
+        case "$2" in /*) ;; *) usage_die 'removal path must be absolute' ;; esac
+        removal_roots+=("$2"); shift 2 ;;
+      *) usage_die "unknown flag: $1" ;;
+    esac
+  done
   for f in "$HANDOFF_DIR"/*.record; do
     [ -f "$f" ] || continue
     load_handoff "$f"
     [ -z "$receiver" ] || [ "$H_RECEIVER" = "$receiver" ] || continue
     handoff_state
+    [ "$H_STATE" != read ] || continue
+    for root in ${removal_roots[@]+"${removal_roots[@]}"}; do
+      status=0
+      artifact_under "$H_PATH" "$root" || status=$?
+      case "$status" in
+        0) die "cleanup deferred: handoff $H_ID awaits a read receipt for $H_PATH" ;;
+        1) ;;
+        *) die "cannot check artifact retention for $H_PATH" ;;
+      esac
+    done
   done
+}
+
+monitor_files() {
+  local kind=$1 directory=$2
+  printf '%s\n' "$directory/"*.record | awk -v kind="$kind" '
+    {
+      file=$0; closed=""; receipt=""; path=""; hash="";
+      while ((getline line < file) > 0) {
+        sep=index(line, "="); if (!sep) continue;
+        key=substr(line, 1, sep-1); value=substr(line, sep+1);
+        if (key == "closed") closed=value;
+        else if (key == "read_receipt") receipt=value;
+        else if (key == "artifact_path") path=value;
+        else if (key == "artifact_hash") hash=value;
+      }
+      close(file);
+      if (kind == "task" ? closed != "1" : receipt != path "@" hash) print file;
+    }
+  '
 }
 
 closed_receipt() {
@@ -473,7 +550,7 @@ cmd_check() {
   [ "$#" -eq 0 ] || usage_die 'check takes no flags'
   local f now age hidden=' ' text status
   now=$(now_epoch)
-  for f in "$HANDOFF_DIR"/*.record; do
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     load_handoff "$f"
     handoff_state
@@ -485,11 +562,10 @@ cmd_check() {
     notify_supervisor "$text" "handoff:$H_ID" || status=$?
     case "$status" in 0|75) ;; *) die "cannot report handoff: $H_ID" ;; esac
     printf '%s\n' "$text"
-  done
-  for f in "$DELEGATED_DIR"/*.record; do
+  done < <(monitor_files handoff "$HANDOFF_DIR")
+  while IFS= read -r f; do
     [ -f "$f" ] || continue
     load_task "$f"
-    [ "$T_CLOSED" = 1 ] && continue
     case "$hidden" in *" $T_TASK "*) continue ;; esac
     [ -n "$T_ESCALATED" ] && continue
     if age=$(fm_del_silence_age "$now" "$(last_activity)" "$T_SILENCE"); then
@@ -505,7 +581,7 @@ cmd_check() {
       save_task "$f" || die "cannot record escalation: $T_TASK"
       printf '%s\n' "$text"
     fi
-  done
+  done < <(monitor_files task "$DELEGATED_DIR")
 }
 
 cmd_handoff() {

@@ -772,6 +772,102 @@ SH
   pass 'notification replay follows acknowledgements that precede the existence probe'
 }
 
+test_cleanup_retains_artifact_until_receipted() {
+  local h hash receiver rc
+  for receiver in firstmate worker; do
+    h=$(new_home "retained-$receiver")
+    register_task "$h" "$T0" producer || fail 'register failed'
+    mkdir "$h/producer-worktree" "$h/unrelated"
+    printf 'retained evidence\n' > "$h/producer-worktree/evidence.txt"
+    ln -s "$h/producer-worktree/evidence.txt" "$h/art/link.txt"
+    hash=$(sha_of "$h/art/link.txt")
+    del "$h" "$T0" handoff --task producer --id evidence --receiver "$receiver" --path "$h/art/link.txt" \
+      --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'handoff failed'
+    del "$h" "$T0" receipt || fail 'initial pending snapshot failed'
+    del "$h" "$T0" receipt --before-remove "$h/unrelated" || fail 'unrelated cleanup was blocked'
+    rc=0
+    del "$h" "$T0" receipt --before-remove "$h/producer-worktree" > "$h/guard.out" 2> "$h/guard.err" || rc=$?
+    assert_equals 1 "$rc" 'pending consumption must prevent artifact removal, including through a symlink'
+    assert_contains "$(cat "$h/guard.err")" 'cleanup deferred: handoff evidence' 'cleanup names the retained handoff'
+    [ -f "$h/producer-worktree/evidence.txt" ] || fail 'guard lost the artifact'
+    if [ "$receiver" = firstmate ]; then ack_primary "$h"; else
+      mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'late acknowledgement failed'
+    fi
+    del "$h" "$T0" receipt --before-remove "$h/producer-worktree" || fail 'cleanup did not resume after the late acknowledgement'
+    rm -rf "$h/producer-worktree"
+    assert_contains "$(del "$h" "$T0" view)" 'handoff=evidence state=read' 'late consumption survives artifact deletion after the guard'
+  done
+  pass 'cleanup retains pending artifacts until primary and worker read receipts are durable'
+}
+
+test_record_loaders_preserve_serialized_values() {
+  local h hash out path
+  h=$(new_home parsed-values)
+  path="$h/art/proof = value.txt"
+  printf 'literal record values\n' > "$path"
+  hash=$(sha_of "$path")
+  del "$h" "$T0" register --task literals --deliverable report --artifact "$path" --heartbeat-secs 60 --silence-secs 300 >/dev/null || fail 'register failed'
+  del "$h" "$T0" heartbeat --task literals >/dev/null || fail 'heartbeat failed'
+  assert_contains "$(del "$h" "$T0" view)" "artifact=$path" 'task loader preserves spaces and equals signs'
+  del "$h" "$T0" handoff --task literals --id evidence --receiver worker --path "$path" --hash "$hash" --alt-dir "$h/hosted" --location read >/dev/null || fail 'handoff failed'
+  mv "$h/state/worker.inbox/001.msg" "$h/state/worker.inbox/handled/" || fail 'ack failed'
+  out=$(del "$h" "$T0" view)
+  assert_contains "$out" "handoff=evidence state=read receiver=worker artifact=$path hash=$hash" 'handoff loader preserves the complete artifact receipt'
+  del "$h" "$T0" deliver --task literals --path "$path" --hash "$hash" >/dev/null || fail 'delivery failed'
+  printf 'closed=1\nclosed=0\n' >> "$h/state/delegated/literals.record"
+  out=$(del "$h" $((T0 + 400)) check) || fail 'monitor failed'
+  assert_contains "$out" 'escalation task=literals' 'the serialized record contract uses the final occurrence of a key'
+  pass 'single-pass loaders preserve literal values and last-key semantics'
+}
+
+test_closed_history_has_constant_process_cost() {
+  local h hash real_awk i trial count baseline_count='' history_count='' out
+  local -a homes
+  real_awk=$(command -v awk)
+  homes=("$(new_home process-baseline)" "$(new_home process-history)")
+  for h in "${homes[@]}"; do
+    register_task "$h" "$T0" active || fail 'active register failed'
+    register_task "$h" "$T0" template || fail 'template register failed'
+    hash=$(sha_of "$h/art/out.txt")
+    del "$h" "$T0" deliver --task template --path "$h/art/out.txt" --hash "$hash" >/dev/null || fail 'template delivery failed'
+    mkdir "$h/fakebin"
+    cat > "$h/fakebin/awk" <<'SH'
+#!/usr/bin/env bash
+printf 'awk\n' >> "$FM_AWK_PROCESS_TRACE"
+exec "$FM_REAL_AWK" "$@"
+SH
+    chmod +x "$h/fakebin/awk"
+  done
+  h=${homes[1]}
+  i=1
+  while [ "$i" -le 128 ]; do
+    cp "$h/state/delegated/template.record" "$h/state/delegated/history-$i.record"
+    printf 'task=history-%s\n' "$i" >> "$h/state/delegated/history-$i.record"
+    i=$((i+1))
+  done
+  for trial in 1 2; do
+    for h in "${homes[@]}"; do
+      : > "$h/processes"
+      out=$(PATH="$h/fakebin:$PATH" FM_REAL_AWK="$real_awk" FM_AWK_PROCESS_TRACE="$h/processes" \
+        del "$h" $((T0 + 100)) check) || fail 'traced monitoring failed'
+      [ -z "$out" ] || fail 'closed history generated spurious supervision'
+      count=$(wc -l < "$h/processes" | tr -d ' ')
+      if [ "$h" = "${homes[0]}" ]; then
+        baseline_count=$count
+      else
+        history_count=$count
+        [ "$history_count" -le "$baseline_count" ] || fail "closed history added parser processes: baseline=$baseline_count history=$history_count"
+      fi
+    done
+  done
+  out=$(del "$h" "$T0" view) || fail 'history view failed'
+  assert_contains "$out" 'task=history-128 state=closed' 'closed records remain visible in explicit history views'
+  out=$(del "$h" $((T0 + 400)) check) || fail 'active monitoring failed'
+  assert_contains "$out" 'escalation task=active' 'the cost check did not skip active supervision'
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c '^escalation ')" 'completed history never escalates'
+  pass 'closed history adds no external parser processes while live supervision and history views remain intact'
+}
+
 fm_test_run \
   test_dispatch_only_renders_dispatched_not_progressing \
   test_silent_task_escalates_exactly_once \
@@ -801,5 +897,8 @@ fm_test_run \
   test_watcher_defers_contended_supervisor \
   test_remote_routes_never_use_local_inboxes \
   test_read_channel_has_no_override \
-  test_notification_move_before_existence_check
+  test_notification_move_before_existence_check \
+  test_cleanup_retains_artifact_until_receipted \
+  test_record_loaders_preserve_serialized_values \
+  test_closed_history_has_constant_process_cost
 
