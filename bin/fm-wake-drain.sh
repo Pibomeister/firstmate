@@ -25,13 +25,17 @@
 # retirement; docs/watcher-continuity.md owns the recovery contract.
 # Queue-mutation scratch files (.main-eligible-rows.tmp.*,
 # .wake-rows.consume.*, .wake-queue.retire.*, .wake-queue.ack.*,
-# .wake-queue.actor-view.*) is created and removed under the queue lock, so one
+# .wake-queue.actor-view.*) are created and removed under the queue lock, so one
 # found while taking that lock was left by a drain that died mid-write; each
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks, acknowledgement
 # included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
 # and exit 1 with the state untouched past it.
+# Status-presentation scratch lives in one attempt-owned directory under state/.
+# On exit, including timeout, INT or TERM, the invoking process stops and reaps
+# its presentation worker before removing that directory; other readers' scratch
+# is left intact.
 # A separate per-attempt phase file under TMPDIR is removed by the invoking
 # process after the bounded presentation or from its exit trap. Descriptor 18
 # stays open while the worker writes, so caller death cannot turn a later phase

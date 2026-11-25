@@ -307,12 +307,12 @@ Every presented row is claimed to exactly one actor under the durable queue lock
 
 ### Lock deadlines during presentation
 
-An ordinary presentation drain bounds both its initial queue-lock acquire and its later status-presentation-lock acquire at the deadline owned by the script header.
+An ordinary presentation drain bounds each presentation-path lock wait separately; the status-presentation wait also falls within the combined optional-presentation deadline owned by the [drain header](../bin/fm-wake-drain.sh).
 
 | Lock with a live holder | Drain result |
 | --- | --- |
 | Initial queue lock | One PID-naming advisory, and the whole drain is skipped before any claim or mutation. |
-| Status-presentation lock | One such advisory after raw wake presentation, and status annotations, sections, and cursors are left retriable on the next drain. |
+| Status-presentation lock | One such advisory after its lock wait, or an incomplete-presentation diagnostic if the combined deadline expires first; status annotations, sections, and cursors remain retriable on the next drain. |
 
 Acknowledgement invocations and every other mutation-critical queue-lock acquire wait up to the queue lock's own bound (`fm_wake_queue_lock_acquire` in `bin/fm-wake-lib.sh`) and then exit nonzero with the queue untouched, so acknowledgement stays atomic and a stuck holder is reported rather than waited on forever.
 
@@ -392,6 +392,9 @@ The same suite pins the counted-equals-presentable invariant against `bin/fm-gua
 - Structurally unusable rows are retired by main alone while every remaining row stays presentable and acknowledgeable.
 
 Branch acknowledgement retiring the check-row receipts of exactly its granted sequences is pinned by `tests/fm-wake-queue.test.sh` for the secondmate stall receipt and by `tests/fm-inactive-reconcile.test.sh` for the inactive-outcome receipt.
+
+`tests/fm-wake-drain-unread-status.test.sh` covers presentation timeout recovery, failed-output retry on fresh and primed homes, attempt-owned scratch cleanup on timeout and handled interruptions, phase-channel separation, and independent routine-context ownership across tasks and warm history.
+`tests/fm-afk-return.test.sh` covers retention of completed drain output after a later failure while catch-up remains gated.
 
 `tests/fm-pi-branch-extension.test.sh` pins extension-side classification, claim publication and release, and the pre-drain recheck.
 

@@ -2105,8 +2105,9 @@ EOF
 # presented byte offset, and one atomic replacement commits only the contiguous
 # status spans that were successfully presented. A quiet fleet scan leaves
 # routine working/done bytes unacknowledged so a subsequently published signal
-# can still annotate them. A missing manifest row or changed file identity is
-# offset 0 for the current file, while malformed or unreadable cursor state
+# can still annotate them. A missing manifest or row, or changed file identity,
+# is offset 0 for the current file; a decision-fold cursor never seeds a
+# presentation receipt. Malformed or unreadable presentation cursor state
 # aborts presentation without advancing any offset. A trusted cursor at EOF
 # prints nothing, so already-presented bytes are not replayed as new. Teardown
 # retires a task's manifest row with its status file, so reusing a task ID starts
