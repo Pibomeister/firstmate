@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# fm-memory-guard.sh - host memory and swap self-monitoring that names, but
-# never stops, a runaway scratch process.
+# fm-memory-guard.sh - host memory and swap self-monitoring that names a
+# runaway process and, only in mode=stop-scratch, stops a runaway scratch one.
 #
 # Usage:
 #   fm-memory-guard.sh check [--json] [--observe]
@@ -19,6 +19,8 @@
 #          and `ps -axo pid=,ucomm=` (Linux uses -eo and comm). The name is
 #          read on its own because it can hold spaces; it is reduced to its
 #          basename. macOS ucomm names the real executable, not argv[0].
+# The sample time is the clock right after the process table read, and the
+# executable name loses the padding macOS adds.
 # A swap read that fails is swap_used_mb=unknown. A process read that fails
 # leaves the top fields as `-` and makes the pass exit 1 unless it alarms;
 # when both fail the status is unreadable.
@@ -30,8 +32,9 @@
 #   state/memory-guard.tsv     one sample row per pass, tab-separated, no header:
 #                              epoch swap_used_mb top_pid top_rss_mb top_comm status action
 #                              Trimmed to the newest log_max_rows rows.
-#   state/memory-guard-seen.tsv  pid start first_seen last_seen for each process
-#                              at or over proc_rss_mb.
+#   state/memory-guard-seen.tsv  pid start first_seen last_seen read_secs for
+#                              each process at or over proc_rss_mb; read_secs
+#                              is how long the read that set start took.
 #   state/memory-guard-alarms.tsv  key last_emitted for each alarm in force.
 #
 # Keys and defaults:
@@ -40,13 +43,20 @@
 #   proc_sustained_secs=900    a watched process this long is an alarm
 #   alarm_repeat_secs=3600     an alarm still in force is printed again after this
 #   log_max_rows=2000          sample rows kept
+#   scratch_stop_secs=420      stop-scratch only: a scratch process that has
+#                              held proc_rss_mb this long is stopped; a value
+#                              over proc_sustained_secs counts as that value
 #   mode=observe               observe reports each alarm; reap-scratch also
-#                              classifies each sustained process as below
+#                              classifies each sustained process as below;
+#                              stop-scratch also stops a scratch process
 # A key whose value is not a positive integer keeps its default and prints a
-# stderr note. Any mode other than reap-scratch is observe.
+# stderr note. Any mode other than reap-scratch or stop-scratch is observe.
 #
-# Sustained window: a process is tracked by pid and start time (now - etime,
-# matched within 5 s, so a reused pid starts a new window). A process that
+# Sustained window: a process is tracked by pid and start time (sample time
+# minus etime). Two starts match within 5 s plus the time this process read
+# took and the time the read that set the stored start took, each counted to
+# at most 30 s, so a slow read on a loaded host keeps the window and a reused
+# pid starts a new one. A process that
 # drops under proc_rss_mb, or was last seen more than 600 s ago, starts again,
 # so samples must come at least every 600 s for any process to be sustained.
 #
@@ -54,12 +64,36 @@
 # sustained), alarm (swap at or over swap_warn_mb or a sustained process), or
 # unreadable (both reads failed).
 # Action: none, or a comma list of would-stop:<pid> (a sustained process that
-# is disposable scratch) and spared:<pid> (one that is not).
+# is disposable scratch), spared:<pid> (one that is not), and in stop-scratch
+# stopped:<pid>, stop-failed:<pid>, and stop-deferred:<pid>.
 #
-# The guard never sends a signal in any mode: it contains no kill call. With
-# mode=reap-scratch and no --observe, each sustained process is classified,
-# and the alarm names it as one that would be stopped only when every rule
-# holds; a process that is classified that way is still left running:
+# observe and reap-scratch never send a signal, and neither does any mode with
+# --observe. With mode=reap-scratch and no --observe, each sustained process
+# is classified, and the alarm names it as one that would be stopped only when
+# every rule below holds; it is still left running.
+#
+# With mode=stop-scratch and no --observe, a process that has held proc_rss_mb
+# for scratch_stop_secs is classified by the same rules, and one that passes
+# every rule is stopped. A spared process alarms after proc_sustained_secs as
+# in the other modes and is never signalled, so an agent session, a
+# supervisor, and every process with children stay alarm-only.
+# Stops run largest first. A stop starts only in the first 15 s of a pass, so
+# a caller's 30 s bound does not cut one short; a process left over is named
+# stop-deferred and waits for the next pass. Right before each signal the
+# guard reads that one pid again: it must still have the same start time,
+# user, executable name, and command line; before the first signal it must
+# also still be at or over proc_rss_mb and have no child process (pgrep -P).
+# A process that fails the first check has changed since the sample: nothing
+# is signalled, and it stays watched. The guard then sends TERM to that pid
+# alone, never to a process group or to another process, waits up to 5 s for
+# it to be gone (absent, a zombie, or its pid reused), and sends KILL when the
+# same process is still there, waiting up to 3 s more. A process that could
+# not be checked or is still running afterwards is stop-failed, and each later
+# pass tries again. A stop or a failed stop is an alarm, so the pass exits 3
+# and reports it; a deferred or changed process alarms only once it is
+# sustained.
+#
+# The rules, all of which must hold:
 #   - it belongs to the guard's own uid and is not the guard or an ancestor;
 #   - no protected name is its command name, its argv[0] basename, any path
 #     component of any argument, or the leading word of one (claude-code,
@@ -95,7 +129,8 @@
 #     name. TMPDIR counts as a temp root only when it resolves under /tmp,
 #     /private/tmp, or /var/folders/<a>/<b>/T. No argument may hold a ..
 #     segment, and an argument that only names a temp path does not make a
-#     process scratch. A child of a test runner gets no special treatment;
+#     process scratch. A child of a test runner gets no special treatment,
+#     and a test-queue run is not a class of its own;
 #   - names and paths are compared without case, since macOS file systems
 #     usually ignore it;
 #   - a script run straight through its shebang on Linux names itself, not
@@ -107,6 +142,7 @@
 # this pass:
 #   memory-guard: status=<s> swap_used_mb=<n|unknown> top_pid=<n|-> top_rss_mb=<n|-> top_comm=<name|-> mode=<m> action=<a>
 #   MEMORY_GUARD_ALARM: <what is over which limit, and what was done>
+# A stop is always printed, whatever alarm_repeat_secs says.
 # An alarm still in force inside alarm_repeat_secs is not printed again.
 #
 # Exit status: 0 for ok or watch, 3 for alarm (even when the sample could not
@@ -115,8 +151,11 @@
 # a usage error.
 #
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
-# clock, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
-# FM_MEMORY_GUARD_MEMINFO replaces /proc/meminfo. ps and sysctl come from PATH.
+# clock, FM_MEMORY_GUARD_CLOCK names a file whose first line is the clock at
+# each reading, FM_MEMORY_GUARD_ELAPSED adds seconds to the time the pass has
+# run, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
+# FM_MEMORY_GUARD_MEMINFO replaces /proc/meminfo. ps, pgrep, and sysctl come
+# from PATH.
 set -u
 
 usage() {
@@ -153,18 +192,37 @@ SEEN=$STATE/memory-guard-seen.tsv
 ALARMS=$STATE/memory-guard-alarms.tsv
 WINDOW_GAP_SECS=600
 START_SLACK_SECS=5
+READ_TOOK_MAX_SECS=30
+STOP_START_MAX_SECS=15
+STOP_TERM_WAIT_SECS=5
+STOP_KILL_WAIT_SECS=3
+TAB=$'\t'
 SELF_PIDS=''
 
-now=
+fixed_now=
+clock_file=
+elapsed_extra=0
 os=
 meminfo=/proc/meminfo
 if [ "${FM_TEST_SEAM:-}" = 1 ]; then
-  now=${FM_MEMORY_GUARD_NOW:-}
+  fixed_now=${FM_MEMORY_GUARD_NOW:-}
+  clock_file=${FM_MEMORY_GUARD_CLOCK:-}
+  case "${FM_MEMORY_GUARD_ELAPSED:-}" in '' | *[!0-9]*) ;; *) elapsed_extra=$FM_MEMORY_GUARD_ELAPSED ;; esac
   os=${FM_MEMORY_GUARD_OS:-}
   meminfo=${FM_MEMORY_GUARD_MEMINFO:-$meminfo}
 fi
-[ -n "$now" ] || now=$(date +%s)
 [ -n "$os" ] || os=$(uname -s)
+
+# clock: a test clock when one is set, else the wall clock.
+clock() {
+  if [ -n "$clock_file" ]; then head -n 1 "$clock_file"
+  elif [ -n "$fixed_now" ]; then printf '%s\n' "$fixed_now"
+  else date +%s
+  fi
+}
+# elapsed: whole seconds this pass has run.
+elapsed() { printf '%s\n' "$((SECONDS + elapsed_extra))"; }
+now=$(clock)
 
 conf_get() {  # <key> -> last value, empty when absent
   [ -f "$CONF" ] || return 0
@@ -192,11 +250,13 @@ proc_rss_mb=$(conf_int proc_rss_mb 8192)
 proc_sustained_secs=$(conf_int proc_sustained_secs 900)
 alarm_repeat_secs=$(conf_int alarm_repeat_secs 3600)
 log_max_rows=$(conf_int log_max_rows 2000)
+scratch_stop_secs=$(conf_int scratch_stop_secs 420)
+[ "$scratch_stop_secs" -le "$proc_sustained_secs" ] || scratch_stop_secs=$proc_sustained_secs
 mode=$(conf_get mode)
 case "$mode" in
   '' | observe) mode=observe ;;
-  reap-scratch) ;;
-  *) printf 'memory-guard: config: mode=%s is not observe or reap-scratch; using observe\n' "$mode" >&2
+  reap-scratch | stop-scratch) ;;
+  *) printf 'memory-guard: config: mode=%s is not observe, reap-scratch, or stop-scratch; using observe\n' "$mode" >&2
     mode=observe ;;
 esac
 [ "$force_observe" = 0 ] || mode=observe
@@ -235,12 +295,30 @@ ps_select() { case "$os" in Darwin) printf '%s\n' -axo ;; *) printf '%s\n' -eo ;
 comm_field() { case "$os" in Darwin) printf '%s\n' ucomm ;; *) printf '%s\n' comm ;; esac; }
 
 # Prints pid uid ppid pgid rss_kb etime_secs comm args, tab-separated; comm is
-# the basename of ps comm, and every tab or control byte is a space.
-read_procs() {  # <names-scratch-file>
-  local sel table
+# the basename of ps comm without the padding macOS adds, and every tab or
+# control byte is a space. With a pid it reads that one process. It sets
+# READ_AT to the clock right after the table read and READ_TOOK to how long
+# that read took, because etime is only as old as the read.
+READ_AT=
+READ_TOOK=0
+read_procs() {  # <names-scratch-file> [pid]
+  local sel table before
   sel=$(ps_select)
-  table=$(ps -ww "$sel" pid=,uid=,ppid=,pgid=,rss=,etime=,args= 2>/dev/null) || return 1
-  ps -ww "$sel" "pid=,$(comm_field)=" > "$1" 2>/dev/null || : > "$1"
+  before=$(clock)
+  if [ -n "${2:-}" ]; then
+    table=$(ps -ww -o pid=,uid=,ppid=,pgid=,rss=,etime=,args= -p "$2" 2>/dev/null) || return 1
+  else
+    table=$(ps -ww "$sel" pid=,uid=,ppid=,pgid=,rss=,etime=,args= 2>/dev/null) || return 1
+  fi
+  READ_AT=$(clock)
+  READ_TOOK=$((READ_AT - before))
+  [ "$READ_TOOK" -ge 0 ] || READ_TOOK=0
+  [ "$READ_TOOK" -le "$READ_TOOK_MAX_SECS" ] || READ_TOOK=$READ_TOOK_MAX_SECS
+  if [ -n "${2:-}" ]; then
+    ps -ww -o "pid=,$(comm_field)=" -p "$2" > "$1" 2>/dev/null || : > "$1"
+  else
+    ps -ww "$sel" "pid=,$(comm_field)=" > "$1" 2>/dev/null || : > "$1"
+  fi
   [ -n "$table" ] || return 1
   printf '%s\n' "$table" | awk -v names="$1" '
     function secs(e,   d, n, p, t, i) {
@@ -255,7 +333,7 @@ read_procs() {  # <names-scratch-file>
       while ((getline l < names) > 0) {
         sub(/^[[:space:]]+/, "", l)
         p = l; sub(/[[:space:]].*/, "", p)
-        c = l; sub(/^[^[:space:]]+[[:space:]]*/, "", c)
+        c = l; sub(/^[^[:space:]]+[[:space:]]*/, "", c); sub(/[[:space:]]+$/, "", c)
         if (p ~ /^[0-9]+$/) comm[p] = c
       }
     }
@@ -505,6 +583,9 @@ procs_ok=1
 state_ok=1
 read_procs "$WORK/names" > "$WORK/procs" || procs_ok=0
 [ -s "$WORK/procs" ] || procs_ok=0
+# etime is as old as the read, so the sample time is the end of the read.
+[ "$procs_ok" = 0 ] || now=$READ_AT
+read_took=$READ_TOOK
 [ "$swap_ok" = 1 ] || echo "memory-guard: swap could not be read on $os" >&2
 [ "$procs_ok" = 1 ] || echo "memory-guard: the process table could not be read" >&2
 
@@ -514,20 +595,30 @@ if [ "$procs_ok" = 1 ]; then
   [ -n "$top_pid" ] || { top_pid=- top_rss=- top_comm=-; }
 fi
 
-# Sustained window bookkeeping: rewrite the seen file from this sample.
+# Sustained window bookkeeping: rewrite the seen file from this sample. A
+# start time is only as exact as the read that gave it, so the match allows
+# for this read and for the read that set the stored start.
+stop_at=0
+[ "$mode" != stop-scratch ] || stop_at=$scratch_stop_secs
 : > "$WORK/seen"
 : > "$WORK/sustained"
+: > "$WORK/stop-due"
 if [ "$procs_ok" = 1 ]; then
   awk -F'\t' -v now="$now" -v lim="$proc_rss_mb" -v sus="$proc_sustained_secs" -v gap="$WINDOW_GAP_SECS" -v slack="$START_SLACK_SECS" \
-      -v seen="$SEEN" -v sout="$WORK/seen" -v susout="$WORK/sustained" '
-    BEGIN { while ((getline l < seen) > 0) { split(l, f, "\t"); if (f[1] ~ /^[0-9]+$/) { st[f[1]] = f[2]; fs[f[1]] = f[3]; ls[f[1]] = f[4] } } }
+      -v took="$read_took" -v stopat="$stop_at" -v seen="$SEEN" -v sout="$WORK/seen" -v susout="$WORK/sustained" -v dueout="$WORK/stop-due" '
+    BEGIN { while ((getline l < seen) > 0) { split(l, f, "\t"); if (f[1] ~ /^[0-9]+$/) { st[f[1]] = f[2]; fs[f[1]] = f[3]; ls[f[1]] = f[4]; tk[f[1]] = (f[5] ~ /^[0-9]+$/) ? f[5] : 0 } } }
     $5 / 1024 >= lim + 0 {
-      pid = $1; start = now - $6; first = now
-      if ((pid in st) && (start - st[pid] <= slack) && (st[pid] - start <= slack) && (now - ls[pid] <= gap)) { first = fs[pid]; start = st[pid] }
-      printf "%s\t%s\t%s\t%s\n", pid, start, first, now > sout
+      pid = $1; start = now - $6; first = now; mine = took
+      if ((pid in st) && (now - ls[pid] <= gap)) {
+        d = start - st[pid]; if (d < 0) d = -d
+        if (d <= slack + tk[pid] + took) { first = fs[pid]; start = st[pid]; mine = tk[pid] }
+      }
+      printf "%s\t%s\t%s\t%s\t%s\n", pid, start, first, now, mine > sout
       held = now - first
       if (held >= sus + 0) printf "%s\t%d\t%d\t%s\n", pid, $5 / 1024, held, $7 > susout
+      if (stopat + 0 > 0 && held >= stopat + 0) printf "%s\t%d\t%d\t%s\n", pid, $5 / 1024, held, $7 > dueout
     }' "$WORK/procs"
+  cp "$WORK/seen" "$WORK/seen-now" 2>/dev/null || : > "$WORK/seen-now"
   mv -f "$WORK/seen" "$SEEN" 2>/dev/null || { echo "memory-guard: cannot write $SEEN" >&2; state_ok=0; }
 fi
 
@@ -536,23 +627,142 @@ watched=0
 swap_alarm=0
 [ "$swap_ok" = 1 ] && [ "$swap_mb" -ge "$swap_warn_mb" ] && swap_alarm=1
 
-# Classify each sustained process as would-stop scratch or spared, only in
-# reap-scratch mode; observe does no classification work.
+# Classify each process that is due as scratch or spared: the sustained ones
+# in reap-scratch, the ones past scratch_stop_secs in stop-scratch. observe
+# does no classification work.
 actions=''
 : > "$WORK/verdicts"
-if [ "$mode" = reap-scratch ] && [ -s "$WORK/sustained" ]; then
-  cut -f 1 "$WORK/sustained" > "$WORK/cands"
+REPORT=$WORK/sustained
+[ "$mode" != stop-scratch ] || REPORT=$WORK/stop-due
+if [ "$mode" != observe ] && [ -s "$REPORT" ]; then
+  cut -f 1 "$REPORT" > "$WORK/cands"
   SELF_PIDS=$(self_pids)
   judge "$WORK/cands" < "$WORK/procs" > "$WORK/verdicts"
 fi
 
 verdict_of() { awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $3; exit }' "$WORK/verdicts"; }
 
+# --- stop (mode=stop-scratch only) ------------------------------------------------
+
+# proc_gone <pid>: no such process, or only a zombie that holds no memory.
+proc_gone() {
+  local st
+  st=$(ps -o stat= -p "$1" 2>/dev/null) || return 0
+  st=$(printf '%s' "$st" | tr -d '[:space:]')
+  case "$st" in '' | Z*) return 0 ;; esac
+  return 1
+}
+
+# wait_gone <pid> <secs>: true once the process is gone, false after <secs>.
+wait_gone() {
+  local end=$((SECONDS + $2))
+  while :; do
+    ! proc_gone "$1" || return 0
+    [ "$SECONDS" -lt "$end" ] || return 1
+    sleep 0.2
+  done
+}
+
+# recheck <pid> <start> <read-secs> <uid> <comm> <args> <strict|identity>:
+# read that one pid again. 0: the same process (and, for strict, still at or
+# over the limit, still an interpreter, and childless). 1: gone or changed;
+# RECHECK_SAME_START is 1 when the pid still holds a process with that start.
+# 2: it could not be checked.
+RECHECK_SAME_START=0
+recheck() {
+  local row r_uid r_rss r_etime r_comm r_args start d rc=0
+  RECHECK_SAME_START=0
+  read_procs "$WORK/recheck-names" "$1" > "$WORK/recheck" || return 1
+  row=$(awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $5 "\t" $6 "\t" $7 "\t" $8; exit }' "$WORK/recheck")
+  [ -n "$row" ] || return 1
+  IFS=$'\t' read -r r_uid r_rss r_etime r_comm r_args <<EOF
+$row
+EOF
+  start=$((READ_AT - r_etime))
+  d=$((start - $2)); [ "$d" -ge 0 ] || d=$((0 - d))
+  [ "$d" -le $((START_SLACK_SECS + $3 + READ_TOOK)) ] || return 1
+  RECHECK_SAME_START=1
+  [ "$r_uid" = "$4" ] && [ "$r_comm" = "$5" ] && [ "$r_args" = "$6" ] || return 1
+  [ "$7" = strict ] || return 0
+  [ $((r_rss / 1024)) -ge "$proc_rss_mb" ] || return 1
+  real_interpreter "$1" || return 1
+  command -v pgrep >/dev/null 2>&1 || return 2
+  pgrep -P "$1" >/dev/null 2>&1 || rc=$?
+  case "$rc" in
+    0) return 1 ;;
+    1) return 0 ;;
+    *) return 2 ;;
+  esac
+}
+
+# stop_scratch <pid>: stop one eligible process. Sets STOP_OUTCOME to stopped,
+# stop-failed, or changed, and STOP_DETAIL to the signal or the reason.
+STOP_OUTCOME=
+STOP_DETAIL=
+stop_scratch() {
+  local pid=$1 start took uid comm args rc=0
+  STOP_OUTCOME=stop-failed
+  STOP_DETAIL="it could not be checked before the signal"
+  case "$pid" in '' | *[!0-9]* | 0 | 1) return 0 ;; esac
+  IFS=$'\t' read -r start took <<EOF
+$(awk -F'\t' -v p="$pid" '$1 == p { printf "%s\t%s\n", $2, ($5 ~ /^[0-9]+$/ ? $5 : 0); exit }' "$WORK/seen-now")
+EOF
+  IFS=$'\t' read -r uid comm args <<EOF
+$(awk -F'\t' -v p="$pid" '$1 == p { printf "%s\t%s\t%s\n", $2, $7, $8; exit }' "$WORK/procs")
+EOF
+  case "$start" in '' | *[!0-9]*) return 0 ;; esac
+  [ -n "$uid" ] && [ -n "$comm" ] && [ -n "$args" ] || return 0
+  recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" strict || rc=$?
+  case "$rc" in
+    0) ;;
+    1) STOP_OUTCOME=changed STOP_DETAIL="changed before the stop"; return 0 ;;
+    *) return 0 ;;
+  esac
+  kill -TERM "$pid" 2>/dev/null || :
+  if wait_gone "$pid" "$STOP_TERM_WAIT_SECS"; then
+    STOP_OUTCOME=stopped STOP_DETAIL=TERM
+    return 0
+  fi
+  if ! recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" identity; then
+    if [ "$RECHECK_SAME_START" = 1 ]; then
+      STOP_DETAIL="it changed after TERM and was not signalled again"
+    else
+      STOP_OUTCOME=stopped STOP_DETAIL=TERM
+    fi
+    return 0
+  fi
+  kill -KILL "$pid" 2>/dev/null || :
+  if wait_gone "$pid" "$STOP_KILL_WAIT_SECS" || { ! recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" identity && [ "$RECHECK_SAME_START" = 0 ]; }; then
+    STOP_OUTCOME=stopped STOP_DETAIL=KILL
+  else
+    STOP_DETAIL="it is still running after TERM and KILL"
+  fi
+  return 0
+}
+
+# Work through the eligible processes, largest first, while the pass has time.
+: > "$WORK/stops"
+if [ "$mode" = stop-scratch ] && [ -s "$WORK/verdicts" ]; then
+  awk -F'\t' 'NR == FNR { if ($2 == "eligible") e[$1] = 1; next } ($1 in e)' "$WORK/verdicts" "$WORK/stop-due" |
+    sort -t "$TAB" -k 2,2nr > "$WORK/stop-queue"
+  while IFS=$'\t' read -r -u 3 pid _; do
+    [ -n "$pid" ] || continue
+    if [ "$(elapsed)" -gt "$STOP_START_MAX_SECS" ]; then
+      STOP_OUTCOME=stop-deferred STOP_DETAIL="this pass had no time left"
+    else
+      stop_scratch "$pid"
+    fi
+    printf '%s\t%s\t%s\n' "$pid" "$STOP_OUTCOME" "$STOP_DETAIL" >> "$WORK/stops"
+  done 3< "$WORK/stop-queue"
+fi
+
+stop_of() { awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $3; exit }' "$WORK/stops"; }
+
 : > "$WORK/alarm-lines"
 : > "$WORK/alarm-keys"
-add_alarm() {  # <key> <line>
+add_alarm() {  # <key> <line> [always]
   printf '%s\n' "$1" >> "$WORK/alarm-keys"
-  printf '%s\t%s\n' "$1" "$2" >> "$WORK/alarm-lines"
+  printf '%s\t%s\t%s\n' "$1" "${3:-}" "$2" >> "$WORK/alarm-lines"
 }
 
 if [ "$swap_alarm" = 1 ]; then
@@ -563,22 +773,51 @@ fi
 
 while IFS=$'\t' read -r pid rss held comm; do
   [ -n "$pid" ] || continue
-  start=$(awk -F'\t' -v p="$pid" '$1 == p { print $2; exit }' "$SEEN" 2>/dev/null)
-  line="pid $pid ($comm) has held $rss MB, at or over $proc_rss_mb MB, for $held s (limit $proc_sustained_secs s)"
+  start=$(awk -F'\t' -v p="$pid" '$1 == p { print $2; exit }' "$WORK/seen-now" 2>/dev/null)
   IFS=$'\t' read -r verdict reason <<EOF
 $(verdict_of "$pid")
 EOF
-  if [ "$mode" != reap-scratch ]; then
-    line="$line. Mode observe: nothing was stopped."
-  elif [ "$verdict" = eligible ]; then
-    actions="$actions${actions:+,}would-stop:$pid"
-    line="$line. Mode reap-scratch: disposable scratch that would be stopped; the guard never signals, so nothing was stopped."
-  else
-    actions="$actions${actions:+,}spared:$pid"
-    line="$line. Mode reap-scratch: spared (${reason:-unclassified}); nothing was stopped."
-  fi
-  add_alarm "proc:$pid:${start:-0}" "$line"
-done < "$WORK/sustained"
+  IFS=$'\t' read -r outcome detail <<EOF
+$(stop_of "$pid")
+EOF
+  sustained=0
+  [ "$held" -lt "$proc_sustained_secs" ] || sustained=1
+  limit=$proc_sustained_secs
+  case "$outcome" in stopped | stop-failed | stop-deferred) limit=$scratch_stop_secs ;; esac
+  line="pid $pid ($comm) has held $rss MB, at or over $proc_rss_mb MB, for $held s (limit $limit s)"
+  always=''
+  case "$mode:$outcome" in
+    stop-scratch:stopped)
+      actions="$actions${actions:+,}stopped:$pid"
+      always=always
+      if [ "$detail" = KILL ]; then line="$line. Mode stop-scratch: disposable scratch, stopped with KILL after it ignored TERM."
+      else line="$line. Mode stop-scratch: disposable scratch, stopped with TERM."
+      fi ;;
+    stop-scratch:stop-failed)
+      actions="$actions${actions:+,}stop-failed:$pid"
+      line="$line. Mode stop-scratch: disposable scratch, but the stop failed ($detail); the next pass tries again." ;;
+    stop-scratch:stop-deferred)
+      actions="$actions${actions:+,}stop-deferred:$pid"
+      [ "$sustained" = 1 ] || continue
+      line="$line. Mode stop-scratch: disposable scratch; its stop waits for the next pass ($detail)." ;;
+    stop-scratch:*)
+      # Not stopped: it alarms as a spared process does, once it is sustained.
+      [ "$sustained" = 1 ] || continue
+      [ "$outcome" != changed ] || reason=$detail
+      actions="$actions${actions:+,}spared:$pid"
+      line="$line. Mode stop-scratch: spared (${reason:-unclassified}); nothing was stopped." ;;
+    reap-scratch:*)
+      if [ "$verdict" = eligible ]; then
+        actions="$actions${actions:+,}would-stop:$pid"
+        line="$line. Mode reap-scratch: disposable scratch that would be stopped; this mode never signals, so nothing was stopped."
+      else
+        actions="$actions${actions:+,}spared:$pid"
+        line="$line. Mode reap-scratch: spared (${reason:-unclassified}); nothing was stopped."
+      fi ;;
+    *) line="$line. Mode observe: nothing was stopped." ;;
+  esac
+  add_alarm "proc:$pid:${start:-0}" "$line" "$always"
+done < "$REPORT"
 [ -n "$actions" ] || actions=none
 
 if [ "$swap_ok" = 0 ] && [ "$procs_ok" = 0 ]; then status=unreadable
@@ -590,11 +829,15 @@ fi
 # Deduplicate: print an alarm only when it is new or older than the repeat time.
 : > "$WORK/alarms-next"
 : > "$WORK/printed"
-while IFS=$'\t' read -r key line; do
+while IFS= read -r row; do
+  key=${row%%"$TAB"*}
   [ -n "$key" ] || continue
+  row=${row#*"$TAB"}
+  always=${row%%"$TAB"*}
+  line=${row#*"$TAB"}
   last=$(awk -F'\t' -v k="$key" '$1 == k { print $2; exit }' "$ALARMS" 2>/dev/null)
   case "$last" in *[!0-9]*) last='' ;; esac
-  if [ -z "$last" ] || [ $((now - last)) -ge "$alarm_repeat_secs" ]; then
+  if [ -n "$always" ] || [ -z "$last" ] || [ $((now - last)) -ge "$alarm_repeat_secs" ]; then
     printf '%s\n' "$line" >> "$WORK/printed"
     last=$now
   fi

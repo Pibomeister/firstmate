@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-memory-guard.sh: the macOS and Linux readers,
 # the sustained window, the swap alarm and its deduplication, the bounded
-# sample log, observe as the default, and the reap-scratch allowlist that
-# spares live agents, supervisors, multiplexers, and desktop apps.
+# sample log, observe as the default, the reap-scratch allowlist that
+# spares live agents, supervisors, multiplexers, and desktop apps, and the
+# stop-scratch stop of a real scratch process.
 # ps and sysctl are PATH fakes that print fixture tables; every process a
 # fixture row names is a real sleep this suite started, so a test can prove
-# the guard left it running.
+# the guard left it running. The stop cases use the real ps and the real
+# clock instead, with the table cut down to processes this suite started.
 # Optional arguments select test functions; no arguments run the full suite.
 set -u
 
@@ -23,13 +25,13 @@ OUT=
 RC=0
 H=
 CASE_N=0
-SLEEPS=''
+SLEEPS='' HOLDS=''
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
-D_runner='' D_testscript='' D_bareopt='' D_barename='' D_bunrun='' D_runner4='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved=''
+D_runner='' D_testscript='' D_bareopt='' D_barename='' D_bunrun='' D_runner4='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved='' P_padded=''
 
 # Fixture programs under the temp root are real files, as a scratch program must be.
 mkdir -p "$TMP_ROOT/bin" "$TMP_ROOT/live/bin" "$TMP_ROOT/work dir" "$TMP_ROOT/job" "$TMP_ROOT/claude-code"
-for f in runaway.sh leak.js wrap.sh wrap2.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
+for f in runaway.sh grow.pl leak.js wrap.sh wrap2.sh foreign.sh turns.sh again.sh first.sh second.sh a.sh bootstrap.js bin/leaky live/bin/fm-watchdog.sh job/work claude-code/cli.js; do
   : > "$TMP_ROOT/$f"
 done
 # Checkout-like fixtures live outside every disposable temp root, so none of
@@ -48,10 +50,23 @@ printf '%s\n' "$*" >> "$FM_FAKE_PS_LOG"
 case "$*" in
   *'-p '*) PATH=$FM_FAKE_BASE_PATH exec ps "$@" ;;
 esac
-[ "${FM_FAKE_PS_MODE:-ok}" = ok ] || exit 1
+case "${FM_FAKE_PS_MODE:-ok}" in
+  ok) ;;
+  live)
+    # The real table, cut down to the pids this suite listed.
+    PATH=$FM_FAKE_BASE_PATH ps "$@" | awk -v f="$FM_FAKE_PS_DIR/allow" 'BEGIN { while ((getline l < f) > 0) a[l] = 1 } ($1 in a)'
+    exit 0 ;;
+  *) exit 1 ;;
+esac
 case "$*" in
   *comm=*) cat "$FM_FAKE_PS_DIR/comm" ;;
-  *) cat "$FM_FAKE_PS_DIR/table" ;;
+  *)
+    cat "$FM_FAKE_PS_DIR/table"
+    # A slow read: the test clock moves on while the table is read.
+    if [ -n "${FM_FAKE_PS_ADVANCE:-}" ] && [ -n "${FM_FAKE_CLOCK:-}" ]; then
+      c=$(head -n 1 "$FM_FAKE_CLOCK")
+      printf '%s\n' "$((c + FM_FAKE_PS_ADVANCE))" > "$FM_FAKE_CLOCK"
+    fi ;;
 esac
 SH
 cat > "$FAKE/sysctl" <<'SH'
@@ -64,6 +79,8 @@ chmod +x "$FAKE/ps" "$FAKE/sysctl"
 cleanup_sleeps() {
   local p
   for p in $SLEEPS; do kill "$p" 2>/dev/null || true; done
+  # A holder can ignore TERM, so a failed stop case must not leave one behind.
+  for p in $HOLDS; do kill -KILL "$p" 2>/dev/null || true; done
   rm -rf "$OUT_ROOT"
   fm_test_cleanup
 }
@@ -103,8 +120,25 @@ guard() {  # <now> [check args...]
   RC=0
   OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
     FM_FAKE_PS_MODE="${PS_MODE:-ok}" FM_FAKE_SWAP_MODE="${SWAP_MODE:-ok}" FM_FAKE_SWAP_USED="$SWAP_USED" \
+    FM_FAKE_CLOCK="${CLOCK_FILE:-}" FM_FAKE_PS_ADVANCE="${PS_ADVANCE:-}" \
     FM_TEST_SEAM=1 FM_HOME="$H" FM_MEMORY_GUARD_NOW="$now" FM_MEMORY_GUARD_OS="${OS:-Darwin}" \
+    FM_MEMORY_GUARD_CLOCK="${CLOCK_FILE:-}" FM_MEMORY_GUARD_ELAPSED="${ELAPSED:-}" \
     FM_MEMORY_GUARD_MEMINFO="$H/meminfo" "$GUARD" check "$@" 2>&1) || RC=$?
+}
+
+# guard_slow <now> <read-secs>: one pass whose process read takes <read-secs>
+# on the test clock.
+guard_slow() {
+  printf '%s\n' "$1" > "$H/clock"
+  CLOCK_FILE=$H/clock PS_ADVANCE=$2 guard "$1"
+}
+
+# guard_live [check args...]: one pass on the real clock and the real ps,
+# which shows only the pids listed in $H/ps/allow. No test seam is set.
+guard_live() {
+  RC=0
+  OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
+    FM_FAKE_PS_MODE=live FM_FAKE_SWAP_USED=0.00M FM_HOME="$H" "$GUARD" check "$@" 2>&1) || RC=$?
 }
 
 summary() { printf '%s\n' "$OUT" | grep '^memory-guard: status=' | head -n 1; }
@@ -117,6 +151,26 @@ start_sleep() {  # [cwd] -> pid of a real, detached sleep this suite owns
   ( cd "${1:-$TMP_ROOT}" || exit 1; sleep 100000 >/dev/null 2>&1 & printf '%s\n' "$!" > "$f" )
   SLEEP_PID=$(cat "$f")
   SLEEPS="$SLEEPS $SLEEP_PID"
+}
+
+# start_hold <script-path> [first-line] -> HOLD_PID: a real bash this suite
+# owns that runs <script-path>, holds a few MB, has no child of its own, and
+# waits on a fifo nothing writes to. [first-line] runs before it waits.
+start_hold() {
+  local script=$1 i
+  mkdir -p "${script%/*}"
+  rm -f "$script.fifo" "$script.ready"
+  mkfifo "$script.fifo"
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  printf '%s\n' "${2:-:}" 'printf -v pad "%*s" 4000000 ""' ': > "$0.ready"' 'read -r _ < "$0.fifo"' > "$script"
+  ( cd "$TMP_ROOT" || exit 1; bash "$script" >/dev/null 2>&1 & printf '%s\n' "$!" > "$script.pid" )
+  HOLD_PID=$(cat "$script.pid")
+  HOLDS="$HOLDS $HOLD_PID"
+  for i in $(seq 1 50); do
+    [ ! -e "$script.ready" ] || return 0
+    sleep 0.1
+  done
+  fail "the holder $script did not start"
 }
 
 alive() { kill -0 "$1" 2>/dev/null && ! ps -o stat= -p "$1" 2>/dev/null | grep -q '^Z'; }
@@ -268,7 +322,7 @@ test_swap_threshold_and_config() {
   guard "$NOW0"
   assert_contains "$(summary)" "status=watch swap_used_mb=999 " "the last swap_warn_mb wins and a bad proc_rss_mb keeps 8192"
   assert_contains "$OUT" "memory-guard: config: proc_rss_mb=abc is not a positive integer; using 8192" "bad number note"
-  assert_contains "$OUT" "memory-guard: config: mode=kill is not observe or reap-scratch; using observe" "bad mode note"
+  assert_contains "$OUT" "memory-guard: config: mode=kill is not observe, reap-scratch, or stop-scratch; using observe" "bad mode note"
   assert_contains "$(summary)" "mode=observe" "an unknown mode is observe"
   pass "the swap limit is inclusive, deduplicated, and configurable"
 }
@@ -384,9 +438,11 @@ test_observe_default_never_signals() {
   pass "observe is the default, does no classification work, and --observe always wins"
 }
 
-test_reap_scratch_spares_live_agents_and_operator_apps() {
+# agents_fixture: one scratch process, one scratch node program, and every
+# kind of live agent, supervisor, multiplexer, and operator process.
+AGENT_NAMES='runner testchild testscript claude codex agy tmux orca nodeout app watch plain other wrapper wrapped'
+agents_fixture() {
   local name
-  new_home 'mode=reap-scratch'
   for name in scratch runner testchild testscript nodetmp claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do eval "P_$name="; done
   # shellcheck disable=SC2034 # read by reap_fixture through eval
   D_runner=$OUT_ROOT/repo D_testscript=$OUT_ROOT/repo
@@ -407,6 +463,12 @@ plain|python3|me|1|python3 /srv/big.py
 other|bash|0|1|bash $TMP_ROOT/foreign.sh
 wrapper|bash|me|1|bash $TMP_ROOT/wrap.sh
 wrapped|claude|me|P_wrapper|claude"
+}
+
+test_reap_scratch_spares_live_agents_and_operator_apps() {
+  local name
+  new_home 'mode=reap-scratch'
+  agents_fixture
   # The test runner itself stays small, so only its child is a candidate.
   RUNNER_SMALL=1 sustain
   assert_equals 3 "$RC" "reap pass alarms: $OUT"
@@ -415,7 +477,7 @@ wrapped|claude|me|P_wrapper|claude"
     alive "$pid" || fail "scratch process $name (pid $pid) was signaled: $OUT"
     action_has "would-stop:$pid" || fail "action does not name $name as would-stop: $(summary)"
   done
-  for name in runner testchild testscript claude codex agy tmux orca nodeout app watch plain other wrapper wrapped; do
+  for name in $AGENT_NAMES; do
     eval "pid=\$P_$name"
     alive "$pid" || fail "protected process $name (pid $pid) was signaled: $OUT"
     ! action_has "would-stop:$pid" || fail "$name was named as would-stop: $(summary)"
@@ -431,7 +493,7 @@ wrapped|claude|me|P_wrapper|claude"
   assert_contains "$OUT" "spared (not scratch)" "an ordinary large process is not scratch"
   assert_contains "$OUT" "spared (another user)" "another user's process is never signaled"
   assert_contains "$OUT" "spared (ancestor of protected pid $P_wrapped)" "the parent of a live agent is protected"
-  assert_contains "$OUT" "disposable scratch that would be stopped; the guard never signals, so nothing was stopped." "a scratch alarm says it would be stopped and was not"
+  assert_contains "$OUT" "disposable scratch that would be stopped; this mode never signals, so nothing was stopped." "a scratch alarm says it would be stopped and was not"
   pass "reap-scratch names only scratch processes as would-stop and spares every live agent and operator process"
 }
 
@@ -515,11 +577,6 @@ renderer|helper|me|P_runner|/opt/app/helper --type=renderer"
 }
 
 test_reap_scratch_never_signals() {
-  local code
-  # No signal path exists: outside comments the script calls no kill tool.
-  code=$(grep -vE '^[[:space:]]*#' "$GUARD")
-  [ "$(printf '%s\n' "$code" | wc -l)" -gt 100 ] || fail "the guard source was not read"
-  ! printf '%s\n' "$code" | grep -Eqw 'kill|pkill|killall' || fail "the guard script holds a signal call"
   new_home 'mode=reap-scratch'
   P_scratch=
   REAP_ROWS="scratch|bash|me|1|bash $TMP_ROOT/runaway.sh"
@@ -533,6 +590,172 @@ test_reap_scratch_never_signals() {
   action_has "would-stop:$P_scratch" || fail "the next pass does not name it again: $(summary)"
   assert_equals 0 "$(alarms)" "a would-stop alarm inside the repeat time is not printed again"
   pass "reap-scratch only reports would-stop, never signals, and deduplicates the alarm"
+}
+
+test_padded_executable_name() {
+  new_home 'mode=reap-scratch'
+  P_padded=
+  # macOS pads ucomm to 16 characters.
+  REAP_ROWS="padded|perl            |me|1|perl $TMP_ROOT/grow.pl"
+  sustain
+  assert_equals 3 "$RC" "a sustained padded-name process alarms: $OUT"
+  action_has "would-stop:$P_padded" || fail "a padded interpreter name is not scratch: $(summary)"
+  assert_contains "$OUT" "pid $P_padded (perl) has held" "the alarm names the executable without its padding"
+  assert_contains "$(summary)" "top_comm=perl mode=" "the summary names the executable without its padding"
+  pass "an executable name padded by ps still matches its interpreter"
+}
+
+test_slow_process_read_keeps_the_window() {
+  local start=$((NOW0 - 5000))
+  new_home
+  # etime is as old as the start of the read, the worst case for a slow read.
+  one() { : > "$H/ps/table"; : > "$H/ps/comm"; proc 1 0 0 10 400000 launchd /sbin/launchd
+    proc 4242 "$MYUID" 1 9000 $(( $1 - ${3:-$start} )) node 'node /srv/build.js'; guard_slow "$1" "$2"; }
+  one "$NOW0" 9
+  assert_contains "$(summary)" "status=watch" "first sight on a slow read is watch: $OUT"
+  one $((NOW0 + 300)) 0
+  one $((NOW0 + 600)) 12
+  one $((NOW0 + 890)) 0
+  assert_contains "$(summary)" "status=watch" "the window runs from the end of the first read"
+  one $((NOW0 + 909)) 0
+  assert_equals 3 "$RC" "slow and fast reads of one process keep one window: $OUT"
+  assert_contains "$OUT" "pid 4242 (node) has held 9000 MB, at or over 8192 MB, for 900 s (limit 900 s)." "the hold is counted from the end of the first read"
+  one $((NOW0 + 1200)) 0 $((start + 30))
+  assert_contains "$(summary)" "status=watch" "a start 30 s away is a new process even after slow reads"
+  pass "a slow process read neither restarts the window nor hides a reused pid"
+}
+
+test_stop_scratch_does_not_signal_a_changed_process() {
+  local t
+  new_home 'mode=stop-scratch'
+  P_scratch=
+  # The table calls this pid a scratch script, but the real process behind
+  # it is a sleep, as after a pid was reused between the sample and the stop.
+  REAP_ROWS="scratch|bash|me|1|bash $TMP_ROOT/runaway.sh"
+  for t in 0 300; do CLOCK=$((NOW0 + t)) reap_fixture; guard $((NOW0 + t)); done
+  assert_equals 0 "$RC" "a scratch process inside scratch_stop_secs is only watched: $OUT"
+  assert_contains "$(summary)" "status=watch swap_used_mb=0 top_pid=$P_scratch top_rss_mb=9000 top_comm=bash mode=stop-scratch action=none" "nothing is due before scratch_stop_secs"
+  CLOCK=$((NOW0 + 430)) reap_fixture
+  ELAPSED=16 guard $((NOW0 + 430))
+  assert_equals 0 "$RC" "a deferred stop is not an alarm: $OUT"
+  action_has "stop-deferred:$P_scratch" || fail "a pass with no time left does not defer the stop: $(summary)"
+  assert_equals 0 "$(alarms)" "a deferred stop inside the sustained window prints no alarm"
+  ! grep -q "etime=.* -p $P_scratch\$" "$H/ps.log" || fail "a deferred stop still read the process"
+  CLOCK=$((NOW0 + 480)) reap_fixture
+  guard $((NOW0 + 480))
+  grep -q "etime=.* -p $P_scratch\$" "$H/ps.log" || fail "the stop did not read the process again before the signal"
+  assert_equals 0 "$RC" "a changed process inside the sustained window is not an alarm: $OUT"
+  assert_contains "$(summary)" "status=watch" "a changed process stays watched"
+  assert_contains "$(summary)" "action=none" "a changed process is not named as stopped"
+  alive "$P_scratch" || fail "a process that changed after the sample was signaled"
+  CLOCK=$((NOW0 + 900)) reap_fixture
+  guard $((NOW0 + 900))
+  assert_equals 3 "$RC" "the changed process alarms once it is sustained: $OUT"
+  action_has "spared:$P_scratch" || fail "the changed process is not spared: $(summary)"
+  assert_contains "$OUT" "for 900 s (limit 900 s). Mode stop-scratch: spared (changed before the stop); nothing was stopped." "the alarm says why nothing was stopped"
+  alive "$P_scratch" || fail "a process that changed after the sample was signaled at the sustained pass"
+  new_home 'mode=stop-scratch'
+  sustain --observe
+  assert_contains "$(summary)" "mode=observe action=none" "--observe overrides stop-scratch"
+  ! grep -q -- "-p $P_scratch\$" "$H/ps.log" || fail "--observe ran the stop-scratch checks"
+  alive "$P_scratch" || fail "--observe signaled a scratch process"
+  pass "stop-scratch signals nothing when the process changed, the pass ran out of time, or --observe is set"
+}
+
+test_stop_scratch_spares_live_agents_and_operator_apps() {
+  local name
+  new_home 'mode=stop-scratch'
+  agents_fixture
+  RUNNER_SMALL=1 sustain
+  assert_equals 3 "$RC" "stop pass alarms: $OUT"
+  assert_not_contains "$(summary)" "stopped:" "no fixture process is named as stopped"
+  assert_not_contains "$(summary)" "stop-failed:" "no fixture process is named as a failed stop"
+  for name in scratch nodetmp $AGENT_NAMES; do
+    eval "pid=\$P_$name"
+    alive "$pid" || fail "process $name (pid $pid) was signaled in stop-scratch: $OUT"
+    action_has "spared:$pid" || [ "$name" = runner ] || fail "action does not name the spared $name: $(summary)"
+  done
+  assert_contains "$OUT" "Mode stop-scratch: spared (protected claude); nothing was stopped." "an agent harness stays alarm-only"
+  assert_contains "$OUT" "Mode stop-scratch: spared (firstmate supervisor script); nothing was stopped." "a supervisor script stays alarm-only"
+  assert_contains "$OUT" "Mode stop-scratch: spared (ancestor of protected pid $P_wrapped); nothing was stopped." "the parent of a live agent stays alarm-only"
+  assert_contains "$OUT" "Mode stop-scratch: spared (another user); nothing was stopped." "another user's process stays alarm-only"
+  pass "stop-scratch leaves every live agent, supervisor, and operator process alarm-only"
+}
+
+LIVE_CONF='mode=stop-scratch
+proc_rss_mb=2
+swap_warn_mb=99999999'
+
+test_stop_scratch_stops_only_real_scratch() {
+  local scratch worker parent kid sneaky sneakykid named p
+  new_home "$LIVE_CONF
+proc_sustained_secs=1
+scratch_stop_secs=1"
+  start_hold "$TMP_ROOT/stopme/job.sh"; scratch=$HOLD_PID
+  start_hold "$OUT_ROOT/repo/worker.sh"; worker=$HOLD_PID
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  start_hold "$TMP_ROOT/stopme/parent.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; parent=$HOLD_PID
+  kid=$(cat "$TMP_ROOT/stopme/parent.sh.kid")
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  start_hold "$TMP_ROOT/stopme/sneaky.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; sneaky=$HOLD_PID
+  sneakykid=$(cat "$TMP_ROOT/stopme/sneaky.sh.kid")
+  start_hold "$TMP_ROOT/claude-code/session.sh"; named=$HOLD_PID
+  SLEEPS="$SLEEPS $kid $sneakykid"
+  # The sneaky child is left out of the table, as a child is that starts
+  # after the sample was read.
+  printf '%s\n' "$scratch" "$worker" "$parent" "$kid" "$sneaky" "$named" > "$H/ps/allow"
+  guard_live
+  assert_equals 0 "$RC" "first sight of the real processes is watch: $OUT"
+  assert_contains "$(summary)" "status=watch" "first sight is watch"
+  assert_contains "$(summary)" "mode=stop-scratch action=none" "nothing is stopped at first sight"
+  alive "$scratch" || fail "the scratch process was signaled at first sight"
+  sleep 2
+  guard_live
+  assert_equals 3 "$RC" "a stop is an alarm: $OUT"
+  action_has "stopped:$scratch" || fail "the real scratch process is not named as stopped: $OUT"
+  wait_gone "$scratch" || fail "the real scratch process is still running: $OUT"
+  assert_contains "$OUT" "pid $scratch (bash) has held" "the stop alarm names the process"
+  assert_contains "$OUT" "s (limit 1 s). Mode stop-scratch: disposable scratch, stopped with TERM." "the stop alarm names the signal"
+  assert_not_contains "$OUT" "stop-failed" "no stop failed"
+  for p in "$worker" "$parent" "$kid" "$sneaky" "$sneakykid" "$named"; do
+    alive "$p" || fail "pid $p is not scratch and was signaled: $OUT"
+  done
+  for p in "$worker" "$parent" "$sneaky" "$named"; do
+    action_has "spared:$p" || fail "pid $p is not named as spared: $(summary)"
+  done
+  assert_contains "$OUT" "pid $worker (bash) has held" "a script outside a temp root still alarms"
+  assert_contains "$OUT" "spared (not scratch)" "a script outside a temp root is not scratch"
+  assert_contains "$OUT" "spared (has child processes)" "a scratch script with a child is spared"
+  assert_contains "$OUT" "spared (changed before the stop)" "a child found right before the signal stops the stop"
+  assert_contains "$OUT" "spared (protected claude)" "a protected name in the script path is spared"
+  guard_live
+  assert_not_contains "$(summary)" "$scratch" "the stopped process is gone from the next pass"
+  for p in "$worker" "$parent" "$sneaky" "$named"; do
+    alive "$p" || fail "pid $p was signaled on the next pass: $OUT"
+  done
+  pass "stop-scratch stops a real scratch process with TERM and nothing else"
+}
+
+test_stop_scratch_escalates_to_kill() {
+  local stubborn
+  # scratch_stop_secs over proc_sustained_secs counts as proc_sustained_secs.
+  new_home "$LIVE_CONF
+proc_sustained_secs=1
+scratch_stop_secs=600"
+  start_hold "$TMP_ROOT/stopme/stubborn.sh" 'trap "" TERM'; stubborn=$HOLD_PID
+  printf '%s\n' "$stubborn" > "$H/ps/allow"
+  guard_live
+  assert_equals 0 "$RC" "first sight is watch: $OUT"
+  sleep 2
+  guard_live --observe
+  assert_contains "$(summary)" "mode=observe action=none" "--observe overrides stop-scratch on a real scratch process: $OUT"
+  alive "$stubborn" || fail "--observe signaled the real scratch process"
+  guard_live
+  assert_equals 3 "$RC" "a stop by KILL is an alarm: $OUT"
+  action_has "stopped:$stubborn" || fail "the stubborn process is not named as stopped: $OUT"
+  wait_gone "$stubborn" || fail "the stubborn process is still running: $OUT"
+  assert_contains "$OUT" "Mode stop-scratch: disposable scratch, stopped with KILL after it ignored TERM." "the stop alarm names the escalation"
+  pass "stop-scratch sends KILL when a scratch process ignores TERM, and --observe sends nothing"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -554,4 +777,10 @@ fm_test_run \
   test_observe_default_never_signals \
   test_reap_scratch_spares_live_agents_and_operator_apps \
   test_reap_scratch_needs_a_scratch_program \
-  test_reap_scratch_never_signals
+  test_reap_scratch_never_signals \
+  test_padded_executable_name \
+  test_slow_process_read_keeps_the_window \
+  test_stop_scratch_does_not_signal_a_changed_process \
+  test_stop_scratch_spares_live_agents_and_operator_apps \
+  test_stop_scratch_stops_only_real_scratch \
+  test_stop_scratch_escalates_to_kill
