@@ -2024,7 +2024,7 @@ EOF
 }
 
 status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presented-task-ids>]
-  local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident f offset lines line safe
+  local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident offset safe
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     safe=false
@@ -2032,24 +2032,11 @@ status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presente
 $fully_presented
 " in *$'\n'"$task"$'\n'*) safe=true ;; esac
     if [ "$safe" = false ]; then
-      f="$state/$task.status"
-      offset=$(status_presentation_cursor_offset "$f") || return 1
-      lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
-      # Once any informational line in this span is presented fleet-wide, the
-      # contiguous cursor may advance through the captured endpoint. Routine
-      # lines remain unacknowledged only while they are the sole unread content,
-      # preserving delayed signal annotations without replaying a handled note
-      # that happened to follow a routine line.
-      while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-          *[![:space:]]*)
-            if status_line_is_unread_surface "$line"; then safe=true; break; fi
-            ;;
-        esac
-      done <<EOF
-$lines
-EOF
-      if [ "$safe" = false ]; then endpoint=$offset; fi
+      # The caller already classified the captured span while preparing its
+      # output. Tasks without presented annotations or informational rows keep
+      # their routine context available for a delayed signal.
+      offset=$(status_presentation_cursor_offset "$state/$task.status") || return 1
+      endpoint=$offset
     fi
     printf '%s\t%s\t%s\n' "$task" "$endpoint" "$ident" || return 1
   done <<EOF

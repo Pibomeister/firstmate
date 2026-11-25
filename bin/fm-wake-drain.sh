@@ -502,7 +502,8 @@ EOF
 # when the fold later advances the cursor. Prints nothing when nothing is
 # unread, which is the common case.
 print_unread_status_section() {
-  local snapshot=${1:-} unread task line shown=0
+  local snapshot=${1:-} unread task line previous_task='' shown=0
+  STATUS_UNREAD_PRESENTED=
 
   if [ -n "$snapshot" ]; then
     unread=$(scan_unread_surface_snapshot "$STATE" "$snapshot") || return 1
@@ -519,6 +520,11 @@ print_unread_status_section() {
       printf 'UNREAD STATUS (new since last drain, not re-printed after this presentation):\n' || return 1
     fi
     printf '%s\n' "$line" || return 1
+    if [ "$task" != "$previous_task" ]; then
+      STATUS_UNREAD_PRESENTED="$STATUS_UNREAD_PRESENTED
+$task"
+      previous_task=$task
+    fi
     shown=$((shown + 1))
   done <<EOF
 $unread
@@ -836,7 +842,6 @@ print_status_sections() {
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
   drain_phase status-classify
-  acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
   prepared=$(mktemp "$_FM_STATUS_SCRATCH_DIR/.status-presentation.prepared.XXXXXX") || return 1
   if ! {
     drain_phase status-unread && print_unread_status_section "$snapshot" \
@@ -847,6 +852,9 @@ print_status_sections() {
     rm -f -- "$prepared"
     return 1
   fi
+  # Reuse the unread scan instead of reading and classifying the span twice.
+  acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented
+$STATUS_UNREAD_PRESENTED") || { rm -f -- "$prepared"; return 1; }
   # Prepare every section before presentation, but do not commit its receipt
   # until the prepared bytes reach stdout. If the consumer closes or fails,
   # leave the receipt behind so the next drain can recover the presentation.

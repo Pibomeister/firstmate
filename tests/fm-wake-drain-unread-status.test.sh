@@ -674,6 +674,31 @@ test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
   pass 'an explicit phase trace reports progress and completion on stderr'
 }
 
+test_mixed_tasks_preserve_routine_presentation_ownership() {
+  local dir state offset
+  dir=$(make_case mixed-presentation-ownership)
+  state="$dir/state"
+  printf 'working: delayed routine context\n' > "$state/task.status"
+  printf 'note: first task answer\n' > "$state/task-1.status"
+  printf 'note: second task answer\n' > "$state/task-2.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/first.out" 2> "$dir/first.err" || fail 'mixed-task drain failed'
+  assert_grep 'task-1 note: first task answer' "$dir/first.out" 'first informational task was lost'
+  assert_grep 'task-2 note: second task answer' "$dir/first.out" 'second informational task was lost'
+  offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_presentation_cursor_offset "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$state/task.status")
+  assert_equals 0 "$offset" 'presenting other tasks acknowledged routine-only context'
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/repeat.out" 2> "$dir/repeat.err" || fail 'mixed-task repeat failed'
+  assert_no_grep 'task answer' "$dir/repeat.out" 'a successfully presented informational task replayed'
+  append_wake "$state" signal task.status 'signal: task.status' || fail 'could not queue delayed routine signal'
+  cp "$state/.wake-queue" "$dir/queue.before"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/signal.out" 2> "$dir/signal.err" || fail 'delayed routine signal failed'
+  assert_grep 'delayed routine context' "$dir/signal.out" 'other tasks consumed delayed signal context'
+  cmp "$dir/queue.before" "$state/.wake-queue" || fail 'presentation acknowledged the delayed wake'
+  pass 'mixed tasks present informational rows once while preserving routine-only context'
+}
+
 test_warm_routine_history_is_bounded_without_acknowledging_it() {
   local dir state status i epoch rc=0 offset
   dir=$(make_case warm-routine-history)
@@ -746,4 +771,5 @@ test_timeout_cleans_only_attempt_owned_presentation_scratch
 test_term_cleans_only_attempt_owned_presentation_scratch
 test_int_cleans_only_attempt_owned_presentation_scratch
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout
+test_mixed_tasks_preserve_routine_presentation_ownership
 test_warm_routine_history_is_bounded_without_acknowledging_it
