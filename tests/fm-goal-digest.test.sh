@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Behavioral coverage for bin/fm-goal-digest.sh: new-merge detection,
 # the changed flag, missed ETAs, stalls, unreachable sources, the
-# changed-only summarizer, and the LaunchAgent install and its scheduled run.
+# changed-only summarizer, LaunchAgent install, empty-array collection
+# under bash 3.2, content hashing, and summarize on/off parsing.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -116,11 +117,50 @@ make_home() {  # <name> [claude-stub]
 }
 
 run_digest() {  # <home> [now-epoch]
-  local stub
+  local stub interpreter path
   stub=$(cat "$1/.claude-stub" 2>/dev/null || printf '%s' "$TMP_ROOT/summarize.sh")
-  PATH="$FAKE:$BASE_PATH" FM_TEST_SEAM=1 FM_HOME="$1" FM_GD_FIXTURE="$FIXTURE" \
-    FM_GOAL_DIGEST_CLAUDE="$stub" \
-    FM_GD_NOW_EPOCH="${2:-}" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" "$SCRIPT" run
+  interpreter=${FM_GD_BASH:-}
+  path=${FM_GD_PATH:-$FAKE:$BASE_PATH}
+  if [ -n "$interpreter" ]; then
+    PATH="$path" FM_TEST_SEAM=1 FM_HOME="$1" FM_GD_FIXTURE="$FIXTURE" \
+      FM_GOAL_DIGEST_CLAUDE="$stub" \
+      FM_GD_NOW_EPOCH="${2:-}" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" \
+      "$interpreter" "$SCRIPT" run
+  else
+    PATH="$path" FM_TEST_SEAM=1 FM_HOME="$1" FM_GD_FIXTURE="$FIXTURE" \
+      FM_GOAL_DIGEST_CLAUDE="$stub" \
+      FM_GD_NOW_EPOCH="${2:-}" FM_GD_SUMMARY_MARKER="$TMP_ROOT/summary-marker" \
+      "$SCRIPT" run
+  fi
+}
+
+find_bash32() {
+  local b v
+  for b in ${FM_TEST_BASH32:+"$FM_TEST_BASH32"} "$HOME/.local/bin/bash-3.2" /tmp/fm-bash32/bin/bash /bin/bash; do
+    [ -n "$b" ] && [ -x "$b" ] || continue
+    # shellcheck disable=SC2016 # expanded by the child shell
+    v=$("$b" -c 'printf "%s.%s" "${BASH_VERSINFO[0]}" "${BASH_VERSINFO[1]}"' 2>/dev/null) || continue
+    [ "$v" = "3.2" ] || continue
+    printf '%s' "$b"
+    return 0
+  done
+  return 1
+}
+
+# A PATH with the collector's tools and none of the named extras, so a
+# missing shasum can be proven without also hiding python3 or cut.
+make_tool_path() {
+  local dest=$1 cmd src
+  shift
+  mkdir -p "$dest"
+  for cmd in python3 cat cut awk mkdir mktemp mv sort rm touch stat grep head tr cksum bash env printf sleep wc basename dirname uname getconf ln cp ls chmod sed; do
+    src=$(PATH="$BASE_PATH" command -v "$cmd") || continue
+    [ -e "$dest/$cmd" ] || ln -s "$src" "$dest/$cmd"
+  done
+  for cmd in "$@"; do
+    src=$(PATH="$BASE_PATH" command -v "$cmd") || continue
+    [ -e "$dest/$cmd" ] || ln -s "$src" "$dest/$cmd"
+  done
 }
 
 test_new_merge_changed_and_summarize_only_on_change() {
@@ -840,4 +880,81 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   pass "fixed runner argv, model rejection and empty output"
 }
 
-fm_test_run test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark
+test_empty_status_and_review_loops_under_bash32() {
+  local bash32 home out err rc
+  if ! bash32=$(find_bash32); then
+    pass "SKIP: no bash 3.2 binary; empty status/review collection was not proven under 3.2 nounset"
+    return 0
+  fi
+  # shellcheck disable=SC2016 # expanded by the child shell
+  err=$("$bash32" -c 'set -u; arr=(); echo "${arr[@]}"' 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "bash 3.2 at $bash32 did not abort on empty \"\${arr[@]}\" under set -u"
+  assert_contains "$err" "unbound variable" "bash 3.2 empty-array values expansion is unbound under set -u"
+  write_fixtures 0
+  home="$TMP_ROOT/home-bash32"
+  mkdir -p "$home/config" "$home/data"
+  printf 'repo = example-org/example-repo\n' > "$home/config/goal-digest"
+  printf '%s' "$TMP_ROOT/summarize.sh" > "$home/.claude-stub"
+  rm -f "$TMP_ROOT/summary-marker"
+  out=$(FM_GD_BASH="$bash32" run_digest "$home" "$RUN1_EPOCH" 2>&1) || fail "bash 3.2 empty status/review run failed: $out"
+  assert_not_contains "$out" "unbound variable" "bash 3.2 empty status/review loops must not abort"
+  assert_contains "$out" "changed=yes" "bash 3.2 empty status/review run still publishes"
+  assert_contains "$(cat "$home/data/goal-digest/latest.json")" "no sources configured" "empty status list is recorded"
+  pass "empty status and review loops complete under bash 3.2"
+}
+
+test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed() {
+  write_fixtures 0
+  local home restricted failbin out rc hash
+  home=$(make_home hash-sha256)
+  restricted="$home/rbin"
+  make_tool_path "$restricted" sha256sum
+  [ -x "$restricted/sha256sum" ] || fail "sha256sum is required for the fallback case"
+  [ ! -e "$restricted/shasum" ] || fail "restricted PATH must not contain shasum"
+  rm -f "$TMP_ROOT/summary-marker"
+  out=$(FM_GD_PATH="$FAKE:$restricted" run_digest "$home" "$RUN1_EPOCH" 2>&1) || fail "sha256sum-only run failed: $out"
+  assert_contains "$out" "changed=yes" "first sha256sum-only run is changed"
+  hash=$(cat "$home/data/goal-digest/.state/content.hash")
+  [ "${#hash}" -eq 64 ] || fail "sha256sum-only hash was not a 64-character digest (got '$hash')"
+  printf 'working [at=1]: T1 done\n' > "$home/review.status"
+  out=$(FM_GD_PATH="$FAKE:$restricted" run_digest "$home" "$RUN2_EPOCH" 2>&1) || fail "sha256sum-only changed run failed: $out"
+  assert_contains "$out" "changed=yes" "sha256sum-only hash detects later content changes"
+
+  home=$(make_home hash-empty)
+  restricted="$home/rbin"
+  make_tool_path "$restricted"
+  failbin="$home/failbin"
+  mkdir -p "$failbin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$failbin/shasum"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$failbin/sha256sum"
+  chmod +x "$failbin/shasum" "$failbin/sha256sum"
+  rc=0
+  out=$(FM_GD_PATH="$failbin:$FAKE:$restricted" run_digest "$home" "$RUN1_EPOCH" 2>&1) || rc=$?
+  [ "$rc" != 0 ] || fail "digest succeeded when both hash tools failed: $out"
+  assert_contains "$out" "content hash failed" "empty hash is refused"
+  [ ! -f "$home/data/goal-digest/.state/content.hash" ] || fail "failed hash still advanced content.hash"
+  pass "content hash uses sha256sum fallback and fails closed on an empty digest"
+}
+
+test_summarize_off_and_invalid_value_do_not_spend() {
+  write_fixtures 0
+  local home out
+  home=$(make_home sum-off)
+  printf 'summarize = off\n' >> "$home/config/goal-digest"
+  rm -f "$TMP_ROOT/summary-marker"
+  out=$(run_digest "$home" "$RUN1_EPOCH" 2>&1) || fail "summarize=off run failed: $out"
+  assert_contains "$out" "changed=yes" "summarize=off still publishes a changed digest"
+  [ ! -f "$TMP_ROOT/summary-marker" ] || fail "summarizer ran despite summarize=off"
+
+  home=$(make_home sum-bad)
+  printf 'summarize = false\n' >> "$home/config/goal-digest"
+  rm -f "$TMP_ROOT/summary-marker"
+  out=$(run_digest "$home" "$RUN1_EPOCH" 2>&1) || fail "summarize=false run failed: $out"
+  assert_contains "$out" "changed=yes" "invalid summarize still publishes a changed digest"
+  [ ! -f "$TMP_ROOT/summary-marker" ] || fail "summarizer ran despite invalid summarize value"
+  assert_contains "$out" "summarize='false' is not on or off; treating as off" "invalid summarize warns and disables"
+  pass "summarize=off and invalid summarize values do not spend"
+}
+
+fm_test_run test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend

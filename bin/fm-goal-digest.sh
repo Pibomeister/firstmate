@@ -28,7 +28,7 @@
 #   review = <label> | <local-path or ssh:<host>:<absolute-path>>
 #   stall_hours = <n>               (default 48)
 #   timeout_seconds = <n>           (per gh/ssh call, default 60)
-#   summarize = <on|off>            (default on, run only when changed)
+#   summarize = <on|off>            (default on; other values warn and disable)
 #   summarize_model = <model>       (default haiku; supported models below)
 #   output_dir = <absolute-path>    (default $FM_HOME/data/goal-digest)
 # Blank lines and lines starting with # are ignored.
@@ -133,6 +133,15 @@ trim() {
   printf '%s' "$s"
 }
 
+# gd_sha256_stdin - hex digest of stdin on either digest tool.
+gd_sha256_stdin() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 2>/dev/null | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum 2>/dev/null | awk '{print $1}'
+  fi
+}
+
 load_config() {
   local line key value label loc
   [ -f "$config_file" ] && while IFS= read -r line || [ -n "$line" ]; do
@@ -153,7 +162,16 @@ load_config() {
         fi
         ;;
       stall_hours) case "$value" in ''|*[!0-9]*) ;; *) stall_hours=$value ;; esac ;;
-            summarize) case "$value" in off) summarize=off ;; *) summarize=on ;; esac ;;
+      summarize)
+        case "$value" in
+          [Oo][Nn]) summarize=on ;;
+          [Oo][Ff][Ff]) summarize=off ;;
+          *)
+            printf '%s\n' "goal-digest: summarize='$value' is not on or off; treating as off" >&2
+            summarize=off
+            ;;
+        esac
+        ;;
       summarize_model) summarize_model=$value ;;
       output_dir) output_dir=$value ;;
       timeout_seconds) case "$value" in ''|*[!0-9]*) ;; *) timeout_seconds=$value ;; esac ;;
@@ -500,7 +518,7 @@ PY
   done
 
   local eta_pattern='(^|[^[:alnum:]_])eta[: ]+[0-9]{4}-[0-9]{2}-[0-9]{2}'
-  for i in "${!status_labels[@]}"; do
+  for i in "${status_labels[@]+"${!status_labels[@]}"}"; do
     label=${status_labels[$i]}; loc=${status_locs[$i]}
     content=$work/status-content; mtime_file=$work/status-mtime
     if ! read_source "$loc" "$content" "$mtime_file"; then
@@ -528,7 +546,7 @@ EOF
     fi
   done
 
-  for i in "${!review_labels[@]}"; do
+  for i in "${review_labels[@]+"${!review_labels[@]}"}"; do
     label=${review_labels[$i]}; loc=${review_locs[$i]}
     content=$work/review-content; mtime_file=$work/review-mtime
     if ! read_source "$loc" "$content" "$mtime_file"; then
@@ -549,7 +567,11 @@ EOF
   # merge reported once would otherwise flip the next run back to changed
   # when it drops off that list).
   local content_hash changed
-  content_hash=$({ cut -f1-5,7,8 "$work/open.tsv"; cut -f1-5 "$work/waiting.tsv"; cat "$work/waiting-unknown.tsv" "$work/missed.tsv"; cut -f1 "$work/stalled.tsv"; cat "$work/reviews.tsv" "$work/unreachable.tsv"; } | shasum -a 256 | awk '{print $1}')
+  content_hash=$(set -o pipefail; { cut -f1-5,7,8 "$work/open.tsv"; cut -f1-5 "$work/waiting.tsv"; cat "$work/waiting-unknown.tsv" "$work/missed.tsv"; cut -f1 "$work/stalled.tsv"; cat "$work/reviews.tsv" "$work/unreachable.tsv"; } | gd_sha256_stdin) || content_hash=
+  if [ -z "$content_hash" ]; then
+    printf '%s\n' "goal-digest: content hash failed; shasum or sha256sum is required" >&2
+    return 1
+  fi
   changed=no
   if [ -s "$work/new_merges.tsv" ] || [ ! -f "$hash_file" ] || [ "$(cat "$hash_file")" != "$content_hash" ]; then
     changed=yes
