@@ -1550,7 +1550,7 @@ test_record_signals_and_leaves() {
   echo slots=2 > "$FM_TEST_QUEUE_DIR/config"
   echo 20.5 > "$CASE/load"
   start_held keeper; holder=$HELD_PID
-  wait_until "keeper served at high load" status_has '^serving .*label=keeper$'
+  wait_until "keeper workload started" file_exists "$CASE/started-keeper"
   assert_equals 20.5 "$(field "$(rows admit 5)" 5)" "an admission above the ceiling did not record its reading"
   qbg run --label hot -- true 2>"$CASE/hot.err" & p=$!
   track_pids "$p"
@@ -1621,7 +1621,7 @@ test_lost_counter_leaves_a_visible_gap() {
   wait "$holder" "$p"
   assert_equals "1 4" "$(record_tickets admit)" "a lost counter reissued a dead ticket's number or left no gap"
   assert_equals 5 "$(cat "$FM_TEST_QUEUE_DIR/next")" "the counter does not bound the issued tickets"
-  pass "fm-test-queue.sh: a lost counter leaves a gap and never reissues a ticket number"
+  pass "fm-test-queue.sh: a lost counter skips one number above the highest ticket still in the spool"
 }
 
 test_help_and_usage

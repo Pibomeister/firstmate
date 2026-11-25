@@ -156,8 +156,8 @@
 #           check on admit, a fresh reading on done and leave; unknown when the
 #           probe failed. It never describes a remote host.
 #   status  - on admit; on done and leave, the status run returned to its caller
-#   reason  - on admit and done; on leave, what the last admission check found:
-#           line, slots, load, or none
+#   reason  - on admit and done; on leave, what the last admission check that
+#           found this ticket saw: line, slots, load, or none
 #   task    FM_TASK_ID, or - when empty
 #   label   the run's label, cut to 200 bytes
 # Tabs, carriage returns, and newlines in task and label become spaces.
@@ -182,10 +182,20 @@
 #     wrapper that dies any other way, for example by SIGKILL, writes no row.
 #   - A row that cannot be appended is skipped without changing the run or its
 #     status, so a recorder failure shows as a missing row.
-#   - A repeated admit or leave number, or an admit number below an earlier
-#     admit, means the counter restarted; coverage across it is unknown. When
-#     the counter is lost while tickets exist, the next ticket skips one
-#     number, so the loss shows as a gap and no number is issued twice.
+#   - A repeated admit or leave number, an admit number below an earlier admit,
+#     or a recorded number at or above next (read the record first, then next)
+#     means the counter restarted; coverage across it is unknown. next is
+#     rewritten in place, so a reader can find it empty for a moment: read it
+#     again before using it.
+#   - When the counter is lost while tickets exist, the next ticket takes the
+#     highest remaining ticket's number plus two, read before stale tickets are
+#     reclaimed. No remaining ticket's number is issued again. The skipped
+#     number is a gap when that ticket was the newest one and a ticket at or
+#     below it has a row. The number of a ticket no longer in the spool can be
+#     issued again. The restart rule catches that when both tickets with that
+#     number wrote an admit or a leave row, or when the new ticket writes admit
+#     after a higher admit. Otherwise one ticket's rows can cover the other's
+#     number, and then the record does not show that a ticket is unaccounted.
 # A nested run takes no ticket and writes no row. An offloaded run also writes
 # the remote user's record on the remote host; that file is not copied back.
 # Runs that do not go through this queue are not in the record.
@@ -723,8 +733,9 @@ cleanup() {
 
 # Sets MY_NUMBER and MY_TICKET. The number is never below an existing
 # ticket's, even when the counter file is lost, so a new ticket cannot jump
-# the line. The highest ticket is read before dead tickets are reclaimed, so a
-# dead ticket's number is not issued again, and a lost counter skips one number.
+# the line. The highest ticket is read before dead tickets are reclaimed, so
+# the number of a dead ticket still in the spool is not issued again, and a
+# lost counter skips one number above that highest ticket.
 MY_NUMBER=""
 take_ticket() {  # <label>
   local n f last=""
@@ -796,7 +807,9 @@ admission_check() {
   done < <(ticket_files)
   if [ "$head" != "$MY_TICKET" ]; then
     WAIT_REASON="waiting behind $((POSITION - 1)) earlier ticket(s)"
-    CHECK_REASON=line
+    # A check that did not find its own ticket observed no line, so the last
+    # reason it did observe stands.
+    [ "$POSITION" = 0 ] || CHECK_REASON=line
   elif [ "$serving" -ge "$SLOTS" ]; then
     WAIT_REASON="all $SLOTS slot(s) busy"
     CHECK_REASON=slots
@@ -887,9 +900,9 @@ cmd_run() {
       ticket_read "$MY_TICKET"
       T_SERVED=$(date +%s)
       ticket_write "$MY_TICKET" || { lock_release; die "cannot update ticket $n"; }
-      ADMITTED=1
       REC_HOST=local
       [ -z "$REMOTE_HOST" ] || REC_HOST="remote:$REMOTE_HOST"
+      ADMITTED=1
       record_append "$T_SERVED" admit "$REC_HOST" "$CHECK_LOAD" - -
       lock_release
       break
