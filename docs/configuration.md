@@ -1187,7 +1187,7 @@ The paths a self-landed diff must not touch are fixed in the script: the workflo
 No setting adds to or removes from that list.
 Create `state/.self-land-off` to stop every self-landing in this home, and remove it to resume.
 
-`bin/fm-self-land.sh` owns every refusal, its exit statuses, the checks it repeats in front of the merge command, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost or that the forge holds for later.
+`bin/fm-self-land.sh` owns every refusal, its exit statuses, the checks it repeats in front of the merge command, the records under `state/self-land/`, the circuit breaker and how to reset it, and the rule that settles a merge whose forge response was lost or unexpectedly deferred.
 No setting changes how long that script waits for a merge it sent.
 The `ship-landing` skill owns when a lane owner uses it.
 The file is a home-local setting and is not inherited by secondmate homes.

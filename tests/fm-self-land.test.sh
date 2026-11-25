@@ -348,7 +348,11 @@ case "${1:-} ${2:-}" in
         ;;
       *" repos/"*"/rules/branches/"*merge_queue*) ;;
       *" repos/"*"/rules/branches/"*)
-        cat "$d/github-required-rules.json"
+        [ ! -e "$d/rules-read-fail" ] || exit 1
+        cat "$d/github-required-rules.json" || exit 1
+        case " $* " in
+          *" --paginate "*) [ ! -f "$d/github-required-rules-page2.json" ] || cat "$d/github-required-rules-page2.json" ;;
+        esac
         exit 0
         ;;
       *" repos/"*"/branches/"*)
@@ -429,7 +433,7 @@ assert_refused() {  # <case_dir> <reason> <label>
   [ "$(merge_calls "$case_dir")" -eq 0 ] \
     || fail "$label: a merge command reached the forge despite the refusal"
   assert_absent "$(repo_dir "$case_dir")/pending" "$label: a refusal left a pending record"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "$label: a refusal was logged as landed"
+  [ "$(outcome_count "$case_dir" '')" -eq 0 ] || fail "$label: a refusal was reported as landed"
 }
 
 # A merge command that never reached the forge: the merge gate ran, a refusal
@@ -445,7 +449,7 @@ assert_gate_stopped() {  # <case_dir> <reason> <label>
   assert_grep 'no merge was sent' "$case_dir/stderr" "$label: the refusal did not say that no merge was sent"
   [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "$label: a merge command reached the forge"
   assert_absent "$(repo_dir "$case_dir")/pending" "$label: a stopped merge left a pending record"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "$label: a stopped merge was logged as landed"
+  [ "$(outcome_count "$case_dir" '')" -eq 0 ] || fail "$label: a stopped merge was reported as landed"
 }
 
 # The pending record an earlier run left behind, for a diff that was checked
@@ -513,10 +517,6 @@ test_lands_an_allowlisted_repository_at_the_approved_head() {
   assert_grep "self-land: landed $url head=$head merge=$MERGE_SHA" "$case_dir/stdout" \
     "lands: the landing was not reported: $(cat "$case_dir/stdout")"
   assert_absent "$(repo_dir "$case_dir")/pending" "lands: the pending record outlived a known outcome"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] \
-    || fail "lands: expected one landed line"
-  assert_grep "$head	$MERGE_SHA	landed" "$(repo_dir "$case_dir")/landed.tsv" \
-    "lands: the landed line does not name the head and merge commit"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "lands: supervision did not receive exactly one outcome"
 
@@ -900,7 +900,6 @@ test_lost_forge_response_reconciles_without_a_second_merge() {
     "lost-same-run: the reconciliation was not reported: $(cat "$case_dir/stdout")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "lost-same-run: expected exactly one merge command"
   assert_absent "$(repo_dir "$case_dir")/pending" "lost-same-run: the pending record outlived the reconciliation"
-  assert_grep "$MERGE_SHA	reconciled" "$(repo_dir "$case_dir")/landed.tsv" "lost-same-run: no reconciled line was logged"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "lost-same-run: supervision did not receive exactly one outcome"
 
@@ -915,7 +914,6 @@ test_lost_forge_response_reconciles_without_a_second_merge() {
   assert_grep 'self-land: outcome unknown' "$case_dir/stderr" \
     "lost-next-run: the unknown outcome was not reported: $(cat "$case_dir/stderr")"
   assert_present "$(repo_dir "$case_dir")/pending" "lost-next-run: the pending record was dropped with the outcome unknown"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "lost-next-run: an unknown outcome was logged as landed"
   [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "lost-next-run: an unknown outcome was reported to supervision"
 
   # The forge is still unreadable: nothing changes and nothing is sent.
@@ -931,16 +929,12 @@ test_lost_forge_response_reconciles_without_a_second_merge() {
     "lost-next-run: the reconciliation was not reported: $(cat "$case_dir/stdout")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "lost-next-run: the rerun sent a second merge command"
   assert_absent "$(repo_dir "$case_dir")/pending" "lost-next-run: the pending record outlived the reconciliation"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] \
-    || fail "lost-next-run: expected one landed line"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "lost-next-run: supervision did not receive exactly one outcome"
 
   # Another run changes nothing more.
   land "$case_dir" task-x1 "$url" --head "$head"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "lost-next-run: a later run sent a second merge command"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] \
-    || fail "lost-next-run: a later run logged the landing twice"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "lost-next-run: a later run reported the outcome twice"
 
@@ -1005,7 +999,6 @@ test_lost_forge_response_reconciles_without_a_second_merge() {
   assert_grep "merged into release/v1 at base commit $BASE_SHA, but its diff was checked against main at $BASE_SHA" "$case_dir/stderr" \
     "lost-read-other-base: the changed base was not reported: $(cat "$case_dir/stderr")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "lost-read-other-base: the reconciliation sent a second merge command"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "lost-read-other-base: expected one landed line"
   assert_absent "$(repo_dir "$case_dir")/pending" "lost-read-other-base: the settled record was kept"
   pass "reconciles a lost forge response without a duplicate merge"
 }
@@ -1025,7 +1018,6 @@ test_failed_merge_command_holds_the_repository_until_its_outcome_is_known() {
     "sent-unmerged: the kept record was not reported: $(cat "$case_dir/stderr")"
   assert_present "$(repo_dir "$case_dir")/pending" "sent-unmerged: the pending record was dropped right after the merge command"
   assert_equals sent "$(pending_state "$case_dir")" "sent-unmerged: the record must say a merge command was sent"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "sent-unmerged: an unmerged pull request was logged as landed"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "sent-unmerged: expected exactly one merge command"
 
   # The same request again does not send a second merge command.
@@ -1052,7 +1044,6 @@ test_failed_merge_command_holds_the_repository_until_its_outcome_is_known() {
   assert_grep "self-land: landed $url head=$head merge=$MERGE_SHA (reconciled)" "$case_dir/stdout" \
     "sent-late: the reconciliation was not reported: $(cat "$case_dir/stdout")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "sent-late: the reconciliation sent a second merge command"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "sent-late: expected one landed line"
   assert_absent "$(repo_dir "$case_dir")/pending" "sent-late: the pending record outlived the reconciliation"
 
   # The forge never applied it: after the grace the record is dropped and the
@@ -1086,6 +1077,58 @@ test_failed_merge_command_holds_the_repository_until_its_outcome_is_known() {
   pass "holds the repository after a failed merge command until its outcome is known"
 }
 
+# shellcheck disable=SC2016
+test_refuses_known_deferred_merges_before_the_forge_write() {
+  local case_dir head timing kind reason url=$REPO_URL/pull/410
+  for timing in initial gate; do
+    for kind in rule queued auto unreadable malformed empty; do
+      read -r case_dir head <<< "$(ready_case "deferred-$timing-$kind" 410)"
+      write_pull "$case_dir" 410 "$head" 1 release/v1
+      case "$kind" in
+        rule)
+          printf '%s\n' 'printf '\''[{"type":"merge_queue"}]\n'\'' > "$d/github-required-rules-page2.json"' > "$case_dir/change-deferred"
+          ;;
+        queued)
+          printf '%s\n' 'jq -c '\''.isInMergeQueue = true'\'' "$d/pull-410.json" > "$d/pull-410.json.new" && mv "$d/pull-410.json.new" "$d/pull-410.json"' > "$case_dir/change-deferred"
+          ;;
+        auto)
+          printf '%s\n' 'jq -c '\''.autoMergeRequest = {enabledAt: "2026-11-18T00:00:00Z"}'\'' "$d/pull-410.json" > "$d/pull-410.json.new" && mv "$d/pull-410.json.new" "$d/pull-410.json"' > "$case_dir/change-deferred"
+          ;;
+        unreadable)
+          printf '%s\n' ': > "$d/rules-read-fail"' > "$case_dir/change-deferred"
+          ;;
+        malformed)
+          printf '%s\n' 'printf '\''{}\n'\'' > "$d/github-required-rules.json"' > "$case_dir/change-deferred"
+          ;;
+        empty)
+          printf '%s\n' ': > "$d/github-required-rules.json"' > "$case_dir/change-deferred"
+          ;;
+      esac
+      if [ "$timing" = gate ]; then
+        cp "$case_dir/change-deferred" "$case_dir/hook-gate-read"
+      else
+        d="$case_dir" bash "$case_dir/change-deferred"
+      fi
+      land "$case_dir" task-x1 "$url" --head "$head"
+      case "$kind" in
+        unreadable | malformed | empty) reason=forge-read ;;
+        *) reason=deferred-merge ;;
+      esac
+      if [ "$timing" = gate ] && [ "$reason" = forge-read ]; then
+        [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "deferred-$timing-$kind: unreadable rules must refuse"
+        [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "deferred-$timing-$kind: a merge command reached the forge"
+        assert_absent "$(repo_dir "$case_dir")/pending" "deferred-$timing-$kind: a refusal left a pending record"
+        [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "deferred-$timing-$kind: a refusal was reported as landed"
+      elif [ "$timing" = gate ]; then
+        assert_gate_stopped "$case_dir" "$reason" "deferred-$timing-$kind"
+      else
+        assert_refused "$case_dir" "$reason" "deferred-$timing-$kind"
+      fi
+    done
+  done
+  pass "refuses queue requirements and pre-armed merges before every forge write"
+}
+
 test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   local case_dir head url
 
@@ -1093,12 +1136,12 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   read -r case_dir head <<< "$(ready_case queued 411)"
   printf 'queued\n' > "$case_dir/merge-effect"
   land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 0 "$(cat "$case_dir/rc")" "queued: an accepted merge in the queue is not a failure: $(cat "$case_dir/stderr")"
-  assert_grep "self-land: queued $url head=$head" "$case_dir/stdout" \
-    "queued: the queued merge was not reported: $(cat "$case_dir/stdout")"
+  expect_code 1 "$(cat "$case_dir/rc")" "queued: a deferred merge must refuse: $(cat "$case_dir/stderr")"
+  assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
+    "queued: the deferred merge was not reported: $(cat "$case_dir/stderr")"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "queued: an unmerged request was reported as landed"
   assert_no_grep 'self-land: landed' "$case_dir/stdout" "queued: a queued merge was reported as landed"
   assert_equals queued "$(pending_state "$case_dir")" "queued: the record must say the merge is queued"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "queued: a queued merge was logged as landed"
 
   # However long the queue takes, the record stays and nothing else lands.
   age_pending "$case_dir" 100000
@@ -1133,7 +1176,6 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   assert_grep "self-land: landed $url head=$head merge=$MERGE_SHA (reconciled)" "$case_dir/stdout" \
     "queued-merged: the reconciliation was not reported: $(cat "$case_dir/stdout")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "queued-merged: the reconciliation sent a second merge command"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "queued-merged: expected one landed line"
   assert_absent "$(repo_dir "$case_dir")/pending" "queued-merged: the pending record outlived the reconciliation"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "queued-merged: supervision did not receive exactly one outcome"
@@ -1144,7 +1186,7 @@ test_queued_merge_holds_the_repository_until_it_leaves_the_queue() {
   read -r case_dir head <<< "$(ready_case dequeued 413)"
   printf 'queued\n' > "$case_dir/merge-effect"
   land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 0 "$(cat "$case_dir/rc")" "dequeued: the queued merge must be accepted: $(cat "$case_dir/stderr")"
+  expect_code 1 "$(cat "$case_dir/rc")" "dequeued: the queued merge must refuse: $(cat "$case_dir/stderr")"
   rm -f "$case_dir/merge-effect"
   edit_pull "$case_dir" 413 '.isInMergeQueue = false'
   printf '%s\n' 'state=OPEN' 'merged=false' 'queued=false' 'base=main' > "$case_dir/github-outcome"
@@ -1197,12 +1239,12 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
   read -r case_dir head <<< "$(ready_case auto-merge 415)"
   printf 'auto\n' > "$case_dir/merge-effect"
   land "$case_dir" task-x1 "$url" --head "$head"
-  assert_grep "self-land: queued $url head=$head" "$case_dir/stdout" \
-    "auto-merge: the held merge was not reported: $(cat "$case_dir/stdout") $(cat "$case_dir/stderr")"
-  expect_code 0 "$(cat "$case_dir/rc")" "auto-merge: a merge the forge holds is not a failure: $(cat "$case_dir/stderr")"
-  assert_grep 'auto-merge armed' "$case_dir/stdout" "auto-merge: the report did not name the armed auto-merge"
+  expect_code 1 "$(cat "$case_dir/rc")" "auto-merge: a deferred merge must refuse: $(cat "$case_dir/stderr")"
+  assert_grep 'self-land: refused (in-flight)' "$case_dir/stderr" \
+    "auto-merge: the held merge was not reported: $(cat "$case_dir/stderr")"
+  assert_grep 'auto-merge armed' "$case_dir/stderr" "auto-merge: the report did not name the armed auto-merge"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "auto-merge: an unmerged request was reported as landed"
   assert_equals queued "$(pending_state "$case_dir")" "auto-merge: the record must say the forge holds the merge"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "auto-merge: an unmerged pull request was logged as landed"
 
   # However long the forge takes, the record stays and nothing else is sent.
   rm -f "$case_dir/merge-effect"
@@ -1234,7 +1276,7 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 0 "$(cat "$case_dir/rc")" "auto-merged: the merge must reconcile: $(cat "$case_dir/stderr")"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "auto-merged: the reconciliation sent a second merge command"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "auto-merged: expected one landed line"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] || fail "auto-merged: supervision did not receive exactly one outcome"
 
   # The run was stopped, but the merge command it sent still runs: its record
   # is not dropped for its age, because the command can still reach the forge.
@@ -1281,7 +1323,7 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
   read -r case_dir head <<< "$(ready_case auto-merge-pushed 418)"
   printf 'auto\n' > "$case_dir/merge-effect"
   land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 0 "$(cat "$case_dir/rc")" "auto-merge-pushed: the merge must be held first: $(cat "$case_dir/stderr")"
+  expect_code 1 "$(cat "$case_dir/rc")" "auto-merge-pushed: the deferred merge must refuse: $(cat "$case_dir/stderr")"
   assert_absent "$(repo_dir "$case_dir")/breaker" "auto-merge-pushed: a held merge at the approved head tripped the breaker"
   rm -f "$case_dir/merge-effect"
   edit_pull "$case_dir" 418 ".headRefOid = \"$OTHER_SHA\""
@@ -1309,7 +1351,6 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
   grep -Fxq "sha=$MERGE_SHA" "$(repo_dir "$case_dir")/breaker" \
     || fail "auto-merge-landed-other: the breaker must name the merge commit: $(cat "$(repo_dir "$case_dir")/breaker" 2>&1)"
   assert_absent "$(repo_dir "$case_dir")/pending" "auto-merge-landed-other: the settled record was kept"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "auto-merge-landed-other: an unapproved head was logged as landed"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "auto-merge-landed-other: a second merge command was sent"
 
   # The push arrives before the run reads the pull request back: the same run
@@ -1321,7 +1362,7 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
     "$OTHER_SHA" > "$case_dir/hook-merge-done"
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 1 "$(cat "$case_dir/rc")" "auto-merge-pushed-at-once: a held merge at another head is not a success: $(cat "$case_dir/stdout")"
-  assert_no_grep 'self-land: queued' "$case_dir/stdout" "auto-merge-pushed-at-once: an unapproved head was reported as a held merge"
+  assert_no_grep 'self-land: landed' "$case_dir/stdout" "auto-merge-pushed-at-once: an unapproved head was reported as landed"
   assert_present "$(repo_dir "$case_dir")/breaker" "auto-merge-pushed-at-once: the breaker was not tripped"
   assert_equals queued "$(pending_state "$case_dir")" "auto-merge-pushed-at-once: the record must say the forge holds the merge"
 
@@ -1336,7 +1377,6 @@ test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go() {
   assert_grep 'no review covers the head that landed' "$case_dir/stderr" \
     "merged-other-head: the landed head was not reported: $(cat "$case_dir/stderr")"
   assert_present "$(repo_dir "$case_dir")/breaker" "merged-other-head: the breaker was not tripped"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "merged-other-head: another head was logged as landed"
   pass "holds the repository while auto-merge is armed or a merge command still runs"
 }
 
@@ -1732,55 +1772,6 @@ test_unfinished_base_checks_refuse_until_they_finish() {
   pass "refuses while the base head has unfinished checks, and lands once they finish"
 }
 
-test_landing_whose_record_fails_is_completed_by_the_next_run() {
-  local case_dir head url=$REPO_URL/pull/451
-  read -r case_dir head <<< "$(ready_case record-fail 451)"
-  # The landed log cannot be appended to.
-  mkdir -p "$(repo_dir "$case_dir")/landed.tsv"
-  land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 3 "$(cat "$case_dir/rc")" "record-fail: a landing with an incomplete record has its own exit status: $(cat "$case_dir/stderr")"
-  assert_grep 'its record is not complete' "$case_dir/stderr" \
-    "record-fail: the incomplete record was not reported: $(cat "$case_dir/stderr")"
-  assert_no_grep 'self-land: landed' "$case_dir/stdout" "record-fail: an incomplete record was reported as a clean landing"
-  assert_present "$(repo_dir "$case_dir")/pending" "record-fail: the pending record was dropped with the log line missing"
-  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "record-fail: expected exactly one merge command"
-
-  # The log is still broken: the next run changes nothing and sends nothing.
-  land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 3 "$(cat "$case_dir/rc")" "record-fail: the record is still incomplete"
-  assert_present "$(repo_dir "$case_dir")/pending" "record-fail: the pending record was dropped while the log was broken"
-
-  # The log works again: the same command completes the record.
-  rmdir "$(repo_dir "$case_dir")/landed.tsv"
-  land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 0 "$(cat "$case_dir/rc")" "record-fail: the rerun must complete the record: $(cat "$case_dir/stderr")"
-  assert_grep "self-land: landed $url head=$head merge=$MERGE_SHA (reconciled)" "$case_dir/stdout" \
-    "record-fail: the completed record was not reported: $(cat "$case_dir/stdout")"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "record-fail: expected one landed line"
-  assert_grep "$head	$MERGE_SHA" "$(repo_dir "$case_dir")/landed.tsv" "record-fail: the landed line does not name the head and merge commit"
-  assert_absent "$(repo_dir "$case_dir")/pending" "record-fail: the pending record outlived the completed record"
-  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "record-fail: completing the record sent a second merge command"
-  [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
-    || fail "record-fail: supervision did not receive exactly one outcome"
-
-  # An earlier write of the landed line stopped part way: the log ends in a
-  # short line with no line end. That line is not the record. The next run
-  # writes the complete line, on a line of its own.
-  url=$REPO_URL/pull/455
-  read -r case_dir head <<< "$(ready_case record-partial 455)"
-  mkdir -p "$(repo_dir "$case_dir")"
-  seed_pending "$case_dir" "$url" "$head" sent || fail "record-partial: could not write the pending record"
-  printf '1790000000\ttask-x1\t%s\t%s' "$url" "$head" > "$(repo_dir "$case_dir")/landed.tsv"
-  edit_pull "$case_dir" 455 ".state = \"MERGED\" | .merged = true | .mergeCommit = {oid: \"$MERGE_SHA\"}"
-  land "$case_dir" task-x1 "$url" --head "$head"
-  expect_code 0 "$(cat "$case_dir/rc")" "record-partial: the run must complete the record: $(cat "$case_dir/stderr")"
-  [ "$(grep -c "^[0-9][0-9]*	task-x1	$url	$head	$MERGE_SHA	reconciled\$" "$(repo_dir "$case_dir")/landed.tsv")" -eq 1 ] \
-    || fail "record-partial: expected one complete landed line on a line of its own, got: $(cat "$(repo_dir "$case_dir")/landed.tsv")"
-  assert_absent "$(repo_dir "$case_dir")/pending" "record-partial: the pending record outlived the completed record"
-  [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "record-partial: completing the record sent a merge command"
-  pass "completes the record of a landing on the next run when it could not be written"
-}
-
 # shellcheck disable=SC2016 # Hook text expands when the stand-in forge runs it, not here.
 test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run() {
   local case_dir head url=$REPO_URL/pull/452
@@ -1796,7 +1787,6 @@ test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run() {
     "outcome-fail: the incomplete record was not reported: $(cat "$case_dir/stderr")"
   assert_no_grep 'self-land: landed' "$case_dir/stdout" "outcome-fail: an unreported landing was reported as a clean landing"
   assert_present "$(repo_dir "$case_dir")/pending" "outcome-fail: the pending record was dropped with the outcome unreported"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "outcome-fail: an unreported landing was logged"
 
   # The queue works again: the same command reports the outcome once.
   rmdir "$case_dir/state/.wake-queue"
@@ -1806,7 +1796,6 @@ test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run() {
     "outcome-fail: the completed record was not reported: $(cat "$case_dir/stdout")"
   [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] \
     || fail "outcome-fail: supervision did not receive exactly one outcome"
-  [ "$(wc -l < "$(repo_dir "$case_dir")/landed.tsv" | tr -d ' ')" -eq 1 ] || fail "outcome-fail: expected one landed line"
   assert_absent "$(repo_dir "$case_dir")/pending" "outcome-fail: the pending record outlived the completed record"
   [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "outcome-fail: completing the record sent a second merge command"
 
@@ -1817,7 +1806,7 @@ test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run() {
   printf '%s\n' \
     'jq -c ".baseRefName = \"release/v1\"" "$d/pull-453.json" > "$d/pull-453.json.new" && mv "$d/pull-453.json.new" "$d/pull-453.json"' \
     > "$case_dir/hook-merge-done"
-  mkdir -p "$(repo_dir "$case_dir")/landed.tsv"
+  mkdir -p "$case_dir/state/.wake-queue"
   land "$case_dir" task-x1 "$url" --head "$head"
   expect_code 3 "$(cat "$case_dir/rc")" "other-base: the record could not be completed: $(cat "$case_dir/stderr")"
   assert_present "$(repo_dir "$case_dir")/breaker" "other-base: a merge into an unchecked base did not trip the breaker"
@@ -1858,7 +1847,6 @@ test_merge_accepted_without_the_forge_gate_stops_every_later_landing() {
   assert_present "$(repo_dir "$case_dir")/breaker" "unguarded: the breaker was not tripped"
   assert_present "$(repo_dir "$case_dir")/pending" "unguarded: the record of a possibly sent merge was dropped"
   assert_equals sent "$(pending_state "$case_dir")" "unguarded: the record must say a merge may have been sent"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "unguarded: an unconfirmed merge was logged as landed"
 
   # The real wrapper refuses every later landing in the repository.
   land "$case_dir" task-x1 "$url" --head "$head"
@@ -1903,7 +1891,6 @@ JSON
     "gate-refusal: the refusal did not come from the merge gate: $(cat "$case_dir/stderr")"
   [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "gate-refusal: a merge command was sent for a red pull request"
   assert_absent "$(repo_dir "$case_dir")/pending" "gate-refusal: a refused merge left a pending record"
-  assert_absent "$(repo_dir "$case_dir")/landed.tsv" "gate-refusal: a refused merge was logged as landed"
   pass "keeps every refusal of the merge gate it wraps"
 }
 
@@ -1919,6 +1906,7 @@ fm_test_run \
   test_red_base_trips_the_breaker_and_it_stays_tripped \
   test_lost_forge_response_reconciles_without_a_second_merge \
   test_failed_merge_command_holds_the_repository_until_its_outcome_is_known \
+  test_refuses_known_deferred_merges_before_the_forge_write \
   test_queued_merge_holds_the_repository_until_it_leaves_the_queue \
   test_armed_auto_merge_holds_the_repository_until_the_forge_lets_go \
   test_inherited_forge_host_does_not_redirect_the_landing \
@@ -1928,7 +1916,6 @@ fm_test_run \
   test_branch_health_belongs_to_the_branches_and_commits_that_merge \
   test_breaker_reads_every_status_and_the_default_branch \
   test_unfinished_base_checks_refuse_until_they_finish \
-  test_landing_whose_record_fails_is_completed_by_the_next_run \
   test_landing_whose_outcome_is_not_reported_is_completed_by_the_next_run \
   test_merge_accepted_without_the_forge_gate_stops_every_later_landing \
   test_takes_no_waiver_or_forge_option \
