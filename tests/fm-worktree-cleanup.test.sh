@@ -518,6 +518,32 @@ test_pull_request_lookup_failure_removes_nothing() {
   pass "a failed pull request lookup removes nothing"
 }
 
+# The fake forge honors --limit like gh: 21 pull requests exist, the first 20
+# merged at the worktree head and the open one past the 20-row bound.
+test_pull_request_list_at_the_bound_removes_nothing() {
+  local sha i rows=''
+  begin_case prbound
+  cat > "$CASE_DIR/bin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_GH_LOG:?}"
+limit=30
+while [ "$#" -gt 0 ]; do
+  [ "$1" = --limit ] && { limit=$2; shift; }
+  shift
+done
+jq --argjson n "$limit" '.[:$n]' "${FM_TEST_GH_JSON_FILE:?}"
+SH
+  chmod +x "$CASE_DIR/bin/gh"
+  sha=$(git -C "$CASE_WT" rev-parse HEAD) || fail "could not read the worktree head"
+  for i in $(seq 1 20); do rows="$rows$(pr_row "$i" MERGED "$sha"),"; done
+  printf '[%s%s]\n' "$rows" "$(pr_row 21 OPEN "$sha")" > "$CASE_DIR/pr.json"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  assert_branch "$CASE_REPO" feature
+  assert_out "pull request lookup failed"
+  pass "a pull request list at its 20-row bound removes nothing and reports the lookup"
+}
+
 test_locked_worktree_is_not_removed() {
   begin_case locked
   publish_pr MERGED
@@ -1232,6 +1258,7 @@ fm_test_run \
   test_unknown_process_scan_removes_nothing \
   test_scan_is_silent_and_logged \
   test_pull_request_lookup_failure_removes_nothing \
+  test_pull_request_list_at_the_bound_removes_nothing \
   test_locked_worktree_is_not_removed \
   test_disabled_scan_leaves_the_worktree \
   test_task_record_keeps_the_worktree \

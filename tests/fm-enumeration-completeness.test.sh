@@ -21,8 +21,9 @@
 #   visible skip_enumeration_incomplete event, never pane-missing.
 # - bin/fm-terminal-reap.sh: orca terminal list had no --limit and only
 #   warned on truncated while judging listed terminals. Fixed: both
-#   lists retain the default limit and truncated is a hard error (exit 1,
-#   nothing closed); current_title also refuses a truncated re-list.
+#   lists retain the default limit, and truncated or totalCount above
+#   listed is a hard error (exit 1, nothing closed); current_title also
+#   refuses a truncated re-list.
 # - bin/fm-nm-run-lib.sh (fm-crew-state.sh, fm-teardown.sh runs
 #   --limit): structurally truncated overview reports unknown /
 #   incomplete with run ids, never no-run. Refuses.
@@ -55,8 +56,8 @@
 # Regression: total (211) above the server bound (200), sought item
 # past the bound. Pre-fix, fm-captain-nudge reported the live captain
 # pane missing and fm-terminal-reap judged a truncated inventory.
-# Post-fix both refuse visibly, and a complete list finds the item
-# past the old bound.
+# Post-fix both refuse visibly, on the truncated flag or on totalCount
+# alone, and a complete list finds the item past the old bound.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -131,10 +132,12 @@ test_nudge_complete_finds_past_old_bound() {
   pass "fm-enumeration: captain-nudge finds terminal past the old bound on a complete list"
 }
 
-test_reap_truncated_refuses() {
-  local home="$TMP_ROOT/reap" rc=0 out
+# run_reap_refusal <name> <truncated:true|false>: a 200-row list whose
+# totalCount is 211 must refuse with exit 1 and judge no terminal.
+run_reap_refusal() {
+  local home="$TMP_ROOT/$1" rc=0 out
   mkdir -p "$home/state" "$home/data" "$home/fakebin"
-  make_list "$home/list.json" true 200
+  make_list "$home/list.json" "$2" 200
   printf '{"ok":true,"result":{"worktrees":[]}}' > "$home/memory.json"
   cat > "$home/fakebin/orca" <<'SH'
 #!/usr/bin/env bash
@@ -155,9 +158,20 @@ SH
   assert_contains "$(cat "$home/stderr")" "enumeration incomplete" \
     "refusal must be visible in stderr"
   assert_equals "" "$out" "no terminal may be judged from a truncated list"
+}
+
+test_reap_truncated_refuses() {
+  run_reap_refusal reap-truncated true
   pass "fm-enumeration: terminal-reap refuses on truncated terminal list"
 }
 
-test_nudge_truncated_refuses_not_missing
-test_nudge_complete_finds_past_old_bound
-test_reap_truncated_refuses
+test_reap_total_count_alone_refuses() {
+  run_reap_refusal reap-total-count false
+  pass "fm-enumeration: terminal-reap refuses when totalCount exceeds the listed terminals without a truncated flag"
+}
+
+fm_test_run \
+  test_nudge_truncated_refuses_not_missing \
+  test_nudge_complete_finds_past_old_bound \
+  test_reap_truncated_refuses \
+  test_reap_total_count_alone_refuses
