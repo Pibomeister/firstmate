@@ -1411,7 +1411,7 @@ A refusal places the work on another host or cloud.
 ## Host memory guard (config/memory-guard)
 
 [`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh) samples swap use and the largest processes once per [watchdog](watchdog.md) pass, and `check` runs one sample by hand.
-The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, and `mode`.
+The optional local, gitignored `config/memory-guard` sets its swap and process limits, the sustained window, the alarm repeat time, the sample log cap, the scratch stop time, and `mode`.
 The default `mode=observe` only reports alarms and never signals a process.
 An explicit `mode=reap-scratch` also names each sustained process as `would-stop` scratch or as spared, and still stops nothing, so an operator decides what to end.
 An explicit `mode=stop-scratch` stops a scratch process once it has held the process limit for `scratch_stop_secs`, with TERM and then KILL, and leaves every other process alarm-only.
