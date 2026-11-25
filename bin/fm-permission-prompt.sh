@@ -69,8 +69,9 @@
 #       The last 20 non-blank rows are checked for a hard stop, across blank
 #       rows, because such a prompt has no boundary to prove and its warning
 #       often sits a paragraph above it. OpenSSH's unknown-host-key question
-#       (`(yes/no/[fingerprint])`) is `hardstop reserved` by that answer
-#       alone. No key. Any other screen with no
+#       (`(yes/no/[fingerprint])`, or the older `continue connecting
+#       (yes/no)`) is `hardstop reserved` by that row alone. No key. Any
+#       other screen with no
 #       recognized dialog has no verdict: other terminal and external-CLI
 #       prompts, such as a password input, are out of scope here.
 #   hold <external-imports|bypass-confirm|hooks-review>
@@ -358,7 +359,8 @@ _fm_pp_codex_daemon_rows() {  # <screen>
 
 # A screen no harness dialog explains: a terminal yes/no confirmation is held,
 # or named a hard stop from the last 20 non-blank rows. OpenSSH's question
-# about an unknown host key, known by its `/[fingerprint]` answer, is always a
+# about an unknown host key, known by its `/[fingerprint]` answer or by the
+# older `continue connecting (yes/no)` row, is always a
 # hard stop: its rows name no reserved word, and a yes trusts a host. Anything
 # else has no verdict.
 _fm_pp_plain_prompt() {  # <screen>
@@ -369,7 +371,7 @@ _fm_pp_plain_prompt() {  # <screen>
   fi
   if printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
       /[^ \t]/ { last = tolower($0) }
-      END { exit !(last ~ /\/\[fingerprint\]\)[ \t]*[?:]?[ \t]*$/) }'; then
+      END { exit !(last ~ /(\/\[fingerprint\]|continue connecting \(yes\/no)\)[ \t]*[?:]?[ \t]*$/) }'; then
     printf 'hardstop\treserved\n'; return 0
   fi
   printf 'hold\tgeneric-confirm\n'
@@ -377,9 +379,11 @@ _fm_pp_plain_prompt() {  # <screen>
 
 # A numbered picker without the answer rows its cursor is not on: its title,
 # the answer under the cursor, and its footer. A row is an answer row only
-# when its number is the next one in the picker's own count from 1, so a
-# wrapped row that happens to start with a number stays, and so does every
-# other wrapped row. Empty when no answer row carries a selection mark.
+# when its number is the next one in the picker's own count from 1 and starts
+# in the column the first answer's number starts in, the selection mark
+# counted as one blank. So a wrapped row that happens to start with a number
+# stays, and so does every other wrapped row. Empty when no answer row carries
+# a selection mark.
 _fm_pp_picker_chosen_rows() {  # <picker rows>
   printf '%s\n' "${1-}" | awk '
     BEGIN { want = 1 }
@@ -387,9 +391,19 @@ _fm_pp_picker_chosen_rows() {  # <picker rows>
       r[NR] = $0
       row = $0
       cur = 0
-      if (match(row, /^[ \t]*(❯|›|>)[ \t]*/)) { cur = 1; row = substr(row, RLENGTH + 1) }
-      else sub(/^[ \t]*/, "", row)
-      if (row ~ /^[0-9]+[.)][ \t]/ && row + 0 == want) {
+      col = 0
+      if (match(row, /^[ \t]*(❯|›|>)/)) {
+        cur = 1
+        lead = substr(row, 1, RLENGTH)
+        row = substr(row, RLENGTH + 1)
+        sub(/[^ \t]+$/, " ", lead)
+        col = length(lead)
+      }
+      match(row, /^[ \t]*/)
+      col += RLENGTH
+      row = substr(row, RLENGTH + 1)
+      if (row ~ /^[0-9]+[.)][ \t]/ && row + 0 == want && (want == 1 || col == numcol)) {
+        if (want == 1) numcol = col
         want++
         if (cur) chosen = NR; else other[NR] = 1
       }

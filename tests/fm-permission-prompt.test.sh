@@ -313,6 +313,8 @@ test_hardstop_categories() {
     "a wrapped row of the chosen answer that starts with a number still names the spend stop"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Continue\n      1) Add funds from your card\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
     "so does a wrapped row that repeats an answer number"
+  assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit\n ❯ 1. Continue, as described in\n      2. Add funds from your card\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
+    "and a wrapped row that starts with the next answer number, because it does not start in the answers' column"
   printf ' You have hit your limit\n   1. Add funds to keep going\n   2. Buy more credits\n ❯ 3. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit >/dev/null \
     && fail "paid answers above the cursor answer took a usage-limit picker from the usage-limit path"
   assert_equals $'hardstop\tspend' "$(printf ' You have hit your limit. Add funds to continue?\n ❯ 1. Yes\n   2. Wait for reset\n\n Enter to confirm · Esc to cancel\n' | classify claude usage-limit)" \
@@ -864,6 +866,8 @@ ROWS
   row='Are you sure you want to continue connecting (yes/no/[fingerprint])? '
   assert_equals $'hardstop\treserved' "$(printf 'The authenticity of host build.example.org (203.0.113.7) can not be established.\nED25519 key fingerprint is SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG.\n%s\n' "$row" | classify codex none)" \
     "a host-key trust question is a hard stop by its answer set alone"
+  assert_equals $'hardstop\treserved' "$(printf 'The authenticity of host build.example.org (203.0.113.7) can not be established.\nRSA key fingerprint is SHA256:abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG.\nAre you sure you want to continue connecting (yes/no)? \n' | classify codex none)" \
+    "and so is the form older OpenSSH releases print"
   assert_equals 'yes-no confirmation prompt' "$(printf 'Resolving packages...\n%s\n' "$row" | send_guard)" "a send is refused: $row"
   assert_equals $'hold\tgeneric-confirm' "$(printf 'Resolving packages...\nProceed? [y/N]\n' | classify claude)" "the dialog is computed from the screen when the caller passes none"
   assert_equals $'hold\tgeneric-confirm' "$(printf 'Resolving packages...\nProceed? [y/N]\n' | classify '')" "a worker with no recorded harness is held too"
@@ -990,6 +994,21 @@ test_hook_hold_and_pane_are_one_decision() {
   FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 620 once >/dev/null 2>&1
   assert_equals '' "$(typed hr)" "the reserved prompt gets no Escape after a read that missed it"
   assert_equals 1 "$(status_rows hr blocked permission-prompt-hardstop)" "and no second blocked line"
+  # Another dialog on the pane does not close the reservation either.
+  repaint hr "$FIX/claude-2.1.325-trust.txt"
+  FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 625 once >/dev/null 2>&1
+  assert_equals 0 "$(grep -c '^resolved .*\[key=permission-prompt-hardstop\]' "$H/state/hr.status")" "a different dialog on the pane does not close the reserved hold: $(cat "$H/state/hr.status")"
+  assert_equals '' "$(typed hr)" "and it gets no key"
+  # A held set that cannot be read is a reservation, never no hold.
+  if [ "$(id -u)" -ne 0 ]; then
+    worker hx claude "$FIX/claude-2.1.325-bash-prompt.txt" "$FIX/claude-2.1.325-after-escape.txt"
+    hook_request hx 'echo hello'
+    chmod 000 "$H/state/hx.permission-held"
+    FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 630 once >/dev/null 2>&1
+    chmod 600 "$H/state/hx.permission-held"
+    assert_equals '' "$(typed hx)" "a prompt whose hold cannot be read gets no Escape"
+    assert_equals 1 "$(status_rows hx blocked permission-prompt-hardstop)" "and it is reported for the owner: $(cat "$H/state/hx.status")"
+  fi
   # The hook closes its own key when the request finishes, and the watchdog
   # adds no second close on its next pass.
   jq -cn '{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {command: "sudo ls"}}' \

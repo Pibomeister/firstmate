@@ -236,7 +236,7 @@ It never grants a request.
 It refuses one proven prompt class with a fix instruction: a Bash command that Claude Code cannot check under bypass because an unquoted heredoc body carries a backtick.
 It holds every other request by printing nothing, so the prompt stays for a person, and it writes one `blocked` line under the same two keys as the table above.
 A request that names a credential, sign-in, spend, security, destructive, production, or release category, or whose text cannot be read whole, is written under `permission-prompt-hardstop`; every other hold is written under `permission-prompt-held`.
-Every request under `permission-prompt-hardstop` gets its own line; `permission-prompt-held` takes at most 20 waiting requests per worker, and a request past that limit joins the decision that is already open.
+Every distinct request under `permission-prompt-hardstop` gets its own line, and requests that cannot be read share one; `permission-prompt-held` takes at most 20 waiting requests per worker, and a request past that limit joins the decision that is already open, which then stays open until the pane is proven clear, the session ends, or the supervisor answers.
 
 The hook and the watchdog report one prompt as one open decision:
 

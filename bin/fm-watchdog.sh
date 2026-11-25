@@ -1887,7 +1887,10 @@ wd_pp_stop() {
       && wd_rec "$(wd_id)" permission-prompt report dry-run "would write blocked [key=$key]: $text"
     return 0
   fi
-  if [ -n "$prev" ] && [ "${prev%% *}" != "$key" ]; then
+  # The hook's owner-reserved key is the hook's to close, as in wd_pp_clear.
+  if [ -n "$prev" ] && [ "${prev%% *}" != "$key" ] \
+    && ! { [ "${prev%% *}" = permission-prompt-hardstop ] \
+      && wd_pp_hook_keys "$id" | grep -qx permission-prompt-hardstop; }; then
     wd_pp_status "$id" resolved "${prev%% *}" "worker $id shows a different prompt now" || true
   fi
   mkdir -p "$WD/permission"

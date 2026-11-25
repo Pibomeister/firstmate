@@ -161,6 +161,7 @@ computed command word|hold computed|cat <<EOF\n@t@\nEOF\n$TOOL run
 quoted computed command word|hold computed|cat <<EOF\n@t@\nEOF\n"$BIN/x" run
 computed word behind a redirection|hold computed|cat <<EOF >out\n@t@\nEOF\n>log $CMD
 glob command word|hold computed|cat <<EOF\n@t@\nEOF\n./bin/*.sh
+command word from a backtick substitution|hold computed|cat <<EOF\n@t@\nEOF\n@t@tool@t@ run
 eval wrapper|hold wrapper|cat <<EOF\n@t@\nEOF\neval "$X"
 shell wrapper in a subshell|hold wrapper|cat <<EOF\n@t@\nEOF\n( true && bash tests/a.test.sh )
 dot wrapper|hold wrapper|cat <<EOF\n@t@\nEOF\n. ./lib.sh
@@ -173,7 +174,8 @@ escape byte|hold shape|cat <<EOF\n@t@\nEOF\nprintf '\033[0m'
 wrapper behind a quoted assignment|hold computed|cat <<EOF\n@t@\nEOF\nFOO="a b" eval "$X"
 computed word behind a quoted redirection|hold computed|cat <<EOF\n@t@\nEOF\n> "a b" $cmd
 wrapper split by a line continuation|hold computed|cat <<EOF\n@t@\nEOF\nev\\\nal "$X"
-plain assignment and redirection|refuse|cat <<EOF\n@t@\nEOF\nN=1 echo hi 2> err.log
+plain assignment and redirection|refuse|cat <<EOF\n@t@\nEOF\nN=1 2> err.log echo hi
+reserved word split by quotes|hold release|cat <<EOF\n@t@\nEOF\ngit t"a"g v1.2.0
 ROWS
   assert_equals "hold shape" "$(classify "")" "classify: empty command"
   # shellcheck disable=SC2046
@@ -395,6 +397,68 @@ test_reserved_request_is_always_reported() {
   pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, and by a key name alone"
 }
 
+test_held_set_follows_the_latest_requests() {
+  local home i rc
+  # A request asked again restarts the quiet period before a pane-clear close.
+  home=$(new_home asked-again)
+  request "$home" "$(bash_payload 'echo hello')"
+  awk -F '\t' -v OFS='\t' -v e="$(($(date +%s) - 3600))" '{ $3 = e; print }' "$home/state/task.permission-held" >"$home/held.new" \
+    && mv "$home/held.new" "$home/state/task.permission-held"
+  request "$home" "$(bash_payload 'echo hello')"
+  assert_equals "1" "$(grep -c '^blocked ' "$home/state/task.status")" "a request asked again writes no second line"
+  pane_clear "$home"
+  assert_equals "$HELD" "$(open_keys "$home")" "a request asked again a moment ago is not closed from the pane: its prompt may not be drawn yet"
+
+  # A request past the limit still waits when the others finish, so no
+  # finished call closes the key then: the pane or the session end does.
+  home=$(new_home overflow)
+  for i in 1 2 3; do
+    FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "echo hello $i")"
+  done
+  for i in 1 2 3; do
+    settle "$home" tool-finished "$(finished_payload "echo hello $i")"
+  done
+  assert_equals "$HELD" "$(open_keys "$home")" "a request past the limit keeps the key open when every finished call is in"
+  assert_equals "2" "$(grep -c '^blocked ' "$home/state/task.status")" "and it wrote no line of its own under the open key"
+  pane_clear "$home"
+  assert_equals "$HELD" "$(open_keys "$home")" "a request asked a moment ago keeps the pane from closing it"
+  pane_clear "$home" 0
+  assert_equals "" "$(open_keys "$home")" "a proven-clear pane closes it"
+
+  # A limit of zero is no limit to hide a hold behind.
+  home=$(new_home zero)
+  FM_PERMISSION_ROUTE_MAX_HELD=0 request "$home" "$(bash_payload 'echo hello')"
+  assert_equals "$HELD" "$(open_keys "$home")" "a hold is reported under a limit of zero"
+
+  # A request that arrives with no payload is not read whole.
+  home=$(new_home empty)
+  request "$home" ''
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "an empty payload is held for the owner"
+
+  # An input field this route does not know names another request.
+  home=$(new_home field)
+  request "$home" "$(bash_payload 'echo hello' '{"mode": "x"}')"
+  assert_equals "$HELD" "$(open_keys "$home")" "a request with an unknown input field is held"
+  settle "$home" tool-finished "$(finished_payload 'echo hello')"
+  assert_equals "$HELD" "$(open_keys "$home")" "a finished call without that field does not close it"
+  settle "$home" tool-finished "$(jq -cn '{hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: {command: "echo hello", description: "another", mode: "x"}}')"
+  assert_equals "" "$(open_keys "$home")" "the finished call with that field closes it"
+
+  # A held set that cannot be read is an error to the watchdog, never no hold.
+  if [ "$(id -u)" -ne 0 ]; then
+    home=$(new_home unreadable-set)
+    request "$home" "$(bash_payload 'echo hello')"
+    chmod 000 "$home/state/task.permission-held"
+    bash "$ROUTE" held-keys "$home/state" task >/dev/null 2>&1
+    rc=$?
+    settle "$home" tool-finished "$(finished_payload 'echo hello')"
+    chmod 600 "$home/state/task.permission-held"
+    assert_equals "1" "$rc" "held-keys fails on a held set it cannot read"
+    assert_equals "1" "$(grep -c . "$home/state/task.permission-held")" "a held set that cannot be read is left as it is"
+  fi
+  pass "the held set follows the latest requests, tells requests apart by their input, and is never read as empty when it cannot be read"
+}
+
 test_unreadable_payload_never_matches_a_finished_call() {
   local home
   home=$(new_home unreadable)
@@ -443,5 +507,6 @@ fm_test_run \
   test_each_key_closes_on_its_own \
   test_pane_clear_closes_only_a_settled_ordinary_hold \
   test_reserved_request_is_always_reported \
+  test_held_set_follows_the_latest_requests \
   test_unreadable_payload_never_matches_a_finished_call \
   test_bad_task_id_and_missing_state_touch_nothing
