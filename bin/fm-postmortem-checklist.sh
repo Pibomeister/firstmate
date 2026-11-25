@@ -25,28 +25,43 @@
 #       Print only the open rows, in the same shape as `check`.
 #       Exit 0; an unopened night lists every machine as missing.
 #   fm-postmortem-checklist.sh collect [--since <epoch>]
-#       Report existing nights and mornings due at 07:45 through now.
+#       Open mornings due at 07:45 and print retained open rows.
 #       Nights name the morning of collection; --night defaults to today.
 #       Inbox note bodies may contain a tab-separated receipt line:
 #       postmortem-receipt<TAB>night<TAB>machine<TAB>absolute-path<TAB>sha256
 #       Pending and handled notes both count; their id supplies the epoch.
 #
+# Collection uses the process-local timezone; 07:45 is a due time, not a
+# scheduled invocation. `collect` opens today's checklist once due, even
+# when --since is later than 07:45. It also backfills due mornings from
+# --since through now (today by default) and rechecks every ledger night
+# through today. Historical rows can reopen if their artifacts change.
+# Output contains only open rows, with the night prefixed to each detail.
+# Collection exits 0 even with open rows, and nonzero on collection failure.
+# Unreadable receipt inputs or failed hash verification keep rows open.
+#
 # State: an append-only tab-separated ledger at
-# state/postmortem-checklist.tsv under the home (FM_HOME, or
-# FM_STATE_OVERRIDE). Rows are
+# ${FM_STATE_OVERRIDE:-$FM_HOME/state}/postmortem-checklist.tsv. Rows are
 # <night><TAB><machine><TAB><event><TAB><path><TAB><hash><TAB><epoch>
-# with event `opened` (machine `-`, from `start`) or `receipt`. The
-# newest ledger or inbox receipt for a machine and night is verified.
-# Ledger append order is authoritative within the ledger.
-# Cross-record receipt epochs order candidates; conflicting ties stay open.
-# A night exists once any row names it, so a receipt recorded before
-# `start` still opens the other machines' rows for that night.
+# with event `opened` (machine `-`, from `start`) or `receipt`.
+# The last ledger receipt by append order competes with inbox receipts
+# by epoch; conflicting ties between candidates stay open.
+# Identical path/hash ties agree; hash letter case does not matter.
+# A checklist exists for `check` and `start` once a ledger row names it,
+# so a CLI receipt before `start` opens the other machines' rows too.
+# Inbox receipts alone do not create a checklist.
+# CLI receipt paths are stored as absolute paths against the caller's
+# working directory; inbox receipts must already use absolute paths.
+# --night requires a valid Gregorian YYYY-MM-DD date; collection skips
+# invalid dates in existing ledger rows without discarding valid history.
 #
 # This script records and verifies receipts only. It never writes any
 # machine's postmortem content. bin/fm-afk-return.sh reads the open rows
 # through `collect` and names each unclosed machine in the morning return
-# brief's "Waiting on you" section, so a missing machine is named at
-# 07:45 rather than silently absent.
+# brief's "Waiting on you" section. A return at or after 07:45 names missing
+# machines without requiring a manual `start`; no separate timer is armed.
+# Regression coverage: tests/fm-postmortem-checklist.test.sh and
+# tests/fm-afk-return.test.sh.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

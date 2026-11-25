@@ -29,9 +29,8 @@
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
 # status logs, the watchdog's human-only-step record
 # (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh), and the
-# overnight postmortem checklist ledger (bin/fm-postmortem-checklist.sh owns
-# its receipt contract; its unclosed machine rows are named under what is
-# waiting). An open
+# overnight postmortem checklist (bin/fm-postmortem-checklist.sh owns
+# collection and its receipt contract). An open
 # `human-step-<slug>` keyed blocker is a worker's human-only step: it is listed
 # under what is waiting on the captain and never holds the catch-up. Its order
 # is fixed: supervisor health across the away window
