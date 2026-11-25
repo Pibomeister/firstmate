@@ -103,12 +103,24 @@ fm_watch_hold_active() {
 
 # Local Codex secondmates keep the existing watcher, not a model tool session,
 # alive. The parent binding supplies the existing steering inbox and doorbell.
+FM_SM_REFUSAL_REASON=
+
+# Internal probes stay quiet; the public selector and starter report this reason.
+fm_secondmate_watch_selection_report() {
+  printf 'secondmate watcher: unavailable: %s\n' \
+    "${FM_SM_REFUSAL_REASON:-route or ownership eligibility was not proven}" >&2
+}
+
 fm_secondmate_watch_selected() {
   # shellcheck source=bin/fm-primary-scope-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-primary-scope-lib.sh"
   # shellcheck source=bin/fm-supervision-engine-lib.sh
   . "$FM_PUSH_TRANSITION_LIB_DIR/fm-supervision-engine-lib.sh"
-  fm_root_is_secondmate_home "$FM_HOME" || return 1
+  FM_SM_REFUSAL_REASON=
+  fm_root_is_secondmate_home "$FM_HOME" || {
+    FM_SM_REFUSAL_REASON='not a genuine secondmate home'
+    return 1
+  }
   # The pane environment only names the candidate endpoint, tmux first as in
   # fm_backend_detect; fm_secondmate_watch_binding_valid owns its proof. A
   # Herdr pane with no HERDR_SESSION lives in the default session, exactly as
@@ -120,11 +132,26 @@ fm_secondmate_watch_selected() {
   elif [ -n "${HERDR_PANE_ID:-}" ]; then
     FM_SM_BACKEND=herdr FM_SM_TARGET=${HERDR_SESSION:-default}:$HERDR_PANE_ID FM_SM_ROUTE=${HERDR_SESSION:-default}
   else
+    FM_SM_REFUSAL_REASON='native endpoint registration prerequisite missing: no current tmux or Herdr pane identity; do not substitute a stale binding'
     return 1
   fi
   # shellcheck disable=SC2153 # CONFIG is set by bin/fm-watch.sh.
-  [ ! -e "$STATE/.afk" ] && ! fm_supervision_host_enabled "$CONFIG" codex || return 1
-  FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") && [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || return 1
+  [ ! -e "$STATE/.afk" ] || {
+    FM_SM_REFUSAL_REASON='away or quiet daemon mode owns supervision'
+    return 1
+  }
+  ! fm_supervision_host_enabled "$CONFIG" codex || {
+    FM_SM_REFUSAL_REASON='the supervision host owns this home'
+    return 1
+  }
+  FM_SM_INBOX=$(fm_secondmate_home_inbox "$FM_HOME") || {
+    FM_SM_REFUSAL_REASON='a valid local secondmate parent record is required'
+    return 1
+  }
+  [ "${FM_TASK_INBOX:-}" = "$FM_SM_INBOX" ] || {
+    FM_SM_REFUSAL_REASON='the caller steering inbox does not match its registered parent'
+    return 1
+  }
   FM_SM_ID=${FM_SM_INBOX##*/}
   FM_SM_ID=${FM_SM_ID%.inbox}
   if fm_watcher_healthy "$STATE" "$FM_PUSH_TRANSITION_LIB_DIR/fm-watch.sh" "${FM_GUARD_GRACE:-300}" "$FM_HOME"; then
@@ -132,7 +159,10 @@ fm_secondmate_watch_selected() {
     # A doorbell-less --grok-hold in a home that no longer runs Grok is a
     # leftover fm_secondmate_watch_start takes over; every other healthy
     # owner keeps its own protocol.
-    fm_grok_holding_watcher "$FM_WATCHER_HEALTHY_PID" && [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" != grok ] || return 1
+    fm_grok_holding_watcher "$FM_WATCHER_HEALTHY_PID" && [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" != grok ] || {
+      FM_SM_REFUSAL_REASON='a different healthy watcher already owns this home'
+      return 1
+    }
   fi
 }
 
@@ -187,7 +217,7 @@ fm_secondmate_watch_relay_stale_refusal() {
 
 fm_secondmate_watch_start() {
   local pid identity tmp deadline monitor=0
-  fm_secondmate_watch_selected || { echo 'secondmate watcher: unsupported home, route or ownership mode' >&2; return 1; }
+  fm_secondmate_watch_selected || { fm_secondmate_watch_selection_report; return 1; }
   fm_secondmate_watch_status && return 0
   [ "$("$FM_PUSH_TRANSITION_LIB_DIR/fm-harness.sh")" = codex ] || { echo 'secondmate watcher: caller is not Codex' >&2; return 1; }
   # shellcheck source=bin/fm-session-lock-lib.sh

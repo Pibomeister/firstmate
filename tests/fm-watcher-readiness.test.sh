@@ -337,7 +337,80 @@ SH
   pass "supported starter surfaces the live stale-holder refusal and exits 1"
 }
 
+selection_probe() {  # <case_home> <parent> <mode> [NAME=VALUE...]
+  local case_home=$1 parent=$2 mode=$3
+  shift 3
+  env -u TMUX -u TMUX_PANE -u HERDR_SESSION -u HERDR_PANE_ID \
+    -u FM_BACKEND -u FM_SESSION_ENDPOINT_META \
+    FM_HOME="$case_home" FM_STATE_OVERRIDE="$case_home/state" FM_CONFIG_OVERRIDE="$case_home/config" \
+    FM_TASK_INBOX="$parent/state/fixture-mate.inbox" \
+    "$@" "$WATCH" "$mode"
+}
+
+test_secondmate_selection_refusal_is_actionable() {
+  local dir case_home parent out rc
+  dir="$TMP_ROOT/selection-refusal"
+  case_home="$dir/home"
+  parent="$dir/parent"
+  mkdir -p "$case_home/state" "$case_home/config" "$parent/state/fixture-mate.inbox"
+  printf 'fixture-mate\n' > "$case_home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" \
+    > "$case_home/.fm-secondmate-parent"
+  : > "$case_home/config/supervision-host-off"
+
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-selected 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'a missing terminal candidate must remain refused'
+  assert_contains "$out" 'native endpoint registration' 'selection silently refused the missing prerequisite'
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'the starter must refuse the same missing prerequisite'
+  assert_contains "$out" 'native endpoint registration' 'starter hid the selection refusal reason'
+
+  selection_probe "$case_home" "$parent" --secondmate-selected HERDR_PANE_ID=wlab:plab \
+    || fail 'a candidate with a valid local parent and inbox was not eligible'
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-status HERDR_PANE_ID=wlab:plab 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'selection eligibility became readiness without a verified binding'
+  assert_contains "$out" 'not ready' 'unbound status must stay unready'
+
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-selected \
+    HERDR_PANE_ID=wlab:plab FM_TASK_INBOX=foreign.inbox 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'a foreign inbox must remain refused'
+  assert_contains "$out" 'steering inbox' 'foreign-inbox refusal lacked its reason'
+
+  mv "$case_home/.fm-secondmate-parent" "$case_home/parent.saved"
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-selected HERDR_PANE_ID=wlab:plab 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'a missing parent record must remain refused'
+  assert_contains "$out" 'parent' 'missing-parent refusal lacked its reason'
+  mv "$case_home/parent.saved" "$case_home/.fm-secondmate-parent"
+
+  : > "$case_home/state/.afk"
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-selected HERDR_PANE_ID=wlab:plab 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'an away-owned case_home must remain refused'
+  assert_contains "$out" 'away' 'ownership-mode refusal lacked its reason'
+  rm "$case_home/state/.afk"
+
+  rm "$case_home/.fm-secondmate-home"
+  rc=0
+  out=$(selection_probe "$case_home" "$parent" --secondmate-selected HERDR_PANE_ID=wlab:plab 2>&1) || rc=$?
+  assert_equals 1 "$rc" 'a primary or unmarked home must remain refused'
+  assert_contains "$out" 'secondmate home' 'case_home-scope refusal lacked its reason'
+  assert_absent "$case_home/state/.watch.lock" 'read-only selection or refused start armed a watcher'
+  assert_absent "$case_home/state/.last-watcher-beat" 'read-only selection manufactured a beat'
+  pass 'secondmate selection reports actionable refusals without granting binding readiness'
+}
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit "$?"
+fi
+
 fm_test_run \
+  test_secondmate_selection_refusal_is_actionable \
   test_capture_accepts_gnu_stat \
   test_stuck_subordinate_still_becomes_stale \
   test_progressing_records_stay_ready_across_grace \

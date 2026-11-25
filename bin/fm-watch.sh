@@ -7,7 +7,9 @@
 # --managed-hold watcher remains the arm's child; --grok-hold is Grok-owned.
 # --secondmate starts and verifies a detached local Codex secondmate watcher;
 # --secondmate-status is its read-only identity, route and beacon proof.
-# --secondmate-selected reads route eligibility. Ownership-mode selection is
+# --secondmate-selected reads route eligibility, reporting a refusal reason on
+# stderr when ineligible. Eligibility never proves binding readiness.
+# Ownership-mode selection is
 # documented in docs/turnend-guard.md, not configured by these interfaces.
 # The internal --secondmate-hold mode retains this watcher across actionable
 # wakes, which ring the existing parent-owned steering inbox without a model poll;
@@ -340,7 +342,10 @@ WATCH_HOME_EXISTED=0
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
 case "$SECONDMATE_MODE" in
-  --secondmate-selected) fm_secondmate_watch_selected; exit $? ;;
+  --secondmate-selected)
+    fm_secondmate_watch_selected && exit 0
+    fm_secondmate_watch_selection_report
+    exit 1 ;;
   --secondmate-status)
     fm_secondmate_watch_status && { echo 'secondmate watcher: ready'; exit 0; }
     echo 'secondmate watcher: not ready'; exit 1 ;;
