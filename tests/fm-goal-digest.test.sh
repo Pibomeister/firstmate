@@ -317,7 +317,7 @@ SH
   local home
   home=$(make_home home7 "$TMP_ROOT/linger-summarize.sh")
   run_digest "$home" >/dev/null || fail "first run with lingering summarizer failed"
-  run_digest "$home" >/dev/null 2>&1 || fail "background helper left by summarize_cmd kept the run lock held"
+  run_digest "$home" >/dev/null 2>&1 || fail "background helper left by the summarizer kept the run lock held"
   pkill -f "$TMP_ROOT/linger-helper" 2>/dev/null || true
   pass "summarizer background helper does not hold the run lock"
 }
@@ -554,7 +554,8 @@ def check(digest, known, sources):
 first = run(snapshot)
 check(first, True, {"Fleet/mate-a","Fleet/mate-b"})
 assert all(w["title"] == "Choose route: north or south?" for w in first["waiting_on_captain"])
-assert "Choose route: north or south? age_hours=unknown" in (home / "data/goal-digest/latest.md").read_text()
+assert all(w["age_days"] == 30 and w["age_precision"] == "day" for w in first["waiting_on_captain"]), first["waiting_on_captain"]
+assert "Choose route: north or south? age_days=30 (day precision)" in (home / "data/goal-digest/latest.md").read_text()
 env["FM_GD_NOW_EPOCH"] = str(int(now) + 3600)
 snapshot["secondmate_current"]["records"][0]["decisions_open"][0]["hold_age_days"] = 31
 snapshot["secondmate_current"]["records"][0]["freshness"]["age_seconds"] = 3600
@@ -864,7 +865,10 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   home=$(make_home runner-argv)
   FM_GD_CLAUDE_ARGS="$TMP_ROOT/claude-args" run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "runner argv run failed"
   assert_contains "$(cat "$TMP_ROOT/claude-args")" "--no-session-persistence" "runner uses isolated fixed argv"
-  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--model haiku" "runner uses the cheap default model"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--model claude-haiku-4-5" "runner pins the cheap default model"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" '--tools ' "runner disables tools"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--setting-sources " "runner disables setting sources"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--strict-mcp-config" "runner uses strict MCP config"
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "summary written by fixed runner"
   printf 'summarize_model = best\n' >> "$home/config/goal-digest"
   write_fixtures 1
@@ -879,6 +883,59 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "empty runner output keeps prior summary"
   pass "fixed runner argv, model rejection and empty output"
 }
+
+test_review_fixes_parse_eta_history_summary_and_window() {
+  write_fixtures 0
+  # Duplicate closed page entries are reported once; every ETA on a line counts.
+  cat > "$FIXTURE/merged-example-org_example-repo.json" <<'JSON'
+[{"number": 1, "title": "First", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"},
+ {"number": 1, "title": "First", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"}]
+JSON
+  local home
+  home=$(make_home review-fixes)
+  printf 'eta: 2099-01-01 later eta: 2020-01-01 missed second\neta: 2019-05-05 first\n' > "$home/status.txt"
+  printf '{"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[{"id":"done","title":"eta: 2018-01-01 done row","captain_actionable":false}]},"secondmate_current":{"registry":{"available":true,"complete":true},"records":[],"truncated":0}}\n' > "$home/snapshot.json"
+  printf 'status = Snapshot | %s\n' "$home/snapshot.json" >> "$home/config/goal-digest"
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "review-fixes first run failed"
+  assert_equals "[1]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home/data/goal-digest/latest.json")" "duplicate closed entries reported once"
+  assert_equals "['2019-05-05', '2020-01-01']" "$(python3 -c 'import json,sys; print(sorted(m["eta"] for m in json.load(open(sys.argv[1]))["missed_etas"]))' "$home/data/goal-digest/latest.json")" "all ETAs per line counted and JSON snapshot not raw-grepped"
+  # Same-second second run keeps both history archives.
+  write_fixtures 1
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "review-fixes same-second run failed"
+  [ "$(find "$home/data/goal-digest/history" -name '20260101T120000Z*.md' | wc -l | tr -d ' ')" -ge 2 ] || fail "same-second history archive was overwritten"
+  # Non-list open payload is recorded unreachable, not silently dropped.
+  printf '{"error":"nope"}\n' > "$FIXTURE/open-example-org_example-repo.json"
+  printf 'T1: changed\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "review-fixes open-parse run failed"
+  assert_contains "$(cat "$home/data/goal-digest/latest.json")" '"repo-open"' "open parse failure recorded unreachable"
+  assert_equals "[]" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["open_pull_requests"])' "$home/data/goal-digest/latest.json")" "failed open parse publishes no partial rows"
+  write_fixtures 0
+  # Whitespace-only summary keeps the prior summary and cannot be remapped to Opus.
+  cat > "$TMP_ROOT/whitespace-claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s' "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-unset}" > "$FM_HOME/runner-env"
+printf '  \n'
+SH
+  chmod +x "$TMP_ROOT/whitespace-claude"
+  printf '%s' "$TMP_ROOT/whitespace-claude" > "$home/.claude-stub"
+  printf 'T1: complete\n' > "$home/review.status"
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-opus-4-6 run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "whitespace summary run failed"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "whitespace-only summary keeps prior summary"
+  assert_equals "unset" "$(cat "$home/runner-env")" "model-remap environment is unset for the runner"
+  # A failed first publication retries against the persisted initial window.
+  local home2
+  home2=$(make_home first-publication)
+  mkdir -p "$home2/data/goal-digest/history"
+  mkdir "$home2/data/goal-digest/history/20260101T120000Z.json.tmp"
+  local rc=0
+  run_digest "$home2" "$RUN1_EPOCH" >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 0 ] || fail "blocked first publication reported success"
+  rmdir "$home2/data/goal-digest/history/20260101T120000Z.json.tmp"
+  run_digest "$home2" $((RUN1_EPOCH + 172800)) >/dev/null || fail "first-publication retry failed"
+  assert_equals "[1]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home2/data/goal-digest/latest.json")" "failed first publication retains its initial merge window"
+  pass "review fixes: parse, ETA, history, summary and first-publication window"
+}
+
 
 test_empty_status_and_review_loops_under_bash32() {
   local bash32 home out err rc
@@ -957,4 +1014,4 @@ test_summarize_off_and_invalid_value_do_not_spend() {
   pass "summarize=off and invalid summarize values do not spend"
 }
 
-fm_test_run test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
+fm_test_run test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
