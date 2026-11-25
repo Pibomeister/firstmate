@@ -428,6 +428,84 @@ test_claude_ship_stopfailure_records_a_provider_refusal() {
   pass "a claude ship's StopFailure hooks close the turn and record a 429 refusal for provider failover, and a server error records nothing"
 }
 
+# The permission prompt route (bin/fm-permission-route.sh) rides the same
+# settings file. These drive the generated hook commands as the harness does:
+# through sh, with the hook payload on stdin.
+run_route_hook() {  # <settings.json> <jq-path-to-command> <payload>
+  local cmd
+  cmd=$(jq -r "$2" "$1")
+  [ -n "$cmd" ] && [ "$cmd" != null ] || fail "no hook command at $2 in $1"
+  printf '%s' "$3" | AK_LIFECYCLE_POLICY=unattended sh -c "$cmd"
+}
+
+test_claude_worker_gets_the_permission_route() {
+  local rec id=busy-cl-route out state settings bt='`' held refused answer
+  rec=$(make_spawn_case claude-route claude "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "claude spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  settings="$WT_DIR/.claude/settings.local.json"
+  jq -e . "$settings" >/dev/null || fail "claude hook settings are not valid JSON"
+  # The spawned record decides the route's posture check, so the refusal below
+  # also proves the wired command reads this task's own record.
+  printf 'approval_mode=bypass\n' >> "$state/$id.meta"
+
+  refused=$(jq -cn --arg c "N=/nonexistent/n; cat <<EOF
+${bt}true${bt}
+EOF
+echo \$N" '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Bash", tool_input: {command: $c}}')
+  answer=$(run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$refused") \
+    || fail "the PermissionRequest hook command failed"
+  assert_equals "deny" "$(printf '%s' "$answer" | jq -r '.hookSpecificOutput.decision.behavior')" \
+    "the wired route refuses the identified prompt class"
+
+  held=$(jq -cn '{hook_event_name: "PermissionRequest", permission_mode: "bypassPermissions", tool_name: "Bash", tool_input: {command: "sudo ls"}}')
+  answer=$(run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$held") \
+    || fail "the PermissionRequest hook command failed on a hold"
+  assert_equals "" "$answer" "the wired route prints nothing for a held prompt"
+  grep -q '^blocked .*\[key=permission-prompt\]' "$state/$id.status" \
+    || fail "a held prompt did not wake the supervisor through the task's status log"
+
+  run_route_hook "$settings" '.hooks.PostToolUse[0].hooks[0].command' \
+    '{"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "sudo ls"}}' \
+    || fail "the PostToolUse hook command failed"
+  grep -q '^resolved .*\[key=permission-prompt\]' "$state/$id.status" \
+    || fail "the finished held request did not close the wake"
+
+  run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$held" >/dev/null
+  run_route_hook "$settings" '.hooks.PostToolUseFailure[0].hooks[0].command' \
+    '{"hook_event_name": "PostToolUseFailure", "tool_name": "Bash", "tool_input": {"command": "sudo ls"}}' \
+    || fail "the PostToolUseFailure hook command failed"
+  assert_equals "2" "$(grep -c '^resolved ' "$state/$id.status")" "a failed held request closes the wake too"
+
+  run_route_hook "$settings" '.hooks.PermissionRequest[0].hooks[0].command' "$held" >/dev/null
+  run_route_hook "$settings" '.hooks.SessionEnd[1].hooks[0].command' '{}' \
+    || fail "the route's SessionEnd hook command failed"
+  assert_equals "3" "$(grep -c '^resolved ' "$state/$id.status")" "session end closes an open hold"
+
+  run_claude_hook "$settings" SessionEnd || fail "the busy SessionEnd hook no longer runs first"
+  out=$(classify claude "$id" "$state")
+  [ "$out" = "idle claude-hook" ] || fail "the busy SessionEnd hook must still classify idle, got '$out'"
+  pass "a claude worker's settings carry the permission route beside the busy hooks"
+}
+
+test_claude_secondmate_gets_no_permission_route() {
+  local case_dir id=sm-claude-route settings out
+  case_dir="$TMP_ROOT/sm-claude-route"
+  out=$(spawn_secondmate_harness "$case_dir" "$id" claude) \
+    || fail "claude secondmate spawn failed: $out"
+  settings="$case_dir/primary/state/$id.claude-settings.json"
+  assert_present "$settings" "claude secondmate spawn did not write hook settings"
+  for ev in PermissionRequest PostToolUse PostToolUseFailure; do
+    [ "$(jq -r ".hooks[\"$ev\"] // \"absent\"" "$settings")" = absent ] \
+      || fail "a secondmate must get no $ev hook"
+  done
+  assert_equals "1" "$(jq -r '.hooks.SessionEnd | length' "$settings")" \
+    "a secondmate keeps only the busy SessionEnd hook"
+  pass "a claude secondmate gets no permission route"
+}
+
 test_codex_unverified_until_a_semantic_source_exists() {
   local rec id=busy-cx-1 out state
   rec=$(make_spawn_case codex-unverified codex "$id")
@@ -994,6 +1072,8 @@ test_opencode_plugin_v2_execution_lifecycle
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
 test_claude_ship_stopfailure_records_a_provider_refusal
+test_claude_worker_gets_the_permission_route
+test_claude_secondmate_gets_no_permission_route
 test_gemini_hooks_semantic_lifecycle
 test_gemini_hooks_stale_incarnation_harmless
 test_raw_gemini_launch_has_no_semantic_wiring
