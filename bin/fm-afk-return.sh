@@ -7,11 +7,12 @@
 #   fm-afk-return.sh check    Retry quiet exit, or recheck the away brief and blockers.
 #   fm-afk-return.sh guard    Read-only consult: exit 3 while away mode is still
 #                            active, exit 4 while return catch-up is pending.
-#                            Validated quiet mode passes unless an away gate remains.
+#                            Quiet mode passes unless away catch-up remains.
 #   fm-afk-return.sh catchup-summary  Read-only catch-up projection for a reporting surface.
 # Quiet exit requires a validated quiet record with no contradictory legacy flag
-# (bin/fm-afk-contract.sh owns the predicates). An existing away gate always goes
-# through normal reconciliation before any quiet receipt is considered.
+# (bin/fm-afk-contract.sh owns the predicates). An existing away gate or retained
+# recovery sidecar always goes through normal reconciliation before any quiet
+# receipt is considered.
 # Quiet exit stops the daemon, retains detail in .subsuper-digests, and atomically
 # records its transaction ID, archive path, and event count in .quiet-exit-receipt
 # before clearing only a buffer whose bytes match the archive.
@@ -48,7 +49,10 @@
 # only, never the forge - finished work that owes an ordinary teardown, which
 # is fleet work and so waits for the gate rather than holding it), then what
 # the away session handled, then cost. The health snapshot is taken BEFORE the
-# daemon shutdown so the shutdown itself cannot read as a gap.
+# daemon shutdown so the shutdown itself cannot read as a gap. Each new window
+# takes fresh health and engine snapshots; retries within that window keep its
+# first snapshots. Earlier snapshots remain as retained-health and
+# retained-engine evidence, separate from the current window's health and failures.
 #
 # THE AWAY GATE. `blocked:` is the crewmate protocol's firstmate-actionable verb. A
 # live task's open blocked event must be remediated and closed with
@@ -68,8 +72,14 @@
 #
 # Recovery evidence from an earlier window that an intervening away entry
 # retained in state/.afk-carried-retained (bin/fm-afk-launch.sh) seeds this
-# gate through preserve_evidence, and each retained-record it names must
-# validate here before catch-up can clear.
+# gate through preserve_evidence. Retained-record and superseded references
+# must validate before catch-up clears, even without a current posture record
+# after launch rollback. Until seeded into the gate, the sidecar itself makes
+# guard and catchup-summary report pending catch-up.
+# If entry published a new record before consuming the old gate, return selects
+# the live record's window and retains the old gate's archive obligations and
+# historical evidence. tests/fm-afk-return.test.sh covers both interrupted
+# handoff stages, rollback recovery, and fresh snapshots across re-entry.
 #
 # The durable state/.afk-return-catchup file is written BEFORE daemon shutdown,
 # so a crash between stopping, wake presentation, and blocker handling fails

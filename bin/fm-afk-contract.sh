@@ -67,10 +67,11 @@
 #                                  from the previous return gate (one line per
 #                                  item, <n> of them); each keeps its own key
 #                                  and reason, is listed by `carried` and in
-#                                  the read-back, and is carried forward by a
-#                                  replacement entry until the next return's
-#                                  per-key resolution or reclassification
-#                                  (bin/fm-afk-return.sh owns that mechanics)
+#                                  the read-back, and survives refreshes and
+#                                  replacement mandates. These rows remain
+#                                  historical after resolution; they do not
+#                                  determine whether a key is still open
+#                                  (bin/fm-afk-return.sh owns the gate).
 #   words: | or |-                 the captain's words, verbatim, never edited,
 #     <line>                       one record line per input line (or `words: -`
 #     ...                          when /afk carried no words); `|` retains a
@@ -103,7 +104,11 @@
 #     record as carried items; bin/fm-afk-launch.sh supplies it at entry.
 #     --words-file keeps the file's bytes verbatim, trailing newlines
 #     included. With no words while a record stands, this is a refresh that
-#     leaves the standing record untouched; new words replace the mandate,
+#     leaves the standing record untouched unless --carried-file supplies
+#     items: those merge by task and key, with later rows replacing earlier
+#     rows, while the words, entry, expected return, and spend stay unchanged.
+#     That refresh updates confirmed time without a superseded archive.
+#     New words replace the mandate,
 #     carry the original session entry forward, and archive the superseded
 #     record. A replacement is staged before the prior record is archived and
 #     replaced. `propose` and `confirm` were retired with the wait-for-go gate.
@@ -111,7 +116,8 @@
 #   fm-afk-contract.sh readback
 #     The record's content for the captain and for the away session: the words
 #     verbatim plus the entry time, expected return, spend cap, and reach line
-#     (for a quiet record, the entry time and that nothing is held).
+#     (for a quiet record, the entry time and that nothing is held), plus any
+#     carried items.
 #   fm-afk-contract.sh carried [--path <record>]
 #     Print the record's carried items, one tab-separated
 #     <task><TAB><key><TAB><reason> line each; exit 1 with no record.

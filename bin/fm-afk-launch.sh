@@ -424,7 +424,7 @@ fm_afk_launch_carried_from_gate() {
 }
 
 # Retained recovery evidence from the gate being consumed: every
-# evidence or superseded row the gate held (for example an unreadable
+# evidence, superseded, or retained-record row the gate held (for example an unreadable
 # archived or superseded posture record that still owes recovery) is
 # merged, deduplicated, into state/.afk-carried-retained before the gate
 # is deleted, so the obligation survives entry and the next return
