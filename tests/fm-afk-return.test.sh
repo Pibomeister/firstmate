@@ -548,6 +548,134 @@ test_retained_record_from_entry_still_gates_until_recovered() {
   pass "a retained earlier archive gates the next return until it is restored valid"
 }
 
+test_retained_records_gate_after_launch_rollback() {
+  local dir out rc final superseded backup gate
+  dir="$TMP_ROOT/retained-after-rollback"
+  install_runner "$dir"
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  run_return "$dir" begin >/dev/null || fail "could not create the earlier quiet receipt"
+  final="$dir/home/state/afk-contracts/1790000000.afk-contract"
+  superseded="$dir/home/state/afk-contracts/1790000000-superseded-1.afk-contract"
+  gate="$dir/home/state/.afk-return-catchup"
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nretained-record\t%s\nsuperseded\t%s\n' "$final" "$superseded" > "$gate"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch after recovery' 2>&1) \
+    || fail "retained recovery refused entry: $out"
+  backup="$dir/valid-contract"
+  cp "$dir/home/state/.afk-contract" "$backup"
+  set +e
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" start-native 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "the Pi native-launch refusal did not fail"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" stop 2>&1) || fail "launch rollback failed: $out"
+  [ ! -e "$dir/home/state/.afk-contract" ] && [ ! -e "$dir/home/state/.afk" ] \
+    && [ ! -e "$gate" ] || fail "rollback did not leave the sidecar-only recovery state"
+
+  set +e
+  out=$(run_return "$dir" guard)
+  rc=$?
+  set -e
+  [ "$rc" -eq 4 ] || fail "guard allowed work before retained recovery (rc=$rc): $out"
+  assert_contains "$out" "$final" "guard did not name the retained archive"
+  out=$(run_return "$dir" catchup-summary) || fail "summary omitted retained catch-up: $out"
+  assert_contains "$out" "$final" "summary did not identify retained recovery"
+  [ ! -e "$gate" ] || fail "the read-only guard or summary created a gate"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "an old quiet receipt bypassed retained recovery (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record missing: $final" "return skipped the retained archive without a current contract"
+  assert_contains "$out" "superseded away-posture record missing: $superseded" "return skipped the superseded archive without a current contract"
+  cp "$backup" "$final"
+  printf 'version: 1\n' > "$superseded"
+  set +e
+  out=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "partial archive recovery cleared catch-up (rc=$rc): $out"
+  assert_contains "$out" "superseded away-posture record unreadable: $superseded" "check did not validate the remaining superseded archive"
+  assert_not_contains "$out" "retained away-posture record missing: $final" "check kept the recovered final archive open"
+  cp "$backup" "$superseded"
+  out=$(run_return "$dir" check) || fail "valid retained archives did not clear catch-up: $out"
+  [ ! -e "$gate" ] && [ ! -e "$dir/home/state/.afk-carried-retained" ] || fail "recovery left retained catch-up pending"
+  [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail "recovery deleted the earlier quiet receipt"
+  pass "retained recovery gates guards, summaries, and returns after launch rollback, even beside an old quiet receipt"
+}
+
+test_return_recovers_interrupted_entry_handoff() {
+  local stage dir out rc old_epoch new_epoch archive backup saved_gate gate section
+  for stage in before-retain before-delete; do
+    dir="$TMP_ROOT/interrupted-entry-$stage"
+    install_runner "$dir"
+    contract_in "$dir" enter --words 'earlier mandate' >/dev/null 2>&1 || fail "could not enter the earlier posture"
+    old_epoch=$(contract_in "$dir" field entered_epoch)
+    seed_live_blocker "$dir" tmux interrupted-entry
+    touch "$dir/home/state/.last-watcher-beat"
+    : > "$dir/home/state/.fake-drain"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "the earlier blocker did not gate return (rc=$rc): $out"
+    archive="$dir/home/state/afk-contracts/$old_epoch.afk-contract"
+    backup="$dir/earlier-contract"
+    cp "$archive" "$backup"
+    rm "$archive"
+    if [ "$stage" = before-delete ]; then
+      printf 'resolved [key=interrupted-entry]: repaired the earlier blocker\n' >> "$dir/home/state/repair-task.status"
+      set +e
+      out=$(run_return "$dir" check)
+      rc=$?
+      set -e
+      [ "$rc" -eq 3 ] || fail "the missing earlier archive did not retain catch-up (rc=$rc): $out"
+    fi
+    gate="$dir/home/state/.afk-return-catchup"
+    saved_gate="$dir/earlier-gate"
+    cp "$gate" "$saved_gate"
+    sleep 1
+    out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+      "$ROOT/bin/fm-afk-launch.sh" enter --words 'current mandate' 2>&1) \
+      || fail "the next posture refused entry: $out"
+    new_epoch=$(contract_in "$dir" field entered_epoch)
+    [ "$new_epoch" != "$old_epoch" ] || fail "the interruption fixture did not create a new window"
+    cp "$saved_gate" "$gate"
+    if [ "$stage" = before-retain ]; then
+      rm "$dir/home/state/.afk-carried-retained"
+    fi
+    : > "$dir/home/state/.watcher-down"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "$stage: interrupted entry lost recovery (rc=$rc): $out"
+    section=$(printf '%s\n' "$out" | sed -n '/^Your instructions:$/,/^Waiting on you:$/p')
+    assert_contains "$section" 'current mandate' "$stage: return presented the earlier mandate"
+    assert_not_contains "$section" 'earlier mandate' "$stage: return used the earlier archive as current instructions"
+    if [ "$stage" = before-retain ]; then
+      assert_contains "$section" 'repair-task [key=interrupted-entry]' "interrupted entry lost its carried blocker"
+    fi
+    section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+    assert_contains "$section" 'GAP: watcher downtime' "$stage: old health suppressed the new window snapshot"
+    assert_not_contains "$section" 'no detected gap' "$stage: historical health was displayed as current"
+    assert_contains "$out" "retained away-posture record missing: $archive" "$stage: return lost the earlier archive obligation"
+    [ "$(awk -F '\t' '$1 == "contract" { print $2 }' "$gate")" = "$new_epoch" ] \
+      && [ "$(awk -F '\t' '$1 == "window" { print $2 }' "$gate")" = "$new_epoch" ] \
+      || fail "$stage: the return gate retained the wrong window"
+    cp "$backup" "$archive"
+    printf 'resolved [key=interrupted-entry]: repaired the earlier blocker\n' >> "$dir/home/state/repair-task.status"
+    out=$(run_return "$dir" check) || fail "$stage: recovered entry did not clear catch-up: $out"
+    assert_contains "$out" 'current mandate' "$stage: retry lost the current instructions"
+    assert_contains "$out" 'GAP: watcher downtime' "$stage: retry lost the new window snapshot"
+    [ ! -e "$gate" ] || fail "$stage: recovered entry left the gate pending"
+  done
+  pass "return recovers both interrupted entry handoffs before choosing instructions, snapshots, and recovery obligations"
+}
+
 test_reentry_takes_fresh_health_and_engine_snapshots() {
   local dir out rc section now tab second
   dir="$TMP_ROOT/reentry-health"
@@ -1769,6 +1897,8 @@ test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
 test_retained_record_from_entry_still_gates_until_recovered
+test_retained_records_gate_after_launch_rollback
+test_return_recovers_interrupted_entry_handoff
 test_reentry_takes_fresh_health_and_engine_snapshots
 test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
 test_return_brief_lists_landed_work_awaiting_cleanup

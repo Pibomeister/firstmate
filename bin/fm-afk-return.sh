@@ -140,21 +140,29 @@ remove_evidence_prefix() {  # <kind> <text-prefix> <file>
 }
 
 preserve_evidence() {  # <destination>
-  local destination=$1
-  if [ -f "$GATE" ]; then
-    grep -E '^(evidence|window|contract|superseded|retained-record)'"$(printf '\t')" "$GATE" >> "$destination" 2>/dev/null || true
-  fi
-  # Recovery evidence an intervening away entry retained when it consumed
-  # the old gate (bin/fm-afk-launch.sh) rejoins the gate here, so the
-  # archived and superseded records it names are re-checked at this return
-  # rather than dropped with the old entry epoch.
-  if [ -f "$STATE/.afk-carried-retained" ]; then
-    awk -F '\t' 'BEGIN { OFS = FS }
+  local destination=$1 source historical live_epoch gate_epoch
+  live_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
+  case "$live_epoch" in ''|*[!0-9]*) live_epoch= ;; esac
+  gate_epoch=$(gate_contract_epoch)
+  for source in "$GATE" "$STATE/.afk-carried-retained"; do
+    [ -f "$source" ] || continue
+    historical=0
+    if [ "$source" != "$GATE" ] || { [ -n "$live_epoch" ] && [ "$live_epoch" != "$gate_epoch" ]; }; then
+      historical=1
+    fi
+    awk -F '\t' -v historical="$historical" -v archives="$(fm_afk_contract_archive_dir "$STATE")" 'BEGIN { OFS = FS }
       $1 == "evidence" || $1 == "window" || $1 == "contract" || $1 == "superseded" || $1 == "retained-record" {
-        if ($1 == "evidence" && ($2 == "health" || $2 == "engine")) $2 = "retained-" $2
+        if (historical) {
+          if ($1 == "window") next
+          if ($1 == "contract") {
+            if ($2 ~ /^[0-9]+$/) print "retained-record", archives "/" $2 ".afk-contract"
+            next
+          }
+          if ($1 == "evidence" && ($2 == "health" || $2 == "engine")) $2 = "retained-" $2
+        }
         print
-      }' "$STATE/.afk-carried-retained" >> "$destination" 2>/dev/null || true
-  fi
+      }' "$source" >> "$destination" 2>/dev/null || true
+  done
 }
 
 append_superseded_record() {  # <path> <file>
@@ -163,25 +171,14 @@ append_superseded_record() {  # <path> <file>
   grep -Fqx "$row" "$file" 2>/dev/null || printf '%s\n' "$row" >> "$file"
 }
 
-remove_superseded_record() {  # <path> <file>
-  local path=$1 file=$2 row pending
-  row=$(printf 'superseded\t%s' "$path")
-  pending=$(mktemp "$(dirname "$file")/.afk-return-superseded-filter.XXXXXX") || return 1
-  grep -Fvx "$row" "$file" > "$pending" 2>/dev/null || true
-  mv "$pending" "$file"
-}
-
-remove_retained_record() {  # <path> <file>
-  local path=$1 file=$2 row pending
-  row=$(printf 'retained-record\t%s' "$path")
+remove_record_reference() {
+  local tag=$1 path=$2 file=$3 row pending
+  row=$(printf '%s\t%s' "$tag" "$path")
   pending=$(mktemp "$(dirname "$file")/.afk-return-retained-filter.XXXXXX") || return 1
   grep -Fvx "$row" "$file" > "$pending" 2>/dev/null || true
   mv "$pending" "$file"
 }
 
-# The epoch the away window started at, from the gate's retained contract row,
-# else from the live record (before it is archived), else from the legacy away
-# flag's own timestamp, else unknown (empty).
 gate_contract_epoch() {
   awk -F '\t' '$1 == "contract" { print $2; exit }' "$GATE" 2>/dev/null || true
 }
@@ -192,11 +189,9 @@ gate_window_epoch() {
 
 window_start_epoch() {
   local epoch flag
-  epoch=$(gate_window_epoch)
+  epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
   case "$epoch" in ''|*[!0-9]*) epoch= ;; esac
-  if [ -z "$epoch" ] && fm_afk_contract_present "$STATE"; then
-    epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
-  fi
+  [ -n "$epoch" ] || epoch=$(gate_window_epoch)
   if [ -z "$epoch" ] && [ -f "$STATE/.afk" ]; then
     flag=$(head -1 "$STATE/.afk" 2>/dev/null || true)
     case "$flag" in
@@ -326,8 +321,11 @@ clear_delivery_artifacts() {
 gate_retention_reasons() {  # <file>
   local file=$1 tag kind text
   while IFS="$(printf '\t')" read -r tag kind text; do
-    [ "$tag" = evidence ] && [ "$kind" = lifecycle ] || continue
-    printf '%s\n' "$text"
+    case "$tag" in
+      evidence) [ "$kind" != lifecycle ] || printf '%s\n' "$text" ;;
+      superseded) printf 'superseded away-posture record requires validation: %s\n' "$kind" ;;
+      retained-record) printf 'retained away-posture record requires validation: %s\n' "$kind" ;;
+    esac
   done < "$file"
 }
 
@@ -339,32 +337,42 @@ gate_has_blockers() {  # <file>
 # fm-bearings-snapshot.sh: one tab-separated line
 # `<open-blocker-count><TAB><first-retention-reason>`, and exit 1 when no gate
 # is open. The reason field is empty when open blockers alone hold the gate.
+catchup_file() {
+  if [ -e "$GATE" ]; then
+    printf '%s\n' "$GATE"
+  elif [ -e "$STATE/.afk-carried-retained" ]; then
+    printf '%s\n' "$STATE/.afk-carried-retained"
+  else
+    return 1
+  fi
+}
+
 catchup_summary() {
-  local count reason
-  [ -e "$GATE" ] || return 1
-  count=$(grep -c "^blocker$(printf '\t')" "$GATE" 2>/dev/null || true)
+  local count reason file
+  file=$(catchup_file) || return 1
+  count=$(grep -c "^blocker$(printf '\t')" "$file" 2>/dev/null || true)
   case "$count" in ''|*[!0-9]*) count=0 ;; esac
-  reason=$(gate_retention_reasons "$GATE" | head -1)
+  reason=$(gate_retention_reasons "$file" | head -1)
   printf '%s\t%s\n' "$count" "$reason"
 }
 
 return_guard() {
-  local reasons
+  local reasons file
   if { [ -e "$STATE/.afk" ] || fm_afk_contract_present "$STATE"; } \
      && ! fm_afk_contract_quiet_active "$STATE"; then
     printf 'fm-afk-return: away mode is still active; run bin/fm-afk-return.sh before ordinary captain work\n' >&2
     return 3
   fi
-  if [ -e "$GATE" ]; then
-    if gate_has_blockers "$GATE"; then
+  if file=$(catchup_file); then
+    if gate_has_blockers "$file"; then
       printf 'fm-afk-return: return catch-up is pending; remediate or durably reclassify every listed blocker, then run bin/fm-afk-return.sh check\n' >&2
-      print_blockers "$GATE" >&2
+      print_blockers "$file" >&2
     else
       # No blocker row exists, so naming "every listed blocker" would ask for
       # something the gate does not list. Name the lifecycle retention reason
       # that actually holds it instead.
       printf 'fm-afk-return: return catch-up is pending with no open blocker; clear the retention reason below, then run bin/fm-afk-return.sh check\n' >&2
-      reasons=$(gate_retention_reasons "$GATE")
+      reasons=$(gate_retention_reasons "$file")
       if [ -n "$reasons" ]; then
         printf '%s\n' "$reasons" | while IFS= read -r text; do
           printf 'catch-up retained: %s\n' "$text" >&2
@@ -397,7 +405,7 @@ quiet_exit() {
   local pending="$STATE/.quiet-exit-pending" receipt="$STATE/.quiet-exit-receipt"
   local buf="$STATE/.subsuper-escalations" id archived count tmp receipt_id
   # An old away gate has no unique posture identity: never clear or reinterpret it.
-  [ ! -e "$GATE" ] || { return_guard; return 3; }
+  ! catchup_file >/dev/null || { return_guard; return 3; }
   if [ ! -f "$pending" ]; then
     if ! fm_afk_contract_quiet_active "$STATE"; then
       quiet_receipt_print
@@ -875,7 +883,7 @@ EOF
 
 return_reconcile() {
   local evidence blockers drain_err drained drain_ok=1 wake_ack_line wake_ack_through wake_ack_generation wedge escalations lifecycle_ok=1 since contract_since superseded_record retained_record
-  local archived_contract tag kind text retained_live restored_epoch brief
+  local archived_contract tag kind text retained_live restored_epoch brief record_kind
   evidence=$(mktemp "$STATE/.afk-return-evidence.XXXXXX") || return 1
   blockers=$(mktemp "$STATE/.afk-return-blockers.XXXXXX") || { rm -f "$evidence"; return 1; }
   drain_err=$(mktemp "$STATE/.afk-return-drain.XXXXXX") || { rm -f "$evidence" "$blockers"; return 1; }
@@ -974,25 +982,6 @@ EOF
       remove_evidence_prefix lifecycle 'archived away-posture record unreadable' "$evidence" || lifecycle_ok=0
     fi
 
-    while IFS="$(printf '\t')" read -r tag retained_record; do
-      [ "$tag" = superseded ] || continue
-      if [ ! -f "$retained_record" ]; then
-        remove_evidence lifecycle "superseded away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        append_evidence lifecycle "superseded away-posture record missing: $retained_record; catch-up stays gated" "$evidence"
-        lifecycle_ok=0
-      elif ! fm_afk_contract_validate "$retained_record"; then
-        remove_evidence lifecycle "superseded away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        append_evidence lifecycle "superseded away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence"
-        lifecycle_ok=0
-      else
-        remove_evidence lifecycle "superseded away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        remove_evidence lifecycle "superseded away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        remove_superseded_record "$retained_record" "$evidence" || lifecycle_ok=0
-      fi
-    done <<EOF
-$(cat "$evidence")
-EOF
-
     for superseded_record in "$(fm_afk_contract_archive_dir "$STATE")/$contract_since-superseded-"*.afk-contract; do
       [ -f "$superseded_record" ] || continue
       if ! fm_afk_contract_validate "$superseded_record"; then
@@ -1001,28 +990,30 @@ EOF
         lifecycle_ok=0
       fi
     done
+  fi
 
-    # Earlier final archives an intervening entry retained: each must
-    # validate at this return, or catch-up stays gated on it.
-    while IFS="$(printf '\t')" read -r tag retained_record; do
-      [ "$tag" = retained-record ] || continue
-      if [ ! -f "$retained_record" ]; then
-        remove_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        append_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence"
-        lifecycle_ok=0
-      elif ! fm_afk_contract_validate "$retained_record"; then
-        remove_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        append_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence"
-        lifecycle_ok=0
-      else
-        remove_evidence lifecycle "retained away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        remove_evidence lifecycle "retained away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
-        remove_retained_record "$retained_record" "$evidence" || lifecycle_ok=0
-      fi
-    done <<EOF
+  while IFS="$(printf '\t')" read -r tag retained_record; do
+    case "$tag" in
+      superseded) record_kind=superseded ;;
+      retained-record) record_kind=retained ;;
+      *) continue ;;
+    esac
+    if [ ! -f "$retained_record" ]; then
+      remove_evidence lifecycle "$record_kind away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+      append_evidence lifecycle "$record_kind away-posture record missing: $retained_record; catch-up stays gated" "$evidence"
+      lifecycle_ok=0
+    elif ! fm_afk_contract_validate "$retained_record"; then
+      remove_evidence lifecycle "$record_kind away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+      append_evidence lifecycle "$record_kind away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence"
+      lifecycle_ok=0
+    else
+      remove_evidence lifecycle "$record_kind away-posture record missing: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+      remove_evidence lifecycle "$record_kind away-posture record unreadable: $retained_record; catch-up stays gated" "$evidence" || lifecycle_ok=0
+      remove_record_reference "$tag" "$retained_record" "$evidence" || lifecycle_ok=0
+    fi
+  done <<EOF
 $(cat "$evidence")
 EOF
-  fi
 
   if [ -s "$STATE/.subsuper-inject-wedged" ]; then
     wedge=$(head -1 "$STATE/.subsuper-inject-wedged" 2>/dev/null || true)
@@ -1129,7 +1120,7 @@ main() {
   fi
   fm_lock_acquire_wait "$LOCK"
   trap 'fm_lock_release "$LOCK"' EXIT
-  if [ ! -e "$GATE" ] \
+  if ! catchup_file >/dev/null \
      && { fm_afk_contract_quiet_active "$STATE" \
           || { [ ! -e "$STATE/.afk" ] && ! fm_afk_contract_present "$STATE" \
                && { [ -f "$STATE/.quiet-exit-pending" ] || quiet_receipt_present; }; }; }; then
@@ -1140,11 +1131,8 @@ main() {
     return "$rc"
   fi
   window_epoch=$(window_start_epoch)
-  contract_epoch=$(gate_contract_epoch)
-  if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE"; then
-    contract_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
-    case "$contract_epoch" in ''|*[!0-9]*) contract_epoch= ;; esac
-  fi
+  contract_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
+  case "$contract_epoch" in ''|*[!0-9]*) contract_epoch=$(gate_contract_epoch) ;; esac
   write_pending_seed "$window_epoch" "$contract_epoch" || { fm_lock_release "$LOCK"; trap - EXIT; return 1; }
   return_reconcile
   rc=$?
