@@ -1,31 +1,8 @@
-
-TEST_EXIT_STATUS=-9
-es a delayed first content proof before comparison starts
+ok - inventory survives a delayed first content proof before comparison starts
 ok - nested non-repository directories cannot hide a recorded checkout root
 ok - unpublished blocked task is flagged on every startup without changing refs or its blocker
 ok - branch survives missing task metadata and ledger intake
-ok - an open PR does not hide unpublished local follow-up commits
-ok - commits reachable from any publishing remote need no recovery finding
-ok - a squash-merged task head whose remote task branch is gone is not flagged
-ok - local commits newer than a merged head stay flagged
-ok - a merged PR at the exact local head proves landing when the content proof conflicts
-ok - a merged head past the closed-PR bound is unknown, while a complete matching page proves landing
-ok - local commits beyond a merged PR head stay flagged
-ok - a failed merged-proof lookup keeps the branch flagged as unknown
-ok - a fork PR head is looked up in origin and still binds to the exact local head
-ok - the landed proof uses the recorded base branch
-ok - a local no-mistakes proxy ref is not publication evidence
-ok - registered task branch prefixes are respected
-ok - recorded branches remain discoverable after a prefix change
-ok - identical branch names in distinct repositories cannot claim or suppress each other
-ok - local-only projects and per-task delivery choices are not asked to publish
-ok - forge failure cannot masquerade as an absent PR
-ok - a slow forge read retains all discovered branches and an incomplete scan
-ok - a caller deadline bounds the scan from where its timer starts
-ok - replaying a cut-short scan ends the timed scan its caller could not reach
-ok - the replay never ends its own or an unrelated process group
-ok - a timed scan that starts after its deadline stops before any read
-ok - resolved blockers are folded by the existing status owner
-# fm-unpushed-reconcile.test.sh: all assertions passed
-
-TEST_EXIT_STATUS=0
+not ok - missing open PR (missing: 'pr=open')
+--- output ---
+UNPUSHED: project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-unpushed-reconcile.emQw0K/open-pr/projects/demo branch=fm/task head=cbe44ac8a1c5f9bf56474cf17ab4f7fcb4487896 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: incomplete scan (failed or exceeded 20s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan

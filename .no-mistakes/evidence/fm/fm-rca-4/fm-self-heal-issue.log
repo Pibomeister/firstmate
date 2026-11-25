@@ -1,6 +1,5 @@
-
-TEST_EXIT_STATUS=-9
- repository is refused with no gh calls
+1..19
+ok - unapproved repository is refused with no gh calls
 ok - --repo accepts owner/name only
 ok - a new issue gets both labels and the full body
 ok - existing labels are not recreated
@@ -20,5 +19,4 @@ ok - a maintainer scope on a fork does not authorize firstmate
 ok - other approved repositories do not need the firstmate grant
 ok - a flag without a value is a usage error
 FM_TEST_COMPLETE
-
-TEST_EXIT_STATUS=0
+timeout 300 bash tests/$t.test.sh  4.01s user 7.12s system 8% cpu 2:14.08 total

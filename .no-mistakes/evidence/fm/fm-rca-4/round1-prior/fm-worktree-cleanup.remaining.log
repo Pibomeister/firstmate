@@ -1,0 +1,16 @@
+1..14
+ok - a registered lane's merged clean worktree is removed and its record dropped
+ok - a registered lane with uncommitted tracked changes is kept and reported
+ok - a registered lane with a non-ignored untracked file is kept and reported
+ok - a registered lane's worktree is kept while its terminal is open
+ok - a clone-path pass keeps a registered lane while its terminal is open, then removes the clean worktree and the record
+ok - a dry run over a registered lane changes nothing
+ok - a lane whose worktree and terminal are both gone is forgotten
+ok - every lane-record cleanup path visibly refuses an incomplete terminal inventory
+ok - a registered lane's untracked cache files are kept, not pruned, and reported
+ok - a registered lane's worktree that Orca does not list is removed with git worktree remove
+ok - without Orca, a lane's pane is never read as closed and its record is kept
+ok - a worktree that two lanes name is kept and reported
+ok - a task record owns a worktree even when a lane registered it
+ok - a lane worktree inside a registered project is judged once, with the lane checks
+FM_TEST_COMPLETE

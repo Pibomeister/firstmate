@@ -1,0 +1,6 @@
+1..19
+ok - unapproved repository is refused with no gh calls
+ok - --repo accepts owner/name only
+ok - a new issue gets both labels and the full body
+ok - existing labels are not recreated
+not ok - a label past the 500-row bound must not be declared missing (expected '1', got '0')

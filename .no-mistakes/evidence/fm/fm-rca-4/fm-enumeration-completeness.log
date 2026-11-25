@@ -1,7 +1,7 @@
-
-TEST_EXIT_STATUS=-9
-captain-nudge refuses on truncated terminal list
+1..4
+ok - fm-enumeration: captain-nudge refuses on truncated terminal list
 ok - fm-enumeration: captain-nudge finds terminal past the old bound on a complete list
 ok - fm-enumeration: terminal-reap refuses on truncated terminal list
-
-TEST_EXIT_STATUS=0
+ok - fm-enumeration: terminal-reap refuses when totalCount exceeds the listed terminals without a truncated flag
+FM_TEST_COMPLETE
+timeout 300 bash tests/$t.test.sh  1.06s user 1.70s system 11% cpu 24.824 total

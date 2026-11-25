@@ -1,0 +1,9 @@
+1..14
+ok - a registered lane's merged clean worktree is removed and its record dropped
+ok - a registered lane with uncommitted tracked changes is kept and reported
+ok - a registered lane with a non-ignored untracked file is kept and reported
+ok - a registered lane's worktree is kept while its terminal is open
+ok - a clone-path pass keeps a registered lane while its terminal is open, then removes the clean worktree and the record
+ok - a dry run over a registered lane changes nothing
+ok - a lane whose worktree and terminal are both gone is forgotten
+not ok - missing [lane terminal term-lane inventory is unreadable or incomplete] in decision output: 

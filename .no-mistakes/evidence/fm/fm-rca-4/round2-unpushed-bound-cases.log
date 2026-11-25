@@ -1,0 +1,8 @@
+ok - a squash-merged task head whose remote task branch is gone is not flagged
+ok - local commits newer than a merged head stay flagged
+ok - a merged PR at the exact local head proves landing when the content proof conflicts
+ok - a merged head past the closed-PR bound is unknown, while a complete matching page proves landing
+ok - local commits beyond a merged PR head stay flagged
+ok - a failed merged-proof lookup keeps the branch flagged as unknown
+FM_TEST_COMPLETE
+exit=0

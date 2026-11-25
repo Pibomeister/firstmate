@@ -1,0 +1,16 @@
+ok - inventory survives a delayed first content proof before comparison starts
+ok - nested non-repository directories cannot hide a recorded checkout root
+ok - unpublished blocked task is flagged on every startup without changing refs or its blocker
+ok - branch survives missing task metadata and ledger intake
+ok - an open PR does not hide unpublished local follow-up commits
+ok - commits reachable from any publishing remote need no recovery finding
+ok - a squash-merged task head whose remote task branch is gone is not flagged
+ok - local commits newer than a merged head stay flagged
+ok - a merged PR at the exact local head proves landing when the content proof conflicts
+ok - a merged head past the closed-PR bound is unknown, while a complete matching page proves landing
+ok - local commits beyond a merged PR head stay flagged
+not ok - a failed merged-proof read became a definite answer (missing: 'merged=unknown')
+--- output ---
+UNPUSHED: project=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-unpushed-reconcile.04AAkm/merged-lookup-failure/projects/demo branch=fm/task head=94fa0445841e361dedecc41bc3b0da87ae2d6e68 commits=1 task=task owner=recorded; flag for supervisor recovery
+UNPUSHED: task=task [key=nm-daemon-gate-context] blocked: startup timed out twice; escalate before retrying publication
+UNPUSHED: incomplete scan (failed or exceeded 20s); rerun {run-worktree}/bin/fm-unpushed-reconcile.sh scan

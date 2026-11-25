@@ -1,6 +1,5 @@
-
-TEST_EXIT_STATUS=-9
--nudge: help and usage plumbing
+1..26
+ok - fm-captain-nudge: help and usage plumbing
 ok - fm-captain-nudge: decide nudges when idle with open work and empty composer
 ok - fm-captain-nudge: decide skips when idle is below threshold
 ok - fm-captain-nudge: decide skips when there is no open work
@@ -30,5 +29,3 @@ ok - fm-captain-nudge: literal ~ in config paths expands to HOME
 ok - fm-captain-nudge: herdr idle tracks screen change, not a cron heartbeat
 ok - fm-captain-nudge: submits only its own unsent fixed prompt, Enter only
 FM_TEST_COMPLETE
-
-TEST_EXIT_STATUS=0
