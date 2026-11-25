@@ -17,7 +17,10 @@
 # (state/<id>.check.sh), in the delivery mode the relaunch resync supports
 # (mode=no-mistakes, or no mode and a `no-mistakes` remote), with an origin
 # remote, its recorded branch checked out in its recorded worktree, no
-# deliberate stop (state/.crew-stopped-<id>), and no terminal last status.
+# deliberate stop (state/.crew-stopped-<id>), and no terminal last status
+# unless the task's steering inbox (state/<id>.inbox, pending or handled/) holds
+# a record whose at= header, or mtime when that is unreadable, is newer than
+# the terminal line's [at=]: firstmate steered the worker after it finished.
 # Each candidate is probed at most once per FM_PR_BEHIND_INTERVAL seconds
 # (default 900): one bounded `git ls-remote` of origin's branch. A head equal to
 # the local branch, or one this task already settled, ends the probe there.
@@ -31,7 +34,11 @@
 #   - planned:archive-advance (diverged), or any other refusal: record it, no
 #     relaunch;
 #   - planned:advance (strictly behind, clean): a decision held for the
-#     captain records `held`; otherwise request one relaunch.
+#     captain records `held`, and a hold that cannot be read records
+#     `hold-unknown`; otherwise request one relaunch.
+# A relaunch that returns but leaves the branch short of the PR head (the copy
+# turned dirty, or a run took the branch, before the stop) records `unsynced`
+# and reports it once; that reopens the head for a later sweep.
 # A relaunch is requested at most once per new PR head and at most once per
 # scan. A dirty or active head is not settled, so the same head is requested
 # once the copy is clean and the run is over; its event is reported only once.
@@ -40,7 +47,8 @@
 #
 # Ledger: state/.pr-behind-<id>, rows `<epoch>\t<event>\t<head>`, newest last,
 # trimmed to the last 64 rows. Events: probe current dirty held active diverged
-# refused requested relaunched deferred failed unreadable.
+# refused requested relaunched unsynced deferred failed unreadable held
+# hold-unknown.
 #
 # Output: one `<wake-key>\t<check reason>` line per event the supervisor should
 # see; bin/fm-watch.sh appends each as a durable check wake. Silence means
@@ -72,6 +80,8 @@ esac
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-task-inbox-lib.sh
+. "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 
 posint() {  # <value> <default>
   case "$1" in ''|*[!0-9]*|0) printf '%s' "$2" ;; *) printf '%s' "$1" ;; esac
@@ -105,11 +115,11 @@ record() {  # <event> <head>
 last_probe() { awk -F '\t' '$1 ~ /^[0-9]+$/ { t = $1 } END { print t + 0 }' "$LEDGER" 2>/dev/null || echo 0; }
 # The head whose relaunch question is closed: a request, a not-behind reading,
 # or a divergence or refusal the relaunch would also refuse. `deferred` (the
-# control plane proved nothing was sent) reopens it.
+# control plane proved nothing was sent) and `unsynced` reopen it.
 settled_head() {
   awk -F '\t' '
     $2 ~ /^(current|requested|relaunched|failed|diverged|refused)$/ { h = $3 }
-    $2 == "deferred" && $3 == h { h = "" }
+    $2 ~ /^(deferred|unsynced)$/ && $3 == h { h = "" }
     END { print h }' "$LEDGER" 2>/dev/null
 }
 seen_event() { awk -F '\t' -v e="$1" -v h="$2" '$2 == e && $3 == h { f = 1 } END { exit !f }' "$LEDGER" 2>/dev/null; }
@@ -119,6 +129,18 @@ note() {  # <event> <head> <key> <reason>
   ! seen_event "$1" "$2" || first=0
   record "$1" "$2" || return 0
   [ "$first" -eq 0 ] || emit "$3" "$4"
+}
+
+steered_after() {  # <task-id> <status-line>: an inbox record is newer than the line
+  local at f ts e
+  at=$(status_line_at_epoch "$2") || return 1
+  for f in "$(fm_task_inbox_dir "$STATE" "$1")"/*.msg "$(fm_task_inbox_handled_dir "$STATE" "$1")"/*.msg; do
+    [ -f "$f" ] || continue
+    ts=$(sed -n '/^--$/q; s/^at=//p' "$f" 2>/dev/null | head -n 1)
+    e=$(fm_utc_iso_to_epoch "$ts") || e=$(fm_path_mtime "$f") || continue
+    [ "$e" -le "$at" ] || return 0
+  done
+  return 1
 }
 
 requested=0
@@ -145,7 +167,8 @@ for meta in "$STATE"/*.meta; do
   git -C "$wt" remote get-url origin >/dev/null 2>&1 || continue
   [ ! -e "$STATE/.crew-stopped-$id" ] && [ ! -L "$STATE/.crew-stopped-$id" ] || continue
   statusf="$STATE/$id.status"
-  ! status_is_terminal_verb "$(last_status_line "$statusf")" || continue
+  last=$(last_status_line "$statusf")
+  ! status_is_terminal_verb "$last" || steered_after "$id" "$last" || continue
   [ "$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null)" = "$branch" ] || continue
   LEDGER="$STATE/.pr-behind-$id"
   [ ! -L "$LEDGER" ] || continue
@@ -200,11 +223,15 @@ for meta in "$STATE"/*.meta; do
       continue
       ;;
   esac
-  if status_is_captain_held "$(status_declared_wait_line "$statusf")" \
-    || FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" open "$id" --identity >/dev/null 2>&1; then
-    record held "$pub" || true
-    continue
-  fi
+  hold_rc=0
+  status_is_captain_held "$(status_declared_wait_line "$statusf")" \
+    || FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-captain-hold.sh" open "$id" --identity >/dev/null 2>&1 \
+    || hold_rc=$?
+  case "$hold_rc" in
+    0) record held "$pub" || true; continue ;;
+    1) ;;
+    *) record hold-unknown "$pub" || true; continue ;;
+  esac
 
   # Leave the request to a later sweep, with nothing recorded, when it could
   # not finish before the deadline; probed tasks are spaced out by then.
@@ -223,9 +250,22 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
     fm_run_timed "$left" "$CONTROL" "$id" relaunch --note "$relaunch_note" </dev/null 2>&1) || rc=$?
   case "$rc" in
     0)
-      record relaunched "$pub" || true
-      emit "pr-behind-relaunched-$id-$(short "$pub")" \
-        "check: $id relaunched because its local branch $branch ($(short "$local_head")) was behind its PR head $(short "$pub") ($pr) - the relaunch resynced it; reconcile its current state rather than relaunching it again"
+      now_head=$(git -C "$wt" rev-parse -q --verify "refs/heads/$branch^{commit}" 2>/dev/null)
+      if [ "$now_head" = "$pub" ]; then
+        record relaunched "$pub" || true
+        emit "pr-behind-relaunched-$id-$(short "$pub")" \
+          "check: $id relaunched because its local branch $branch ($(short "$local_head")) was behind its PR head $(short "$pub") ($pr) - the relaunch resynced it; reconcile its current state rather than relaunching it again"
+      else
+        if [ -n "$(git -C "$wt" status --porcelain --untracked-files=all 2>/dev/null)" ]; then
+          cause="its local copy had uncommitted changes when the worker stopped"
+        elif printf '%s\n' "$out" | grep -q 'monitoring-only'; then
+          cause="an active no-mistakes run held the branch when the worker stopped"
+        else
+          cause="the relaunch did not say why"
+        fi
+        note unsynced "$pub" "pr-behind-unsynced-$id-$(short "$pub")" \
+          "check: $id relaunched because its local branch $branch ($(short "$local_head")) was behind its PR head $(short "$pub") ($pr), but the branch is still at $(short "${now_head:-unknown}") because $cause; it was not resynced - a later sweep retries once the copy is clean and no run holds it"
+      fi
       ;;
     5|6|7)
       # The control plane proved nothing reached the agent; retry on a later sweep.

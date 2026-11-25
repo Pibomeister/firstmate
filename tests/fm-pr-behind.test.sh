@@ -26,7 +26,14 @@ mkdir -p "$STUB_BIN"
 cat > "$STUB_BIN/fm-control" <<'EOF'
 #!/usr/bin/env bash
 printf '%s|gen=%s|noguard=%s\n' "$1 $2" "${FM_CONTROL_EXPECT_SPAWN_GEN:-}" "${FM_SPAWN_NO_GUARD:-}" >> "$CTL_CALLS"
-exit "${CTL_RC:-0}"
+rc=${CTL_RC:-0}
+if [ "$rc" -eq 0 ]; then
+  case "${CTL_SYNC:-ff}" in
+    ff) git -C "$CTL_WT" pull -q --ff-only origin "$(git -C "$CTL_WT" symbolic-ref --short HEAD)" ;;
+    dirty) printf 'late edit\n' > "$CTL_WT/late.txt" ;;
+  esac
+fi
+exit "$rc"
 EOF
 cat > "$STUB_BIN/no-mistakes" <<'EOF'
 #!/usr/bin/env bash
@@ -52,7 +59,7 @@ fixture() {  # <name>: origin publishes $B; the task clone holds $B at the same 
   git clone -q -b "$B" "$D/origin.git" "$D/wt"
   WT=$D/wt
   S=$D/state
-  mkdir -p "$S"
+  mkdir -p "$S" "$D/data"
   printf 'kind=ship\nworktree=%s\nbranch=%s\nmode=no-mistakes\nspawn_gen=4\npr=%s\n' "$WT" "$B" "$PR" > "$S/$TASK.meta"
   printf '#!/usr/bin/env bash\n' > "$S/$TASK.check.sh"
   printf 'working [at=1]: building\n' > "$S/$TASK.status"
@@ -73,7 +80,7 @@ age_ledger() {  # move every ledger row past the probe interval
 
 scan() {
   OUT=$(PATH="$STUB_BIN:$PATH" FM_HOME="$D" FM_STATE_OVERRIDE="$S" FM_CONTROL_BIN="$STUB_BIN/fm-control" \
-    CTL_CALLS="$CTL_CALLS" NM_CALLS="$NM_CALLS" NM_RESPONSE="$D/nm-response" bash "$SCAN" scan 2>&1)
+    CTL_CALLS="$CTL_CALLS" CTL_WT="$WT" NM_CALLS="$NM_CALLS" NM_RESPONSE="$D/nm-response" bash "$SCAN" scan 2>&1)
   RC=$?
   expect_code 0 "$RC" "scan exit"
 }
@@ -224,6 +231,67 @@ test_ineligible_ships_are_skipped() {
   pass "a ship with no merge poll, a terminal status, a deliberate stop or a remote host is never probed"
 }
 
+steer() {  # <iso-at> [handled]: one steering record for $TASK
+  local dir=$S/$TASK.inbox
+  [ -z "${2:-}" ] || dir=$dir/handled
+  mkdir -p "$dir"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nplease address the review\n' "$1" > "$dir/001.msg"
+}
+
+iso() { date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+test_steer_after_done_is_probed() {
+  local done_at
+  done_at=$(( $(date +%s) - 600 ))
+  fixture steered
+  publish fix1
+  printf 'done [at=%s]: PR %s\n' "$done_at" "$PR" >> "$S/$TASK.status"
+  steer "$(iso $(( done_at - 60 )))" handled
+  scan
+  assert_equals 0 "$(calls)" "steer older than done: no relaunch"
+  assert_equals "" "$(events)" "steer older than done: never probed"
+  steer "$(iso $(( done_at + 60 )))" handled
+  scan
+  assert_equals 1 "$(calls)" "steer newer than done: one relaunch request"
+  assert_contains "$OUT" "check: $TASK relaunched because its local branch $B" "steer newer than done: wake reason"
+  pass "a finished ship steered after its done line is probed, and one steered only before it is not"
+}
+
+test_relaunch_that_left_the_branch_behind_is_reported() {
+  fixture unsynced
+  publish fix1
+  CTL_SYNC=dirty scan
+  assert_equals 1 "$(calls)" "unsynced: one relaunch request"
+  assert_contains "$OUT" "pr-behind-unsynced-$TASK-" "unsynced: a durable wake key"
+  assert_contains "$OUT" "it was not resynced" "unsynced: honest reason"
+  assert_contains "$OUT" "uncommitted changes" "unsynced: names the dirty copy"
+  case "$OUT" in *"the relaunch resynced it"*) fail "unsynced: claimed a resync that did not happen" ;; esac
+  rm "$WT/late.txt"
+  age_ledger
+  CTL_SYNC=none scan
+  assert_equals 2 "$(calls)" "unsynced: the same head is requested again once clean"
+  assert_equals "" "$OUT" "unsynced again: reported only once per head"
+  age_ledger
+  scan
+  assert_equals 3 "$(calls)" "unsynced twice: still reopened"
+  assert_contains "$OUT" "the relaunch resynced it" "synced at last: success reported"
+  pass "a relaunch that leaves the branch behind its PR head is reported honestly and retried"
+}
+
+test_unreadable_captain_hold_does_not_relaunch() {
+  fixture holdunknown
+  publish fix1
+  rmdir "$D/data"
+  scan
+  assert_equals 0 "$(calls)" "hold unknown: no relaunch"
+  assert_equals "hold-unknown " "$(events)" "hold unknown: recorded"
+  mkdir "$D/data"
+  age_ledger
+  scan
+  assert_equals 1 "$(calls)" "hold readable again: the same head is requested"
+  pass "a captain hold that cannot be read blocks the relaunch until a later sweep can read it"
+}
+
 test_watcher_sweep_queues_the_relaunch() {
   local out drain_out pid
   fixture watcher
@@ -234,7 +302,7 @@ test_watcher_sweep_queues_the_relaunch() {
   out=$D/watch.out
   drain_out=$D/drain.out
   PATH="$STUB_BIN:$PATH" FM_HOME="$D" FM_STATE_OVERRIDE="$S" FM_CONTROL_BIN="$STUB_BIN/fm-control" \
-    CTL_CALLS="$CTL_CALLS" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
+    CTL_CALLS="$CTL_CALLS" CTL_WT="$WT" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 \
     "$ROOT/bin/fm-watch.sh" > "$out" 2>/dev/null &
   pid=$!
   wait_for_exit "$pid" 400 || fail "watcher did not wake for the relaunch"
@@ -267,5 +335,8 @@ fm_test_run \
   test_diverged_is_reported_without_relaunch \
   test_refused_control_retries_later \
   test_ineligible_ships_are_skipped \
+  test_steer_after_done_is_probed \
+  test_relaunch_that_left_the_branch_behind_is_reported \
+  test_unreadable_captain_hold_does_not_relaunch \
   test_watcher_sweep_queues_the_relaunch \
   test_usage
