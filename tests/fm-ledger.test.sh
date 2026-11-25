@@ -605,7 +605,7 @@ test_claim_project_symlink_cannot_cross_home() {
   pass 'claim rejects a project symlink outside the home projects root'
 }
 
-claim_transition_for_test() { # <token> <begin|launch|finish>
+claim_transition_for_test() { # <token> <begin|launch|fence|finish>
   FM_HOME="$HOME_DIR" bash -c '
     source "$1/bin/fm-wake-lib.sh"
     fm_lock_try_acquire "$FM_HOME/state/.spawn-claim-one.lock" || exit 1
@@ -896,6 +896,137 @@ test_claim_spawn_waits_for_concurrent_claim_lock() {
   pass 'spawn claim transitions wait for concurrent claim lock without losing launch completion'
 }
 
+# After claim-launch, spawn hashes the home path before the delivery-point
+# fence. A wrapper that fires only once phase=launching injects into that
+# window without racing the launch transition's own hold read.
+wrap_shasum_after_launching() { # <fakebin>
+  local real_sha
+  real_sha=$(command -v shasum)
+  cat > "$1/shasum" <<EOF
+#!/usr/bin/env bash
+if [ "\$#" = 2 ] && [ "\$1" = -a ] && [ "\$2" = 256 ] &&
+  [ "\$(jq -r .phase "\$FM_CLAIM_RECEIPT" 2>/dev/null)" = launching ] &&
+  [ -f "\$FM_LAUNCHING_TRIGGER" ]; then
+  mv "\$FM_LAUNCHING_TRIGGER" "\$FM_LAUNCHING_TRIGGER.fired"
+  case "\${FM_LAUNCHING_ACTION:-}" in
+    hold)
+      FM_HOME="\$FM_HOLD_HOME" "$ROOT/bin/fm-order.sh" send --hold --from test -- 'hold before delivery' >/dev/null || exit 1
+      ;;
+    stall) sleep 2 ;;
+  esac
+fi
+exec "$real_sha" "\$@"
+EOF
+  chmod +x "$1/shasum"
+}
+
+make_tmux_agent_dead() { # <fakebin>
+  local pane_pid
+  # Relaunch waits for a numeric pane pid whose comm matches pane_current_command.
+  bash -c 'exec -a zsh sleep 3600' &
+  pane_pid=$!
+  printf '%s\n' "$pane_pid" > "$1/.fake-pane-pid"
+  mv "$1/tmux" "$1/tmux-original"
+  cat > "$1/tmux" <<'SH'
+#!/usr/bin/env bash
+pane_pid=$(cat "$(dirname "$0")/.fake-pane-pid" 2>/dev/null || echo 1)
+case "$*" in
+  *'#{pane_pid}'*) printf '%s\n' "$pane_pid"; exit 0 ;;
+  *'#{pane_tty}'*) printf '/dev/ttys999\n'; exit 0 ;;
+  *'#{pane_current_command}'*) printf 'zsh\n'; exit 0 ;;
+esac
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+  cat > "$1/ps" <<'SH'
+#!/usr/bin/env bash
+case "$*" in
+  *'-o comm='*) printf 'zsh\n'; exit 0 ;;
+  *'-o pid=,pgid=,tpgid=,comm='*) printf '123 123 123 zsh\n'; exit 0 ;;
+  *'-o args='*) printf 'zsh\n'; exit 0 ;;
+esac
+exec /bin/ps "$@"
+SH
+  chmod +x "$1/tmux" "$1/ps"
+}
+
+claim_launch_count() { # <log>
+  if [ -f "$1" ]; then grep -c 'export FM_TASK_INBOX=' "$1" || true; else printf '0\n'; fi
+}
+
+test_claim_spawn_fence_refuses_hold_before_delivery() {
+  claim_fixture claim-spawn-fence
+  local out token wt fakebin
+  out=$(ledger claim --project alpha) || fail "cannot reserve spawn fence fixture: $out"
+  token=${out##*token=}
+  wt="$HOME_DIR/test-worktree"
+  fm_git_worktree "$HOME_DIR/projects/alpha" "$wt" claim-spawn-fence
+  fakebin=$(fm_test_make_spawn_fakebin "$HOME_DIR/fake" codex)
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  wrap_shasum_after_launching "$fakebin"
+  touch "$HOME_DIR/inject-delivery-hold"
+  out=$(
+    FM_CLAIM_RECEIPT="$HOME_DIR/state/ledger-claims/claim-one.json" \
+    FM_LAUNCHING_TRIGGER="$HOME_DIR/inject-delivery-hold" \
+    FM_LAUNCHING_ACTION=hold \
+    FM_HOLD_HOME="$HOME_DIR" \
+    FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/fence-launch.log" \
+    fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token"
+  ) && fail "spawn delivered a worker after a hold at the delivery point: $out"
+  [ -f "$HOME_DIR/inject-delivery-hold.fired" ] || fail 'delivery-point hold fixture did not reach the post-launch hash'
+  assert_contains "$out" 'standing holds' 'the delivery-point recheck observes the late hold'
+  [ "$(claim_launch_count "$HOME_DIR/fence-launch.log")" = 0 ] || fail 'the backend received a worker launch after the delivery-point hold'
+  pass 'a hold published after claim-launch refuses spawn before worker delivery'
+}
+
+test_claim_relaunch_from_launching_rechecks_hold() {
+  claim_fixture claim-relaunch-launching
+  local out token wt fakebin spawn_pid deadline pgid my_pgid
+  out=$(ledger claim --project alpha) || fail "cannot reserve launching-relaunch fixture: $out"
+  token=${out##*token=}
+  wt="$HOME_DIR/test-worktree"
+  fm_git_worktree "$HOME_DIR/projects/alpha" "$wt" claim-relaunch-launching
+  fakebin=$(fm_test_make_spawn_fakebin "$HOME_DIR/fake" codex)
+  printf 'codex\n' > "$HOME_DIR/config/crew-harness"
+  touch "$HOME_DIR/state/.last-watcher-beat"
+  wrap_shasum_after_launching "$fakebin"
+  touch "$HOME_DIR/stall-after-launch"
+  FM_CLAIM_RECEIPT="$HOME_DIR/state/ledger-claims/claim-one.json" \
+  FM_LAUNCHING_TRIGGER="$HOME_DIR/stall-after-launch" \
+  FM_LAUNCHING_ACTION=stall \
+  FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/crash-launch.log" \
+    fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one "$HOME_DIR/projects/alpha" --scout --claim "$token" \
+    > "$HOME_DIR/crash-spawn.out" 2>&1 &
+  spawn_pid=$!
+  deadline=$((SECONDS + 30))
+  while [ ! -f "$HOME_DIR/stall-after-launch.fired" ]; do
+    [ "$SECONDS" -lt "$deadline" ] || fail "crash fixture did not reach the post-launch hash: $(cat "$HOME_DIR/crash-spawn.out")"
+    sleep 0.01
+  done
+  pgid=$(ps -o pgid= -p "$spawn_pid" 2>/dev/null | tr -d ' ')
+  my_pgid=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+  if [ -n "$pgid" ] && [ "$pgid" != "$my_pgid" ]; then
+    kill -KILL -- "-$pgid" 2>/dev/null || true
+  fi
+  pkill -KILL -P "$spawn_pid" 2>/dev/null || true
+  kill -KILL "$spawn_pid" 2>/dev/null || true
+  wait "$spawn_pid" 2>/dev/null || true
+  [ "$(jq -r .phase "$HOME_DIR/state/ledger-claims/claim-one.json")" = launching ] || fail 'crash fixture did not leave a launching receipt'
+  [ "$(claim_launch_count "$HOME_DIR/crash-launch.log")" = 0 ] || fail 'the killed dispatcher already delivered a worker'
+  make_tmux_agent_dead "$fakebin"
+  order send --hold --from test -- 'hold after crash' >/dev/null || fail 'hold publish failed'
+  out=$(
+    FM_BACKEND=tmux FM_FAKE_LAUNCH_LOG="$HOME_DIR/relaunch-launch.log" \
+    fm_test_run_spawn "$HOME_DIR" "$wt" "$fakebin" claim-one --relaunch
+  ) && fail "relaunch from launching delivered a worker without the delivery-point hold recheck: $out"
+  assert_contains "$out" 'standing holds' 'relaunch from launching rechecks standing holds'
+  [ "$(claim_launch_count "$HOME_DIR/relaunch-launch.log")" = 0 ] || fail 'relaunch from launching delivered a worker after a hold'
+  if [ -f "$fakebin/.fake-pane-pid" ]; then
+    kill "$(cat "$fakebin/.fake-pane-pid")" 2>/dev/null || true
+  fi
+  pass 'a crash after claim-launch forces relaunch through the delivery-point hold recheck'
+}
+
 test_claim_waits_for_concurrent_claim_scan() {
   claim_fixture claim-wait-scan
   local out holder
@@ -913,13 +1044,18 @@ test_claim_waits_for_concurrent_claim_scan() {
   pass 'a claimant waits for a concurrent claim scan instead of refusing'
 }
 
+if [ "${FM_TEST_ONLY:-}" = delivery-fence ]; then
+  fm_test_run test_claim_spawn_fence_refuses_hold_before_delivery test_claim_relaunch_from_launching_rechecks_hold
+  exit
+fi
+
 if [ "${FM_TEST_ONLY:-}" = claims ]; then
-  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance test_claim_spawn_waits_for_concurrent_claim_lock test_claim_waits_for_concurrent_claim_scan
+  fm_test_run test_claim_reserves_once_and_resumes test_claim_refusals_and_changed_approval test_claim_concurrent_spawn_and_lost_reply test_claim_crash_fence test_claim_skips_unprepared_work_and_scopes_charter_guidance test_claim_spawn_waits_for_concurrent_claim_lock test_claim_spawn_fence_refuses_hold_before_delivery test_claim_waits_for_concurrent_claim_scan
   exit
 fi
 
 if [ "${FM_TEST_ONLY:-}" = claim-recovery ]; then
-  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_refusals_leave_no_staging_files test_claim_authority_boundaries test_claim_release_requires_proven_retirement
+  fm_test_run test_claim_crash_fence test_claim_parked_order_revokes_authority test_claim_project_symlink_cannot_cross_home test_claim_rechecks_hold_at_publication test_claim_refusals_leave_no_staging_files test_claim_authority_boundaries test_claim_release_requires_proven_retirement test_claim_relaunch_from_launching_rechecks_hold
   exit
 fi
 
@@ -936,6 +1072,8 @@ fm_test_run \
   test_claim_release_requires_proven_retirement \
   test_claim_skips_unprepared_work_and_scopes_charter_guidance \
   test_claim_spawn_waits_for_concurrent_claim_lock \
+  test_claim_spawn_fence_refuses_hold_before_delivery \
+  test_claim_relaunch_from_launching_rechecks_hold \
   test_claim_waits_for_concurrent_claim_scan \
   test_intake_files_one_item_per_ask_and_replays \
   test_intake_replay_key_and_existing_ids \

@@ -126,8 +126,9 @@
 # dispatching -> launching after metadata publication and before worker delivery;
 # fence re-reads claim authority at the delivery point without moving the receipt;
 # finish changes launching -> launched after delivery and backlog commit.
-# A missing token refuses an existing claim; relaunch is the recovery path only
-# after a launch was attempted, never for a claim that has not launched.
+# A missing token refuses an existing claim. Relaunch of a launched receipt is
+# the recovery path after delivery. Relaunch of a launching receipt re-runs fence
+# and may finish; a claim that has not launched still refuses.
 #
 # DEPTH. `depth` reports every active project whose ready queue is below the
 # target, so the night always has work:

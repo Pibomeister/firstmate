@@ -4998,22 +4998,35 @@ spawn_claim_transition() {
     # that never attempted a launch has no delivered worker to recover:
     # letting relaunch proceed would perform the first launch past every
     # claim authority check, so refuse it toward claim recovery instead.
+    # launching means claim-launch ran and delivery has not: re-enter fence
+    # and finish so a crash in that window still rechecks holds.
     local receipt="$STATE/ledger-claims/$ID.json" phase=''
     if [ -e "$receipt" ] || [ -L "$receipt" ]; then
       [ -f "$receipt" ] && [ -r "$receipt" ] && [ ! -L "$receipt" ] && phase=$(jq -r '.phase // empty' "$receipt" 2>/dev/null)
       case "$phase" in
-        launching | launched) return 0 ;;
+        launched) return 0 ;;
+        launching)
+          case "$1" in
+            fence | finish) ;;
+            *) return 0 ;;
+          esac
+          ;;
         *)
           echo "error: task $ID holds a ledger claim that has not launched (phase=${phase:-unreadable}); relaunch would bypass claim checks - recover it through fm-ledger.sh claim --resume or claim-release" >&2
           return 1
           ;;
       esac
+    else
+      return 0
     fi
-    return 0
   fi
   if [ -n "$LEDGER_CLAIM" ] || [ -e "$STATE/ledger-claims/$ID.json" ] || [ -L "$STATE/ledger-claims/$ID.json" ]; then
+    local claim_token=$LEDGER_CLAIM
+    if [ "$RELAUNCH" -eq 1 ] && [ -z "$claim_token" ]; then
+      claim_token=$(jq -r '.token // empty' "$STATE/ledger-claims/$ID.json" 2>/dev/null)
+    fi
     FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
-      "$SCRIPT_DIR/fm-ledger.sh" "claim-$1" "$ID" "$LEDGER_CLAIM" "$PROJ_ABS"
+      "$SCRIPT_DIR/fm-ledger.sh" "claim-$1" "$ID" "$claim_token" "$PROJ_ABS"
   fi
 }
 spawn_claim_transition check || exit 1
