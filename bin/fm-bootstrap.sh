@@ -1833,6 +1833,12 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
       "$SCRIPT_DIR/fm-ledger.sh" arm --if-enabled >/dev/null \
       || echo "MISSING: the mission ledger's ready-depth check could not be armed; thin night queues are not reported"
   fi
+  # The reset audit's sweep check writes one row per supervisor context reset.
+  if local_phase && [ -d "$DATA" ] && [ -d "$STATE" ] && [ -x "$SCRIPT_DIR/fm-reset-audit.sh" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-reset-audit.sh" arm >/dev/null 2>&1 \
+      || echo "MISSING: the reset audit check could not be armed; supervisor context resets are not audited"
+  fi
   if [ -n "$fleet_sync_pid" ]; then
     wait "$fleet_sync_pid" || true
     cat "$fleet_sync_out"

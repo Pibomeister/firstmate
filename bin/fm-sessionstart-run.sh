@@ -147,6 +147,14 @@ case "$SOURCE" in
     exec "$SCRIPT_DIR/fm-sessionstart-nudge.sh"
     ;;
   clear|compact)
+    # The reset audit freezes its "before" snapshot before this session acts
+    # (bin/fm-reset-audit.sh). It never blocks or fails the session open.
+    if fm_session_lock_owned_by_self "$STATE" && [ -x "$SCRIPT_DIR/fm-reset-audit.sh" ]; then
+      RESET_KIND=compaction
+      [ "$SOURCE" = compact ] || RESET_KIND=clear
+      FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-reset-audit.sh" \
+        begin --kind "$RESET_KIND" --source hook >/dev/null 2>&1 || true
+    fi
     if session_start_completed; then
       "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
     else

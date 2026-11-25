@@ -369,6 +369,10 @@ successor_argv() {
   esac
 }
 
+# End a late successor of an earlier failed attempt before launching a new
+# one (bin/fm-handoff-reconcile.sh owns the rules). It never fails this launch.
+fm_run_timed 8 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply >/dev/null 2>&1 || true
+
 for attempt in 1 2; do
   if ! take_claim; then
     fail_handoff claim_busy
