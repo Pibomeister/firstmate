@@ -82,7 +82,7 @@ reconcile() {
     PATH="$FAKEBIN:$PATH" FAKE_ORCA="$FAKE_ORCA" FM_HOME="$HOME_DIR" "$@" bash "$RECONCILE" ${ARGS[@]+"${ARGS[@]}"}
 }
 apply() { ARGS=(--apply --report); reconcile "$@"; }
-dry() { ARGS=(); reconcile "$@"; }
+dry() { ARGS=(); reconcile; }
 
 event() {  # <seconds ago> <event> <nonce> <handle> <reason>
   printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=0 handle=%s reason=%s\n' \

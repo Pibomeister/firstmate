@@ -61,6 +61,11 @@
 # unfinished exit once clearing an earlier record has begun, and a launch
 # removes it once it holds the launch lock; bin/fm-handoff-lib.sh owns the record and
 # how it releases a planned fresh start's Stop gate for the surviving session.
+# Before its budget starts, a launch runs bin/fm-handoff-reconcile.sh --apply,
+# which ends a late successor of an earlier failed attempt, and stages the
+# reset audit's snapshot when bin/fm-ledger.sh handoff did not; a verified
+# transfer records the handoff with bin/fm-reset-audit.sh begin. Those scripts
+# own the rules; the calls never fail a launch and spend none of its budget.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -307,6 +312,11 @@ trap 'HANDOFF_FAILURE_REASON=interrupted; exit 1' HUP INT TERM
 # still leaves this launch's own failure record for the surviving session.
 FAILED_RECORD_CLEARED=1
 rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
+# Before the budget starts: end a late successor of an earlier failed attempt
+# (bin/fm-handoff-reconcile.sh), and make sure the reset audit has this
+# handoff's "before" snapshot (bin/fm-reset-audit.sh). Neither fails the launch.
+fm_run_timed 8 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply >/dev/null 2>&1 || true
+FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" stage --if-absent >/dev/null 2>&1 || true
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
 
@@ -341,6 +351,8 @@ record_completion() {
   mv "$record_tmp" "$STATE/.handoff-successor" || return 1
   HANDOFF_COMPLETE=1
   fm_failover_log "event=successor_ready pid=$(cat "$STATE/.lock") $SUCC_RECORD" || true
+  # The transfer is verified: this handoff is a reset the audit must settle.
+  FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff --if-staged >/dev/null 2>&1 || true
 }
 
 # The predecessor's own endpoint, for bin/fm-handoff-close.sh after a committed
@@ -368,10 +380,6 @@ successor_argv() {
     agy) SUCC_ARGV=("${MARKER_ENV[@]}" agy --prompt-interactive "$PROMPT" ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} "${PERM_ARGS[@]}") ;;
   esac
 }
-
-# End a late successor of an earlier failed attempt before launching a new
-# one (bin/fm-handoff-reconcile.sh owns the rules). It never fails this launch.
-fm_run_timed 8 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply >/dev/null 2>&1 || true
 
 for attempt in 1 2; do
   if ! take_claim; then

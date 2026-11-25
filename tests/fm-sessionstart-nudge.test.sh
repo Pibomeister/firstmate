@@ -330,6 +330,54 @@ test_run_new_context_clears_the_order_handoff_record() {
   pass "run wrapper: a lock owner's clear, compact, or resume clears the earlier order handoff record"
 }
 
+# A compaction of the session that holds the helm is a reset the audit must
+# settle; a clear, and a compaction of a session that does not hold the helm,
+# are not recorded.
+test_run_compact_records_the_reset_for_the_lock_owner() {
+  local root="$TMP_ROOT/run-reset-audit" hostbin tool real holder saved_lock
+  for tool in tasks-axi node; do
+    command -v "$tool" >/dev/null 2>&1 || {
+      echo "skip: $tool not found; the compaction reset record was not exercised"
+      return 0
+    }
+  done
+  make_run_primary "$root"
+  fm_test_tasks_toml "$root/.tasks.toml"
+  printf '## In flight\n\n## Queued\n\n## Done\n' >"$root/data/backlog.md"
+  # The wrapper runs on the deliberately bare PATH; expose only what the audit
+  # needs, on the host PATH those tools need to run.
+  hostbin="$root/hostbin"
+  mkdir -p "$hostbin"
+  for tool in tasks-axi node; do
+    real=$(command -v "$tool")
+    printf '#!/bin/sh\nPATH=%s exec %s "$@"\n' "'$PATH'" "'$real'" >"$hostbin/$tool"
+    chmod +x "$hostbin/$tool"
+  done
+  compactions() { find "$root/state/reset-audit-pending" -maxdepth 1 -name '*-compaction-*.json' 2>/dev/null | wc -l | tr -d ' '; }
+
+  RUN_PATH="$hostbin:$RUN_PATH" run_hook_pi "$root" --source startup </dev/null >/dev/null
+  [ "$(compactions)" = 0 ] || fail "a session start recorded a compaction"
+  RUN_PATH="$hostbin:$RUN_PATH" run_hook_pi "$root" --source clear </dev/null >/dev/null
+  [ "$(compactions)" = 0 ] || fail "a clear recorded a compaction"
+  RUN_PATH="$hostbin:$RUN_PATH" run_hook_pi "$root" --source compact </dev/null >/dev/null
+  [ "$(compactions)" = 1 ] || fail "the lock owner's compact recorded $(compactions) compaction reset(s), expected 1"
+  FM_HOME="$root" PATH="$hostbin:$PATH" "$ROOT/bin/fm-reset-audit.sh" settle --now >/dev/null \
+    || fail "the recorded compaction could not be settled"
+  assert_contains "$(cat "$root/state/reset-audit.tsv")" $'\tcompaction\tPASS\t-' \
+    "the recorded compaction did not settle as one PASS row"
+
+  sleep 60 &
+  holder=$!
+  saved_lock=$(cat "$root/state/.lock")
+  printf '%s\n' "$holder" >"$root/state/.lock"
+  RUN_PATH="$hostbin:$RUN_PATH" run_hook_pi "$root" --source compact </dev/null >/dev/null
+  printf '%s\n' "$saved_lock" >"$root/state/.lock"
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  [ "$(compactions)" = 0 ] || fail "a session that does not hold the helm recorded a compaction"
+  pass "run wrapper: a lock owner's compact is recorded for the reset audit; a clear or a foreign compact is not"
+}
+
 # run_claude_sequence <root> <outdir> <step>...: run every step inside ONE fake
 # Claude harness process, as a real Claude primary's startup and later hooks
 # share one harness pid. A step is a session-open source, whose output lands in
@@ -1297,6 +1345,7 @@ test_run_startup_runs_the_full_digest
 test_run_clear_and_compact_reemit
 test_run_rebuild_forwards_source_to_drifted_instruction_refresh
 test_run_new_context_clears_the_order_handoff_record
+test_run_compact_records_the_reset_for_the_lock_owner
 test_run_claude_compact_prints_the_reentry_card
 test_run_claude_compact_card_rearms_auto_away
 test_run_claude_compact_card_stays_within_its_bound

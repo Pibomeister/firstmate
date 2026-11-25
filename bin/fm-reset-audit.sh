@@ -4,7 +4,13 @@
 # Usage:
 #   fm-reset-audit.sh snapshot [--out <file>]
 #   fm-reset-audit.sh compare --before <file> [--after <file>]
-#                     [--kind compaction|handoff] [--strict|--no-strict]
+#                     [--kind compaction|handoff] [--at <epoch>]
+#                     [--strict|--no-strict]
+#   fm-reset-audit.sh stage [--if-absent]
+#   fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]
+#   fm-reset-audit.sh settle [--now]
+#   fm-reset-audit.sh sweep
+#   fm-reset-audit.sh arm | disarm
 #
 # FM_HOME selects the home (default: the code root). Node and tasks-axi are
 # required. Directory overrides and inherited TASKS_AXI_* addressing are ignored:
@@ -33,7 +39,52 @@
 # exclusive lock, by atomic replacement. Concurrent compares refuse (exit 2).
 # Strict mode is the default: DRIFT prints FAIL and exits 1. --no-strict still
 # records FAIL but exits 0. PASS exits 0; usage/read/schema errors exit 2 and
-# never record a successful audit. --kind defaults to compaction.
+# never record a successful audit. --kind defaults to compaction. --at records
+# the given epoch in the row instead of the time of the compare.
+#
+# The remaining commands run that audit once for every reset of this home, so
+# each handoff and each compaction ends as exactly one row whose epoch is the
+# time of the reset:
+#   stage    saves a snapshot as the next handoff's "before" in
+#            state/reset-audit-staged.json, replacing an earlier one.
+#            bin/fm-ledger.sh handoff calls it once the document is written;
+#            --if-absent keeps an existing one (bin/fm-handoff-launch.sh).
+#   begin    records that a reset happened now. A handoff takes the staged
+#            snapshot by rename, so of two callers only one records it;
+#            --if-staged does nothing when none is staged. A compaction, or a
+#            handoff with nothing staged, takes a snapshot now. The snapshot
+#            waits in state/reset-audit-pending/<epoch>-<kind>-<pid>.json.
+#            Callers: bin/fm-sessionstart-run.sh for a compact session open by
+#            the lock owner, bin/fm-bootstrap.sh for a new session that takes
+#            the helm, and bin/fm-handoff-launch.sh at a verified transfer.
+#   settle   compares each waiting reset that is at least
+#            FM_RESET_AUDIT_SETTLE_SECS old (default 600) against one snapshot
+#            of the present, with --no-strict and --at, then removes it. The
+#            wait lets the session that came out of the reset act first: a
+#            reset loses nothing from disk by itself, the loss shows when that
+#            session drops work it no longer remembers. It prints one line per
+#            FAIL and nothing per PASS. A reset that still cannot be compared
+#            an hour after it was due is moved to
+#            state/reset-audit-pending/unreadable/ (newest 20 kept) and
+#            reported in one line; it gets no row. --now settles every waiting
+#            reset at once, prints every verdict, and exits 1 when one could
+#            not be compared. At most 20 resets wait: begin settles them all
+#            first when that many are waiting.
+#   sweep    is what the armed check runs: bin/fm-handoff-reconcile.sh --apply
+#            --report, then settle. It prints only lines the supervisor must
+#            read, and bounds its own work below the watcher's check timeout.
+#   arm      installs and registers state/reset-audit.check.sh, the watcher
+#            check that runs sweep (bin/fm-bootstrap.sh arms it at each session
+#            start in every home whose backlog tasks-axi can read); disarm
+#            retires it. A check file of that name that this script did not
+#            write is left unchanged.
+# These commands change nothing and exit 0 when FM_STATE_OVERRIDE,
+# FM_DATA_OVERRIDE or FM_CONFIG_OVERRIDE names a directory that is not this
+# home's own, because the audit reads this home's records only.
+# Not covered: a compaction on a harness with no tracked session-open source
+# (docs/sessionstart-nudge.md), a restart with no handoff written, a reset
+# whose snapshot could not be taken (a backlog tasks-axi cannot read, or a
+# missing tool), and work that existed only in chat.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -43,6 +94,230 @@ case "${1:-}" in
     exit 0
     ;;
 esac
+
+# --- Reset lifecycle (stage, begin, settle, sweep, arm, disarm) -------------
+CHECK_ID=reset-audit
+CHECK_MARK='# fm-reset-audit: reset audit sweep check'
+PENDING_CAP=20          # resets that may wait for their settle time
+UNREADABLE_KEEP=20      # unreadable resets kept for inspection
+UNREADABLE_GRACE=3600   # seconds past due before a reset is given up on
+
+lifecycle_die() { printf 'fm-reset-audit: %s\n' "$1" >&2; exit 2; }
+
+lifecycle_home() {
+  local pair name value resolved
+  HOME_DIR=$(cd "${FM_HOME:-$(dirname "$SCRIPT_DIR")}" 2>/dev/null && pwd -P) \
+    || lifecycle_die 'FM_HOME is not a directory'
+  for pair in FM_STATE_OVERRIDE:state FM_DATA_OVERRIDE:data FM_CONFIG_OVERRIDE:config; do
+    name=${pair%%:*}
+    value=${!name:-}
+    [ -n "$value" ] || continue
+    resolved=$(cd "$value" 2>/dev/null && pwd -P) || resolved=$value
+    [ "$resolved" = "$HOME_DIR/${pair##*:}" ] || exit 0
+  done
+  umask 077
+  STATE="$HOME_DIR/state"
+  STAGED="$STATE/reset-audit-staged.json"
+  PENDING="$STATE/reset-audit-pending"
+  [ -d "$STATE" ] && [ ! -L "$STATE" ] || lifecycle_die "state directory is unavailable: $STATE"
+  # shellcheck source=bin/fm-clock-lib.sh
+  . "$SCRIPT_DIR/fm-clock-lib.sh"
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$SCRIPT_DIR/fm-timeout-lib.sh"
+}
+
+audit_cli() { env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-reset-audit.sh" "$@"; }
+
+take_snapshot() {  # <destination> <seconds>
+  local tmp
+  tmp=$(umask 077; mktemp "$STATE/.reset-audit-snap.XXXXXX") || return 1
+  if fm_run_timed "$2" env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-reset-audit.sh" snapshot --out "$tmp" 2>/dev/null \
+    && mv -f -- "$tmp" "$1"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+pending_count() {
+  local file count=0
+  for file in "$PENDING"/*.json; do
+    [ -f "$file" ] && count=$((count + 1))
+  done
+  printf '%s\n' "$count"
+}
+
+cmd_stage() {
+  case "${1:-}" in
+    '') ;;
+    --if-absent) [ ! -f "$STAGED" ] || return 0 ;;
+    *) lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]' ;;
+  esac
+  [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh stage [--if-absent]'
+  take_snapshot "$STAGED" 30 || { printf 'fm-reset-audit: could not take the snapshot to stage\n' >&2; return 1; }
+}
+
+cmd_begin() {
+  local kind='' if_staged=0 dest
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --kind) kind=${2:-}; shift 2 2>/dev/null || shift ;;
+      --if-staged) if_staged=1; shift ;;
+      *) lifecycle_die 'usage: fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]' ;;
+    esac
+  done
+  case "$kind" in
+    compaction|handoff) ;;
+    *) lifecycle_die 'usage: fm-reset-audit.sh begin --kind compaction|handoff [--if-staged]' ;;
+  esac
+  [ "$if_staged" -eq 0 ] || [ "$kind" = handoff ] || lifecycle_die '--if-staged applies to a handoff only'
+  if [ "$if_staged" -eq 1 ] && [ ! -f "$STAGED" ]; then return 0; fi
+  mkdir -p "$PENDING" || return 1
+  if [ "$(pending_count)" -ge "$PENDING_CAP" ]; then
+    cmd_settle --now >/dev/null 2>&1 || true
+    if [ "$(pending_count)" -ge "$PENDING_CAP" ]; then
+      printf 'fm-reset-audit: %s resets already wait and cannot be settled; this reset is not recorded\n' "$PENDING_CAP" >&2
+      return 1
+    fi
+  fi
+  dest="$PENDING/$(fm_now)-$kind-$$.json"
+  if [ "$kind" = handoff ] && [ -f "$STAGED" ]; then
+    # The rename is the claim: a second caller finds nothing staged.
+    if mv -- "$STAGED" "$dest" 2>/dev/null; then return 0; fi
+    [ "$if_staged" -eq 0 ] || return 0
+  fi
+  take_snapshot "$dest" 30 || { printf 'fm-reset-audit: could not take the snapshot for this reset\n' >&2; return 1; }
+}
+
+give_up() {  # <pending-file> <kind> <epoch> <why>
+  local kept old
+  mkdir -p "$PENDING/unreadable" || return 0
+  kept="$PENDING/unreadable/${1##*/}"
+  mv -f -- "$1" "$kept" 2>/dev/null || return 0
+  printf 'reset audit: the %s at %s could not be audited (%s); its snapshot is kept at %s\n' "$2" "$3" "$4" "$kept"
+  # shellcheck disable=SC2012 # Names are this script's own epoch-kind-pid form.
+  ls -1 "$PENDING/unreadable" 2>/dev/null | sort -r | tail -n +"$((UNREADABLE_KEEP + 1))" | while IFS= read -r old; do
+    rm -f -- "$PENDING/unreadable/$old"
+  done
+}
+
+cmd_settle() {
+  local now_flag=0 window=${FM_RESET_AUDIT_SETTLE_SECS:-600} snap_secs=${SETTLE_SNAPSHOT_SECS:-30}
+  local now file base epoch rest kind after out rc failed=0 why
+  local -a due=()
+  case "${1:-}" in
+    '') ;;
+    --now) now_flag=1 ;;
+    *) lifecycle_die 'usage: fm-reset-audit.sh settle [--now]' ;;
+  esac
+  [ "$#" -le 1 ] || lifecycle_die 'usage: fm-reset-audit.sh settle [--now]'
+  case "$window" in ''|*[!0-9]*) window=600 ;; esac
+  [ -d "$PENDING" ] || return 0
+  now=$(fm_now)
+  for file in "$PENDING"/*.json; do
+    [ -f "$file" ] && [ ! -L "$file" ] || continue
+    base=${file##*/}; epoch=${base%%-*}
+    case "$epoch" in ''|*[!0-9]*) continue ;; esac
+    if [ "$now_flag" -eq 1 ] || [ $((now - epoch)) -ge "$window" ]; then due+=("$file"); fi
+  done
+  [ "${#due[@]}" -gt 0 ] || return 0
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # One settle at a time, so no reset is compared twice.
+  fm_lock_try_acquire "$STATE/.reset-audit-settle.lock" 2>/dev/null || return "$now_flag"
+  find "$STATE" -maxdepth 1 -name '.reset-audit-snap.*' -mmin +60 -exec rm -f -- {} + 2>/dev/null || true
+  after="$STATE/.reset-audit-snap.after.$$"
+  rc=0
+  take_snapshot "$after" "$snap_secs" || rc=1
+  for file in "${due[@]}"; do
+    [ -f "$file" ] || continue
+    base=${file##*/}; base=${base%.json}; epoch=${base%%-*}; rest=${base#*-}; kind=${rest%%-*}
+    why='the present state could not be read'
+    out=''
+    if [ "$rc" -eq 0 ]; then
+      case "$kind" in
+        compaction|handoff)
+          if out=$(audit_cli compare --before "$file" --after "$after" --kind "$kind" --at "$epoch" --no-strict 2>&1); then
+            rm -f -- "$file"
+            case "$out" in
+              FAIL*) printf 'reset audit: open work went missing across the %s at %s: %s (state/reset-audit.tsv)\n' "$kind" "$epoch" "${out#*DRIFT }" ;;
+              *) [ "$now_flag" -eq 0 ] || printf '%s at=%s\n' "$out" "$epoch" ;;
+            esac
+            continue
+          fi
+          why=$(printf '%s' "$out" | head -n 1)
+          ;;
+        *) why='its record does not name a reset kind' ;;
+      esac
+    fi
+    failed=1
+    if [ "$now_flag" -eq 1 ]; then
+      printf 'fm-reset-audit: the %s at %s could not be audited: %s\n' "$kind" "$epoch" "$why" >&2
+    elif [ $((now - epoch)) -ge $((window + UNREADABLE_GRACE)) ]; then
+      give_up "$file" "$kind" "$epoch" "$why"
+    fi
+  done
+  rm -f -- "$after"
+  fm_lock_release "$STATE/.reset-audit-settle.lock" 2>/dev/null || true
+  [ "$now_flag" -eq 0 ] || return "$failed"
+}
+
+cmd_sweep() {
+  [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh sweep'
+  fm_run_timed 8 env FM_HOME="$HOME_DIR" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply --report 2>/dev/null || true
+  SETTLE_SNAPSHOT_SECS=15 cmd_settle || true
+}
+
+check_owned_or_absent() {
+  local check="$STATE/$CHECK_ID.check.sh"
+  [ -e "$check" ] || [ -L "$check" ] || return 0
+  [ -f "$check" ] && [ ! -L "$check" ] && sed -n 2p "$check" 2>/dev/null | grep -qxF -- "$CHECK_MARK"
+}
+
+cmd_arm() {
+  local device staged
+  local -a shim
+  [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh arm'
+  # shellcheck source=bin/fm-pr-lib.sh disable=SC1091
+  . "$SCRIPT_DIR/fm-pr-lib.sh"
+  device=$(fm_pr_file_device "$STATE") || lifecycle_die "state directory is unavailable: $STATE"
+  fm_pr_regular_destination_on_device_or_absent "$STATE/$CHECK_ID.check.sh" "$device" \
+    || lifecycle_die "unsafe check destination: $STATE/$CHECK_ID.check.sh"
+  check_owned_or_absent \
+    || lifecycle_die "$STATE/$CHECK_ID.check.sh exists and is not the reset audit's check (a task named $CHECK_ID may own it); left unchanged"
+  shim=('#!/usr/bin/env bash'
+    "$CHECK_MARK"
+    "export FM_HOME=$(printf '%q' "$HOME_DIR")"
+    'unset FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_CONFIG_OVERRIDE'
+    "exec $(printf '%q' "$SCRIPT_DIR/fm-reset-audit.sh") sweep")
+  staged=$(umask 077; mktemp "$STATE/.reset-audit-check.XXXXXX") || lifecycle_die 'could not stage the check'
+  if ! { printf '%s\n' "${shim[@]}" > "$staged" && chmod 700 "$staged" \
+    && mv -f -- "$staged" "$STATE/$CHECK_ID.check.sh"; }; then
+    rm -f -- "$staged"
+    lifecycle_die 'could not install the check'
+  fi
+  FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-register.sh" "$CHECK_ID"
+}
+
+cmd_disarm() {
+  [ "$#" -eq 0 ] || lifecycle_die 'usage: fm-reset-audit.sh disarm'
+  if ! check_owned_or_absent; then
+    printf 'fm-reset-audit: %s is not the reset audit check; left unchanged\n' "$STATE/$CHECK_ID.check.sh" >&2
+    return 0
+  fi
+  FM_HOME="$HOME_DIR" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-check-unregister.sh" "$CHECK_ID"
+}
+
+case "${1:-}" in
+  stage|begin|settle|sweep|arm|disarm)
+    lifecycle_command=$1
+    shift
+    lifecycle_home
+    "cmd_$lifecycle_command" "$@"
+    exit $?
+    ;;
+esac
+
 exec node - "$SCRIPT_DIR" "$@" <<'NODE'
 const fs = require('node:fs');
 const path = require('node:path');
@@ -55,8 +330,8 @@ const canonical = value => JSON.stringify(value, null, 2) + '\n';
 const digest = value => require('node:crypto').createHash('sha256').update(value).digest('hex');
 const opts = {};
 try {
-  if (!['snapshot', 'compare'].includes(command)) fail('expected snapshot or compare; see --help');
-  const allowed = command === 'snapshot' ? ['--out'] : ['--before', '--after', '--kind'];
+  if (!['snapshot', 'compare'].includes(command)) fail('unknown command; see --help');
+  const allowed = command === 'snapshot' ? ['--out'] : ['--before', '--after', '--kind', '--at'];
   let strict = true;
   for (let i = 0; i < args.length; i++) {
     const flag = args[i];
@@ -277,6 +552,8 @@ try {
     if (!opts['--before']) fail('--before is required');
     const kind = opts['--kind'] || 'compaction';
     if (!['compaction', 'handoff'].includes(kind)) fail('invalid reset kind');
+    const at = opts['--at'];
+    if (at !== undefined && !/^[0-9]{1,12}$/.test(at)) fail('invalid --at epoch');
     const before = validate(JSON.parse(fs.readFileSync(opts['--before'], 'utf8')));
     const after = validate(opts['--after'] ? JSON.parse(fs.readFileSync(opts['--after'], 'utf8')) : snapshot());
     const has = (rows, id) => rows.some(row => row.id === id);
@@ -304,7 +581,7 @@ try {
     let temporary;
     try {
       const prior = read(log).split('\n').filter(Boolean).slice(-99);
-      prior.push(`${Math.floor(Date.now() / 1000)}\t${kind}\t${verdict}\t${drift.join(',') || '-'}`);
+      prior.push(`${at === undefined ? Math.floor(Date.now() / 1000) : Number(at)}\t${kind}\t${verdict}\t${drift.join(',') || '-'}`);
       temporary = path.join(state, `.reset-audit.${process.pid}.tmp`);
       fs.writeFileSync(temporary, prior.join('\n') + '\n', { flag: 'wx', mode: 0o600 });
       fs.renameSync(temporary, log);
