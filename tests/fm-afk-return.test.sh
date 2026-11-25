@@ -493,6 +493,346 @@ test_return_brief_composes_from_record_store_and_held_set() {
   pass "the return brief renders health, the words with the session account, waiting, could-not-fix, handled, and cost from durable records, and the gate shrinks to what the away session could not fix"
 }
 
+# Recovery evidence an intervening entry retained (state/.afk-carried-retained)
+# is re-checked at the next return: a missing earlier archive gates even
+# under a fresh posture, and restoring it clears catch-up.
+test_retained_record_from_entry_still_gates_until_recovered() {
+  local dir out rc gate retained missing second cycle backup
+  dir="$TMP_ROOT/retained-record"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'watch the fleet' >/dev/null 2>&1 \
+    || fail "could not enter the retained fixture posture"
+  backup="$dir/valid-contract"
+  cp "$dir/home/state/.afk-contract" "$backup"
+  missing="$dir/home/state/afk-contracts/1790000000.afk-contract"
+  retained="$dir/home/state/.afk-carried-retained"
+  printf 'retained-record\t%s\n' "$missing" > "$retained"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  gate="$dir/home/state/.afk-return-catchup"
+  [ "$rc" -eq 3 ] || fail "a missing retained archive should still gate the return (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record missing: $missing" "the brief did not name the missing retained archive"
+  [ -e "$gate" ] || fail "the retained gate was not persisted"
+  [ ! -e "$retained" ] || fail "the seeded gate did not take ownership of the retained evidence"
+
+  for cycle in 1 2; do
+    out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+      "$ROOT/bin/fm-afk-launch.sh" enter --words "watch the fleet again $cycle" 2>&1) \
+      || fail "re-entry $cycle refused the posture: $out"
+    [ ! -e "$gate" ] || fail "re-entry $cycle did not consume the old gate"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "re-entry $cycle lost the earlier archive obligation (rc=$rc): $out"
+    assert_contains "$out" "retained away-posture record missing: $missing" "re-entry $cycle lost the earlier missing archive"
+  done
+
+  printf 'version: 1\n' > "$missing"
+  set +e
+  out=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "an unreadable retained archive cleared catch-up (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record unreadable: $missing" "check lost the unreadable retained archive"
+  cp "$backup" "$missing" \
+    || fail "could not restore the retained archive fixture"
+  second=$(run_return "$dir" check) || fail "restoring the retained archive did not clear catch-up: $second"
+  assert_contains "$second" 'catch-up clear' "check did not clear after retained recovery"
+  [ ! -e "$gate" ] || fail "the cleared retained check left the gate behind"
+  pass "a retained earlier archive gates the next return until it is restored valid"
+}
+
+test_retained_records_gate_after_launch_rollback() {
+  local dir out rc final superseded backup gate
+  dir="$TMP_ROOT/retained-after-rollback"
+  install_runner "$dir"
+  FM_HOME="$dir/home" FM_AFK_MODE=quiet "$dir/bin/fm-afk-contract.sh" enter >/dev/null
+  run_return "$dir" begin >/dev/null || fail "could not create the earlier quiet receipt"
+  final="$dir/home/state/afk-contracts/1790000000.afk-contract"
+  superseded="$dir/home/state/afk-contracts/1790000000-superseded-1.afk-contract"
+  gate="$dir/home/state/.afk-return-catchup"
+  printf 'schema\tfm-afk-return.v1\nphase\tblocked\nretained-record\t%s\nsuperseded\t%s\n' "$final" "$superseded" > "$gate"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch after recovery' 2>&1) \
+    || fail "retained recovery refused entry: $out"
+  backup="$dir/valid-contract"
+  cp "$dir/home/state/.afk-contract" "$backup"
+  set +e
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" start-native 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "the Pi native-launch refusal did not fail"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" stop 2>&1) || fail "launch rollback failed: $out"
+  [ ! -e "$dir/home/state/.afk-contract" ] && [ ! -e "$dir/home/state/.afk" ] \
+    && [ ! -e "$gate" ] || fail "rollback did not leave the sidecar-only recovery state"
+
+  set +e
+  out=$(run_return "$dir" guard)
+  rc=$?
+  set -e
+  [ "$rc" -eq 4 ] || fail "guard allowed work before retained recovery (rc=$rc): $out"
+  assert_contains "$out" "$final" "guard did not name the retained archive"
+  out=$(run_return "$dir" catchup-summary) || fail "summary omitted retained catch-up: $out"
+  assert_contains "$out" "$final" "summary did not identify retained recovery"
+  [ ! -e "$gate" ] || fail "the read-only guard or summary created a gate"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "an old quiet receipt bypassed retained recovery (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record missing: $final" "return skipped the retained archive without a current contract"
+  assert_contains "$out" "superseded away-posture record missing: $superseded" "return skipped the superseded archive without a current contract"
+  cp "$backup" "$final"
+  printf 'version: 1\n' > "$superseded"
+  set +e
+  out=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "partial archive recovery cleared catch-up (rc=$rc): $out"
+  assert_contains "$out" "superseded away-posture record unreadable: $superseded" "check did not validate the remaining superseded archive"
+  assert_not_contains "$out" "retained away-posture record missing: $final" "check kept the recovered final archive open"
+  cp "$backup" "$superseded"
+  out=$(run_return "$dir" check) || fail "valid retained archives did not clear catch-up: $out"
+  [ ! -e "$gate" ] && [ ! -e "$dir/home/state/.afk-carried-retained" ] || fail "recovery left retained catch-up pending"
+  [ -f "$dir/home/state/.quiet-exit-receipt" ] || fail "recovery deleted the earlier quiet receipt"
+  pass "retained recovery gates guards, summaries, and returns after launch rollback, even beside an old quiet receipt"
+}
+
+test_return_recovers_interrupted_entry_handoff() {
+  local stage dir out rc old_epoch new_epoch archive backup saved_gate gate section
+  for stage in before-retain before-delete; do
+    dir="$TMP_ROOT/interrupted-entry-$stage"
+    install_runner "$dir"
+    contract_in "$dir" enter --words 'earlier mandate' >/dev/null 2>&1 || fail "could not enter the earlier posture"
+    old_epoch=$(contract_in "$dir" field entered_epoch)
+    seed_live_blocker "$dir" tmux interrupted-entry
+    touch "$dir/home/state/.last-watcher-beat"
+    : > "$dir/home/state/.fake-drain"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "the earlier blocker did not gate return (rc=$rc): $out"
+    archive="$dir/home/state/afk-contracts/$old_epoch.afk-contract"
+    backup="$dir/earlier-contract"
+    cp "$archive" "$backup"
+    rm "$archive"
+    if [ "$stage" = before-delete ]; then
+      printf 'resolved [key=interrupted-entry]: repaired the earlier blocker\n' >> "$dir/home/state/repair-task.status"
+      set +e
+      out=$(run_return "$dir" check)
+      rc=$?
+      set -e
+      [ "$rc" -eq 3 ] || fail "the missing earlier archive did not retain catch-up (rc=$rc): $out"
+    fi
+    gate="$dir/home/state/.afk-return-catchup"
+    saved_gate="$dir/earlier-gate"
+    cp "$gate" "$saved_gate"
+    sleep 1
+    out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+      "$ROOT/bin/fm-afk-launch.sh" enter --words 'current mandate' 2>&1) \
+      || fail "the next posture refused entry: $out"
+    new_epoch=$(contract_in "$dir" field entered_epoch)
+    [ "$new_epoch" != "$old_epoch" ] || fail "the interruption fixture did not create a new window"
+    cp "$saved_gate" "$gate"
+    if [ "$stage" = before-retain ]; then
+      rm "$dir/home/state/.afk-carried-retained"
+    fi
+    : > "$dir/home/state/.watcher-down"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "$stage: interrupted entry lost recovery (rc=$rc): $out"
+    section=$(printf '%s\n' "$out" | sed -n '/^Your instructions:$/,/^Waiting on you:$/p')
+    assert_contains "$section" 'current mandate' "$stage: return presented the earlier mandate"
+    assert_not_contains "$section" 'earlier mandate' "$stage: return used the earlier archive as current instructions"
+    if [ "$stage" = before-retain ]; then
+      assert_contains "$section" 'repair-task [key=interrupted-entry]' "interrupted entry lost its carried blocker"
+    fi
+    section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+    assert_contains "$section" 'GAP: watcher downtime' "$stage: old health suppressed the new window snapshot"
+    assert_not_contains "$section" 'no detected gap' "$stage: historical health was displayed as current"
+    assert_contains "$out" "retained away-posture record missing: $archive" "$stage: return lost the earlier archive obligation"
+    [ "$(awk -F '\t' '$1 == "contract" { print $2 }' "$gate")" = "$new_epoch" ] \
+      && [ "$(awk -F '\t' '$1 == "window" { print $2 }' "$gate")" = "$new_epoch" ] \
+      || fail "$stage: the return gate retained the wrong window"
+    cp "$backup" "$archive"
+    printf 'resolved [key=interrupted-entry]: repaired the earlier blocker\n' >> "$dir/home/state/repair-task.status"
+    out=$(run_return "$dir" check) || fail "$stage: recovered entry did not clear catch-up: $out"
+    assert_contains "$out" 'current mandate' "$stage: retry lost the current instructions"
+    assert_contains "$out" 'GAP: watcher downtime' "$stage: retry lost the new window snapshot"
+    [ ! -e "$gate" ] || fail "$stage: recovered entry left the gate pending"
+  done
+  pass "return recovers both interrupted entry handoffs before choosing instructions, snapshots, and recovery obligations"
+}
+
+test_reentry_takes_fresh_health_and_engine_snapshots() {
+  local dir out rc section now tab second
+  dir="$TMP_ROOT/reentry-health"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'watch the fleet' >/dev/null 2>&1 \
+    || fail "could not enter the health fixture posture"
+  seed_live_blocker "$dir" tmux health-repair
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "the health fixture blocker did not retain catch-up (rc=$rc): $out"
+  assert_contains "$out" 'supervision ran through the away window with no detected gap' "the first window was not healthy"
+
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch the next window' 2>&1) \
+    || fail "the second health window refused entry: $out"
+  : > "$dir/home/state/.watcher-down"
+  now=$(date +%s)
+  tab=$(printf '\t')
+  seed_host_latch "$dir" 2 300 "$((now + 300))" "$now${tab}latch${tab}errors=2${tab}cooldown=300s"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "the second health window lost its blocker (rc=$rc): $out"
+  section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+  assert_contains "$section" 'GAP: watcher downtime' "historical healthy evidence hid the new outage"
+  assert_not_contains "$section" 'no detected gap' "historical healthy evidence was displayed as current health"
+  assert_contains "$out" 'catch-up retained-health: supervision ran through the away window with no detected gap' "the old health snapshot was lost"
+  section=$(printf '%s\n' "$out" | sed -n '/^Tried and failed, or could not be fixed:$/,/^Landed, cleanup due:$/p')
+  assert_contains "$section" 'after 2 consecutive engine errors and paused away supervision' "historical health suppressed the new engine snapshot"
+
+  rm "$dir/home/state/.watcher-down" "$dir/home/state/.supervision-host.log" "$dir/home/state/.supervision-host-health"
+  set +e
+  second=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "same-window check lost its blocker (rc=$rc): $second"
+  assert_contains "$second" 'GAP: watcher downtime' "same-window check replaced the initial health snapshot"
+  assert_contains "$second" 'after 2 consecutive engine errors and paused away supervision' "same-window check replaced the initial engine snapshot"
+
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch the recovered window' 2>&1) \
+    || fail "the recovered health window refused entry: $out"
+  printf 'resolved [key=health-repair]: repaired the synthetic blocker\n' >> "$dir/home/state/repair-task.status"
+  touch "$dir/home/state/.last-watcher-beat"
+  out=$(run_return "$dir" begin) || fail "the recovered window did not clear catch-up: $out"
+  section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+  assert_contains "$section" 'no detected gap' "historical gap evidence hid the recovered window"
+  assert_not_contains "$section" 'GAP:' "historical gap evidence was displayed as current health"
+  assert_contains "$out" 'catch-up retained-health: GAP: watcher downtime' "the historical outage evidence was lost"
+  assert_contains "$out" 'catch-up retained-engine: the supervision session latched' "the historical engine evidence was lost"
+  section=$(printf '%s\n' "$out" | sed -n '/^Tried and failed, or could not be fixed:$/,/^Landed, cleanup due:$/p')
+  assert_not_contains "$section" 'engine errors' "historical engine evidence was displayed as a current failure"
+  [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "the recovered window left catch-up pending"
+  pass "each re-entry snapshots current health and engine failures while retaining historical evidence and same-window snapshots"
+}
+
+# Carried items from the previous return stay visible in the next brief, a
+# wake handled under the new posture is recorded and counted, and the
+# per-key gate mechanics are unchanged: a still-open carried blocker
+# gates, and resolving its key clears it while the brief keeps listing it.
+test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture() {
+  local dir out rc gate carried second
+  dir="$TMP_ROOT/carried-brief"
+  install_runner "$dir"
+  carried="$dir/carried.tsv"
+  printf 'fix-windows\tkey-a\tfirst reason\ntask-b\tkey-b\tsecond reason\n' > "$carried"
+  contract_in "$dir" enter --words 'watch the fleet' --carried-file "$carried" >/dev/null 2>&1 \
+    || fail "could not enter the carried fixture posture"
+  printf 'window=synthetic:fm-fix-windows\nbackend=tmux\nkind=ship\n' > "$dir/home/state/fix-windows.meta"
+  printf 'blocked [key=key-a]: first reason\n' > "$dir/home/state/fix-windows.status"
+  # One natural wake handled under the posture and recorded in the store.
+  outcome_in "$dir" append --task fix-windows --verdict routine \
+    --summary 'handled a wake under the away posture; worker resumed' --wake 'signal: fix-windows.status' >/dev/null \
+    || fail "could not record the wake handled under the posture"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  gate="$dir/home/state/.afk-return-catchup"
+  [ "$rc" -eq 3 ] || fail "a still-open carried blocker should still gate the return (rc=$rc): $out"
+  assert_contains "$out" 'Carried from the previous return:' "the brief did not list carried items"
+  assert_contains "$out" 'fix-windows [key=key-a] first reason' "the brief lost the first carried key and reason"
+  assert_contains "$out" 'task-b [key=key-b] second reason' "the brief lost the second carried key and reason"
+  assert_contains "$out" '1 outcome(s) handled by the away session (1 routine, 0 escalated above)' "the wake handled under the posture was not recorded in the brief"
+  assert_contains "$out" 'firstmate-actionable blocker: fix-windows [key=key-a]' "the carried blocker did not gate by its own key"
+
+  printf 'resolved [key=key-a]: first reason fixed\n' >> "$dir/home/state/fix-windows.status"
+  second=$(run_return "$dir" check) || fail "resolving the carried key did not clear the gate: $second"
+  assert_contains "$second" 'Carried from the previous return:' "the cleared brief dropped the carried section"
+  assert_contains "$second" 'task-b [key=key-b] second reason' "the cleared brief lost a carried item"
+  assert_contains "$second" 'catch-up clear' "check did not clear after the carried key resolved"
+  [ ! -e "$gate" ] || fail "the cleared carried check left the gate behind"
+  pass "the next return brief lists carried items, records a wake handled under the posture, and keeps per-key resolution mechanics"
+}
+
+# When stop fails before archive, the live record still holds the carried
+# rows. The brief must list them from that live record.
+test_return_brief_lists_carried_from_live_record_when_stop_does_not_archive() {
+  local dir out rc carried
+  dir="$TMP_ROOT/live-carried-stop-fail"
+  install_runner "$dir"
+  carried="$dir/carried.tsv"
+  printf 'repair-task\tkey-a\tfirst reason\n' > "$carried"
+  contract_in "$dir" enter --words 'watch the fleet' --carried-file "$carried" >/dev/null 2>&1 \
+    || fail "could not enter the live-carried fixture"
+  seed_live_blocker "$dir" tmux key-a
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  touch "$dir/home/state/.fail-terminal-stop-once"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "failed stop should keep catch-up gated (rc=$rc): $out"
+  [ -f "$dir/home/state/.afk-contract" ] || fail "failed stop archived the live record"
+  assert_contains "$out" 'Carried from the previous return:' "the brief omitted carried items from the live record"
+  assert_contains "$out" 'repair-task [key=key-a] first reason' "the brief lost the live record's carried row"
+  pass "the return brief lists carried rows from the live record when stop does not archive"
+}
+
+# An unreadable or truncated retained sidecar must keep catch-up gated and
+# must not be deleted.
+test_unreadable_or_malformed_retained_sidecar_keeps_catchup_gated() {
+  local dir out rc sidecar case_name
+  for case_name in unreadable malformed; do
+    dir="$TMP_ROOT/sidecar-$case_name"
+    install_runner "$dir"
+    sidecar="$dir/home/state/.afk-carried-retained"
+    : > "$dir/home/state/.fake-drain"
+    if [ "$case_name" = unreadable ]; then
+      printf 'retained-record\t%s\n' "$dir/home/state/afk-contracts/1.afk-contract" > "$sidecar"
+      chmod 000 "$sidecar"
+    else
+      printf 'retained-recor\t%s\n' "$dir/home/state/afk-contracts/1.afk-contract" > "$sidecar"
+    fi
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "$case_name sidecar printed catch-up clear (rc=$rc): $out"
+    assert_not_contains "$out" 'catch-up clear' "$case_name sidecar cleared catch-up"
+    if [ "$case_name" = unreadable ]; then
+      chmod 600 "$sidecar"
+    fi
+    [ -e "$sidecar" ] || fail "$case_name sidecar was deleted"
+  done
+  pass "an unreadable or malformed retained sidecar keeps catch-up gated and is not deleted"
+}
+
 # On a supervision-host home off Pi the drain's BRANCH OUTCOMES section is the
 # one presenter of branch outcomes and the one owner of their read cursor, so
 # the return brief counts the window's outcomes and points there instead of
@@ -1610,6 +1950,13 @@ test_check_retries_recorded_terminal_teardown
 test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
+test_retained_record_from_entry_still_gates_until_recovered
+test_retained_records_gate_after_launch_rollback
+test_return_recovers_interrupted_entry_handoff
+test_reentry_takes_fresh_health_and_engine_snapshots
+test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
+test_return_brief_lists_carried_from_live_record_when_stop_does_not_archive
+test_unreadable_or_malformed_retained_sidecar_keeps_catchup_gated
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
 test_return_brief_points_at_the_drain_on_a_host_home_only

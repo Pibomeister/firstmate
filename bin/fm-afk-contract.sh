@@ -62,6 +62,16 @@
 #   confirmed_epoch: <seconds>        is the go, so no later human step stamps it
 #   mode: quiet                    only on a quiet entry (FM_AFK_MODE=quiet); absent
 #                                  means away
+#   carried_blockers: <n>          only when the entry carried open blockers
+#   carried: <task><TAB><key><TAB><reason>
+#                                  from the previous return gate (one line per
+#                                  item, <n> of them); each keeps its own key
+#                                  and reason, is listed by `carried` and in
+#                                  the read-back, and survives refreshes and
+#                                  replacement mandates. These rows remain
+#                                  historical after resolution; they do not
+#                                  determine whether a key is still open
+#                                  (bin/fm-afk-return.sh owns the gate).
 #   words: | or |-                 the captain's words, verbatim, never edited,
 #     <line>                       one record line per input line (or `words: -`
 #     ...                          when /afk carried no words); `|` retains a
@@ -86,11 +96,19 @@
 # Usage:
 #   fm-afk-contract.sh enter [--words-file <path> | --words <text>]
 #       [--expected-return <UTC ISO 8601>] [--spend <n>]
+#       [--carried-file <path>]
 #     Write the record now, with no separate confirmation step, then print the
 #     entry announcement and the read-back. Exit 0 on success and 2 on a usage
-#     error. --words-file keeps the file's bytes verbatim, trailing newlines
+#     error. --carried-file names a tab-separated file of open blockers from
+#     the previous return gate (<task><TAB><key><TAB><reason> per line) to
+#     record as carried items; bin/fm-afk-launch.sh supplies it at entry.
+#     --words-file keeps the file's bytes verbatim, trailing newlines
 #     included. With no words while a record stands, this is a refresh that
-#     leaves the standing record untouched; new words replace the mandate,
+#     leaves the standing record untouched unless --carried-file supplies
+#     items: those merge by task and key, with later rows replacing earlier
+#     rows, while the words, entry, expected return, and spend stay unchanged.
+#     That refresh updates confirmed time without a superseded archive.
+#     New words replace the mandate,
 #     carry the original session entry forward, and archive the superseded
 #     record. A replacement is staged before the prior record is archived and
 #     replaced. `propose` and `confirm` were retired with the wait-for-go gate.
@@ -98,7 +116,11 @@
 #   fm-afk-contract.sh readback
 #     The record's content for the captain and for the away session: the words
 #     verbatim plus the entry time, expected return, spend cap, and reach line
-#     (for a quiet record, the entry time and that nothing is held).
+#     (for a quiet record, the entry time and that nothing is held), plus any
+#     carried items.
+#   fm-afk-contract.sh carried [--path <record>]
+#     Print the record's carried items, one tab-separated
+#     <task><TAB><key><TAB><reason> line each; exit 1 with no record.
 #   fm-afk-contract.sh mode [--path <record>]
 #     Print `away` or `quiet` (AWAY OR QUIET above); exit 1 with no record.
 #   fm-afk-contract.sh field <name> [--path <record>]
@@ -323,10 +345,52 @@ fm_afk_contract_validate_iso() {  # <ts>
   fm_utc_iso_to_epoch "$1" >/dev/null 2>&1
 }
 
+# Carried items are tab-separated <task><TAB><key><TAB><reason> rows, one
+# per line, in CARRIED_ITEMS (empty when the entry carried nothing).
+# Merge two row sets: a later set's row replaces an earlier row with the
+# same task and key, keeping the first row's position.
+fm_afk_contract_merge_carried() {  # <earlier-rows> <later-rows>
+  { printf '%s\n' "$1"; printf '%s\n' "$2"; } | awk -F '\t' '
+    NF < 3 || $1 == "" || $2 == "" { next }
+    { k = $1 SUBSEP $2
+      if (k in pos) { rows[pos[k]] = $0 }
+      else { pos[k] = ++n; rows[n] = $0 } }
+    END { for (i = 1; i <= n; i++) print rows[i] }'
+}
+
+# Print a record's carried rows; refuse a malformed carried section rather
+# than returning it truncated.
+fm_afk_contract_read_carried() {  # <path>
+  local path=$1 count
+  [ -f "$path" ] || return 1
+  count=$(fm_afk_contract_read_field "$path" carried_blockers)
+  case "$count" in
+    '') ! grep -q '^carried: ' "$path" || { fm_afk_contract_log "record $path has carried items with no carried_blockers count"; return 1; } ;;
+    *[!0-9]*) fm_afk_contract_log "record $path has an invalid carried_blockers count"; return 1 ;;
+    *)
+      awk -F '\t' -v want="$count" '
+        /^words: / { in_words = 1 }
+        in_words { next }
+        /^carried_blockers: / { in_carried = 1; next }
+        /^carried: / {
+          n++
+          sub(/^carried: /, "")
+          if (NF < 3 || $1 == "" || $2 == "") bad = 1
+          print
+          next
+        }
+        in_carried && $0 != "" { bad = 1 }
+        END { if (bad || n != want) exit 1 }' "$path" || {
+          fm_afk_contract_log "record $path has a malformed carried section"
+          return 1
+        } ;;
+  esac
+}
+
 # Render a whole record on stdout.
-# Inputs: WORDS (verbatim), EXPECTED_RETURN, SPEND.
+# Inputs: WORDS (verbatim), EXPECTED_RETURN, SPEND, CARRIED_ITEMS.
 fm_afk_contract_render_record() {  # <entered-iso> <entered-epoch> <confirmed-iso> <confirmed-epoch>
-  local entered=$1 entered_epoch=$2 confirmed=$3 confirmed_epoch=$4
+  local entered=$1 entered_epoch=$2 confirmed=$3 confirmed_epoch=$4 carried_count
   printf 'version: %s\n' "$FM_AFK_CONTRACT_VERSION"
   printf 'entered: %s\n' "$entered"
   printf 'entered_epoch: %s\n' "$entered_epoch"
@@ -337,6 +401,11 @@ fm_afk_contract_render_record() {  # <entered-iso> <entered-epoch> <confirmed-is
   printf 'confirmed: %s\n' "$confirmed"
   printf 'confirmed_epoch: %s\n' "$confirmed_epoch"
   [ "${FM_AFK_CONTRACT_ENTRY_MODE:-away}" != quiet ] || printf 'mode: quiet\n'
+  if [ -n "${CARRIED_ITEMS:-}" ]; then
+    carried_count=$(printf '%s\n' "$CARRIED_ITEMS" | awk 'NF { n++ } END { print n + 0 }')
+    printf 'carried_blockers: %s\n' "$carried_count"
+    printf '%s\n' "$CARRIED_ITEMS" | awk 'NF { printf "carried: %s\n", $0 }'
+  fi
   if [ -n "$WORDS" ]; then
     local words_body=$WORDS words_indicator='|-'
     case "$words_body" in
@@ -436,6 +505,7 @@ fm_afk_contract_validate() {  # <path>
     ''|quiet) ;;
     *) fm_afk_contract_log "record $path has an invalid mode"; return 1 ;;
   esac
+  fm_afk_contract_read_carried "$path" >/dev/null || return 1
   words_header=$(sed -n '/^words: /{p;q;}' "$path")
   case "$words_header" in 'words: -'|'words: |'|'words: |-') ;; *) fm_afk_contract_log "record $path has no valid words field"; return 1 ;; esac
   fm_afk_contract_read_words "$path" >/dev/null || return 1
@@ -456,6 +526,20 @@ fm_afk_contract_validate() {  # <path>
 # It never asks for a go: the record already stands when it is printed.
 # A quiet record reads back as quiet mode: no return, reach, or spend cap
 # applies while the captain is present.
+fm_afk_contract_render_carried() {  # <path>
+  local path=$1 rows task key reason tab
+  rows=$(fm_afk_contract_read_carried "$path") || return 1
+  [ -n "$rows" ] || return 0
+  printf '  carried from the previous return (each stays open until its key is resolved or reclassified):\n'
+  tab=$(printf '\t')
+  while IFS="$tab" read -r task key reason; do
+    [ -n "$task" ] || continue
+    printf '    - %s [key=%s] %s\n' "$task" "$key" "$reason"
+  done <<EOF
+$rows
+EOF
+}
+
 fm_afk_contract_render_readback() {  # <path>
   local path=$1 words expected spend
   if [ "$(fm_afk_contract_record_mode "$path")" = quiet ]; then
@@ -471,6 +555,7 @@ fm_afk_contract_render_readback() {  # <path>
     printf '  spend cap: %s concurrent workers\n' "$spend"
     printf '  reach: hold-for-return only. %s\n' "$(fm_afk_contract_read_field "$path" reach_announced)"
   fi
+  fm_afk_contract_render_carried "$path" || return 1
   words=$(fm_afk_contract_read_words "$path"; rc=$?; printf x; exit "$rc") || return 1
   words=${words%x}
   if [ -n "$words" ]; then
@@ -507,9 +592,10 @@ fm_afk_contract_render_announcement() {  # <path>
 
 # --- subcommands ------------------------------------------------------------
 
-fm_afk_contract_parse_inputs() {  # <args...>; sets WORDS, EXPECTED_RETURN, SPEND
-  local words_file='' spend_given=0
+fm_afk_contract_parse_inputs() {  # <args...>; sets WORDS, EXPECTED_RETURN, SPEND, CARRIED_ITEMS
+  local words_file='' carried_file='' spend_given=0 line tab task key reason extra
   WORDS=; EXPECTED_RETURN=-; SPEND=$FM_AFK_CONTRACT_SPEND_DEFAULT; FM_AFK_CONTRACT_SCALARS_GIVEN=0
+  CARRIED_ITEMS=; CARRIED_ITEMS_NEW=
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --words-file)
@@ -536,6 +622,10 @@ fm_afk_contract_parse_inputs() {  # <args...>; sets WORDS, EXPECTED_RETURN, SPEN
         spend_given=1
         FM_AFK_CONTRACT_SCALARS_GIVEN=1
         shift 2 ;;
+      --carried-file)
+        [ "$#" -gt 1 ] || { fm_afk_contract_log '--carried-file requires a path'; return 2; }
+        carried_file=$2
+        shift 2 ;;
       --action|--object|--when|--stop|--grant|--grant=*)
         fm_afk_contract_log "$1 was retired: the captain's away words are the whole mandate, so pass them with --words or --words-file and nothing else"
         return 2 ;;
@@ -550,6 +640,26 @@ fm_afk_contract_parse_inputs() {  # <args...>; sets WORDS, EXPECTED_RETURN, SPEN
     # file's bytes verbatim, trailing newlines included.
     WORDS=$(cat "$words_file"; rc=$?; printf x; exit "$rc") || return 1
     WORDS=${WORDS%x}
+  fi
+  if [ -n "$carried_file" ]; then
+    [ -f "$carried_file" ] || { fm_afk_contract_log "carried file not found: $carried_file"; return 2; }
+    tab=$(printf '\t')
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ -n "$line" ] || continue
+      task=; key=; reason=; extra=
+      IFS="$tab" read -r task key reason extra <<EOF
+$line
+EOF
+      if [ -z "$task" ] || [ -z "$key" ]; then
+        fm_afk_contract_log "carried file $carried_file has a line with no task or key: $line"
+        return 2
+      fi
+      [ -z "$extra" ] || reason="$reason $extra"
+      reason=$(printf '%s' "$reason" | tr '\t\r\n' '   ')
+      CARRIED_ITEMS_NEW="${CARRIED_ITEMS_NEW:+$CARRIED_ITEMS_NEW
+}$task$tab$key$tab$reason"
+    done < "$carried_file"
+    CARRIED_ITEMS=$CARRIED_ITEMS_NEW
   fi
   [ "$spend_given" -eq 1 ] || SPEND=$(fm_afk_contract_entry_spend_default) || return 1
   return 0
@@ -575,16 +685,44 @@ fm_afk_contract_archive_target() {  # <record> [superseded-stamp]
 # EXPECTED_RETURN, SPEND, FM_AFK_CONTRACT_SCALARS_GIVEN). The written mode
 # follows the header's AWAY OR QUIET rules.
 fm_afk_contract_cmd_enter() {
-  local record legacy now now_epoch session_entered session_entered_epoch staged archived archived_tmp standing=''
+  local record legacy now now_epoch session_entered session_entered_epoch staged archived archived_tmp standing='' existing_carried saved_words saved_spend saved_expected
   fm_afk_contract_entry_allowed || return 1
   record=$(fm_afk_contract_path)
   legacy=$(fm_afk_contract_legacy_proposal_path)
   FM_AFK_CONTRACT_ENTRY_MODE=away
   [ "${FM_AFK_MODE:-}" != quiet ] || FM_AFK_CONTRACT_ENTRY_MODE=quiet
+  existing_carried=
   if [ -f "$record" ]; then
     fm_afk_contract_validate "$record" || return 1
     standing=$(fm_afk_contract_record_mode "$record")
     [ "$standing" = quiet ] || FM_AFK_CONTRACT_ENTRY_MODE=away
+    existing_carried=$(fm_afk_contract_read_carried "$record") || return 1
+  fi
+  CARRIED_ITEMS=$(fm_afk_contract_merge_carried "$existing_carried" "${CARRIED_ITEMS_NEW:-}")
+  # A refresh that only adds carried items rewrites the standing record in
+  # place: same words, same session entry, no superseded archive.
+  if [ -f "$record" ] && [ -z "$WORDS" ] && [ "$standing" = "$FM_AFK_CONTRACT_ENTRY_MODE" ] \
+    && [ -n "${CARRIED_ITEMS_NEW:-}" ]; then
+    saved_words=$(fm_afk_contract_read_words "$record"; rc=$?; printf x; exit "$rc") || return 1
+    WORDS=${saved_words%x}
+    saved_spend=$(fm_afk_contract_read_field "$record" spend_max_concurrent_workers)
+    saved_expected=$(fm_afk_contract_read_field "$record" expected_return)
+    SPEND=$saved_spend
+    EXPECTED_RETURN=$saved_expected
+    now_epoch=$(date +%s)
+    now=$(fm_afk_contract_epoch_iso "$now_epoch") || return 1
+    session_entered=$(fm_afk_contract_read_field "$record" entered)
+    session_entered_epoch=$(fm_afk_contract_read_field "$record" entered_epoch)
+    mkdir -p "$(dirname "$record")" || return 1
+    staged=$(mktemp "$(dirname "$record")/.afk-contract.entering.XXXXXX") || return 1
+    fm_afk_contract_render_record "$session_entered" "$session_entered_epoch" "$now" "$now_epoch" > "$staged" \
+      || { rm -f "$staged"; return 1; }
+    fm_afk_contract_validate "$staged" || { rm -f "$staged"; return 1; }
+    mv "$staged" "$record" || { rm -f "$staged"; return 1; }
+    rm -f "$legacy"
+    fm_afk_contract_render_announcement "$record" || return 1
+    fm_afk_contract_render_readback "$record"
+    return
   fi
   if [ -f "$record" ] && [ -z "$WORDS" ] && [ "$standing" = "$FM_AFK_CONTRACT_ENTRY_MODE" ]; then
     if [ "$standing" = quiet ]; then
@@ -708,6 +846,10 @@ fm_afk_contract_main() {
     words)
       path=$(fm_afk_contract_select_path "$@") || { fm_afk_contract_usage >&2; return 2; }
       fm_afk_contract_read_words "$path" ;;
+    carried)
+      path=$(fm_afk_contract_select_path "$@") || { fm_afk_contract_usage >&2; return 2; }
+      [ -f "$path" ] || { fm_afk_contract_log "no record at $path"; return 1; }
+      fm_afk_contract_read_carried "$path" ;;
     mode)
       path=$(fm_afk_contract_select_path "$@") || { fm_afk_contract_usage >&2; return 2; }
       [ -f "$path" ] || { fm_afk_contract_log "no record at $path"; return 1; }
