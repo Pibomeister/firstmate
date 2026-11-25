@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Successor runtime choice and quota preflight for the verified handoff:
 # codex, agy, and a declared Claude account take over through the real lock
-# and ack; an exhausted pool is refused before anything launches; no account
+# and ack; by default the successor keeps the predecessor's model, effort, and
+# setting sources from its own launch argv, and an explicit choice wins and is
+# recorded; an exhausted pool is refused before anything launches; no account
 # pin changes. The Orca and tmux transports, quota-axi, and claude auth are
 # fakes; lock, ack, and launcher are real.
 set -eu
@@ -89,6 +91,11 @@ cat > "$LAB/predecessor.sh" <<'EOF2'
 #!/usr/bin/env bash
 set -eu
 echo "$$" > "$FM_HOME/pred.pid"
+# An exact /proc-style cmdline for this process, under the launcher's test seam.
+if [ -n "${FM_TEST_FAKE_CMDLINE:-}" ]; then
+  mkdir -p "$FM_HANDOFF_TEST_PROC_ROOT/$$"
+  cp "$FM_TEST_FAKE_CMDLINE" "$FM_HANDOFF_TEST_PROC_ROOT/$$/cmdline"
+fi
 ORCA_TERMINAL_HANDLE=term_predecessor bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/lock.out" 2>&1
 set +e
 args=()
@@ -120,6 +127,10 @@ pins_digest() {
   (cd "$LAB/config" && find . -name '*account*' -exec cksum {} + 2>/dev/null | sort)
 }
 # run_case <backend> [launcher args...]: lock a predecessor, run the launcher.
+# The predecessor runs as $PRED_HARNESS with PRED_ARGS after its script, so
+# its own launch argv carries them.
+PRED_HARNESS=claude
+PRED_ARGS=()
 run_case() {
   local backend=$1 limit
   shift
@@ -128,7 +139,7 @@ run_case() {
     "$LAB/state/supervisor-failover.log" "$LAB/rc" "$LAB/ack.out" "$LAB/pred.pid" "$QUOTA/reads"
   printf '%s\n' "$backend" > "$LAB/config/backend"
   if [ $# -gt 0 ]; then printf '%s\n' "$@" > "$LAB/launch.args"; else rm -f "$LAB/launch.args"; fi
-  (claude "$LAB/predecessor.sh" & echo "$!" >> "$FM_TEST_PIDS")
+  ("$PRED_HARNESS" "$LAB/predecessor.sh" ${PRED_ARGS[@]+"${PRED_ARGS[@]}"} & echo "$!" >> "$FM_TEST_PIDS")
   limit=$((SECONDS + 200))
   while [ ! -f "$LAB/rc" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
   [ -f "$LAB/rc" ] || fail "launcher did not finish: $(cat "$LAB/launch.err" 2>/dev/null)"
@@ -305,6 +316,104 @@ quota_fixture claude 12 exhausted_now > "$QUOTA/claude.json"
 run_case tmux
 [ "$(cat "$LAB/rc")" = 3 ] && [ ! -e "$LAB/state/attempts" ] || fail 'an exhausted ambient claude pool must be vetoed'
 pass 'exhausted_now veto: no successor launches onto an exhausted pool and the predecessor keeps the lock'
+
+# The successor keeps the predecessor's runtime, read from its own launch argv.
+record() { sed -n 's/^successor=//p' "$LAB/state/.handoff-successor"; }
+quota_fixture claude 40 through_reset > "$QUOTA/claude.json"
+PRED_ARGS=(--setting-sources 'project,local' --model haiku --effort low)
+run_case tmux
+assert_transferred_to claude 'carried runtime'
+argv_is 'carried runtime' claude --dangerously-skip-permissions --model haiku --effort low --setting-sources project,local PROMPT
+assert_contains "$(record)" 'harness=claude model=haiku account=ambient reason=handoff' 'the record names the carried model'
+assert_contains "$(record)" 'effort=low setting_sources=project,local model_from=predecessor effort_from=predecessor setting_sources_from=predecessor' \
+  'the record names each carried value and its source'
+assert_contains "$(cat "$LAB/launch.err")" 'successor runtime: model haiku, from the predecessor; effort low, from the predecessor; setting-sources project,local, from the predecessor' \
+  'the launcher states the carried runtime'
+assert_contains "$(cat "$QUOTA/reads")" 'claude profile=0' 'the preflight still reads the successor quota'
+run_case orca
+assert_transferred_to claude 'carried runtime on orca'
+argv_is 'carried runtime on orca' --agent claude --worktree "path:$LAB" --surface terminal --model haiku --effort low --prompt PROMPT --json
+assert_contains "$(record)" 'effort=low setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unsupported' \
+  'orca carries model and effort and records that it cannot carry setting sources'
+pass 'default successor keeps the predecessor model, effort, and setting sources from its launch argv'
+
+# An explicit choice, such as a quota reroute, wins and is recorded beside the predecessor's value.
+run_case tmux --model opus --effort high --reason quota_reroute
+assert_transferred_to claude 'explicit override'
+argv_is 'explicit override' claude --dangerously-skip-permissions --model opus --effort high --setting-sources project,local PROMPT
+assert_contains "$(record)" 'model=opus account=ambient reason=quota_reroute' 'the record names the chosen model and reason'
+assert_contains "$(record)" 'effort=high setting_sources=project,local model_from=explicit effort_from=explicit setting_sources_from=predecessor predecessor_model=haiku predecessor_effort=low predecessor_setting_sources=project,local' \
+  'the record keeps both the explicit choice and the predecessor value'
+assert_contains "$(cat "$LAB/launch.err")" 'model opus, named explicitly (reason=quota_reroute); the predecessor had haiku' \
+  'the launcher states the override and what it replaced'
+run_case tmux --model default --effort default --setting-sources default
+assert_transferred_to claude 'explicit default'
+argv_is 'explicit default' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model=default account=ambient' 'an explicit default model is recorded as default'
+assert_contains "$(record)" 'model_from=explicit effort_from=explicit setting_sources_from=explicit' 'an explicit default is an explicit choice'
+pass 'explicit override wins over the predecessor runtime and is recorded'
+
+# A predecessor that recorded no value keeps today's launch and says so.
+PRED_ARGS=()
+run_case tmux
+assert_transferred_to claude 'unrecorded runtime'
+argv_is 'unrecorded runtime' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model=default account=ambient' 'no recorded model keeps the runtime default'
+assert_contains "$(record)" 'effort=default setting_sources=default model_from=unrecorded effort_from=unrecorded setting_sources_from=unrecorded predecessor_model=none predecessor_effort=none predecessor_setting_sources=none' \
+  'the record says nothing was recorded'
+assert_contains "$(cat "$LAB/launch.err")" "model default: the predecessor's launch recorded none, so the runtime's own applies" \
+  'the launcher states that the runtime default applies'
+pass 'a predecessor with no recorded runtime keeps the runtime default and says so'
+
+# ps joins argv words with blanks, so an empty value cannot be delimited: it
+# is unreadable, never guessed. An exact cmdline carries it as given.
+PRED_ARGS=(--setting-sources '' --model haiku)
+FM_HANDOFF_TEST_PROC_ROOT="$TMP_ROOT/no-proc" run_case tmux
+assert_transferred_to claude 'ps empty value'
+argv_is 'ps empty value' claude --dangerously-skip-permissions --model haiku PROMPT
+assert_contains "$(record)" 'setting_sources=default model_from=predecessor effort_from=unrecorded setting_sources_from=unreadable' \
+  'an undelimited value is recorded as unreadable'
+assert_contains "$(cat "$LAB/launch.err")" "setting-sources default: the predecessor's launch value could not be read" 'the launcher states the unreadable value'
+mkdir -p "$TMP_ROOT/proc"
+printf 'claude\0%s\0--setting-sources\0\0--model\0haiku\0--effort\0max\0' "$LAB/predecessor.sh" > "$TMP_ROOT/cmdline"
+PRED_ARGS=()
+FM_HANDOFF_TEST_PROC_ROOT="$TMP_ROOT/proc" FM_TEST_FAKE_CMDLINE="$TMP_ROOT/cmdline" run_case tmux
+assert_transferred_to claude 'exact cmdline'
+argv_is 'exact cmdline' claude --dangerously-skip-permissions --model haiku --effort max --setting-sources '' PROMPT
+assert_contains "$(record)" 'effort=max setting_sources=empty model_from=predecessor effort_from=predecessor setting_sources_from=predecessor' \
+  'an exact empty value is carried'
+pass 'predecessor argv: ps blanks are unreadable, an exact cmdline carries an empty value'
+
+# A Codex predecessor's model and reasoning effort carry; a harness change carries nothing.
+quota_fixture codex 55 through_reset > "$QUOTA/codex.json"
+PRED_HARNESS=codex
+PRED_ARGS=(-c 'shell_environment_policy.set.TMUX_PANE="%2"' --model gpt-5.5 -c 'model_reasoning_effort="xhigh"')
+FM_HANDOFF_TEST_HARNESS=codex run_case tmux
+assert_transferred_to codex 'codex carry'
+argv_is 'codex carry' "${MARKERS[@]}" -u CODEX_HOME FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --model gpt-5.5 -c 'model_reasoning_effort="xhigh"' --dangerously-bypass-approvals-and-sandbox PROMPT
+assert_contains "$(record)" 'effort=xhigh setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unrecorded' \
+  'the codex record names the carried model and effort'
+FM_HANDOFF_TEST_HARNESS=codex run_case tmux --harness claude
+assert_transferred_to claude 'harness change'
+argv_is 'harness change' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model_from=harness_change effort_from=harness_change setting_sources_from=harness_change predecessor_model=gpt-5.5 predecessor_effort=xhigh' \
+  'a harness change records the predecessor runtime it did not carry'
+PRED_HARNESS=claude
+PRED_ARGS=()
+rm -f "$QUOTA/claude.json" "$QUOTA/codex.json"
+pass 'codex predecessor carries model and effort; a harness change carries nothing and says so'
+
+# Values a successor cannot carry are refused before launch when named.
+run_case tmux --harness agy --effort high
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'agy cannot carry --effort and must refuse before launch'
+run_case orca --setting-sources project
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'orca cannot carry --setting-sources and must refuse before launch'
+run_case orca --effort high
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'orca --effort without --model must refuse before launch'
+assert_contains "$(cat "$LAB/launch.err")" '--effort on Orca needs --model too' 'the refusal names the missing model'
+run_case tmux --effort turbo
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'an unknown effort must refuse'
+pass 'uncarriable or invalid runtime options refuse before launch'
 
 PINS_AFTER=$(pins_digest)
 [ "$PINS_AFTER" = "$PINS_BEFORE" ] || fail "account pins and the account list must be unchanged: before=[$PINS_BEFORE] after=[$PINS_AFTER]"

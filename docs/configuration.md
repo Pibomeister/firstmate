@@ -509,6 +509,7 @@ Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
 A tmux pane does not inherit the session's environment, so a tmux successor launched without an account choice is given the session's own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`.
 Orca owns the agent's permission posture; an explicit `auto` home setting currently refuses rather than substituting a shell launch.
 The successor may run on Codex, on agy, or on another signed-in `config/claude-accounts` entry, without changing any account pin, sign-in, or spend setting; the launcher's `--help` owns the options and their backend limits.
+By default a successor on the same runtime keeps the predecessor's model, reasoning effort, and Claude setting sources, read from the predecessor's own launch; an explicit choice, such as a quota reroute, wins and is recorded beside the predecessor's value, and a value the predecessor never recorded is left to the runtime and reported as such.
 Before anything else, the launcher checks with `bin/fm-order.sh covers --doc` that the handoff it is given lists every open captain order.
 When an order is missing or the check cannot read the document or the order store, the launcher exits 4 before any claim, record, event, or launch, and the session keeps the lock and its Stop gate.
 The session then rewrites the handoff with `bin/fm-ledger.sh handoff` or `bin/fm-order.sh handoff --doc` and launches again.
