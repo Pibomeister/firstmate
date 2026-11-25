@@ -690,6 +690,9 @@
 #     __BRIEFDOORBELL__ quoted printable doorbell naming the launch-brief record this
 #                  script published into the receiving home's operational inbox
 #     __WORKTREE__  absolute path to the task worktree
+#     __AGENTPGRP__ quoted bin/fm-agent-pgrp.sh plus a trailing space, marking
+#                  where a template that is not a single env command starts its
+#                  agent; every other template gets that launcher as a prefix
 #     __CURSORBIN__ resolved, cursor-verified executable for a cursor launch
 #     __GEMINISETTINGS__ firstmate-owned per-task gemini settings file (busy-state hooks)
 #     __ROVOBIN__   resolved, rovo-verified executable for a rovo launch
@@ -3585,7 +3588,7 @@ launch_template() {
   # effort inside the model reference as `<model>(<effort>)`, so the effort
   # axis rides `__MODELFLAG__` after mapping to the nearest compatible
   # level in the installed model's selectable set.
-  polytoken) printf '%s' 'for _fmv in $(env | cut -d= -f1 | grep -E '\''^(ORCA_|FM_)'\''); do case $_fmv in FM_TASK_ID|FM_TASK_INBOX|FM_ZELLIJ_SESSION) ;; *) unset $_fmv ;; esac; done; env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u FM_OMP_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u AGENT __POLYTOKENBIN__ --config-dir __POLYTOKENCONFIG__ new --sessions-dir __POLYTOKENSESSIONS__ --facet firstmate-worker --facets-dir __POLYTOKENFACETS__ __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
+  polytoken) printf '%s' 'for _fmv in $(env | cut -d= -f1 | grep -E '\''^(ORCA_|FM_)'\''); do case $_fmv in FM_TASK_ID|FM_TASK_INBOX|FM_ZELLIJ_SESSION) ;; *) unset $_fmv ;; esac; done; __AGENTPGRP__env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS -u FM_OMP_HARNESS -u GEMINI_CLI -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u ATLASSIAN_AGENT_TYPE -u ROVODEV_CLI -u AGENT __POLYTOKENBIN__ --config-dir __POLYTOKENCONFIG__ new --sessions-dir __POLYTOKENSESSIONS__ --facet firstmate-worker --facets-dir __POLYTOKENFACETS__ __MODELFLAG__--prompt "$(__OPINPUT__ encode launch-brief < __BRIEF__)"' ;;
   # Command Code receives the typed launch envelope after -- as its initial
   # message. --yolo bypasses permission prompts, --trust skips the folder-trust
   # prompt of a fresh worktree, and --skip-onboarding skips taste onboarding.
@@ -9234,6 +9237,25 @@ claude | opencode | pi | pi-signed | grok | kimi | gemini | muse | rovo | agy | 
   LAUNCH="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI $LAUNCH"
   ;;
 esac
+# Every templated agent runs in a process group of its own that owns the pane
+# terminal (bin/fm-agent-pgrp.sh owns why it is a group and not a session, and
+# what it cannot isolate), so a cleanup trap or test-runner teardown signalling
+# a group the agent would otherwise share cannot reach it. Each template here
+# is one `env ...` simple command, except polytoken, whose template marks the
+# command after its unset loop with __AGENTPGRP__; a template of any other
+# shape refuses rather than launching its agent unisolated. A raw launch
+# command is the operator's exact text and runs as given.
+if [ "$RAW_LAUNCH" -eq 0 ]; then
+  sq_agent_pgrp="$(shell_quote "$FM_ROOT/bin/fm-agent-pgrp.sh") "
+  case "$LAUNCH" in
+  *__AGENTPGRP__*) LAUNCH=${LAUNCH//__AGENTPGRP__/$sq_agent_pgrp} ;;
+  'env '*) LAUNCH="$sq_agent_pgrp$LAUNCH" ;;
+  *)
+    echo "error: the $HARNESS launch template is not a single env command, so its agent cannot be started in its own process group; refusing to launch it unisolated" >&2
+    exit 1
+    ;;
+  esac
+fi
 # Crewmate panes are created by a long-lived tmux/herdr daemon that does not
 # inherit firstmate's current environment, so a bare `claude` in the pane falls
 # back to the default ~/.claude store even when firstmate itself runs under a
