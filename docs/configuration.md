@@ -608,7 +608,8 @@ The whole failover call, every relaunch included, ends strictly inside the watch
 
 A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
 When the session holds the lock and the home has open work, the hook writes a handoff with `bin/fm-ledger.sh handoff` and starts a successor on the next eligible primary runtime through `bin/fm-handoff-launch.sh`.
-The successor takes the lock after its verified acknowledgement, then closes the old session's terminal as the handoff section above describes, so the old session never holds the lock against it.
+The successor takes the lock after its verified acknowledgement, so the old session never holds the lock against it.
+The successor then closes the old session's terminal under the proof that the handoff section above describes.
 A second mate's home leaves its own captain failover to its parent, which uses [supervisor failover](#supervisor-failover).
 
 Every switch is recorded in the dispatch log as a `failover` event with its time, task, from, to, and reason (`bin/fm-dispatch-log.sh`).
