@@ -27,8 +27,10 @@
 # records, never from conversation memory: the archived away-posture record
 # (bin/fm-afk-contract.sh), the supervision outcome store
 # (bin/fm-branch-outcome.sh), the held set in the backlog (tasks-axi), the
-# status logs, and the watchdog's human-only-step record
-# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh). An open
+# status logs, the watchdog's human-only-step record
+# (state/watchdog/human-steps.tsv, written by bin/fm-watchdog.sh), and the
+# overnight postmortem checklist (bin/fm-postmortem-checklist.sh owns
+# collection and its receipt contract). An open
 # `human-step-<slug>` keyed blocker is a worker's human-only step: it is listed
 # under what is waiting on the captain and never holds the catch-up. Its order
 # is fixed: supervisor health across the away window
@@ -166,7 +168,8 @@ window_start_epoch() {
   local epoch flag
   epoch=$(gate_window_epoch)
   case "$epoch" in ''|*[!0-9]*) epoch= ;; esac
-  if [ -z "$epoch" ] && fm_afk_contract_present "$STATE"; then
+  if [ -z "$epoch" ] && fm_afk_contract_present "$STATE" \
+     && fm_afk_contract_validate "$(fm_afk_contract_path "$STATE")"; then
     epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
   fi
   if [ -z "$epoch" ] && [ -f "$STATE/.afk" ]; then
@@ -655,6 +658,11 @@ open_human_steps() {  # <human-steps.tsv>
     done
 }
 
+postmortem_open_rows() {
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-postmortem-checklist.sh" collect --since "$1"
+}
+
 render_return_brief() {  # <evidence-file> <blockers-file> <since-epoch> <drain-ok>
   local evidence=$1 blockers=$2 since=$3 drain_ok=$4 now record superseded superseded_at archive_dir stamp
   local tag task key summary count routine routine_visible captain visible_outcomes live held_err last verb rows status url drained=0 pointer
@@ -762,6 +770,17 @@ EOF
     count=$((count + 1))
     printf '  - %s [key=%s] human-only step, other work continues: %s\n' "$task" "$key" "$summary"
   done < "$blockers"
+  # Unclosed overnight postmortems: each machine is named, never silently absent.
+  if ! rows=$(postmortem_open_rows "$since"); then
+    rows="${rows}${rows:+$'\n'}collector"$'\topen\tpostmortem collection failed; machine receipts remain unverified'
+  fi
+  if [ -n "$rows" ]; then
+    count=$((count + 1))
+    printf '  overnight postmortems not received:\n'
+    printf '%s\n' "$rows" | while IFS= read -r row; do
+      printf '    - %s: %s\n' "$(printf '%s' "$row" | cut -f1)" "$(printf '%s' "$row" | cut -f3-)"
+    done
+  fi
   [ "$count" -gt 0 ] || printf '  (nothing)\n'
 
   # 4. tried and failed, or could not be fixed.
@@ -1081,7 +1100,8 @@ main() {
   fi
   window_epoch=$(window_start_epoch)
   contract_epoch=$(gate_contract_epoch)
-  if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE"; then
+  if [ -z "$contract_epoch" ] && fm_afk_contract_present "$STATE" \
+     && fm_afk_contract_validate "$(fm_afk_contract_path "$STATE")"; then
     contract_epoch=$("$CONTRACT" field entered_epoch 2>/dev/null || true)
     case "$contract_epoch" in ''|*[!0-9]*) contract_epoch= ;; esac
   fi

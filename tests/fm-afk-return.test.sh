@@ -42,6 +42,7 @@ install_runner() {  # <case-dir>
   # The merge-notification marker reader behind the brief's landed section.
   cp "$ROOT/bin/fm-pr-lib.sh" "$dir/bin/"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/"
+  cp "$ROOT/bin/fm-postmortem-checklist.sh" "$dir/bin/"
   fm_test_tasks_toml "$dir/home/.tasks.toml"
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/home/data/backlog.md"
   # The fake stop mirrors the real one's ordering: the away flag goes, then the
@@ -559,6 +560,66 @@ test_return_brief_lists_open_human_only_steps() {
   pass "the return brief lists open human-only steps until cleared, across a Friday-to-Monday weekend, and a worker's human-only step never holds the gate"
 }
 
+test_return_brief_names_unclosed_postmortem_machines() (
+  local dir out waiting night artifact hash machine real_date
+  dir="$TMP_ROOT/brief-postmortems"
+  install_runner "$dir"
+  mkdir -p "$dir/fakebin"
+  real_date=$(command -v date)
+  export POSTMORTEM_REAL_DATE="$real_date"
+  cat > "$dir/fakebin/date" <<'SH'
+#!/bin/bash
+case "$*" in
+  +%s) printf '%s\n' "$POSTMORTEM_TEST_EPOCH" ;;
+  +%F) python3 -c 'import datetime, os; print(datetime.datetime.fromtimestamp(int(os.environ["POSTMORTEM_TEST_EPOCH"])).date())' ;;
+  *) exec "$POSTMORTEM_REAL_DATE" "$@" ;;
+esac
+SH
+  chmod +x "$dir/fakebin/date"
+  export PATH="$dir/fakebin:$PATH"
+  export POSTMORTEM_TEST_EPOCH
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,23,20).timestamp()))')
+  contract_in "$dir" enter --words 'collect the overnight postmortems' >/dev/null 2>&1 || fail "could not confirm the away-posture record"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,7,45).timestamp()))')
+  night=2026-11-24
+  for machine in M3 local; do
+    artifact="$dir/home/$machine-postmortem.md"
+    printf '%s postmortem\n' "$machine" > "$artifact"
+    hash=$(shasum -a 256 "$artifact" | awk '{print $1}')
+    if [ "$machine" = M3 ]; then
+      FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$dir/bin/fm-postmortem-checklist.sh" receipt \
+        --machine "$machine" --path "$artifact" --hash "$hash" >/dev/null || fail "could not record default-date receipt"
+    else
+      out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/fm-inbox.sh" note \
+        "$(printf 'postmortem-receipt\t%s\t%s\t%s\t%s' "$night" "$machine" "$artifact" "$hash")") || fail "could not submit inbox receipt: $out"
+    fi
+  done
+  artifact="$dir/home/Studio-postmortem.md"
+  printf 'Studio postmortem\n' > "$artifact"
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" "$ROOT/bin/fm-inbox.sh" note \
+    "$(printf 'postmortem-receipt\t%s\tStudio\t%s\t%064d' "$night" "$artifact" 0)") || fail "could not submit bad-hash inbox receipt: $out"
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  out=$(run_return "$dir" begin) || fail "the postmortem return did not complete: $out"
+  waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
+  assert_contains "$waiting" 'overnight postmortems not received:' "unclosed postmortems were not listed under waiting on you: $out"
+  assert_contains "$waiting" '    - Hetzner: 2026-11-24: no artifact receipt recorded' "the missing machine was not named at 07:45: $waiting"
+  assert_contains "$waiting" '    - Studio: 2026-11-24: artifact hash mismatch' "a bad-hash artifact was not kept open in the brief: $waiting"
+  assert_not_contains "$waiting" '    - M3:' "a default-date receipt was lost across midnight: $waiting"
+  assert_not_contains "$waiting" '    - local:' "the inbox receipt did not close the local row: $waiting"
+  assert_not_contains "$waiting" '(nothing)' "unclosed postmortems left waiting on you empty"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,8,30).timestamp()))')
+  contract_in "$dir" enter --words 'keep watching the fleet' >/dev/null 2>&1 || fail "could not start the next away window"
+  POSTMORTEM_TEST_EPOCH=$(python3 -c 'import datetime as d; print(int(d.datetime(2026,11,24,9).timestamp()))')
+  out=$(run_return "$dir" begin) || fail "the second morning return did not complete: $out"
+  waiting=$(printf '%s\n' "$out" | awk '/^Waiting on you:/{show=1} /^Tried and failed, or could not be fixed:/{show=0} show')
+  assert_contains "$waiting" '    - Hetzner: 2026-11-24: no artifact receipt recorded' "new away window hid the missing machine"
+  assert_contains "$waiting" '    - Studio: 2026-11-24: artifact hash mismatch' "new away window hid the bad hash"
+  assert_not_contains "$waiting" '    - M3:' "second return reopened a verified machine"
+  assert_not_contains "$waiting" '    - local:' "second return lost the inbox receipt"
+  pass "the return collects receipts across midnight and names missing and bad-hash machines at 07:45"
+)
+
 test_return_brief_points_at_the_drain_on_a_host_home_only() {
   local dir harness fakebin out n
   for harness in claude pi; do
@@ -753,25 +814,35 @@ test_return_brief_keeps_refresh_history() {
 }
 
 test_malformed_posture_record_keeps_catchup_gated() {
-  local dir out rc gate record before
+  local dir out rc gate record before today mode
   dir="$TMP_ROOT/malformed-posture-record"
   install_runner "$dir"
+  # Recovery must retain existing missing-machine rows, but an invalid posture
+  # must not create historical checklists from its untrusted epoch.
+  FM_HOME="$dir/home" "$dir/bin/fm-postmortem-checklist.sh" start --night 2000-01-01 >/dev/null \
+    || fail "could not seed an unresolved historical checklist"
+  today=$(date +%F)
   gate="$dir/home/state/.afk-return-catchup"
   record="$dir/home/state/.afk-contract"
   printf 'version: 1\nentered: 2026-09-08T08:00:00Z\nentered_epoch: 123\nwords: |-\n  captain words survive\n' > "$record"
   before=$(cat "$record"; printf x)
   touch "$dir/home/state/.last-watcher-beat"
   : > "$dir/home/state/.fake-drain"
-  set +e
-  out=$(run_return "$dir" begin)
-  rc=$?
-  set -e
-  [ "$rc" -eq 3 ] || fail "a malformed posture record should keep catch-up gated (rc=$rc): $out"
-  [ -f "$gate" ] || fail "a malformed posture record did not retain the return gate"
-  [ -f "$record" ] || fail "a malformed posture record was archived or deleted"
-  [ "$(cat "$record"; printf x)" = "$before" ] || fail "a malformed posture record lost its captain words"
-  [ ! -e "$dir/home/state/afk-contracts/123.afk-contract" ] || fail "a malformed posture record was archived"
-  assert_contains "$out" "away-posture record unreadable: $record; catch-up stays gated" "return did not name the malformed posture record"
+  for mode in begin check; do
+    set +e
+    out=$(run_return "$dir" "$mode")
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "a malformed posture record should keep catch-up gated (rc=$rc): $out"
+    [ -f "$gate" ] || fail "a malformed posture record did not retain the return gate"
+    [ -f "$record" ] || fail "a malformed posture record was archived or deleted"
+    [ "$(cat "$record"; printf x)" = "$before" ] || fail "a malformed posture record lost its captain words"
+    [ ! -e "$dir/home/state/afk-contracts/123.afk-contract" ] || fail "a malformed posture record was archived"
+    assert_contains "$out" "away-posture record unreadable: $record; catch-up stays gated" "return did not name the malformed posture record"
+    assert_contains "$out" '    - Hetzner: 2000-01-01: no artifact receipt recorded' "recovery hid an existing unresolved checklist"
+    awk -F '\t' -v today="$today" '$1 != "2000-01-01" && $1 != today { exit 1 }' \
+      "$dir/home/state/postmortem-checklist.tsv" || fail "recovery manufactured historical checklists from an invalid posture"
+  done
   pass "a malformed posture record stays live and gates return catch-up"
 }
 
@@ -1612,6 +1683,7 @@ test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps
+test_return_brief_names_unclosed_postmortem_machines
 test_return_brief_points_at_the_drain_on_a_host_home_only
 test_return_brief_all_silent_window_does_not_point_at_drain
 test_return_keeps_catchup_gated_when_the_drain_cannot_record_outcomes

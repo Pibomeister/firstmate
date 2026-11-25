@@ -240,6 +240,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-public-followup-emit.sh` | Validate and report one typed terminal work result into its owning home, or stage it when that home is remote |
 | `fm-public-followup-collect.sh` | Read and retire the typed terminal results a remote work home staged for the home that owes the public reply |
 | `fm-order.sh`            | Durable captain orders and holds: send, status, verify, ack, finish, the handoff restart gate, and bounded re-delivery with escalation |
+| `fm-postmortem-checklist.sh` | The overnight postmortem receipt checklist and morning-window collector, including inbox receipt intake; see its header and `--help` for the receipt contract |
 | `fm-inbox.sh`            | The captain's out-of-band capture surface: queue a note (optionally idempotent by request id), announce or repair its wake, record a durable primary reply, and emit bounded receipts and primary-readiness JSON |
 | `fm-dispatch-log.sh`     | Append-only captain-goal intake and provider-switch ledger; mark late resolutions and list open goals and goals past the 15-minute dispatch SLA |
 | `fm-ledger.sh`           | The mission ledger over the backlog: file each approved proposal or order as its own item, print the per-project plan and the next ready item, write handoffs from the ledger, and check ready depth at 17:00 and 23:00 |
