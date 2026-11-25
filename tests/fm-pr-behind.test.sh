@@ -310,6 +310,28 @@ test_steer_check_reads_only_the_newest_record() {
   pass "the steer check stops at the newest record, which here predates the done line"
 }
 
+test_refused_check_is_retried_on_a_later_sweep() {
+  local gitstub real_git
+  fixture refusedcheck
+  publish fix1
+  real_git=$(command -v git)
+  gitstub=$D/git-stub
+  mkdir -p "$gitstub"
+  printf '#!/usr/bin/env bash\nif [ -e "%s" ]; then for a; do [ "$a" != fetch ] || exit 128; done; fi\nexec "%s" "$@"\n' "$D/fail-fetch" "$real_git" > "$gitstub/git"
+  chmod +x "$gitstub/git"
+  : > "$D/fail-fetch"
+  PATH="$gitstub:$PATH" scan
+  assert_equals 0 "$(calls)" "fetch fails: no relaunch"
+  assert_contains "$OUT" "pr-behind-refused-$TASK-" "fetch fails: reported"
+  assert_equals "refused " "$(events)" "fetch fails: refusal recorded"
+  rm "$D/fail-fetch"
+  age_ledger
+  PATH="$gitstub:$PATH" scan
+  assert_equals 1 "$(calls)" "fetch works again: the same head is requested"
+  case "$OUT" in *"pr-behind-refused-"*) fail "fetch works again: the refusal was reported twice" ;; esac
+  pass "a refused resync check does not close the head, so a later sweep relaunches it"
+}
+
 test_unreadable_captain_hold_does_not_relaunch() {
   fixture holdunknown
   publish fix1
@@ -370,6 +392,7 @@ fm_test_run \
   test_steer_after_done_is_probed \
   test_relaunch_that_left_the_branch_behind_is_reported \
   test_unreadable_captain_hold_does_not_relaunch \
+  test_refused_check_is_retried_on_a_later_sweep \
   test_relaunch_past_the_probed_head_counts_as_resynced \
   test_steer_check_reads_only_the_newest_record \
   test_watcher_sweep_queues_the_relaunch \

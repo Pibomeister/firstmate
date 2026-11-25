@@ -40,8 +40,9 @@
 # turned dirty, or a run took the branch, before the stop) records `unsynced`
 # and reports it once; that reopens the head for a later sweep.
 # A relaunch is requested at most once per new PR head and at most once per
-# scan. A dirty or active head is not settled, so the same head is requested
-# once the copy is clean and the run is over; its event is reported only once.
+# scan. A dirty, active or refused head is not settled, so the same head is
+# requested once the copy is clean, the run is over and the check succeeds; its
+# event is reported only once.
 # Nothing here discards, resets, moves or forces anything: --check makes no
 # ref change, and the relaunch's own resync owns every move.
 #
@@ -114,11 +115,12 @@ record() {  # <event> <head>
 }
 last_probe() { awk -F '\t' '$1 ~ /^[0-9]+$/ { t = $1 } END { print t + 0 }' "$LEDGER" 2>/dev/null || echo 0; }
 # The head whose relaunch question is closed: a request, a not-behind reading,
-# or a divergence or refusal the relaunch would also refuse. `deferred` (the
+# or a divergence the relaunch would also refuse. A `refused` check may be
+# transient, so it never closes a head. `deferred` (the
 # control plane proved nothing was sent) and `unsynced` reopen it.
 settled_head() {
   awk -F '\t' '
-    $2 ~ /^(current|requested|relaunched|failed|diverged|refused)$/ { h = $3 }
+    $2 ~ /^(current|requested|relaunched|failed|diverged)$/ { h = $3 }
     $2 ~ /^(deferred|unsynced)$/ && $3 == h { h = "" }
     END { print h }' "$LEDGER" 2>/dev/null
 }
