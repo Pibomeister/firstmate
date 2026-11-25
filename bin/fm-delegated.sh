@@ -11,12 +11,13 @@
 #                                 never progress on its own.
 #   heartbeat --task <id>        Record a progress heartbeat now.
 #   deliver --task <id> --path <path> --hash <sha256>
-#                                 Attempt to close the deliverable with an
-#                                 artifact receipt. A missing artifact or a
-#                                 hash mismatch records the attempt, leaves
-#                                 the deliverable open, and exits 1.
-#   view [--task <id>]           The supervisor view: one line per task with
-#                                 its state, plus one line per handoff. A
+#                                 Attempt to close the deliverable with a
+#                                 receipt for the registered artifact path.
+#                                 A wrong path, missing artifact, or hash
+#                                 mismatch records the attempt and exits 1
+#                                 without changing the closed state.
+#   view [--task <id>]           The supervisor view: one line per task and
+#                                 handoff; --task selects only that task. A
 #                                 task with only a dispatch receipt renders
 #                                 as state=dispatched-not-progressing.
 #   check                        One supervision pass. A task silent past
@@ -31,7 +32,11 @@
 #           --location read|alt
 #                                 File one cross-agent handoff carrying the
 #                                 artifact receipt (path plus hash) in the
-#                                 chosen location.
+#                                 chosen location. Artifact paths must be
+#                                 absolute. The read channel is derived:
+#                                 firstmate uses the wake queue, while a
+#                                 local task uses its recorded inbox.
+#                                 Remote task inbox delivery is refused.
 #   mirror --id <id>             Mirror a hidden handoff into the read
 #                                 location its receiver actually reads.
 #
@@ -41,11 +46,13 @@
 #                                 Refuse removal of unreceipted artifacts under
 #                                 each supplied removal path.
 #
-# Files, all under the owner home FM_HOME:
+# Records and delivery locations (state defaults to FM_HOME/state):
 #   state/delegated/<task>.record       one key=value record per task.
 #   state/delegated/handoffs/<id>.record one key=value record per handoff.
+#   FM_STATE_OVERRIDE selects a different state root.
 #   Firstmate reads the wake queue; other receivers read NNN.msg and handled/.
-#   <alt-dir>/NNN.msg holds a non-read placement until mirrored.
+#   The caller-supplied <alt-dir>/NNN.msg holds a non-read placement until
+#   mirrored and may be outside the owner home.
 #
 # This command never instructs, pushes, restarts, or stops any external
 # agent. Escalation and delivery failure are reports to the delegating

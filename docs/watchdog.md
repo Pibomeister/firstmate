@@ -527,8 +527,8 @@ The independent [supervisor-gap record](#supervisor-gap-record) keeps its fixed 
 
 ## Delegated-agent progress contract
 
-External delegated work (a Hermes-class overnight agent, a per-machine postmortem author) is not inside the pane fold above.
-It is held to the contract in [`bin/fm-delegated.sh`](../bin/fm-delegated.sh), whose header owns the commands and record files.
+The delegated progress contract covers registered external work (such as a Hermes-class overnight agent) and Firstmate's ship and scout reports, independently of the pane fold above.
+[`bin/fm-delegated.sh`](../bin/fm-delegated.sh) owns the commands and record files.
 `bin/fm-delegated-lib.sh` owns the hash, identifier, and state-derivation rules.
 Every delegated task records a named deliverable, a heartbeat interval, a silence window that escalates to the delegating supervisor, and a deliverable receipt bound to artifact path plus content hash.
 A dispatch-only receipt is reported as `dispatched-not-progressing` in the supervisor view (`fm-delegated.sh view`), never as progress.
@@ -549,15 +549,15 @@ This retains the artifact for a receiver that acknowledges it after an earlier c
 Runtime retirement checks the bound status and task-artifact paths, including paths archived before deletion.
 Removal checks preserve symlink entries along the complete lookup path as well as the resolved artifact target.
 Task-inbox placements hold the receiver metadata lock and refuse retired receivers.
-Notification checks defer unavailable receivers without stopping other supervision or recording an escalation as delivered.
-Remote receiver metadata cannot authorize local inbox placement or consumption; those routes require the existing remote transport.
+Notification checks defer contended or remote task-supervisor inbox delivery without stopping other supervision or recording an escalation as delivered.
+`fm-delegated.sh` refuses remote task-inbox placement and does not count a local copy as remote consumption; remote messaging remains with the existing transport in [`bin/fm-send.sh`](../bin/fm-send.sh).
 The handoff command derives the read channel from its receiver.
 Handoff artifact paths must be absolute so later consumers resolve the same file.
 Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
 Report completion does not prevent the worker from advancing or relaunching.
 The spawn path registers ship and scout report deliverables with a 300-second heartbeat interval and a two-hour silence window.
 Worker briefs provide heartbeat and delivery commands; watcher passes check the records and route reports through the wake queue and the stored supervisor's inbox when it has task metadata.
-Session-start output includes the delegated supervisor view.
+Locked session-start output includes the delegated supervisor view when delegated records exist.
 All delegated commands serialize their full transactions under one home-local lock.
 Record loaders parse each file in one shell pass; watcher checks select unfinished records in a batch before loading them.
 The contract only reports; it never instructs, pushes, restarts, or stops a named external agent.

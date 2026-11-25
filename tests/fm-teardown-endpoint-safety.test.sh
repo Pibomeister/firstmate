@@ -17,6 +17,9 @@ make_case() {  # <name>
     "$TMP_ROOT/$dir/home/config" "$TMP_ROOT/$dir/fakebin" \
     "$TMP_ROOT/$dir/worktree" "$TMP_ROOT/$dir/project"
   git init -q "$TMP_ROOT/$dir/project"
+  # Keep scratch cleanup inside the synthetic checkout. Without its own Git
+  # root, git -C worktree clean resolves the surrounding gate repository.
+  git init -q "$TMP_ROOT/$dir/worktree"
   : > "$TMP_ROOT/$dir/worktree/sentinel"
   : > "$TMP_ROOT/$dir/runtime.log"
   cat > "$TMP_ROOT/$dir/fakebin/tmux" <<'SH'

@@ -6,17 +6,7 @@
 # the hash, identifier, and state-derivation rules so tests can pin them
 # without a home on disk.
 #
-# Contract (tickets 3a and 9b, council fm-fable-rca-1108):
-# - Every delegated task records a named deliverable, a heartbeat interval,
-#   a silence window, and a deliverable receipt bound to artifact path plus
-#   content hash.
-# - A dispatch-only receipt is never progress: a task whose only receipt is
-#   dispatch renders as dispatched-not-progressing in the supervisor view.
-# - A missing artifact or a hash mismatch can never close a deliverable.
-# - A cross-agent handoff filed only outside the receiver's read location
-#   is a delivery failure naming the hidden item, never silence.
-# - Once a handoff is mirrored into the read location, the receiver's read
-#   is receipted against the same path-plus-hash receipt.
+# docs/watchdog.md's delegated-agent progress contract owns operator guidance.
 #
 # Functions:
 #   fm_del_now

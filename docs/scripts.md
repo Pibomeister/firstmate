@@ -17,6 +17,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
 | `fm-heartbeat.sh`        | Atomically publish the bounded self-watching ledger `state/heartbeat.json` (schema `fm-heartbeat.v1`); unread fields report unknown, including weekly model allowance when quota-axi cannot be read |
+| [`fm-delegated.sh`](../bin/fm-delegated.sh) | Manage the [delegated-agent progress contract](watchdog.md#delegated-agent-progress-contract) |
+| `fm-delegated-lib.sh`    | Pure helpers for delegated artifact verification and state derivation |
 | `fm-health-verdict.sh`   | Print one read-only health verdict for a home (`ok`, `stale`, `dead`, `unconfirmed` or `unknown`) from the heartbeat ledger, the captain record's lock verdict and the watcher beat, and with `--write` record it in `state/health-verdict`. The mid-turn exemption uses the caller's own supervision model, so a caller on a different harness than the home's primary must set `FM_SUPERVISION_MODEL` |
 | `fm-health-lib.sh`       | Shared health predicates, starting with the open-work test that the heartbeat floor and the health verdict both read |
 | `fm-ready-pr-discovery.sh` | List read-only the no-mistakes runs parked with a PR ready or at a gate in every registered repo, owned or orphan |

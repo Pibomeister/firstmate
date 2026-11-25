@@ -278,8 +278,8 @@ Text for a worker to read and commands that drive a worker's process are separat
 
 When [status archival is enabled](configuration.md#task-status-archive-configstatus-archive), teardown preserves the complete status stream in `data/<task>/status.log`, using a separate `status.<N>.log` for reused IDs without overwriting earlier histories.
 Forced secondmate retirement stores descendant logs under the surviving parent's `data/<secondmate>/children/<child>/` tree.
-These archives are cold evidence: presentation, wake classification, and fleet snapshots consume live `state/` records and never read archived logs.
-Ordinary child teardown uses its own home's configuration; retiring a whole home still removes older archives stored inside that home.
+Presentation, status-wake classification, and fleet snapshots consume live `state/` records rather than treating archived logs as active task status.
+Ordinary child teardown uses its own home's configuration; retiring a whole home removes older archives stored inside that home subject to the [delegated receipt-retention boundary](watchdog.md#delegated-agent-progress-contract).
 [`bin/fm-teardown.sh`](../bin/fm-teardown.sh) owns publication, retirement, path safety, and retention mechanics.
 [`tests/fm-teardown.test.sh`](../tests/fm-teardown.test.sh) and [`tests/fm-remote-secondmate-lifecycle-e2e.test.sh`](../tests/fm-remote-secondmate-lifecycle-e2e.test.sh) cover archival and isolation across local, nested, and remote retirement.
 
