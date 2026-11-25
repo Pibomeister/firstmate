@@ -159,11 +159,20 @@ orca_list_json() {
   fm_run_timed 20 orca terminal list --json --limit 5000 2>/dev/null
 }
 
-orca_pick_terminal() {  # <captain-json> -> handle\\tlastOutputAt\\tdraft
+orca_pick_terminal() {  # <captain-json> -> handle\\tlastOutputAt\\tdraft; 2 = enumeration incomplete
   local cap=$1 handle title list
   handle=$(fm_nudge_json_get "$cap" '.handle // ""' '') || true
   title=$(fm_nudge_json_get "$cap" '.title // ""' '') || true
   list=$(orca_list_json) || { printf '\n'; return 1; }
+  # A truncated list cannot prove the captain pane absent: refuse visibly
+  # (return 2) instead of falling through to a pane-missing conclusion.
+  if printf '%s' "$list" | jq -e '
+      def terms: (.result.terminals // .result.items // .terminals // .items // []);
+      ((.result.truncated // .truncated // false) == true)
+      or (((.result.totalCount // .result.total_count // .totalCount // 0) | tonumber) > (terms | length))
+    ' >/dev/null 2>&1; then
+    printf '\n'; return 2
+  fi
   printf '%s' "$list" | jq -r --arg h "$handle" --arg t "$title" '
     def terms:
       (.result.terminals // .result.items // .terminals // .items // [])
@@ -387,8 +396,8 @@ observe_fixture() {  # <captain-json> -> observation fields via globals
   OBS_COMMIT=$(fm_nudge_json_get "$cap" '.fixture.commit // ""' '') || true
 }
 
-observe_live() {  # <captain-json>
-  local cap=$1 backend handle last pane session fmhome row
+observe_live() {  # <captain-json>; 2 = enumeration incomplete (OBS_INCOMPLETE=1)
+  local cap=$1 backend handle last pane session fmhome row rc=0
   backend=$(fm_nudge_json_get "$cap" '.backend' '') || true
   fmhome=$(fm_nudge_json_get "$cap" '.fm_home // ""' '') || true
   OBS_SCREEN=''
@@ -399,9 +408,15 @@ observe_live() {  # <captain-json>
   OBS_COMPOSER=''
   OBS_HB=''
   OBS_COMMIT=''
+  OBS_INCOMPLETE=''
   case "$backend" in
     orca)
-      row=$(orca_pick_terminal "$cap") || { OBS_TARGET=''; return 1; }
+      row=$(orca_pick_terminal "$cap") || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        OBS_TARGET=''
+        [ "$rc" -eq 2 ] && OBS_INCOMPLETE=1
+        return "$rc"
+      fi
       handle=${row%%$'\t'*}
       [ -n "$handle" ] || return 1
       OBS_TARGET=$handle
@@ -482,7 +497,11 @@ process_captain() {  # <captain-json> [force]
     observe_fixture "$cap"
   else
     if ! observe_live "$cap"; then
-      decision=$(jq -nc '{event:"skip_pane_missing",severity:"medium",reason:"captain pane not found",should_send:false}')
+      if [ -n "${OBS_INCOMPLETE:-}" ]; then
+        decision=$(jq -nc '{event:"skip_enumeration_incomplete",severity:"medium",reason:"terminal list truncated; captain pane presence unknown, not missing",should_send:false}')
+      else
+        decision=$(jq -nc '{event:"skip_pane_missing",severity:"medium",reason:"captain pane not found",should_send:false}')
+      fi
       emit_event "$id" "$owner" "$decision" 0 'none'
       return 0
     fi

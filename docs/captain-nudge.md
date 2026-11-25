@@ -13,6 +13,9 @@ The script header owns commands, flags, files, and the send/guard mechanics.
 
 ## When it types
 
+For Orca, the terminal inventory must be complete before the tool evaluates the gates below.
+The [event specification](captain-nudge-spec.md#events) names the visible refusal, covered by [`tests/fm-enumeration-completeness.test.sh`](../tests/fm-enumeration-completeness.test.sh).
+
 For each configured captain on this host, one pass fires the prompt only when every gate holds:
 
 1. Idle at least `idle_min` minutes (default 20), from the newer of Orca `lastOutputAt` and `state/heartbeat.json` `generated_epoch`.

@@ -24,7 +24,10 @@
 #   FM_CONFIG_OVERRIDE  directory holding the role file; defaults to $FM_HOME/config
 #
 # Requires gh. Exit 0 on success and prints `commented <n>` or
-# `created <n> <url>` to stdout.
+# `created <n> <url>` to stdout. Exit 1 with a diagnostic if label listing
+# fails, or a required label is not among 500 returned labels: that result
+# cannot prove absence, so the script stops before creating that label or
+# filing or commenting on an issue.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -135,11 +138,14 @@ fm_self_heal_build_body() {
 }
 
 fm_self_heal_ensure_label() {
-  local gh_repo=$1 name=$2 color=$3
-  if gh label list --repo "$gh_repo" --limit 500 --json name --jq '.[].name' 2>/dev/null \
-    | grep -Fxq -- "$name"; then
+  local gh_repo=$1 name=$2 color=$3 labels
+  labels=$(gh label list --repo "$gh_repo" --limit 500 --json name --jq '.[].name' 2>/dev/null) \
+    || die 'could not list repository labels'
+  if printf '%s\n' "$labels" | grep -Fxq -- "$name"; then
     return 0
   fi
+  [ "$(printf '%s\n' "$labels" | wc -l | tr -d '[:space:]')" -lt 500 ] \
+    || die "label enumeration incomplete; presence of $name is unknown"
   gh label create "$name" --repo "$gh_repo" --color "$color" --force >/dev/null \
     || die "could not create label $name"
 }
