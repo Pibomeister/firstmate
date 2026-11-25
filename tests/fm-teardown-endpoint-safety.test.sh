@@ -259,7 +259,11 @@ test_non_pool_teardown_ignores_task_set_lock() {
     fm_lock_try_acquire "$lock" || exit 1
     trap 'fm_lock_release "$lock"' EXIT
     : > "$ready"
-    sleep 30
+    # The publisher must remain live through teardown and the lock assertion.
+    # Its lifetime follows the fixture owner, rather than teardown's runtime.
+    while [ -d "$dir" ] && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null; do
+      sleep 1
+    done
   ) &
   holder=$!
   while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
