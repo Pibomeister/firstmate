@@ -181,7 +181,8 @@
 #     command's status, one of the four signals above, or a queue error). A
 #     wrapper that dies any other way, for example by SIGKILL, writes no row.
 #   - A row that cannot be appended is skipped without changing the run or its
-#     status, so a recorder failure shows as a missing row.
+#     status, so a recorder failure shows as a missing row. A record that is
+#     not a regular file takes no row.
 #   - A repeated admit or leave number, an admit number below an earlier admit,
 #     or a recorded number at or above next (read the record first, then next)
 #     means the counter restarted; coverage across it is unknown. next is
@@ -687,6 +688,9 @@ record_text() {  # <text>: sets REC_TEXT to one field's worth of it, never empty
 }
 
 record_append() {  # <epoch> <event> <host> <load1> <status> <reason>
+  # Opening anything but a regular file, such as a FIFO, can block, and the
+  # admit row is written with the queue lock held.
+  [ -f "$RECORD" ] || [ ! -e "$RECORD" ] || return 0
   (umask 077; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$1" "$2" "$MY_NUMBER" "$3" "${4:-unknown}" "$5" "$6" "$REC_TASK" "$REC_LABEL" >> "$RECORD") 2>/dev/null || true
 }

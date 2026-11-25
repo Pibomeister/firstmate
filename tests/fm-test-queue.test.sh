@@ -1567,7 +1567,7 @@ test_record_signals_and_leaves() {
 }
 
 test_record_never_invents_a_status() {
-  local p p2 rc out
+  local p p2 rc out i
   new_case record-killed
   start_held killed; p=$HELD_PID
   wait_until "killed workload started" file_exists "$CASE/started-killed"
@@ -1586,6 +1586,24 @@ test_record_never_invents_a_status() {
   out=$(q run -- sh -c 'echo ran; exit 9' 2>"$CASE/err"); rc=$?
   expect_code 9 "$rc" "a run whose record cannot be written"
   assert_equals ran "$out" "a run did not execute when its record could not be written"
+  # A record whose open would block (a FIFO nobody reads) is skipped the same
+  # way: the run never waits on it, with the queue lock held or after.
+  new_case record-blocking
+  mkfifo "$FM_TEST_QUEUE_DIR/workloads.tsv"
+  qbg run -- sh -c 'exit 9' 2>"$CASE/err" &
+  p=$!; track_pids "$p"
+  i=0
+  while ! pid_gone "$p"; do
+    i=$((i + 1))
+    if [ "$i" -ge 150 ]; then
+      exec 9<>"$FM_TEST_QUEUE_DIR/workloads.tsv" # lets the blocked append return
+      fail "a run waited on a record that is not a regular file"
+    fi
+    sleep 0.1
+  done
+  wait "$p"; rc=$?
+  expect_code 9 "$rc" "a run whose record would block"
+  [ -p "$FM_TEST_QUEUE_DIR/workloads.tsv" ] || fail "the queue replaced a record that is not a regular file"
   pass "fm-test-queue.sh: a killed wrapper records no status and an unwritable record changes nothing"
 }
 
