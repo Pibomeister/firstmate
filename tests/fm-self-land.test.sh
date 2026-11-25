@@ -1003,6 +1003,64 @@ test_lost_forge_response_reconciles_without_a_second_merge() {
   pass "reconciles a lost forge response without a duplicate merge"
 }
 
+# shellcheck disable=SC2016
+test_recovery_reports_the_authority_at_send_after_posture_changes() {
+  local case_dir head recovery authority action expected outcome label url=$REPO_URL/pull/376
+  for recovery in same-run later-run; do
+    for authority in away attended; do
+      label="authority-$recovery-$authority"
+      read -r case_dir head <<< "$(ready_case "$label" 376)"
+      if [ "$authority" = attended ]; then
+        FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+          "$ROOT/bin/fm-afk-contract.sh" enter --words 'merge approved green pull requests' \
+          > "$case_dir/posture.out" 2> "$case_dir/posture.err" \
+          || fail "$label: could not enter away posture: $(cat "$case_dir/posture.err")"
+        action=archive
+      else
+        action="enter --words 'merge approved green pull requests'"
+      fi
+      printf 'FM_HOME="$d/home" FM_STATE_OVERRIDE="$d/state" %q %s > "$d/posture.out" 2> "$d/posture.err" || exit 1\n' \
+        "$ROOT/bin/fm-afk-contract.sh" "$action" > "$case_dir/hook-gate-read"
+      printf '1\n' > "$case_dir/merge-rc"
+      printf 'merged\n' > "$case_dir/merge-effect"
+      if [ "$recovery" = later-run ]; then
+        : > "$case_dir/pull-read-fail-after-merge"
+      fi
+      land "$case_dir" task-x1 "$url" --head "$head"
+      if [ "$recovery" = later-run ]; then
+        [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "$label: an unknown outcome must not report success"
+        assert_equals "$authority" "$(pending_field "$case_dir" 5)" "$label: pending authority must reflect the send posture"
+        [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "$label: the unknown outcome was reported as landed"
+        rm -f "$case_dir/pull-read-fail" "$case_dir/pull-read-fail-after-merge" "$case_dir/hook-gate-read"
+        if [ "$authority" = away ]; then
+          FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+            "$ROOT/bin/fm-afk-contract.sh" archive > "$case_dir/posture.out" 2> "$case_dir/posture.err" \
+            || fail "$label: could not restore attended posture"
+        else
+          FM_HOME="$case_dir/home" FM_STATE_OVERRIDE="$case_dir/state" \
+            "$ROOT/bin/fm-afk-contract.sh" enter --words 'merge approved green pull requests' \
+            > "$case_dir/posture.out" 2> "$case_dir/posture.err" \
+            || fail "$label: could not restore away posture"
+        fi
+        land "$case_dir" task-x1 "$url" --head "$head"
+      fi
+      expect_code 0 "$(cat "$case_dir/rc")" "$label: the merge must reconcile: $(cat "$case_dir/stderr")"
+      assert_grep '(reconciled)' "$case_dir/stdout" "$label: the lost response was not reconciled"
+      [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "$label: recovery sent a duplicate merge command"
+      [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] || fail "$label: supervision did not receive exactly one outcome"
+      expected="check: merge landed: task-x1 $url"
+      [ "$authority" != away ] || expected="$expected away"
+      outcome=$(grep -F "check: merge landed: task-x1 $url" "$case_dir/state/.wake-queue")
+      case "$outcome" in
+        *"$expected") ;;
+        *) fail "$label: the reconciled outcome has stale authority: $outcome" ;;
+      esac
+      assert_absent "$(repo_dir "$case_dir")/pending" "$label: the settled pending record was retained"
+    done
+  done
+  pass "reconciles lost responses with send-time authority across both posture changes"
+}
+
 # shellcheck disable=SC2016 # Hook text expands when the stand-in forge runs it, not here.
 test_failed_merge_command_holds_the_repository_until_its_outcome_is_known() {
   local case_dir head url
@@ -1905,6 +1963,7 @@ fm_test_run \
   test_second_merge_in_flight_is_refused \
   test_red_base_trips_the_breaker_and_it_stays_tripped \
   test_lost_forge_response_reconciles_without_a_second_merge \
+  test_recovery_reports_the_authority_at_send_after_posture_changes \
   test_failed_merge_command_holds_the_repository_until_its_outcome_is_known \
   test_refuses_known_deferred_merges_before_the_forge_write \
   test_queued_merge_holds_the_repository_until_it_leaves_the_queue \

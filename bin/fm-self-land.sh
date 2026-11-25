@@ -995,7 +995,9 @@ if [ "$SL_MODE" = gate ]; then
   sender=$(fm_self_land_sender_of "$PPID")
   [ "$sender" != - ] \
     || refuse pending "the process that sends the merge command could not be named, so its merge is not sent"
-  fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent "$sender" \
+  fm_merge_authority_resolve "$FM_HOME" "$STATE" "$META" "$ID" \
+    || refuse task "the away-posture record could not be read before the merge command"
+  fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent "$sender" "$FM_MERGE_AUTHORITY" \
     || refuse pending "the pending record of this run is gone or changed, so its merge is not sent"
   exit 0
 fi
@@ -1071,6 +1073,7 @@ remove_gate
 sent_state=
 if fm_self_land_pending_read "$SL_REPO_DIR" && [ "$FM_SELF_LAND_PENDING_RUN" = "$SL_RUN" ]; then
   sent_state=$FM_SELF_LAND_PENDING_STATE
+  AUTHORITY=$FM_SELF_LAND_PENDING_AUTHORITY
 fi
 if [ "$sent_state" = armed ] && [ "$merge_rc" -eq 0 ]; then
   # The merge gate reports an accepted merge that did not pass the forge gate.

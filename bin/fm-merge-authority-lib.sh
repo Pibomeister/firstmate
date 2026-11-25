@@ -467,8 +467,8 @@ fm_self_land_pending_read() {  # <repo-dir>
 # Returns 0 when the change was made, 1 when the record is absent, belongs to
 # another run, or is in another state, and 2 when it could not be locked, read,
 # or written.
-fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender]
-  local dir=${1-} run=${2-} from=${3-} to=${4-} sender=${5-} lock rc=0 epoch
+fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender] [authority]
+  local dir=${1-} run=${2-} from=${3-} to=${4-} sender=${5-} authority=${6-} lock rc=0 epoch
   [ -n "$dir" ] && [ -n "$run" ] && [ -n "$from" ] && [ -n "$to" ] || return 2
   lock="$dir/pending.lock"
   fm_lock_acquire_wait_max "$lock" 30 || return 2
@@ -480,7 +480,7 @@ fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender]
       rm -f -- "$dir/pending" || rc=2
     elif epoch=$(date +%s) && _fm_self_land_pending_store "$dir" \
         "$FM_SELF_LAND_PENDING_ID" "$FM_SELF_LAND_PENDING_URL" "$FM_SELF_LAND_PENDING_HEAD" \
-        "$FM_SELF_LAND_PENDING_AUTHORITY" "$epoch" "$to" "$run" \
+        "${authority:-$FM_SELF_LAND_PENDING_AUTHORITY}" "$epoch" "$to" "$run" \
         "${sender:-$FM_SELF_LAND_PENDING_SENDER}" \
         "$FM_SELF_LAND_PENDING_BASE" "$FM_SELF_LAND_PENDING_BASE_SHA"; then
       :
