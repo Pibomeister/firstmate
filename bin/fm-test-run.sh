@@ -1140,6 +1140,7 @@ tests/fm-codex-stop-thread-live-e2e.test.sh 60
 tests/fm-context-reading.test.sh 15142
 tests/fm-handoff-launch.test.sh 5980
 tests/fm-handoff-launch-runtime.test.sh 82167
+tests/fm-handoff-prompt-cap.test.sh 154
 tests/fm-supervisor-failover.test.sh 39563
 tests/fm-hc-lab.test.sh 4348
 tests/fm-health-verdict.test.sh 10966
@@ -1150,6 +1151,9 @@ tests/fm-hermes-signals-live-e2e.test.sh 60
 tests/fm-host-health.test.sh 35130
 tests/fm-escalate.test.sh 6000
 tests/fm-escalation-class-map.test.sh 6000
+tests/fm-failover.test.sh 58247
+tests/fm-failover-relaunch.test.sh 17327
+tests/fm-failover-live-e2e.test.sh 60
 tests/fm-incident-ledger.test.sh 30626
 tests/fm-kiro-harness.test.sh 35000
 tests/fm-kiro-signals-live-e2e.test.sh 60
@@ -1167,10 +1171,11 @@ tests/fm-soak-record.test.sh 35000
 tests/fm-stop-policy-live-e2e.test.sh 60
 tests/fm-stop-policy.test.sh 36274
 tests/fm-stall-ledger.test.sh 20000
+tests/fm-stall-watch.test.sh 83018
 tests/fm-wake-ledger.test.sh 25000
-tests/fm-afk-preallow.test.sh 2487700
+tests/fm-afk-preallow.test.sh 12752
 tests/fm-tmux-relaunch-input.test.sh 8356
-tests/fm-unpushed-reconcile.test.sh 1043032
+tests/fm-unpushed-reconcile.test.sh 82030
 EOF
 }
 
