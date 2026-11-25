@@ -1,0 +1,398 @@
+$ {run-worktree}/bin/fm-lab-home.sh create {run-worktree}/.test-away-live/entry-carry-and-key-resolution
+{run-worktree}/.test-away-live/entry-carry-and-key-resolution
+
+[exit 0]
+$ {run-worktree}/bin/fm-afk-launch.sh enter --words Observe the local fleet. Merge nothing.
+Away posture recorded at 2026-11-25T03:41:07Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-25T03:41:07Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  your words (verbatim):
+    Observe the local fleet. Merge nothing.
+
+================================================================================
+AFK PREFLIGHT
+================================================================================
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at each AFK preflight)
+--------------------------------------------------------------------------------
+# Fleet learnings (append-only, dated)
+
+Format per entry: Lesson | Failure | Check/rule | Issue (when one exists).
+Never edit or delete old entries; add a new dated entry to supersede one.
+Keep every entry general: no person, company, project, customer, host, account, or terminal names, and no credential details.
+
+## 2026-10-31 (from an overnight AFK scorecard)
+
+### 1. Preflight readiness was guessed
+- Failure: an AFK preflight reported ready without testing. Hard dependencies surfaced hours later: missing repo config and credentials, undeployed prerequisites, an outdated tool, and a score bar that current output could not reach.
+- Rule: before the captain logs off, dry-run every goal's hard dependencies and record PASS/FAIL with evidence: tokens and credentials exist (never print values), installs and versions, deploys landed, repo config (required approvals and owners), sign-ins, and whether the score bar is reachable on current output. No PASS means not ready; batch every FAIL to the captain before AFK starts.
+- Issue: https://github.com/Pibomeister/firstmate/issues/77
+
+### 2. Self-servable work was parked for the captain
+- Failure: a project missed its whole bar because a tool upgrade, a local runner setup, and work possible through an installed CLI were all parked as needing the captain, and supervision accepted those parks.
+- Rule (park challenge): before parking, try with the tools and authority you have and record what you tried. Installed CLIs, tool upgrades and installs on dev machines, local credentials, sockets and daemons a tool can create or start, and opening PRs, reruns and reroutes through the project's configured delivery path are NOT sign-ins. True SSO/2FA sign-ins, credentials no tool can supply, new spend, releases, merges outside existing rules, and anything destructive, irreversible, or security-sensitive go to the captain; the captain escalation list in AGENTS.md still applies in full. Supervisors challenge every park ("could this be self-served?"). Blocked for more than 1 h means a self-serve path, a reroute, or an escalation to the captain.
+- Issues: https://github.com/Pibomeister/firstmate/issues/78 and https://github.com/Pibomeister/firstmate/issues/63
+
+### 3. Captain context churn
+- Failure: captains restarted repeatedly overnight and auto-compacted, and one captain's self-estimate of remaining context was about five times too high.
+- Failure: handoffs at every context cycle failed in four recorded ways: a limit was reached before the handoff was written, a successor never launched, an order was lost during a restart, and a handoff carried stale facts.
+- Rule: on the same harness, Claude auto-compaction is the routine context reset.
+  Measure context left externally (footer or auto-compact percentage, read by the watcher or leash), never by self-estimate.
+  The early trigger near 15% context left is a capture step, not a handoff: file open work into durable records before the compaction, and re-check volatile facts from live records after it.
+  Do a full handoff only for quota exhaustion, a harness switch, or a planned fresh start after about 4 compactions.
+  Write a handoff early and incrementally, verify that the successor is live, carry every open order, and re-verify facts at pickup.
+- Issues: https://github.com/Pibomeister/firstmate/issues/65 and https://github.com/Pibomeister/firstmate/issues/70
+
+### 4. Late starts on one overloaded host
+- Failure: work piled onto one machine until load was far above its ceiling, orphaned browser processes accumulated, and free disk ran low, while other capacity sat underused.
+- Rule: distribute lanes across available machines and cloud at kickoff; set per-host caps on load, free disk and terminals; reap orphan processes each pass; disk under the floor pauses new launches.
+- Issues: https://github.com/Pibomeister/firstmate/issues/79 , https://github.com/Pibomeister/firstmate/issues/67 and https://github.com/Pibomeister/firstmate/issues/68
+
+### 5. Watchdog restart loop
+- Failure: a network watchdog looped through 20+ restarts; an earlier version could not see a dead data plane behind a live daemon.
+- Rule: test every watchdog against the failure modes it claims to catch before enabling it; use exponential backoff; cap restarts per window, then page instead of restarting.
+- Issue: https://github.com/Pibomeister/firstmate/issues/80
+
+### 6. Supervision gaps (heartbeat, stop verification, receipts)
+- Failure: a required supervisor seat sat empty for hours, a worker kept pushing after a stop order while its captain reported it stopped, and a change merged without receipts or a tag before a release.
+- Rules: required supervisor seats write heartbeats and the watcher alerts or relaunches when they go stale; verify a stop with gh (branch and PR heads unchanged) and process checks (pid gone) before reporting it done; no merge or publish without receipts for the exact head SHA; no release publish without a matching tag. Never push to upstream remotes from a fork run.
+- Issues: https://github.com/Pibomeister/firstmate/issues/81 , https://github.com/Pibomeister/firstmate/issues/82 , https://github.com/Pibomeister/firstmate/issues/72 and https://github.com/Pibomeister/firstmate/issues/74
+
+### 7. Gate-lock serialization and unpushed commits
+- Failure: one global gate lock serialized every lane, committed work sat unpushed for over an hour, and reviews then hit stale heads.
+- Rule: use gate locks per lane or a bounded pool; enter committed work into its configured delivery path promptly; alert when it waits there for more than 30 min.
+
+### 8. Verdict script reported a pass on a rejection
+- Failure: a review script's summary reported a pass while the final verdict was a rejection.
+- Rule: parse verdicts strictly from one structured final field (exact enum); missing or ambiguous means reject; tests include a transcript that mentions a pass early and ends in rejection.
+
+### 9. Input jams and a fix that never landed
+- Failure: a captain's wake-ups sat unsent in its composer, and the push of the fix was rejected, so the fix stayed local.
+- Rule: every doorbell or prompt send verifies submission (turn started) and retries; escalate a failed push of a fix to the captain within 1 h and reroute only through the project's configured delivery path; a change of account or remote needs the captain. Never leave the fix local without that escalation.
+- Issue: https://github.com/Pibomeister/firstmate/issues/64
+
+### 10. Prompts lost during restarts
+- Failure: a nightly order landed during a captain restart and was never delivered, so its goals started hours late.
+- Rule: queue inbound prompts durably; the new session drains and acks the queue on pickup; senders verify the ack and redeliver after any restart.
+- Issue: https://github.com/Pibomeister/firstmate/issues/83
+
+## 2026-11-11 (from a velocity audit)
+
+### 1. Setup and install changes passed only in a warm worktree
+- Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
+- Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.
+
+## 2026-11-19 (from a nightly reflection)
+
+### 1. One restart launched three successors
+- Failure: one keep-alive restart started three sessions on the same prompt within 90 seconds.
+- Failure: each session ran more than 150 commands and spawned its own reviewers, which tripled the spend on one assessment.
+- Rule: a restart or keep-alive launcher is single-flight: before it launches, it checks whether a successor for the same prompt is already starting or live, and after it launches, it confirms exactly one successor session is running.
+- Rule: when more than one successor is found, stop the extras before they start work, keep the one that holds the session lock, and report the duplicate launch.
+
+### 2. Pickups were redirected to a session that could not take the lock
+- Failure: an away-mode run and a successor pickup were each sent to a session that session start then refused, because another live session held the fleet lock.
+- Failure: one pickup went ahead only after the holder's process was proven dead.
+- Rule: before redirecting an away-mode run or a successor pickup to a session, run `FM_HOME=<that home> bin/fm-lock.sh status`.
+- Rule: `lock: held by live harness pid <n>` means route the work to the holding session or wait for it to exit; never start a second supervisor there.
+- Rule: `lock: stale` or `lock: free` means the receiving session may start: its ordinary lock acquisition reclaims a stale lock or takes a free one, and the session proceeds only after that acquisition verifies ownership.
+- Rule: never delete lock files by hand to clear the way for a pickup.
+
+### 3. Host-suite failures blamed on a change came from the session's environment
+- Failure: host-suite cases failed with `this session does not own supervision` when run inside a live agent session, and passed in a clean environment on both the change and its base.
+- Rule: when a host-suite case fails only inside a live agent session, rerun it under `env -i` (passing only `HOME`, `PATH`, and `TERM`) on both the change and its base before attributing the failure to the change.
+- Rule: report a failure as caused by the change only when it fails in the clean environment on the change and passes there on the base.
+
+[exit 0]
+$ {run-worktree}/bin/fm-afk-contract.sh field entered_epoch
+1795578067
+
+[exit 0]
+$ {run-worktree}/bin/fm-afk-return.sh begin
+fm-afk-launch: away-posture record archived at {run-worktree}/.test-away-live/entry-carry-and-key-resolution/state/afk-contracts/1795578067.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 9s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+=== Return brief (away 2026-11-25T03:41:07Z -> 2026-11-25T03:41:17Z, 10s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+Your instructions:
+  your words at entry:
+    Observe the local fleet. Merge nothing.
+  the away session took no action under them.
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  - demo [key=artifact] still blocked, firstmate remediates before ordinary work: local artifact is unavailable
+  - demo [key=token] still blocked, firstmate remediates before ordinary work: local token needs repair
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: demo [key=artifact] blocked: local artifact is unavailable
+catch-up wake: demo [key=token] blocked: local token needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+firstmate-actionable blocker: demo [key=artifact] local artifact is unavailable
+firstmate-actionable blocker: demo [key=token] local token needs repair
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+[exit 3]
+$ {run-worktree}/bin/fm-afk-launch.sh enter --words new mandate --grant retired
+fm-afk-contract: --grant was retired: the captain's away words are the whole mandate, so pass them with --words or --words-file and nothing else
+
+[exit 2]
+$ {run-worktree}/bin/fm-afk-launch.sh enter --words Continue observing. Merge nothing.
+Away posture recorded at 2026-11-25T03:41:20Z: hold-for-return only. No phone channel is configured; anything that needs you waits for your return. Your away instructions are recorded verbatim; the away session will carry them out where it can, and anything it is unsure of, or that needs you, waits for your return. Destructive, irreversible, and security-sensitive actions are never pre-authorizable, whatever the words say. Expected return: not given. Spend cap: 4 concurrent workers.
+Away posture (recorded):
+  entered: 2026-11-25T03:41:20Z
+  expected return: not given
+  spend cap: 4 concurrent workers
+  reach: hold-for-return only. No phone channel is configured; anything that needs you waits for your return.
+  carried from the previous return (each stays open until its key is resolved or reclassified):
+    - demo [key=artifact] local artifact is unavailable
+    - demo [key=token] local token needs repair
+  your words (verbatim):
+    Continue observing. Merge nothing.
+
+================================================================================
+AFK PREFLIGHT
+================================================================================
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings; read at each AFK preflight)
+--------------------------------------------------------------------------------
+# Fleet learnings (append-only, dated)
+
+Format per entry: Lesson | Failure | Check/rule | Issue (when one exists).
+Never edit or delete old entries; add a new dated entry to supersede one.
+Keep every entry general: no person, company, project, customer, host, account, or terminal names, and no credential details.
+
+## 2026-10-31 (from an overnight AFK scorecard)
+
+### 1. Preflight readiness was guessed
+- Failure: an AFK preflight reported ready without testing. Hard dependencies surfaced hours later: missing repo config and credentials, undeployed prerequisites, an outdated tool, and a score bar that current output could not reach.
+- Rule: before the captain logs off, dry-run every goal's hard dependencies and record PASS/FAIL with evidence: tokens and credentials exist (never print values), installs and versions, deploys landed, repo config (required approvals and owners), sign-ins, and whether the score bar is reachable on current output. No PASS means not ready; batch every FAIL to the captain before AFK starts.
+- Issue: https://github.com/Pibomeister/firstmate/issues/77
+
+### 2. Self-servable work was parked for the captain
+- Failure: a project missed its whole bar because a tool upgrade, a local runner setup, and work possible through an installed CLI were all parked as needing the captain, and supervision accepted those parks.
+- Rule (park challenge): before parking, try with the tools and authority you have and record what you tried. Installed CLIs, tool upgrades and installs on dev machines, local credentials, sockets and daemons a tool can create or start, and opening PRs, reruns and reroutes through the project's configured delivery path are NOT sign-ins. True SSO/2FA sign-ins, credentials no tool can supply, new spend, releases, merges outside existing rules, and anything destructive, irreversible, or security-sensitive go to the captain; the captain escalation list in AGENTS.md still applies in full. Supervisors challenge every park ("could this be self-served?"). Blocked for more than 1 h means a self-serve path, a reroute, or an escalation to the captain.
+- Issues: https://github.com/Pibomeister/firstmate/issues/78 and https://github.com/Pibomeister/firstmate/issues/63
+
+### 3. Captain context churn
+- Failure: captains restarted repeatedly overnight and auto-compacted, and one captain's self-estimate of remaining context was about five times too high.
+- Failure: handoffs at every context cycle failed in four recorded ways: a limit was reached before the handoff was written, a successor never launched, an order was lost during a restart, and a handoff carried stale facts.
+- Rule: on the same harness, Claude auto-compaction is the routine context reset.
+  Measure context left externally (footer or auto-compact percentage, read by the watcher or leash), never by self-estimate.
+  The early trigger near 15% context left is a capture step, not a handoff: file open work into durable records before the compaction, and re-check volatile facts from live records after it.
+  Do a full handoff only for quota exhaustion, a harness switch, or a planned fresh start after about 4 compactions.
+  Write a handoff early and incrementally, verify that the successor is live, carry every open order, and re-verify facts at pickup.
+- Issues: https://github.com/Pibomeister/firstmate/issues/65 and https://github.com/Pibomeister/firstmate/issues/70
+
+### 4. Late starts on one overloaded host
+- Failure: work piled onto one machine until load was far above its ceiling, orphaned browser processes accumulated, and free disk ran low, while other capacity sat underused.
+- Rule: distribute lanes across available machines and cloud at kickoff; set per-host caps on load, free disk and terminals; reap orphan processes each pass; disk under the floor pauses new launches.
+- Issues: https://github.com/Pibomeister/firstmate/issues/79 , https://github.com/Pibomeister/firstmate/issues/67 and https://github.com/Pibomeister/firstmate/issues/68
+
+### 5. Watchdog restart loop
+- Failure: a network watchdog looped through 20+ restarts; an earlier version could not see a dead data plane behind a live daemon.
+- Rule: test every watchdog against the failure modes it claims to catch before enabling it; use exponential backoff; cap restarts per window, then page instead of restarting.
+- Issue: https://github.com/Pibomeister/firstmate/issues/80
+
+### 6. Supervision gaps (heartbeat, stop verification, receipts)
+- Failure: a required supervisor seat sat empty for hours, a worker kept pushing after a stop order while its captain reported it stopped, and a change merged without receipts or a tag before a release.
+- Rules: required supervisor seats write heartbeats and the watcher alerts or relaunches when they go stale; verify a stop with gh (branch and PR heads unchanged) and process checks (pid gone) before reporting it done; no merge or publish without receipts for the exact head SHA; no release publish without a matching tag. Never push to upstream remotes from a fork run.
+- Issues: https://github.com/Pibomeister/firstmate/issues/81 , https://github.com/Pibomeister/firstmate/issues/82 , https://github.com/Pibomeister/firstmate/issues/72 and https://github.com/Pibomeister/firstmate/issues/74
+
+### 7. Gate-lock serialization and unpushed commits
+- Failure: one global gate lock serialized every lane, committed work sat unpushed for over an hour, and reviews then hit stale heads.
+- Rule: use gate locks per lane or a bounded pool; enter committed work into its configured delivery path promptly; alert when it waits there for more than 30 min.
+
+### 8. Verdict script reported a pass on a rejection
+- Failure: a review script's summary reported a pass while the final verdict was a rejection.
+- Rule: parse verdicts strictly from one structured final field (exact enum); missing or ambiguous means reject; tests include a transcript that mentions a pass early and ends in rejection.
+
+### 9. Input jams and a fix that never landed
+- Failure: a captain's wake-ups sat unsent in its composer, and the push of the fix was rejected, so the fix stayed local.
+- Rule: every doorbell or prompt send verifies submission (turn started) and retries; escalate a failed push of a fix to the captain within 1 h and reroute only through the project's configured delivery path; a change of account or remote needs the captain. Never leave the fix local without that escalation.
+- Issue: https://github.com/Pibomeister/firstmate/issues/64
+
+### 10. Prompts lost during restarts
+- Failure: a nightly order landed during a captain restart and was never delivered, so its goals started hours late.
+- Rule: queue inbound prompts durably; the new session drains and acks the queue on pickup; senders verify the ack and redeliver after any restart.
+- Issue: https://github.com/Pibomeister/firstmate/issues/83
+
+## 2026-11-11 (from a velocity audit)
+
+### 1. Setup and install changes passed only in a warm worktree
+- Failure: a setup or install change passed in the worker's existing warm worktree, where cached dependencies, generated files, and prior initialization hid a broken cold-start path on a fresh clone.
+- Rule: before reporting a setup, bootstrap, or install change done, verify the documented setup flow end-to-end in a fresh clone (or clean temporary directory with no pre-seeded caches or local state), not only in the warm task worktree, and record the fresh-clone verification output.
+
+## 2026-11-19 (from a nightly reflection)
+
+### 1. One restart launched three successors
+- Failure: one keep-alive restart started three sessions on the same prompt within 90 seconds.
+- Failure: each session ran more than 150 commands and spawned its own reviewers, which tripled the spend on one assessment.
+- Rule: a restart or keep-alive launcher is single-flight: before it launches, it checks whether a successor for the same prompt is already starting or live, and after it launches, it confirms exactly one successor session is running.
+- Rule: when more than one successor is found, stop the extras before they start work, keep the one that holds the session lock, and report the duplicate launch.
+
+### 2. Pickups were redirected to a session that could not take the lock
+- Failure: an away-mode run and a successor pickup were each sent to a session that session start then refused, because another live session held the fleet lock.
+- Failure: one pickup went ahead only after the holder's process was proven dead.
+- Rule: before redirecting an away-mode run or a successor pickup to a session, run `FM_HOME=<that home> bin/fm-lock.sh status`.
+- Rule: `lock: held by live harness pid <n>` means route the work to the holding session or wait for it to exit; never start a second supervisor there.
+- Rule: `lock: stale` or `lock: free` means the receiving session may start: its ordinary lock acquisition reclaims a stale lock or takes a free one, and the session proceeds only after that acquisition verifies ownership.
+- Rule: never delete lock files by hand to clear the way for a pickup.
+
+### 3. Host-suite failures blamed on a change came from the session's environment
+- Failure: host-suite cases failed with `this session does not own supervision` when run inside a live agent session, and passed in a clean environment on both the change and its base.
+- Rule: when a host-suite case fails only inside a live agent session, rerun it under `env -i` (passing only `HOME`, `PATH`, and `TERM`) on both the change and its base before attributing the failure to the change.
+- Rule: report a failure as caused by the change only when it fails in the clean environment on the change and passes there on the base.
+
+[exit 0]
+PERSISTED entry with carried blockers .afk-contract
+version: 2
+entered: 2026-11-25T03:41:20Z
+entered_epoch: 1795578080
+expected_return: -
+reach_channels: none
+reach_announced: No phone channel is configured; anything that needs you waits for your return.
+spend_max_concurrent_workers: 4
+confirmed: 2026-11-25T03:41:20Z
+confirmed_epoch: 1795578080
+carried_blockers: 2
+carried: demo	artifact	local artifact is unavailable
+carried: demo	token	local token needs repair
+words: |-
+  Continue observing. Merge nothing.
+
+PERSISTED entry with carried blockers .afk-carried-retained
+evidence	health	supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+evidence	wake	OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+evidence	wake	demo [key=artifact] blocked: local artifact is unavailable
+evidence	wake	demo [key=token] blocked: local token needs repair
+evidence	wake	OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+evidence	wake	OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+retained-record	{run-worktree}/.test-away-live/entry-carry-and-key-resolution/state/afk-contracts/1795578067.afk-contract
+
+$ {run-worktree}/bin/fm-afk-return.sh begin
+fm-afk-launch: away-posture record archived at {run-worktree}/.test-away-live/entry-carry-and-key-resolution/state/afk-contracts/1795578080.afk-contract
+fm-afk-launch: away mode stopped; no daemon terminal was running, .afk cleared, and the posture record archived
+WARNING: watcher still down (same stale episode; last beat: 21s ago, grace 300s; down 13s) - full banner already printed this episode.
+=== Return brief (away 2026-11-25T03:41:20Z -> 2026-11-25T03:41:29Z, 9s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+Your instructions:
+  your words at entry:
+    Continue observing. Merge nothing.
+  the away session took no action under them.
+Carried from the previous return:
+  - demo [key=artifact] local artifact is unavailable
+  - demo [key=token] local token needs repair
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  - demo [key=artifact] still blocked, firstmate remediates before ordinary work: local artifact is unavailable
+  - demo [key=token] still blocked, firstmate remediates before ordinary work: local token needs repair
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up retained-health: supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: demo [key=artifact] blocked: local artifact is unavailable
+catch-up wake: demo [key=token] blocked: local token needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+firstmate-actionable blocker: demo [key=artifact] local artifact is unavailable
+firstmate-actionable blocker: demo [key=token] local token needs repair
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+[exit 3]
+$ {run-worktree}/bin/fm-afk-return.sh check
+WARNING: watcher still down (same stale episode; last beat: 29s ago, grace 300s; down 21s) - full banner already printed this episode.
+=== Return brief (away 2026-11-25T03:41:20Z -> 2026-11-25T03:41:36Z, 16s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+Your instructions:
+  your words at entry:
+    Continue observing. Merge nothing.
+  the away session took no action under them.
+Carried from the previous return:
+  - demo [key=artifact] local artifact is unavailable
+  - demo [key=token] local token needs repair
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  - demo [key=token] still blocked, firstmate remediates before ordinary work: local token needs repair
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+fm-afk-return: catch-up must finish before the captain request
+catch-up retained-health: supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: demo [key=artifact] blocked: local artifact is unavailable
+catch-up wake: demo [key=token] blocked: local token needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+firstmate-actionable blocker: demo [key=token] local token needs repair
+fm-afk-return: handle each blocker now, or close it with resolved [key=...] and append a durable reclassification reason, then run bin/fm-afk-return.sh check
+
+[exit 3]
+$ {run-worktree}/bin/fm-afk-return.sh check
+WARNING: watcher still down (same stale episode; last beat: 35s ago, grace 300s; down 26s) - full banner already printed this episode.
+=== Return brief (away 2026-11-25T03:41:20Z -> 2026-11-25T03:41:42Z, 22s) ===
+Supervisor health:
+  - supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+Your instructions:
+  your words at entry:
+    Continue observing. Merge nothing.
+  the away session took no action under them.
+Carried from the previous return:
+  - demo [key=artifact] local artifact is unavailable
+  - demo [key=token] local token needs repair
+Waiting on you:
+  (nothing)
+Tried and failed, or could not be fixed:
+  (nothing)
+Landed, cleanup due:
+  (nothing)
+Handled while away:
+  0 outcome(s) handled by the away session (0 routine, 0 escalated above)
+  (no routine outcomes recorded in the store for this window)
+Cost: 0 supervision outcome(s) recorded (0 routine, 0 captain); 1 task(s) live at return.
+catch-up retained-health: supervision ran through the away window with no detected gap (watcher beat 7s old at return)
+catch-up wake: OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+catch-up wake: demo [key=artifact] blocked: local artifact is unavailable
+catch-up wake: demo [key=token] blocked: local token needs repair
+catch-up wake: OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+catch-up wake: OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+catch-up health: supervision ran through the away window with no detected gap (watcher beat 17s old at return)
+fm-afk-return: catch-up clear; ordinary captain work may proceed
+
+[exit 0]
+$ {run-worktree}/bin/fm-afk-return.sh guard
+
+[exit 0]

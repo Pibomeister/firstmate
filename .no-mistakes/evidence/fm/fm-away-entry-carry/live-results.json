@@ -1,0 +1,44 @@
+[
+  {
+    "name": "entry-carry-and-key-resolution",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/entry-carry-and-key-resolution.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  },
+  {
+    "name": "refresh-carried-keys",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/refresh-carried-keys.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  },
+  {
+    "name": "repeated-archive-recovery",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/repeated-archive-recovery.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  },
+  {
+    "name": "rollback-without-contract",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/rollback-without-contract.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  },
+  {
+    "name": "interrupted-handoff",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/interrupted-handoff.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  },
+  {
+    "name": "fresh-window-health",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/fresh-window-health.log",
+    "reason": "Real unmodified CLI entrypoints executed against a marked disposable lab home with synthetic status and recovery records."
+  }
+]

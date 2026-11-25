@@ -1,0 +1,7 @@
+{
+  "name": "natural-wake",
+  "live": true,
+  "result": "pass",
+  "evidence": "~/.no-mistakes/evidence/01M87XC201TK1ENP8GG60A85AH/natural-wake.log",
+  "reason": "Real Claude primary on private fm-lab tmux socket; real watcher observed a synthetic done status, real Claude supervision engine handled it under the recorded away mandate, recorded an outcome and acknowledged its wake."
+}
