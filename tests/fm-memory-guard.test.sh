@@ -81,6 +81,11 @@ cleanup_sleeps() {
   for p in $SLEEPS; do kill "$p" 2>/dev/null || true; done
   # A holder can ignore TERM, so a failed stop case must not leave one behind.
   for p in $HOLDS; do kill -KILL "$p" 2>/dev/null || true; done
+  # A holder's own child is not in SLEEPS when a case fails early.
+  for p in "$TMP_ROOT"/stopme/*.kid; do
+    [ -f "$p" ] || continue
+    kill "$(cat "$p")" 2>/dev/null || true
+  done
   rm -rf "$OUT_ROOT"
   fm_test_cleanup
 }
@@ -153,16 +158,24 @@ start_sleep() {  # [cwd] -> pid of a real, detached sleep this suite owns
   SLEEPS="$SLEEPS $SLEEP_PID"
 }
 
-# start_hold <script-path> [first-line] -> HOLD_PID: a real bash this suite
-# owns that runs <script-path>, holds a few MB, has no child of its own, and
-# waits on a fifo nothing writes to. [first-line] runs before it waits.
+# A holder wait that lets a TERM trap run at once on every bash: a read with
+# a timeout on a fifo this holder holds open itself, so it never has a child.
+# shellcheck disable=SC2016 # the holder expands these, not this suite
+TRAP_WAIT='exec 3<>"$0.fifo"; while :; do read -r -t 1 _ <&3; done'
+# shellcheck disable=SC2016 # the holder expands these, not this suite
+PLAIN_WAIT='read -r _ < "$0.fifo"'
+
+# start_hold <script-path> [first-line] [wait-line] -> HOLD_PID: a real bash
+# this suite owns that runs <script-path>, holds a few MB, has no child of
+# its own, and waits on a fifo nothing writes to. [first-line] runs before it
+# waits, and [wait-line] replaces the wait.
 start_hold() {
   local script=$1 i
   mkdir -p "${script%/*}"
   rm -f "$script.fifo" "$script.ready"
   mkfifo "$script.fifo"
   # shellcheck disable=SC2016 # the holder expands these, not this suite
-  printf '%s\n' "${2:-:}" 'printf -v pad "%*s" 4000000 ""' ': > "$0.ready"' 'read -r _ < "$0.fifo"' > "$script"
+  printf '%s\n' "${2:-:}" 'printf -v pad "%*s" 4000000 ""' ': > "$0.ready"' "${3:-$PLAIN_WAIT}" > "$script"
   ( cd "$TMP_ROOT" || exit 1; bash "$script" >/dev/null 2>&1 & printf '%s\n' "$!" > "$script.pid" )
   HOLD_PID=$(cat "$script.pid")
   HOLDS="$HOLDS $HOLD_PID"
@@ -183,6 +196,9 @@ wait_gone() {  # <pid>
   done
   return 1
 }
+
+# stop_rows <pid>: that pid's rows in the stop record, as "event detail" lines.
+stop_rows() { awk -F'\t' -v p="$1" '$2 == p { print $5 " " $6 }' "${2:-$H/state/memory-guard-stops.tsv}" 2>/dev/null; }
 
 test_help_and_usage() {
   new_home
@@ -589,6 +605,22 @@ test_reap_scratch_never_signals() {
   alive "$P_scratch" || fail "a would-stop process was signaled"
   action_has "would-stop:$P_scratch" || fail "the next pass does not name it again: $(summary)"
   assert_equals 0 "$(alarms)" "a would-stop alarm inside the repeat time is not printed again"
+  # A fixture row never survives the check before a signal, so the proof that
+  # reap-scratch sends none is a real scratch process a stop would end.
+  new_home 'mode=reap-scratch
+proc_rss_mb=2
+swap_warn_mb=99999999
+proc_sustained_secs=1
+scratch_stop_secs=1'
+  start_hold "$TMP_ROOT/stopme/reaponly.sh"
+  printf '%s\n' "$HOLD_PID" > "$H/ps/allow"
+  guard_live
+  sleep 2
+  guard_live
+  assert_equals 3 "$RC" "a sustained real scratch process alarms in reap-scratch: $OUT"
+  action_has "would-stop:$HOLD_PID" || fail "the real scratch process is not named as would-stop: $OUT"
+  alive "$HOLD_PID" || fail "reap-scratch signaled a real scratch process: $OUT"
+  assert_absent "$H/state/memory-guard-stops.tsv" "reap-scratch records no stop"
   pass "reap-scratch only reports would-stop, never signals, and deduplicates the alarm"
 }
 
@@ -691,7 +723,8 @@ test_stop_scratch_stops_only_real_scratch() {
   new_home "$LIVE_CONF
 proc_sustained_secs=1
 scratch_stop_secs=1"
-  start_hold "$TMP_ROOT/stopme/job.sh"; scratch=$HOLD_PID
+  # On TERM the scratch job keeps a copy of the stop record as it stood then.
+  start_hold "$TMP_ROOT/stopme/job.sh" "trap 'cp \"$H/state/memory-guard-stops.tsv\" \"\$0.at-term\" 2>/dev/null; exit 0' TERM" "$TRAP_WAIT"; scratch=$HOLD_PID
   start_hold "$OUT_ROOT/repo/worker.sh"; worker=$HOLD_PID
   # shellcheck disable=SC2016 # the holder expands these, not this suite
   start_hold "$TMP_ROOT/stopme/parent.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; parent=$HOLD_PID
@@ -717,8 +750,12 @@ scratch_stop_secs=1"
   assert_contains "$OUT" "pid $scratch (bash) has held" "the stop alarm names the process"
   assert_contains "$OUT" "s (limit 1 s). Mode stop-scratch: disposable scratch, stopped with TERM." "the stop alarm names the signal"
   assert_not_contains "$OUT" "stop-failed" "no stop failed"
+  assert_equals "signal TERM" "$(stop_rows "$scratch" "$TMP_ROOT/stopme/job.sh.at-term")" "the stop record named the signal before the process received it"
+  assert_equals "signal TERM
+stopped TERM" "$(stop_rows "$scratch")" "the stop record holds the signal and then the outcome"
   for p in "$worker" "$parent" "$kid" "$sneaky" "$sneakykid" "$named"; do
     alive "$p" || fail "pid $p is not scratch and was signaled: $OUT"
+    assert_equals "" "$(stop_rows "$p")" "a process that was not signaled has no stop record"
   done
   for p in "$worker" "$parent" "$sneaky" "$named"; do
     action_has "spared:$p" || fail "pid $p is not named as spared: $(summary)"
@@ -747,6 +784,14 @@ scratch_stop_secs=600"
   guard_live
   assert_equals 0 "$RC" "first sight is watch: $OUT"
   sleep 2
+  # A stop that cannot be recorded first is not started.
+  mkdir "$H/state/memory-guard-stops.tsv"
+  guard_live
+  assert_equals 3 "$RC" "a stop that cannot be recorded is an alarm: $OUT"
+  action_has "stop-failed:$stubborn" || fail "an unrecorded stop is not named as failed: $OUT"
+  assert_contains "$OUT" "the stop failed (the stop could not be recorded" "the alarm says the record could not be written"
+  alive "$stubborn" || fail "a stop that could not be recorded still signaled the process"
+  rmdir "$H/state/memory-guard-stops.tsv"
   guard_live --observe
   assert_contains "$(summary)" "mode=observe action=none" "--observe overrides stop-scratch on a real scratch process: $OUT"
   alive "$stubborn" || fail "--observe signaled the real scratch process"
@@ -755,7 +800,40 @@ scratch_stop_secs=600"
   action_has "stopped:$stubborn" || fail "the stubborn process is not named as stopped: $OUT"
   wait_gone "$stubborn" || fail "the stubborn process is still running: $OUT"
   assert_contains "$OUT" "Mode stop-scratch: disposable scratch, stopped with KILL after it ignored TERM." "the stop alarm names the escalation"
+  assert_equals "signal TERM
+signal KILL
+stopped KILL" "$(stop_rows "$stubborn")" "the stop record holds each signal and then the outcome"
   pass "stop-scratch sends KILL when a scratch process ignores TERM, and --observe sends nothing"
+}
+
+test_stop_scratch_does_not_kill_after_a_new_child() {
+  local spawner kid
+  new_home "$LIVE_CONF
+proc_sustained_secs=1
+scratch_stop_secs=1"
+  # This scratch job answers TERM by starting a child and running on.
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  start_hold "$TMP_ROOT/stopme/spawner.sh" 'trap '\''sleep 100000 & printf "%s\n" "$!" > "$0.kid"'\'' TERM' "$TRAP_WAIT"; spawner=$HOLD_PID
+  printf '%s\n' "$spawner" > "$H/ps/allow"
+  guard_live
+  assert_equals 0 "$RC" "first sight is watch: $OUT"
+  sleep 2
+  guard_live
+  [ -s "$TMP_ROOT/stopme/spawner.sh.kid" ] || fail "the scratch job did not receive TERM: $OUT"
+  kid=$(cat "$TMP_ROOT/stopme/spawner.sh.kid")
+  SLEEPS="$SLEEPS $kid"
+  alive "$spawner" || fail "a process that started a child after TERM was killed: $OUT"
+  alive "$kid" || fail "the child of a signaled process was signaled: $OUT"
+  assert_equals 3 "$RC" "a failed stop is an alarm: $OUT"
+  action_has "stop-failed:$spawner" || fail "the stop is not named as failed: $OUT"
+  assert_contains "$OUT" "the stop failed (it started a child after TERM and was not signalled again)" "the alarm says why KILL was not sent"
+  assert_equals "signal TERM
+stop-failed it started a child after TERM and was not signalled again" "$(stop_rows "$spawner")" "the stop record holds TERM and no KILL"
+  printf '%s\n' "$spawner" "$kid" > "$H/ps/allow"
+  guard_live
+  action_has "spared:$spawner" || fail "a scratch job with a child is not spared on the next pass: $OUT"
+  alive "$spawner" || fail "a scratch job with a child was signaled on the next pass: $OUT"
+  pass "stop-scratch never sends KILL to a process that started a child after TERM"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -783,4 +861,5 @@ fm_test_run \
   test_stop_scratch_does_not_signal_a_changed_process \
   test_stop_scratch_spares_live_agents_and_operator_apps \
   test_stop_scratch_stops_only_real_scratch \
-  test_stop_scratch_escalates_to_kill
+  test_stop_scratch_escalates_to_kill \
+  test_stop_scratch_does_not_kill_after_a_new_child

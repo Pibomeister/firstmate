@@ -36,6 +36,13 @@
 #                              each process at or over proc_rss_mb; read_secs
 #                              is how long the read that set start took.
 #   state/memory-guard-alarms.tsv  key last_emitted for each alarm in force.
+#   state/memory-guard-stops.tsv  one row per signal and per stop outcome,
+#                              stop-scratch only: epoch pid start comm event
+#                              detail. event is signal (detail TERM or KILL),
+#                              stopped (detail: the signal that ended it), or
+#                              stop-failed (detail: why). A signal row is
+#                              written before that signal is sent. Trimmed
+#                              to the newest log_max_rows rows.
 #
 # Keys and defaults:
 #   swap_warn_mb=16384         swap used at or over this is an alarm
@@ -77,17 +84,22 @@
 # every rule is stopped. A spared process alarms after proc_sustained_secs as
 # in the other modes and is never signalled, so an agent session, a
 # supervisor, and every process with children stay alarm-only.
-# Stops run largest first. A stop starts only in the first 15 s of a pass, so
-# a caller's 30 s bound does not cut one short; a process left over is named
+# Stops run largest first. A stop starts only in the first 15 s of a pass, to
+# leave it time inside a caller's 30 s bound; a process left over is named
 # stop-deferred and waits for the next pass. Right before each signal the
 # guard reads that one pid again: it must still have the same start time,
-# user, executable name, and command line; before the first signal it must
-# also still be at or over proc_rss_mb and have no child process (pgrep -P).
+# user, executable name, and command line, and no child process (pgrep -P);
+# before the first signal it must also still be at or over proc_rss_mb.
 # A process that fails the first check has changed since the sample: nothing
 # is signalled, and it stays watched. The guard then sends TERM to that pid
 # alone, never to a process group or to another process, waits up to 5 s for
 # it to be gone (absent, a zombie, or its pid reused), and sends KILL when the
-# same process is still there, waiting up to 3 s more. A process that could
+# same process is still there, waiting up to 3 s more. A process that started
+# a child after TERM gets no KILL; it is stop-failed, and the next pass spares
+# it as a process with children. Each signal is written to
+# state/memory-guard-stops.tsv before it is sent, and so is the outcome after,
+# so a pass that is cut short still leaves a record of what it signalled; a
+# signal that cannot be recorded is not sent. A process that could
 # not be checked or is still running afterwards is stop-failed, and each later
 # pass tries again. A stop or a failed stop is an alarm, so the pass exits 3
 # and reports it; a deferred or changed process alarms only once it is
@@ -190,6 +202,7 @@ CONF=$CONFIG/memory-guard
 LOG=$STATE/memory-guard.tsv
 SEEN=$STATE/memory-guard-seen.tsv
 ALARMS=$STATE/memory-guard-alarms.tsv
+STOPS=$STATE/memory-guard-stops.tsv
 WINDOW_GAP_SECS=600
 START_SLACK_SECS=5
 READ_TOOK_MAX_SECS=30
@@ -663,15 +676,18 @@ wait_gone() {
   done
 }
 
-# recheck <pid> <start> <read-secs> <uid> <comm> <args> <strict|identity>:
-# read that one pid again. 0: the same process (and, for strict, still at or
-# over the limit, still an interpreter, and childless). 1: gone or changed;
-# RECHECK_SAME_START is 1 when the pid still holds a process with that start.
-# 2: it could not be checked.
+# recheck <pid> <start> <read-secs> <uid> <comm> <args> <strict|childless|identity>:
+# read that one pid again. 0: the same process (and, for childless, without a
+# child; for strict, also still at or over the limit and still an
+# interpreter). 1: gone or changed; RECHECK_SAME_START is 1 when the pid still
+# holds a process with that start, and RECHECK_CHILD is 1 when that same
+# process has a child. 2: it could not be checked.
 RECHECK_SAME_START=0
+RECHECK_CHILD=0
 recheck() {
   local row r_uid r_rss r_etime r_comm r_args start d rc=0
   RECHECK_SAME_START=0
+  RECHECK_CHILD=0
   read_procs "$WORK/recheck-names" "$1" > "$WORK/recheck" || return 1
   row=$(awk -F'\t' -v p="$1" '$1 == p { print $2 "\t" $5 "\t" $6 "\t" $7 "\t" $8; exit }' "$WORK/recheck")
   [ -n "$row" ] || return 1
@@ -683,16 +699,24 @@ EOF
   [ "$d" -le $((START_SLACK_SECS + $3 + READ_TOOK)) ] || return 1
   RECHECK_SAME_START=1
   [ "$r_uid" = "$4" ] && [ "$r_comm" = "$5" ] && [ "$r_args" = "$6" ] || return 1
-  [ "$7" = strict ] || return 0
-  [ $((r_rss / 1024)) -ge "$proc_rss_mb" ] || return 1
-  real_interpreter "$1" || return 1
+  [ "$7" != identity ] || return 0
+  if [ "$7" = strict ]; then
+    [ $((r_rss / 1024)) -ge "$proc_rss_mb" ] || return 1
+    real_interpreter "$1" || return 1
+  fi
   command -v pgrep >/dev/null 2>&1 || return 2
   pgrep -P "$1" >/dev/null 2>&1 || rc=$?
   case "$rc" in
-    0) return 1 ;;
+    0) RECHECK_CHILD=1; return 1 ;;
     1) return 0 ;;
     *) return 2 ;;
   esac
+}
+
+# stop_record <pid> <start> <comm> <event> <detail>: append one row to the
+# stop record. False when the row could not be written.
+stop_record() {
+  { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(clock)" "$1" "$2" "$(printf '%s' "$3" | tr '\t\n' '  ')" "$4" "$5" >> "$STOPS"; } 2>/dev/null
 }
 
 # stop_scratch <pid>: stop one eligible process. Sets STOP_OUTCOME to stopped,
@@ -701,6 +725,12 @@ STOP_OUTCOME=
 STOP_DETAIL=
 stop_scratch() {
   local pid=$1 start took uid comm args rc=0
+  # stop_done <outcome> <detail>: set the outcome of a stop that sent a signal
+  # and record it.
+  stop_done() {
+    STOP_OUTCOME=$1 STOP_DETAIL=$2
+    stop_record "$pid" "$start" "$comm" "$1" "$2" || :
+  }
   STOP_OUTCOME=stop-failed
   STOP_DETAIL="it could not be checked before the signal"
   case "$pid" in '' | *[!0-9]* | 0 | 1) return 0 ;; esac
@@ -718,24 +748,35 @@ EOF
     1) STOP_OUTCOME=changed STOP_DETAIL="changed before the stop"; return 0 ;;
     *) return 0 ;;
   esac
-  kill -TERM "$pid" 2>/dev/null || :
-  if wait_gone "$pid" "$STOP_TERM_WAIT_SECS"; then
-    STOP_OUTCOME=stopped STOP_DETAIL=TERM
+  # No record, no signal: a stop must never be the only trace of itself.
+  if ! stop_record "$pid" "$start" "$comm" signal TERM; then
+    STOP_DETAIL="the stop could not be recorded in $STOPS"
     return 0
   fi
-  if ! recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" identity; then
-    if [ "$RECHECK_SAME_START" = 1 ]; then
-      STOP_DETAIL="it changed after TERM and was not signalled again"
-    else
-      STOP_OUTCOME=stopped STOP_DETAIL=TERM
+  kill -TERM "$pid" 2>/dev/null || :
+  if wait_gone "$pid" "$STOP_TERM_WAIT_SECS"; then
+    stop_done stopped TERM
+    return 0
+  fi
+  rc=0
+  recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" childless || rc=$?
+  if [ "$rc" != 0 ]; then
+    if [ "$RECHECK_SAME_START" = 0 ]; then stop_done stopped TERM
+    elif [ "$RECHECK_CHILD" = 1 ]; then stop_done stop-failed "it started a child after TERM and was not signalled again"
+    elif [ "$rc" = 1 ]; then stop_done stop-failed "it changed after TERM and was not signalled again"
+    else stop_done stop-failed "it could not be checked before KILL"
     fi
+    return 0
+  fi
+  if ! stop_record "$pid" "$start" "$comm" signal KILL; then
+    stop_done stop-failed "KILL could not be recorded in $STOPS and was not sent"
     return 0
   fi
   kill -KILL "$pid" 2>/dev/null || :
   if wait_gone "$pid" "$STOP_KILL_WAIT_SECS" || { ! recheck "$pid" "$start" "$took" "$uid" "$comm" "$args" identity && [ "$RECHECK_SAME_START" = 0 ]; }; then
-    STOP_OUTCOME=stopped STOP_DETAIL=KILL
+    stop_done stopped KILL
   else
-    STOP_DETAIL="it is still running after TERM and KILL"
+    stop_done stop-failed "it is still running after TERM and KILL"
   fi
   return 0
 }
@@ -853,6 +894,10 @@ if [ "$record_ok" = 1 ] && [ "$(wc -l < "$LOG" | tr -d ' ')" -gt "$log_max_rows"
   if tail -n "$log_max_rows" "$LOG" > "$WORK/log" && mv -f "$WORK/log" "$LOG"; then :; else record_ok=0; fi
 fi
 [ "$record_ok" = 1 ] || echo "memory-guard: cannot record the sample in $LOG" >&2
+# The stop record is bounded the same way; a failed trim loses no row.
+if [ -s "$WORK/stops" ] && [ -f "$STOPS" ] && [ "$(wc -l < "$STOPS" | tr -d ' ')" -gt "$log_max_rows" ]; then
+  if tail -n "$log_max_rows" "$STOPS" > "$WORK/stops-log" 2>/dev/null; then mv -f "$WORK/stops-log" "$STOPS" 2>/dev/null || :; fi
+fi
 
 json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
 json_num() { case "$1" in '' | *[!0-9]*) printf 'null' ;; *) printf '%s' "$1" ;; esac; }
