@@ -166,8 +166,8 @@ fm_cancel_bash_timeout() {
 }
 
 fm_run_bash_timeout() {
-  local seconds=$1 _FM_BASH_TIMEOUT_STATUS_FILE= _FM_BASH_TIMEOUT_DEADLINE_FILE=
-  local _FM_BASH_TIMEOUT_CHILD_PID= _FM_BASH_TIMEOUT_WATCHDOG_PID= command_rc recorded_rc monitor_was_on=0 caller
+  local seconds=$1 _FM_BASH_TIMEOUT_STATUS_FILE='' _FM_BASH_TIMEOUT_DEADLINE_FILE=''
+  local _FM_BASH_TIMEOUT_CHILD_PID='' _FM_BASH_TIMEOUT_WATCHDOG_PID='' command_rc recorded_rc monitor_was_on=0 caller
   shift
   # Its helper tools come from the default PATH (an absolute sh, command -p
   # otherwise), so a caller with a trimmed PATH still gets a real bound rather
