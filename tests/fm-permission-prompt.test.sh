@@ -957,7 +957,7 @@ test_hook_hold_and_pane_are_one_decision() {
   assert_equals 1 "$(typed hd | tr -cd '\033' | wc -c | tr -d ' ')" "the proven prompt still gets its one Escape"
   assert_equals 1 "$(status_rows hd blocked permission-prompt-held)" "the watchdog adds no second blocked line"
   assert_equals 1 "$(grep -c '^resolved .*\[key=permission-prompt-held\]' "$H/state/hd.status")" "the hook's hold closes once the pane is proven clear: $(cat "$H/state/hd.status")"
-  [ ! -e "$H/state/hd.permission-held" ] || fail "the hook's held set is gone"
+  assert_equals "" "$(bash "$ROOT/bin/fm-permission-route.sh" held-keys "$H/state" hd)" "the hook holds no key any more"
 
   # The same, with the hold too young to trust the pane yet.
   worker hy claude "$FIX/claude-2.1.325-after-escape.txt"

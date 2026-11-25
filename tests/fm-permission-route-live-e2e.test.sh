@@ -144,7 +144,7 @@ assert_closed() {  # <name> <reason>
   [ "$lines" = $((wakes + 1)) ] || fail "$name: expected $wakes wake(s) and one close, the status record holds $lines lines"
   status_line "$name" "$lines" | grep -Eq "^resolved \[at=[0-9]+\] \[key=permission-prompt-hardstop\]: .*$reason\$" \
     || fail "$name: the hold did not close because $reason, status ends with '$(status_line "$name" "$lines")'"
-  [ ! -e "$LAB/$name/home/state/task.permission-held" ] || fail "$name: the held set outlived the close"
+  [ -z "$(bash "$ROUTE" held-keys "$LAB/$name/home/state" task)" ] || fail "$name: the route still names a held key after the close"
 }
 
 PIDS=

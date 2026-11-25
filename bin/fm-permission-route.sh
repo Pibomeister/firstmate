@@ -88,22 +88,29 @@
 # Records, all in <state-dir>:
 #   <id>.permission-route.tsv  One row per routed request: epoch, verdict
 #       (refuse or hold), category, tool, SHA-256 of the command, command
-#       bytes, request hash (for a hold, the hash its row in the held set is
-#       matched by). The command text is never written. The row is written
-#       before the answer is printed.
-#   <id>.permission-held       Present while a hold is open. One row per held
-#       request and key, tab-separated: its status key, its request hash (the
-#       SHA-256 over the tool name with, for Bash, its command and every
-#       other input field except the description, the timeout, and the
-#       background flag, or with its whole input for any other tool or under
-#       the owner-reserved key; `-` for
-#       a payload that cannot be read, which every such request shares), and
-#       the epoch it was last asked. The ordinary key takes at most
-#       FM_PERMISSION_ROUTE_MAX_HELD (default 20, never below 1) request rows,
-#       and every request past that limit shares one row with the hash `+`,
-#       which no finished tool call closes; the owner-reserved key has no
-#       limit, so every such distinct request is reported.
+#       bytes, request hash (for a hold, the hash a finished tool call is
+#       matched by; an ordinary request past the limit below is still named
+#       by its own hash here). The command text is never written. The row is
+#       written before the answer is printed.
+#   <id>.permission-held       The held set, a journal that lasts from the
+#       first hold until the session ends. Each write appends one row and
+#       nothing replaces the file, so a hook that cannot take the lock loses
+#       no row of another hook. A held row is tab-separated: its status key,
+#       its request hash (the SHA-256 over the tool name with, for Bash, its
+#       command and every other input field except the description, the
+#       timeout, and the background flag, or with its whole input for any
+#       other tool or under the owner-reserved key; `-` for a payload that
+#       cannot be read, which every such request shares), the epoch it was
+#       asked, and a token. A request asked again appends a new row, and the
+#       newest row of a key and hash is that request. A row with a fifth
+#       field `done` ends the request whose newest row carries the same
+#       token. The ordinary key takes at most FM_PERMISSION_ROUTE_MAX_HELD
+#       (default 20, never below 1) distinct requests, and every request past
+#       that limit shares one row with the hash `+`, which no finished tool
+#       call closes; the owner-reserved key has no limit, so every such
+#       distinct request is reported.
 #   <id>.permission-lock       Directory lock around the two records above.
+#       A hook that cannot take it still holds its request.
 #   <id>.status                `blocked [at=<epoch>] [key=<key>]` for each newly
 #       held request, and `resolved` with the same key when the last request
 #       held under that key finishes, the session ends, or the pane is proven
@@ -350,14 +357,18 @@ status_append() {  # <line>
   fi
 }
 
-# 0 when the status log still holds that key open. bin/fm-classify-lib.sh owns
-# that fold; it is loaded only on the hold and settle paths.
+# 0 when the status log holds that key open, 1 when it does not, and 2 when
+# the fold cannot be loaded or run. bin/fm-classify-lib.sh owns that fold; it
+# is loaded only on the hold and settle paths.
 key_open() {  # <key>
+  local open
   if ! command -v status_open_decisions >/dev/null 2>&1; then
     # shellcheck source=bin/fm-classify-lib.sh
-    . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
+    . "$SCRIPT_DIR/fm-classify-lib.sh" || return 2
   fi
-  status_open_decisions "$STATUS" 2>/dev/null | grep -q "^$1"$'\t'
+  [ -e "$STATUS" ] || return 1
+  open=$(status_open_decisions "$STATUS" 2>/dev/null) || return 2
+  printf '%s\n' "$open" | grep -q "^$1"$'\t'
 }
 
 # The status key for a hold. Only a request whose text was read whole and
@@ -374,70 +385,108 @@ hold_key() {  # <category>
   fi
 }
 
-# The held set: one row per held request, `<key>\t<request hash>\t<epoch>`.
-marker_rows() {  # <key> [<request hash>]: the rows of that key, or that one row
-  awk -F '\t' -v key="$1" -v hash="${2-}" '
-    $1 == key && (hash == "" || $2 == hash) { n++ }
-    END { print n + 0 }' "$MARKER" 2>/dev/null || printf '0'
-}
+# The held set is a journal. A hook only ever appends one whole row to it, so
+# no writer replaces the set and no append is lost, with the lock or without.
+#   held row  <key> <request hash> <epoch> <token>
+#   done row  <key> <request hash> <epoch> <token> done
+# The newest held row of a key and hash is that request. A done row ends the
+# request only while its token is still the newest one, so a writer never ends
+# a request that was asked again after the writer read the set.
 
-# Drop every row of a key, or its one row for a request. The file is replaced
-# by a rename, so a reader without the lock never sees a half-written set.
-marker_drop() {  # <key> [<request hash>]
-  local rest
-  # A held set that cannot be read is left as it is.
-  rest=$(awk -F '\t' -v key="$1" -v hash="${2-}" '
-    !($1 == key && (hash == "" || $2 == hash))' "$MARKER" 2>/dev/null) || return 1
-  if [ -n "$rest" ]; then
-    printf '%s\n' "$rest" >"$MARKER.new" 2>/dev/null && mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null \
-      || rm -f -- "$MARKER.new" 2>/dev/null || true
-  else
-    rm -f -- "$MARKER" 2>/dev/null || true
-  fi
-}
-
-# Put a request's row last in the set under the current time. A new row is one
-# append, which the append of another hook cannot lose, also when the lock
-# could not be taken. A row that is asked again moves: the set with the moved
-# row replaces the old set in one rename, so a reader without the lock never
-# sees the set without a row it had. A set that cannot be read or replaced
-# gets the row appended when it has no such row.
-marker_put() {  # <key> <request hash>
-  local rest='' row
-  row=$(printf '%s\t%s\t%s' "$1" "$2" "$(date +%s)")
-  if [ "$(marker_rows "$1" "$2")" -eq 0 ]; then
-    printf '%s\n' "$row" >>"$MARKER" 2>/dev/null && return 0
-  fi
-  if [ -e "$MARKER" ] && rest=$(awk -F '\t' -v key="$1" -v hash="$2" \
-      '!($1 == key && $2 == hash)' "$MARKER" 2>/dev/null) || [ ! -e "$MARKER" ]; then
-    if { { [ -z "$rest" ] || printf '%s\n' "$rest"; } && printf '%s\n' "$row"; } >"$MARKER.new" 2>/dev/null \
-      && mv -f -- "$MARKER.new" "$MARKER" 2>/dev/null; then
-      return 0
-    fi
-    rm -f -- "$MARKER.new" 2>/dev/null || true
-  fi
-  [ "$(marker_rows "$1" "$2")" -gt 0 ] || printf '%s\n' "$row" >>"$MARKER" 2>/dev/null
-}
-
-# Drop the rows of a key that another writer already resolved, such as the
-# supervisor's own answer or the watchdog, so they never stand for a new hold.
-marker_prune() {
-  local key
+# Read the open requests into HELD, one `<key> <hash> <epoch> <token>` per row.
+# Fails, with HELD empty, when the set exists and cannot be read.
+marker_read() {
+  HELD=
   [ -e "$MARKER" ] || return 0
+  HELD=$(awk -F '\t' '
+    $1 == "" { next }
+    { k = $1 SUBSEP $2 }
+    $5 == "done" { if ((k in token) && token[k] == $4) { delete token[k]; delete at[k] } next }
+    { token[k] = $4; at[k] = $3 }
+    END { for (k in token) { split(k, part, SUBSEP); printf "%s\t%s\t%s\t%s\n", part[1], part[2], at[k], token[k] } }
+    ' "$MARKER" 2>/dev/null) || { HELD=; return 1; }
+}
+
+held_rows() {  # <key> [<request hash>]: the open requests of that key in HELD, or that one
+  printf '%s\n' "$HELD" | awk -F '\t' -v key="$1" -v hash="${2-}" '
+    $1 == key && (hash == "" || $2 == hash) { n++ }
+    END { print n + 0 }'
+}
+
+# Append one held row for a request under the current time.
+marker_put() {  # <key> <request hash>
+  local now
+  PUT_SEQ=$((${PUT_SEQ:-0} + 1))
+  now=$(date +%s)
+  printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$now" "$now.$$.$RANDOM.$PUT_SEQ" >>"$MARKER" 2>/dev/null
+}
+
+# End the open requests of a key, or that one request, as HELD shows them.
+# Each done row is its own append.
+marker_end() {  # <key> [<request hash>]
+  local key hash at token now
+  now=$(date +%s)
+  while IFS=$'\t' read -r key hash at token; do
+    [ "$key" = "$1" ] || continue
+    [ -z "${2-}" ] || [ "$hash" = "$2" ] || continue
+    printf '%s\t%s\t%s\t%s\tdone\n' "$key" "$hash" "$now" "$token" >>"$MARKER" 2>/dev/null || true
+  done <<EOF_HELD
+$HELD
+EOF_HELD
+}
+
+# End the requests of a key that another writer already resolved, such as the
+# supervisor's own answer, so they never stand for a new hold. Only a hook
+# that holds the lock does this, and only when the status log says the key is
+# closed. A hook without the lock can open the key at the same moment: then no
+# row was stale for certain, and every row ended here is held again.
+marker_prune() {
+  local key hash
+  [ "${LOCKED:-0}" -eq 1 ] || return 0
   for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
-    if [ "$(marker_rows "$key")" -gt 0 ] && ! key_open "$key"; then
-      marker_drop "$key"
+    [ "$(held_rows "$key")" -gt 0 ] || continue
+    key_open "$key"
+    [ "$?" -eq 1 ] || continue
+    marker_end "$key"
+    if key_open "$key"; then
+      while IFS=$'\t' read -r _ hash _; do
+        [ -z "$hash" ] || marker_put "$key" "$hash" || true
+      done <<EOF_ENDED
+$(printf '%s\n' "$HELD" | awk -F '\t' -v key="$key" '$1 == key')
+EOF_ENDED
     fi
   done
+  marker_read || true
 }
 
-# Drop every row of a key and close it in the status log when it is open.
-close_key() {  # <key> <why>
-  [ "$(marker_rows "$1")" -gt 0 ] || return 0
-  marker_drop "$1"
+hold_note() {  # <key>: who answers a prompt held under that key
+  if [ "$1" = "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ]; then
+    printf 'it names or may name an owner-reserved category, so only the owner answers it in the worker terminal'
+  else
+    printf 'a person or the supervisor must answer it in the worker terminal'
+  fi
+}
+
+# Close a key in the status log when the set holds no open request under it.
+# The set is read again after the close: a hook without the lock can hold a
+# request under the key at the same moment, and then the key is opened again.
+settle_key() {  # <key> <why>
+  marker_read || return 0
+  [ "$(held_rows "$1")" -eq 0 ] || return 0
   if key_open "$1"; then
     status_append "resolved [at=$(date +%s)] [key=$1]: permission prompt no longer waiting: $2" || true
   fi
+  marker_read || return 0
+  if [ "$(held_rows "$1")" -gt 0 ] && ! key_open "$1"; then
+    status_append "blocked [at=$(date +%s)] [key=$1]: permission prompt waiting on a request held while this key was closing; nothing was answered, and $(hold_note "$1")" || true
+  fi
+}
+
+# End every open request of a key, as HELD shows them, and close the key.
+close_key() {  # <key> <why>
+  [ "$(held_rows "$1")" -gt 0 ] || return 0
+  marker_end "$1"
+  settle_key "$1" "$2"
 }
 
 # A directory lock around the ledger and the held set. A lock older than one
@@ -465,37 +514,41 @@ lock_release() {
 
 # Record a hold and wake the supervisor for each newly held request. A wake
 # is still written when the lock or the ledger is unavailable. A request is
-# new under a key when that key has no row for it, so a request first held as
-# ordinary and asked again as owner-reserved still gets its reserved line.
-# Every hold ends with its row last in the set under the current time, also a
-# request asked again, so the quiet period before a pane-clear close starts
-# again with each request. The ordinary key takes at most
-# FM_PERMISSION_ROUTE_MAX_HELD request rows, because a declined request never
-# reports that it ended. Every request past the limit shares one row with the
-# hash `+` and writes no line, because that key is open while it has a row. No
-# finished tool call matches that row, so the key then stays open until the
-# session ends, the pane is proven clear, or the supervisor answers.
+# new under a key when that key has no open row for it, so a request first
+# held as ordinary and asked again as owner-reserved still gets its reserved
+# line. Every hold appends its row under the current time, also a request
+# asked again, so the quiet period before a pane-clear close starts again with
+# each request. The ordinary key takes at most FM_PERMISSION_ROUTE_MAX_HELD
+# requests, because a declined request never reports that it ended. Every
+# request past the limit shares one row with the hash `+`. No finished tool
+# call matches that row, so the key then stays open until the session ends,
+# the pane is proven clear, or the supervisor answers.
 # The owner-reserved key has no limit: each such request gets its row and line.
+# The row is appended before the line, and both are checked after they are
+# written: a request that is not new still gets a line when its key is not
+# open, and a row that another hook ended in the same moment is held again.
 hold() {  # <category> [nolock]: nolock when the caller just failed to lock
-  local key note hash=$REQUEST_HASH wake=1
+  local key hash=$REQUEST_HASH new=0
   key=$(hold_key "$1")
   [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
   [ "${2-}" = nolock ] || lock_acquire || true
   ledger_row hold "$1" "$hash" || true
+  marker_read || true
   marker_prune
-  if [ "$(marker_rows "$key" "$hash")" -eq 0 ] && [ "$key" = "$FM_PERMISSION_ROUTE_HELD_KEY" ] \
-    && [ "$(( $(marker_rows "$key") - $(marker_rows "$key" +) ))" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
-    hash=+
-  fi
-  if [ "$(marker_rows "$key" "$hash")" -gt 0 ] || [ "$hash" = + ]; then
-    wake=0
+  if [ "$(held_rows "$key" "$hash")" -eq 0 ]; then
+    if [ "$key" = "$FM_PERMISSION_ROUTE_HELD_KEY" ] \
+      && [ "$(( $(held_rows "$key") - $(held_rows "$key" +) ))" -ge "$FM_PERMISSION_ROUTE_MAX_HELD" ]; then
+      hash=+
+    else
+      new=1
+    fi
   fi
   marker_put "$key" "$hash" || true
-  if [ "$wake" -eq 1 ]; then
-    note='a person or the supervisor must answer it in the worker terminal'
-    [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] \
-      || note='it names or may name an owner-reserved category, so only the owner answers it in the worker terminal'
-    status_append "blocked [at=$(date +%s)] [key=$key]: permission prompt waiting on a $TOOL request, held as $1; nothing was answered, and $note" || true
+  if [ "$new" -eq 1 ] || ! key_open "$key"; then
+    status_append "blocked [at=$(date +%s)] [key=$key]: permission prompt waiting on a $TOOL request, held as $1; nothing was answered, and $(hold_note "$key")" || true
+  fi
+  if marker_read && [ "$(held_rows "$key" "$hash")" -eq 0 ]; then
+    marker_put "$key" "$hash" || true
   fi
   lock_release
 }
@@ -560,7 +613,7 @@ bind_request() {  # <payload>
   if SCAN_TEXT=$(printf '%s' "$1" | jq -rs '
       if length != 1 then error("not one value") else .[0] end
       | if (.tool_input | type) == "object"
-      then [(.tool_name | tostring), (.tool_name | tostring | gsub("_+"; " ")),
+      then [(.tool_name | tostring), (.tool_name | tostring | split("_") | map(select(. != "")) | join(" ")),
             (.tool_input | paths as $p | ($p | map(tostring) | join(".")),
              (getpath($p) | if type == "object" or type == "array" then empty else tostring end))] | join("\n")
       else error("no tool input") end' 2>/dev/null) \
@@ -624,24 +677,35 @@ claude_settled() {  # <state-dir> <id> <event>
   [ -e "$MARKER" ] || return 0
   case "$event" in
     session-end)
+      # The session is over, so nothing it asked can still wait: each key
+      # with an open request closes, and the set goes with the session.
       lock_acquire || true
-      close_key "$FM_PERMISSION_ROUTE_HELD_KEY" 'the session ended'
-      close_key "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" 'the session ended'
+      marker_read || true
+      for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
+        if [ "$(held_rows "$key")" -gt 0 ] && key_open "$key"; then
+          status_append "resolved [at=$(date +%s)] [key=$key]: permission prompt no longer waiting: the session ended" || true
+        fi
+      done
       rm -f -- "$MARKER" 2>/dev/null || true
       ;;
     pane-clear)
       # The caller proved an empty composer with no prompt on the worker pane.
-      # The owner-reserved key is never closed from the pane: only rows another
-      # writer already resolved are dropped.
+      # The owner-reserved key is never closed from the pane: only requests
+      # another writer already resolved are ended.
       quiet=$(int_or "${FM_PERMISSION_ROUTE_PANE_CLEAR_SECS:-}" 15)
+      marker_read && [ -n "$HELD" ] || return 0
       lock_acquire || return 0
-      newest=$(awk -F '\t' '$3 + 0 > n { n = $3 + 0 } END { print n + 0 }' "$MARKER" 2>/dev/null)
-      if [ "$(( $(date +%s) - $(int_or "$newest" 0) ))" -ge "$quiet" ]; then
-        marker_prune
-        close_key "$FM_PERMISSION_ROUTE_HELD_KEY" 'the worker pane shows an empty composer and no permission prompt'
+      if marker_read; then
+        newest=$(printf '%s\n' "$HELD" | awk -F '\t' '$3 + 0 > n { n = $3 + 0 } END { print n + 0 }')
+        if [ "$(( $(date +%s) - $(int_or "$newest" 0) ))" -ge "$quiet" ]; then
+          marker_prune
+          close_key "$FM_PERMISSION_ROUTE_HELD_KEY" 'the worker pane shows an empty composer and no permission prompt'
+        fi
       fi
       ;;
     tool-finished)
+      # The set outlives its last request, so most finished calls end here.
+      marker_read && [ -n "$HELD" ] || return 0
       payload=$(cat) || payload=
       bind_request "$payload"
       [ "$REQUEST_HASH" != - ] || return 0
@@ -649,12 +713,10 @@ claude_settled() {  # <state-dir> <id> <event>
       for key in "$FM_PERMISSION_ROUTE_HELD_KEY" "$FM_PERMISSION_ROUTE_HARDSTOP_KEY"; do
         hash=$REQUEST_HASH
         [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
-        [ "$hash" != - ] && [ "$(marker_rows "$key" "$hash")" -gt 0 ] || continue
-        if [ "$(marker_rows "$key")" -gt 1 ]; then
-          marker_drop "$key" "$hash"
-        else
-          close_key "$key" 'the held request was answered and finished'
-        fi
+        marker_read || break
+        [ "$hash" != - ] && [ "$(held_rows "$key" "$hash")" -gt 0 ] || continue
+        marker_end "$key" "$hash"
+        settle_key "$key" 'the held request was answered and finished'
       done
       ;;
     *) return 0 ;;
@@ -664,22 +726,23 @@ claude_settled() {  # <state-dir> <id> <event>
 
 # The keys this route still holds open, one per row, for the watchdog.
 held_keys() {  # <state-dir> <id>
-  local key held open
+  local key open
   # A task that cannot be named, a held set or a status log that cannot be
   # read, or a status fold that cannot be loaded or run, exits non-zero, so
   # the caller never reads it as no hold.
   bind_task "${1:-}" "${2:-}" || return 1
   [ -s "$MARKER" ] || return 0
-  [ -r "$MARKER" ] && [ -f "$STATUS" ] && [ ! -L "$STATUS" ] && [ -r "$STATUS" ] || return 1
+  [ -r "$MARKER" ] && marker_read || return 1
+  [ -n "$HELD" ] || return 0
+  [ -f "$STATUS" ] && [ ! -L "$STATUS" ] && [ -r "$STATUS" ] || return 1
   if ! command -v status_open_decisions >/dev/null 2>&1; then
     # shellcheck source=bin/fm-classify-lib.sh
     . "$SCRIPT_DIR/fm-classify-lib.sh" || return 1
   fi
-  held=$(awk -F '\t' '{ print $1 }' "$MARKER" 2>/dev/null) || return 1
   open=$(status_open_decisions "$STATUS" 2>/dev/null) || return 1
   open=$(printf '%s\n' "$open" | cut -f1)
   for key in "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" "$FM_PERMISSION_ROUTE_HELD_KEY"; do
-    if printf '%s\n' "$held" | grep -qx "$key" && printf '%s\n' "$open" | grep -qx "$key"; then
+    if [ "$(held_rows "$key")" -gt 0 ] && printf '%s\n' "$open" | grep -qx "$key"; then
       printf '%s\n' "$key"
     fi
   done

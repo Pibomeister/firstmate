@@ -120,7 +120,7 @@ test_identified_class_is_refused_with_a_fix_instruction() {
 }
 
 test_each_reserved_category_is_held_for_a_person() {
-  local row category tail home
+  local category tail home
   while IFS='|' read -r category tail; do
     home=$(new_home "reserved-$category")
     request "$home" "$(bash_payload "$(class_command "$tail")")"
@@ -293,7 +293,7 @@ test_hold_opens_once_and_closes_when_the_request_finishes() {
   key_is_open "$home" || fail "the hold stays open while another held request waits"
   settle "$home" tool-finished "$(finished_payload "$other" PostToolUseFailure d)"
   ! key_is_open "$home" || fail "the hold closes when the last held request finishes"
-  assert_absent "$home/state/task.permission-held" "a closed hold leaves no held set"
+  assert_equals "" "$(bash "$ROUTE" held-keys "$home/state" task)" "a closed hold names no held key"
   assert_absent "$home/state/task.permission-lock" "the lock is released"
   assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "the hold closes once"
   settle "$home" tool-finished "$(finished_payload "$held" PostToolUse d)"
@@ -341,7 +341,6 @@ test_each_key_closes_on_its_own() {
   settle "$home" tool-finished "$(finished_payload "$reserved" PostToolUse d)"
   assert_equals "" "$(open_keys "$home")" "the second finished request closes the owner-reserved key"
   assert_equals "" "$(bash "$ROUTE" held-keys "$home/state" task)" "held-keys prints nothing when nothing is held"
-  assert_absent "$home/state/task.permission-held" "no held set is left"
 
   # The reserved scan reads the description, so the same command with a plain
   # description is another request, and its finished call closes only itself.
@@ -378,7 +377,9 @@ test_pane_clear_closes_only_a_settled_ordinary_hold() {
   printf '%s\n' "resolved [key=$HELD]: answered: declined in the terminal" >>"$home/state/task.status"
   pane_clear "$home" 0
   assert_equals "1" "$(grep -c '^resolved ' "$home/state/task.status")" "an answered key gets no second close"
-  assert_absent "$home/state/task.permission-held" "its row is dropped"
+  assert_equals "" "$(bash "$ROUTE" held-keys "$home/state" task)" "and names no held key"
+  request "$home" "$(bash_payload 'echo hello')"
+  assert_equals "2" "$(grep -c '^blocked ' "$home/state/task.status")" "the same request asked after the answer wakes the supervisor again"
   pass "a proven-clear pane closes only an ordinary hold that has had time to draw its prompt"
 }
 
@@ -422,7 +423,8 @@ test_reserved_request_is_always_reported() {
   home=$(new_home ledger)
   request "$home" "$(bash_payload 'sudo true')"
   request "$home" "$(bash_payload 'sudo true' '{"description": "again, in other words"}')"
-  assert_equals 2 "$(grep -c "^$HARDSTOP	" "$home/state/task.permission-held")" "the same reserved command with another description is a second held request"
+  settle "$home" tool-finished "$(finished_payload 'sudo true' PostToolUse d)"
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "the same reserved command with another description is a second held request"
   assert_equals 2 "$(awk -F '\t' '$2 == "hold" { print $7 }' "$home/state/task.permission-route.tsv" | sort -u | grep -c .)" "and the request record names two requests"
   for name in mcp__db__drop_table mcp__aws__terminate_instances mcp__stripe__create_refund mcp__ssh__run_command; do
     home=$(new_home "toolname-$name")
@@ -432,25 +434,61 @@ test_reserved_request_is_always_reported() {
   pass "a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, by a key name alone, and by a tool name alone"
 }
 
-# The hook still holds when it cannot take the lock, and then two hooks write
-# the held set at the same time.
+# The hook still holds when it cannot take the lock, and then several hooks
+# write the held set at the same time.
+# open_requests <home> <key>: the requests the held set still holds under a key.
+open_requests() {
+  awk -F '\t' -v key="$2" '
+    $1 != key { next }
+    $5 == "done" { if (token[$2] == $4) delete token[$2]; next }
+    { token[$2] = $4 }
+    END { n = 0; for (h in token) n++; print n }' "$1/state/task.permission-held"
+}
+
 test_holds_without_the_lock_keep_every_row() {
-  local home i pids='' round
+  local home i pids='' round first
+  first='sudo true first'
   for round in 1 2 3; do
     home=$(new_home "nolock-$round")
     mkdir "$home/state/task.permission-lock"
-    for i in 1 2 3 4 5 6 7 8; do
+    # One request waits already. It is asked again while new requests arrive.
+    request "$home" "$(bash_payload "$first")"
+    for i in 1 2 3 4 5 6; do
+      request "$home" "$(bash_payload "$first")" &
+      pids="$pids $!"
       request "$home" "$(bash_payload "sudo true $i")" &
       pids="$pids $!"
     done
     # shellcheck disable=SC2086  # pids is a word list by design
     wait $pids
     pids=''
-    assert_equals 8 "$(grep -c "^$HARDSTOP	" "$home/state/task.permission-held")" "round $round: each of eight requests held at the same time without the lock keeps its row"
-    assert_equals 8 "$(grep -c "^blocked .*key=$HARDSTOP" "$home/state/task.status")" "round $round: and its line"
+    assert_equals 7 "$(open_requests "$home" "$HARDSTOP")" "round $round: the request asked again and each of six new requests held at the same time without the lock stay held"
+    assert_equals 7 "$(grep -c "^blocked .*key=$HARDSTOP" "$home/state/task.status")" "round $round: and each has its one line"
     rmdir "$home/state/task.permission-lock" 2>/dev/null || true
+    settle "$home" tool-finished "$(finished_payload "$first" PostToolUse d)"
+    assert_equals "$HARDSTOP" "$(bash "$ROUTE" held-keys "$home/state" task)" "round $round: the first request finishing leaves the key held for the six that still wait"
+    for i in 1 2 3 4 5; do
+      settle "$home" tool-finished "$(finished_payload "sudo true $i" PostToolUse d)"
+    done
+    assert_equals "$HARDSTOP" "$(open_keys "$home")" "round $round: the key stays open for the last waiting request"
+    settle "$home" tool-finished "$(finished_payload "sudo true 6" PostToolUse d)"
+    assert_equals "" "$(open_keys "$home")" "round $round: and closes when it finishes"
   done
-  pass "requests held at the same time without the lock each keep their row"
+
+  # The same request held twice at the same moment is one request to finish.
+  home=$(new_home nolock-same)
+  mkdir "$home/state/task.permission-lock"
+  for i in 1 2 3 4; do
+    request "$home" "$(bash_payload "$first")" &
+    pids="$pids $!"
+  done
+  # shellcheck disable=SC2086  # pids is a word list by design
+  wait $pids
+  rmdir "$home/state/task.permission-lock" 2>/dev/null || true
+  assert_equals "$HARDSTOP" "$(open_keys "$home")" "the same request held four times at the same moment without the lock opens its key"
+  settle "$home" tool-finished "$(finished_payload "$first" PostToolUse d)"
+  assert_equals "" "$(open_keys "$home")" "and its one finished call closes the key"
+  pass "requests held at the same time without the lock each stay held, also while a waiting request is asked again"
 }
 
 test_asked_again_never_hides_the_held_set() {
@@ -465,8 +503,9 @@ test_asked_again_never_hides_the_held_set() {
   done
   wait "$pid"
   assert_equals 0 "$missing" "a reader without the lock always finds the held set while its one request is asked again"
-  assert_equals 1 "$(grep -c . "$home/state/task.permission-held")" "and the request keeps one row"
-  assert_equals 1 "$(grep -c '^blocked ' "$home/state/task.status")" "and one line"
+  assert_equals 1 "$(grep -c '^blocked ' "$home/state/task.status")" "and the request keeps one line"
+  settle "$home" tool-finished "$(finished_payload 'echo hello')"
+  assert_equals "" "$(open_keys "$home")" "and one finished call ends it"
   pass "a request asked again never leaves the held set absent or empty"
 }
 
@@ -521,7 +560,7 @@ test_held_set_follows_the_latest_requests() {
   for i in 1 2 3 3; do
     FM_PERMISSION_ROUTE_MAX_HELD=2 request "$home" "$(bash_payload "echo hello $i")"
   done
-  assert_equals "3" "$(grep -c . "$home/state/task.permission-held")" "a request past the limit asked again keeps the one shared row"
+  assert_equals "2" "$(grep -c '^blocked ' "$home/state/task.status")" "a request past the limit asked again writes no line of its own"
   for i in 1 2; do settle "$home" tool-finished "$(finished_payload "echo hello $i")"; done
   assert_equals "$HELD" "$(open_keys "$home")" "and the key stays open for it"
   if [ "$(id -u)" -ne 0 ]; then

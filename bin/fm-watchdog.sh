@@ -1943,8 +1943,9 @@ wd_pp_clear() {
 # the watchdog's only reads and writes of that hold.
 
 # wd_pp_hook_keys <id>: the status keys the hook holds open, one per row.
-# A hold that exists but cannot be read counts as both keys, so an unreadable
-# hold is never read as no hold.
+# The hook's held set outlives its last request, so its presence alone is no
+# hold. A hold that exists but cannot be read counts as both keys, so an
+# unreadable hold is never read as no hold.
 wd_pp_hook_keys() {
   [ -s "$O_HOME/state/$1.permission-held" ] || return 0
   fm_run_timed 20 bash "$SCRIPT_DIR/fm-permission-route.sh" held-keys "$O_HOME/state" "$1" 2>/dev/null </dev/null \
@@ -1958,10 +1959,10 @@ wd_pp_hook_keys() {
 # owner-reserved key is never closed from here.
 wd_pp_hook_clear() {
   local id=$1 harness=$2 screen=$3 dialog=$4 composer
-  [ -s "$O_HOME/state/$id.permission-held" ] || return 0
   [ "$(wd_permission_mode)" = act ] || return 0
   [ -n "$screen" ] || return 0
   case "$dialog" in ''|none) ;; *) return 0 ;; esac
+  wd_pp_hook_keys "$id" | grep -qx permission-prompt-held || return 0
   ! fm_wd_human_step "$screen" >/dev/null || return 0
   ! fm_pp_classify "$screen" "$harness" none >/dev/null || return 0
   [ -z "$(fm_wd_pane_dialog "$screen" "$harness")" ] || return 0
@@ -2172,7 +2173,7 @@ wd_permission_prompt() {
   if fm_wd_human_step "$screen" >/dev/null || ! verdict=$(fm_pp_classify "$screen" "$harness" "$dialog"); then
     # No verdict and no reported prompt leaves nothing to write. A hold the
     # worker's permission hook still records is a reported prompt.
-    [ -e "$(wd_pp_mark "$id").open" ] || [ -s "$O_HOME/state/$id.permission-held" ] || return 2
+    [ -e "$(wd_pp_mark "$id").open" ] || [ -n "$(wd_pp_hook_keys "$id")" ] || return 2
     kind=none
   else
     kind=${verdict%%$'\t'*}
