@@ -497,11 +497,13 @@ test_return_brief_composes_from_record_store_and_held_set() {
 # is re-checked at the next return: a missing earlier archive gates even
 # under a fresh posture, and restoring it clears catch-up.
 test_retained_record_from_entry_still_gates_until_recovered() {
-  local dir out rc gate retained missing second
+  local dir out rc gate retained missing second cycle backup
   dir="$TMP_ROOT/retained-record"
   install_runner "$dir"
   contract_in "$dir" enter --words 'watch the fleet' >/dev/null 2>&1 \
     || fail "could not enter the retained fixture posture"
+  backup="$dir/valid-contract"
+  cp "$dir/home/state/.afk-contract" "$backup"
   missing="$dir/home/state/afk-contracts/1790000000.afk-contract"
   retained="$dir/home/state/.afk-carried-retained"
   printf 'retained-record\t%s\n' "$missing" > "$retained"
@@ -518,13 +520,93 @@ test_retained_record_from_entry_still_gates_until_recovered() {
   [ -e "$gate" ] || fail "the retained gate was not persisted"
   [ ! -e "$retained" ] || fail "the seeded gate did not take ownership of the retained evidence"
 
-  # Restore the earlier archive with any valid posture record, then recheck.
-  cp "$dir/home/state/afk-contracts/"*.afk-contract "$missing" 2>/dev/null \
+  for cycle in 1 2; do
+    out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+      "$ROOT/bin/fm-afk-launch.sh" enter --words "watch the fleet again $cycle" 2>&1) \
+      || fail "re-entry $cycle refused the posture: $out"
+    [ ! -e "$gate" ] || fail "re-entry $cycle did not consume the old gate"
+    set +e
+    out=$(run_return "$dir" begin)
+    rc=$?
+    set -e
+    [ "$rc" -eq 3 ] || fail "re-entry $cycle lost the earlier archive obligation (rc=$rc): $out"
+    assert_contains "$out" "retained away-posture record missing: $missing" "re-entry $cycle lost the earlier missing archive"
+  done
+
+  printf 'version: 1\n' > "$missing"
+  set +e
+  out=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "an unreadable retained archive cleared catch-up (rc=$rc): $out"
+  assert_contains "$out" "retained away-posture record unreadable: $missing" "check lost the unreadable retained archive"
+  cp "$backup" "$missing" \
     || fail "could not restore the retained archive fixture"
   second=$(run_return "$dir" check) || fail "restoring the retained archive did not clear catch-up: $second"
   assert_contains "$second" 'catch-up clear' "check did not clear after retained recovery"
   [ ! -e "$gate" ] || fail "the cleared retained check left the gate behind"
   pass "a retained earlier archive gates the next return until it is restored valid"
+}
+
+test_reentry_takes_fresh_health_and_engine_snapshots() {
+  local dir out rc section now tab second
+  dir="$TMP_ROOT/reentry-health"
+  install_runner "$dir"
+  contract_in "$dir" enter --words 'watch the fleet' >/dev/null 2>&1 \
+    || fail "could not enter the health fixture posture"
+  seed_live_blocker "$dir" tmux health-repair
+  touch "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/.fake-drain"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "the health fixture blocker did not retain catch-up (rc=$rc): $out"
+  assert_contains "$out" 'supervision ran through the away window with no detected gap' "the first window was not healthy"
+
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch the next window' 2>&1) \
+    || fail "the second health window refused entry: $out"
+  : > "$dir/home/state/.watcher-down"
+  now=$(date +%s)
+  tab=$(printf '\t')
+  seed_host_latch "$dir" 2 300 "$((now + 300))" "$now${tab}latch${tab}errors=2${tab}cooldown=300s"
+  set +e
+  out=$(run_return "$dir" begin)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "the second health window lost its blocker (rc=$rc): $out"
+  section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+  assert_contains "$section" 'GAP: watcher downtime' "historical healthy evidence hid the new outage"
+  assert_not_contains "$section" 'no detected gap' "historical healthy evidence was displayed as current health"
+  assert_contains "$out" 'catch-up retained-health: supervision ran through the away window with no detected gap' "the old health snapshot was lost"
+  section=$(printf '%s\n' "$out" | sed -n '/^Tried and failed, or could not be fixed:$/,/^Landed, cleanup due:$/p')
+  assert_contains "$section" 'after 2 consecutive engine errors and paused away supervision' "historical health suppressed the new engine snapshot"
+
+  rm "$dir/home/state/.watcher-down" "$dir/home/state/.supervision-host.log" "$dir/home/state/.supervision-host-health"
+  set +e
+  second=$(run_return "$dir" check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 3 ] || fail "same-window check lost its blocker (rc=$rc): $second"
+  assert_contains "$second" 'GAP: watcher downtime' "same-window check replaced the initial health snapshot"
+  assert_contains "$second" 'after 2 consecutive engine errors and paused away supervision' "same-window check replaced the initial engine snapshot"
+
+  out=$(FM_HOME="$dir/home" FM_STATE_OVERRIDE="$dir/home/state" FM_TEST_HARNESS=pi \
+    "$ROOT/bin/fm-afk-launch.sh" enter --words 'watch the recovered window' 2>&1) \
+    || fail "the recovered health window refused entry: $out"
+  printf 'resolved [key=health-repair]: repaired the synthetic blocker\n' >> "$dir/home/state/repair-task.status"
+  touch "$dir/home/state/.last-watcher-beat"
+  out=$(run_return "$dir" begin) || fail "the recovered window did not clear catch-up: $out"
+  section=$(printf '%s\n' "$out" | sed -n '/^Supervisor health:$/,/^Your instructions:$/p')
+  assert_contains "$section" 'no detected gap' "historical gap evidence hid the recovered window"
+  assert_not_contains "$section" 'GAP:' "historical gap evidence was displayed as current health"
+  assert_contains "$out" 'catch-up retained-health: GAP: watcher downtime' "the historical outage evidence was lost"
+  assert_contains "$out" 'catch-up retained-engine: the supervision session latched' "the historical engine evidence was lost"
+  section=$(printf '%s\n' "$out" | sed -n '/^Tried and failed, or could not be fixed:$/,/^Landed, cleanup due:$/p')
+  assert_not_contains "$section" 'engine errors' "historical engine evidence was displayed as a current failure"
+  [ ! -e "$dir/home/state/.afk-return-catchup" ] || fail "the recovered window left catch-up pending"
+  pass "each re-entry snapshots current health and engine failures while retaining historical evidence and same-window snapshots"
 }
 
 # Carried items from the previous return stay visible in the next brief, a
@@ -1687,6 +1769,7 @@ test_unreadable_superseded_archive_keeps_return_gated
 test_missing_final_archive_keeps_retained_contract_gated
 test_return_brief_composes_from_record_store_and_held_set
 test_retained_record_from_entry_still_gates_until_recovered
+test_reentry_takes_fresh_health_and_engine_snapshots
 test_return_brief_lists_carried_items_and_records_a_wake_under_the_posture
 test_return_brief_lists_landed_work_awaiting_cleanup
 test_return_brief_lists_open_human_only_steps

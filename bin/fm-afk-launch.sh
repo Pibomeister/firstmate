@@ -435,7 +435,7 @@ fm_afk_launch_retain_gate_evidence() {  # <gate>
   local gate=$1 retained rows pending contract_epoch tab
   retained="$FM_AFK_LAUNCH_STATE/.afk-carried-retained"
   tab=$(printf '\t')
-  rows=$(grep -E "^(evidence|superseded)${tab}" "$gate" 2>/dev/null || true)
+  rows=$(grep -E "^(evidence|superseded|retained-record)${tab}" "$gate" 2>/dev/null || true)
   # The gate's contract row names the previous window's final archived
   # record; retain it as a record the next return must re-validate, so a
   # missing or unreadable earlier archive is never dropped with the gate.

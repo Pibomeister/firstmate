@@ -149,8 +149,11 @@ preserve_evidence() {  # <destination>
   # archived and superseded records it names are re-checked at this return
   # rather than dropped with the old entry epoch.
   if [ -f "$STATE/.afk-carried-retained" ]; then
-    grep -E '^(evidence|window|contract|superseded|retained-record)'"$(printf '\t')" \
-      "$STATE/.afk-carried-retained" >> "$destination" 2>/dev/null || true
+    awk -F '\t' 'BEGIN { OFS = FS }
+      $1 == "evidence" || $1 == "window" || $1 == "contract" || $1 == "superseded" || $1 == "retained-record" {
+        if ($1 == "evidence" && ($2 == "health" || $2 == "engine")) $2 = "retained-" $2
+        print
+      }' "$STATE/.afk-carried-retained" >> "$destination" 2>/dev/null || true
   fi
 }
 
