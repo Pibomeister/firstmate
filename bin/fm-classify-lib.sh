@@ -1311,6 +1311,8 @@ EOF
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
 # The optional timed view uses a separate `.timed` cursor and adds `:timed3`
 # to the version; status_open_decisions_incremental owns its row format.
+# A long fold also saves a cursor at a whole-line boundary every 64 lines, so a
+# caller stopped at a deadline resumes from its last checkpoint.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0; the kind suffix does the
@@ -1476,7 +1478,7 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed] [strict]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor kind fold_version timed=${3:-} read_rc=0
+  local kind fold_version timed=${3:-} read_rc=0 folded='' folded_lines=0
   case "$timed" in ''|timed) ;; *) return 2 ;; esac
   # `strict` makes every read failure below return 3 instead of 0, for a caller
   # that must not read the already-trusted set (empty without a cursor) as the
@@ -1579,22 +1581,48 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
     while IFS= read -r line || [ -n "$line" ]; do
       open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")
+      folded="$folded$line"$'\n'
+      folded_lines=$((folded_lines + 1))
+      # A long cold fold saves whole-line progress every 64 lines, so a caller
+      # killed at its deadline resumes there instead of from byte 0.
+      if [ "$folded_lines" -ge 64 ]; then
+        _fm_status_byte_length "$folded"
+        if [ "$((offset + _FM_STATUS_BYTE_LENGTH))" -lt "$size" ]; then
+          offset=$((offset + _FM_STATUS_BYTE_LENGTH))
+          _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" \
+            || true
+        fi
+        folded=''
+        folded_lines=0
+      fi
     done < "$chunk_file"
     rm -f "$chunk_file"
     offset=$size
     cursor_dirty=1
   fi
   if [ "$cursor_dirty" -eq 1 ]; then
-    target_cursor=$(_fm_status_scratch_path "$cf.tmp.$$")
-    {
-      printf 'version=%s\n' "$fold_version"
-      printf 'offset=%s\n' "$offset"
-      printf 'ident=%s\n' "$cur_ident"
-      if [ -n "$open" ]; then printf '%s' "$open"; fi
-    } > "$target_cursor" || return 1
-    mv -f "$target_cursor" "$cf" || return 1
+    _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" || return 1
   fi
   printf '%s' "$open"
+}
+
+# Byte length of <text>, independent of the caller's locale.
+_fm_status_byte_length() {  # <text>; sets _FM_STATUS_BYTE_LENGTH
+  local LC_ALL=C
+  _FM_STATUS_BYTE_LENGTH=${#1}
+}
+
+# Atomically replace one decision-fold cursor with a consistent offset/open pair.
+_fm_open_decisions_write_cursor() {  # <cursor> <version> <offset> <ident> <open-set>
+  local target
+  target=$(_fm_status_scratch_path "$1.tmp.$$")
+  {
+    printf 'version=%s\n' "$2"
+    printf 'offset=%s\n' "$3"
+    printf 'ident=%s\n' "$4"
+    if [ -n "$5" ]; then printf '%s' "$5"; fi
+  } > "$target" || { rm -f "$target"; return 1; }
+  mv -f "$target" "$1" || { rm -f "$target"; return 1; }
 }
 
 # Incremental sibling of scan_open_decisions: same fleet-wide directory walk and

@@ -416,6 +416,41 @@ test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace() {
   pass "fm_exec_timed's GNU timeout fallback kills a TERM-ignoring command once the grace has passed"
 }
 
+# A TERM sent to a caller bounded by an external timeout runner must stop the
+# runner's group, so a TERM-ignoring command never outlives its caller.
+test_run_timed_external_forwards_a_caller_term() {
+  local dir fb tool caller pid rc=0 i=0
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed forwards a caller TERM through its external runner (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    PATH=$fb fm_run_timed 60 bash -c 'trap "" TERM; echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
+  ) &
+  caller=$!
+  wait_for_file "$dir/pid"
+  pid=$(cat "$dir/pid")
+  kill -TERM "$caller"
+  wait "$caller" 2>/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || fail "a caller stopped by TERM reported success"
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 250 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "a TERM-ignoring command outlived its caller's TERM under the external runner"
+    fi
+    sleep 0.02
+  done
+  pass "fm_run_timed forwards a caller TERM through its external runner"
+}
+
 test_timed_out_names_exactly_the_bound_statuses() {
   local status verdict
   for status in 124 137 0 1 125 127 143 ''; do
@@ -1032,4 +1067,5 @@ test_perl_is_preferred_over_timeout
 test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
 test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
+test_run_timed_external_forwards_a_caller_term
 test_timed_out_names_exactly_the_bound_statuses

@@ -13,7 +13,8 @@
 # stdout remains the wake/status presentation channel.
 # FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds the combined optional status,
 # branch-outcome and liveness presentation after queue collection (default 30s,
-# positive whole seconds). A timeout returns 124 and names its last phase.
+# positive whole seconds). A timeout returns 124 and names its last phase; any
+# other worker failure, a 137 included, keeps its own status.
 # Already completed sections keep their receipts; incomplete status output never
 # commits its presentation receipt. This command never acknowledges queue rows
 # without the explicit sequence/generation acknowledgement arguments.
@@ -32,10 +33,17 @@
 # presentation-path locks (default 10); queue mutation locks, acknowledgement
 # included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
 # and exit 1 with the state untouched past it.
-# Status-presentation scratch lives in one attempt-owned directory under state/.
+# Status-presentation scratch lives in one attempt-owned directory under state/,
+# named with the invoking process's pid.
 # On exit, including timeout, INT or TERM, the invoking process stops and reaps
 # its presentation worker before removing that directory; other readers' scratch
 # is left intact.
+# A later drain removes a directory whose owning pid is no longer alive, which
+# covers an owner killed before its exit trap could run.
+# When that directory cannot be created, the drain prints STATUS PRESENTATION
+# INCOMPLETE, still presents branch outcomes and liveness, and exits 1.
+# An invalid FM_WAKE_DRAIN_PRESENTATION_TIMEOUT falls back to 30 seconds with a
+# stderr note, so acknowledgement never fails on a bad presentation bound.
 # A separate per-attempt phase file under TMPDIR is removed by the invoking
 # process after the bounded presentation or from its exit trap. Descriptor 18
 # stays open while the worker writes, so caller death cannot turn a later phase
@@ -88,8 +96,8 @@ DRAIN_STARTED_EPOCH=$(date +%s)
 case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10 ;; esac
 case "$DRAIN_PRESENTATION_TIMEOUT" in
   ''|0*|*[!0-9]*)
-    printf 'wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT must be positive whole seconds\n' >&2
-    exit 2
+    printf 'wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT is not positive whole seconds; using 30\n' >&2
+    DRAIN_PRESENTATION_TIMEOUT=30
     ;;
 esac
 case "${1:-}" in --phases) DRAIN_TRACE=1; shift ;; esac
@@ -102,7 +110,7 @@ drain_phase() {  # <phase> [detail]
   if [ "$DRAIN_TRACE" -eq 1 ]; then
     printf 'wake drain: pid=%s started=%s phase=%s elapsed=%ss%s\n' \
       "$DRAIN_PARENT_PID" "$DRAIN_STARTED_EPOCH" "$phase" \
-      "$((SECONDS - DRAIN_STARTED_SECONDS))" "${detail:+ $detail}" >&2
+      "$((SECONDS - DRAIN_STARTED_SECONDS))" "${detail:+ $detail}" >&2 || true
   fi
 }
 
@@ -916,7 +924,12 @@ print_status_presentation() {  # [<deduped-raw-rows>]
 # needed by queue acknowledgement, which has its own separate locked path.
 drain_presentation_worker() {  # [<deduped-raw-rows>]
   local branch_rc=0
-  print_status_presentation "${1:-}" || true
+  if [ -n "$_FM_STATUS_SCRATCH_DIR" ]; then
+    print_status_presentation "${1:-}" || true
+  else
+    printf 'STATUS PRESENTATION INCOMPLETE: status scratch could not be created; retry unfinished presentation.\n'
+    branch_rc=1
+  fi
   drain_phase branch-outcomes
   print_branch_outcomes_section || branch_rc=1
   drain_phase liveness
@@ -924,16 +937,36 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
   return "$branch_rc"
 }
 
+# A drain killed before its exit trap ran leaves its attempt directory behind.
+# The directory name carries its owner's pid, and a live owner always has a
+# live pid, so only a directory whose owner is gone is removed. Directories
+# without an owner pid are never touched.
+sweep_orphan_presentation_scratch() {
+  local dir owner
+  for dir in "$STATE"/.wake-drain-presentation.*.*; do
+    [ -d "$dir" ] || continue
+    owner=${dir#"$STATE"/.wake-drain-presentation.}
+    owner=${owner%%.*}
+    case "$owner" in ''|*[!0-9]*) continue ;; esac
+    [ "$owner" != "$DRAIN_PARENT_PID" ] || continue
+    kill -0 "$owner" 2>/dev/null && continue
+    ps -p "$owner" >/dev/null 2>&1 && continue
+    rm -rf -- "$dir" 2>/dev/null || true
+  done
+}
+
 run_drain_presentation() {  # [<deduped-raw-rows>]
   local rc=0 phase=optional-presentation phase_line
   drain_phase presentation-setup
-  _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.XXXXXX") || return 1
+  sweep_orphan_presentation_scratch
+  _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.$DRAIN_PARENT_PID.XXXXXX" 2>/dev/null) \
+    || _FM_STATUS_SCRATCH_DIR=
   DRAIN_PHASE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-wake-drain-phase.XXXXXX" 2>/dev/null) || DRAIN_PHASE_FILE=
   if [ -n "$DRAIN_PHASE_FILE" ] && { exec 18>> "$DRAIN_PHASE_FILE"; } 2>/dev/null; then
     DRAIN_PHASE_FD_OPEN=1
   fi
   fm_run_timed_fn "$DRAIN_PRESENTATION_TIMEOUT" drain_presentation_worker "${1:-}" || rc=$?
-  if fm_timed_out "$rc"; then
+  if [ "$rc" -eq 124 ]; then
     if [ -n "$DRAIN_PHASE_FILE" ] && [ -r "$DRAIN_PHASE_FILE" ]; then
       while IFS= read -r phase_line; do phase=$phase_line; done < "$DRAIN_PHASE_FILE"
     fi
@@ -951,6 +984,7 @@ run_drain_presentation() {  # [<deduped-raw-rows>]
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$? current_pid
+  trap '' INT TERM
   [ -z "$DRAIN_TMP" ] || rm -f -- "$DRAIN_TMP" 2>/dev/null || true
   [ -z "$DRAIN_VIEW_TMP" ] || rm -f -- "$DRAIN_VIEW_TMP" 2>/dev/null || true
   if [ "$DRAIN_LOCK_HELD" = true ]; then
@@ -958,7 +992,6 @@ cleanup() {
   fi
   fm_current_pid current_pid || current_pid=
   if [ "$current_pid" = "$DRAIN_PARENT_PID" ]; then
-    trap '' INT TERM
     fm_cancel_bash_timeout
     [ -z "$_FM_STATUS_SCRATCH_DIR" ] || rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
     _FM_STATUS_SCRATCH_DIR=

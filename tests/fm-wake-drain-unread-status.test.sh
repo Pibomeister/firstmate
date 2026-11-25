@@ -602,7 +602,8 @@ with (case / 'timed.out').open('wb') as out, (case / 'timed.err').open('wb') as 
                              preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
     try:
         deadline = time.monotonic() + 20
-        while not (case / 'drain.pid').exists():
+        pid_file = case / 'drain.pid'
+        while not (pid_file.exists() and pid_file.stat().st_size > 0):
             if child.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError('drain never reached the blocked reader: ' + (case / 'timed.err').read_text())
             time.sleep(0.05)
@@ -656,6 +657,57 @@ test_term_cleans_only_attempt_owned_presentation_scratch() {
 
 test_int_cleans_only_attempt_owned_presentation_scratch() {
   check_attempt_owned_presentation_scratch INT
+}
+
+test_invalid_presentation_bound_falls_back_to_the_default() {
+  local dir state rc=0
+  dir=$(make_case invalid-presentation-bound)
+  state="$dir/state"
+  printf 'note: invalid bound fixture\n' > "$state/task-bound.status"
+  FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=soon "$BASH" "$DRAIN" \
+    > "$dir/drain.out" 2> "$dir/drain.err" || rc=$?
+  assert_equals 0 "$rc" "an invalid presentation bound stopped the drain: $(cat "$dir/drain.err")"
+  assert_grep 'using 30' "$dir/drain.err" 'an invalid presentation bound was not reported'
+  assert_grep 'invalid bound fixture' "$dir/drain.out" 'the fallback bound did not present status'
+  pass 'an invalid presentation bound falls back to the default and still presents'
+}
+
+test_unwritable_presentation_scratch_still_presents_outcomes_and_liveness() {
+  local dir state fake rc=0 real
+  dir=$(make_case unwritable-presentation-scratch)
+  state="$dir/state"
+  fake="$dir/no-scratch-bin"
+  mkdir -p "$fake"
+  real=$(command -v mktemp)
+  printf '#!/bin/sh
+case "$*" in *.wake-drain-presentation.*) exit 1 ;; esac
+exec %s "$@"\n' "$real" > "$fake/mktemp"
+  chmod +x "$fake/mktemp"
+  printf 'note: scratch failure fixture\n' > "$state/task-scratch.status"
+  PATH="$fake:$PATH" FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" --phases \
+    > "$dir/drain.out" 2> "$dir/drain.err" || rc=$?
+  assert_equals 1 "$rc" 'a drain without presentation scratch did not report failure'
+  assert_grep 'STATUS PRESENTATION INCOMPLETE:' "$dir/drain.out" 'a scratch failure was silent'
+  assert_grep 'phase=branch-outcomes' "$dir/drain.err" 'a scratch failure skipped branch outcomes'
+  assert_grep 'phase=liveness' "$dir/drain.err" 'a scratch failure skipped the liveness check'
+  pass 'a presentation scratch failure still presents branch outcomes and liveness'
+}
+
+test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
+  local dir state dead
+  dir=$(make_case orphan-presentation-scratch)
+  state="$dir/state"
+  sleep 0 &
+  dead=$!
+  wait "$dead" 2>/dev/null || true
+  mkdir "$state/.wake-drain-presentation.$dead.orphan1" "$state/.wake-drain-presentation.$$.live001" \
+    "$state/.wake-drain-presentation.legacy1"
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/drain.out" 2> "$dir/drain.err" \
+    || fail "drain failed: $(cat "$dir/drain.err")"
+  [ ! -e "$state/.wake-drain-presentation.$dead.orphan1" ] || fail 'a dead owner left its presentation scratch behind'
+  [ -d "$state/.wake-drain-presentation.$$.live001" ] || fail 'a live owner lost its presentation scratch'
+  [ -d "$state/.wake-drain-presentation.legacy1" ] || fail 'scratch without an owner pid was removed'
+  pass 'presentation scratch of a dead owner is removed and live scratch is kept'
 }
 
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout() {
@@ -746,6 +798,60 @@ test_warm_routine_history_is_bounded_without_acknowledging_it() {
   pass 'warm routine-only history completes without changing wake, decision or presentation ownership'
 }
 
+test_cold_decision_fold_progresses_across_presentation_deadlines() {
+  local dir state status i rc attempt=0 offset previous=0 size
+  dir=$(make_case cold-decision-fold)
+  state="$dir/state"
+  status="$state/task-cold.status"
+  printf 'kind=ship\n' > "$state/task-cold.meta"
+  : > "$status"
+  : > "$dir/expected"
+  i=0
+  while [ "$i" -lt 40 ]; do
+    printf 'needs-decision [key=k%03d]: exact decision %03d\n' "$i" "$i" >> "$status"
+    printf 'k%03d\tneeds-decision\texact decision %03d\n' "$i" "$i" >> "$dir/expected"
+    i=$((i + 1))
+  done
+  awk 'BEGIN { for (i=0;i<2000;i++) print "working: historical presented context" }' >> "$status"
+  cp "$status" "$dir/history.before"
+  size=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
+  # Present the history once without folding it, so every bounded attempt
+  # reaches the cold fold quickly and the shortest legal bound tests its progress.
+  FM_STATE_OVERRIDE="$state" /bin/bash -c '
+    . "$1"
+    snapshot=$(status_presentation_snapshot "$2") || exit 1
+    status_commit_presentation_snapshot "$2" "$snapshot"
+  ' _ "$ROOT/bin/fm-classify-lib.sh" "$state" || fail 'could not record the presentation receipt'
+  while :; do
+    rc=0
+    fm_run_timed 60 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=2 \
+      "$BASH" "$DRAIN" --phases > "$dir/attempt.out" 2> "$dir/attempt.err" || rc=$?
+    attempt=$((attempt + 1))
+    offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_cursor_offset "$2"' \
+      _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+    [ "$rc" -ne 0 ] || break
+    assert_equals 124 "$rc" "a cold fold attempt failed for a reason other than its deadline: $(cat "$dir/attempt.err")"
+    [ "$offset" -ge "$previous" ] || fail "a bounded attempt moved the fold cursor back from $previous to $offset"
+    [ "$offset" -lt "$size" ] || break
+    previous=$offset
+    [ "$attempt" -lt 60 ] || fail "a cold fold never finished across $attempt bounded attempts"
+  done
+  cmp "$dir/history.before" "$status" || fail 'bounded folding rewrote history'
+  rc=0
+  fm_run_timed 75 env -u FM_WAKE_DRAIN_PRESENTATION_TIMEOUT FM_STATE_OVERRIDE="$state" \
+    "$BASH" "$DRAIN" > "$dir/final.out" 2> "$dir/final.err" || rc=$?
+  assert_equals 0 "$rc" "the drain after checkpointed folding did not complete: $(cat "$dir/final.err")"
+  i=0
+  while [ "$i" -lt 40 ]; do
+    assert_grep "$(printf '[key=k%03d]' "$i")" "$dir/final.out" "the completed drain did not present open decision $i"
+    i=$((i + 1))
+  done
+  FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_incremental "$2"' \
+    _ "$ROOT/bin/fm-classify-lib.sh" "$status" | LC_ALL=C sort > "$dir/open.after"
+  cmp "$dir/expected" "$dir/open.after" || fail 'checkpointed folding changed the open decisions'
+  pass "a cold decision fold keeps its progress across $attempt two-second presentation deadlines"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit "$?"
@@ -773,3 +879,7 @@ test_int_cleans_only_attempt_owned_presentation_scratch
 test_explicit_phase_trace_keeps_raw_wakes_on_stdout
 test_mixed_tasks_preserve_routine_presentation_ownership
 test_warm_routine_history_is_bounded_without_acknowledging_it
+test_invalid_presentation_bound_falls_back_to_the_default
+test_unwritable_presentation_scratch_still_presents_outcomes_and_liveness
+test_orphaned_presentation_scratch_of_a_dead_owner_is_removed
+test_cold_decision_fold_progresses_across_presentation_deadlines

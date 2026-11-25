@@ -148,18 +148,52 @@ fm_bash_timeout_child() {
   exit "$command_rc"
 }
 
+# Read $! without tripping set -u before the shell has started any job.
+_fm_bash_timeout_last_job() {  # sets _FM_BASH_TIMEOUT_LAST_JOB
+  local nounset=0
+  case $- in *u*) nounset=1; set +u ;; esac
+  _FM_BASH_TIMEOUT_LAST_JOB=$!
+  [ "$nounset" -eq 0 ] || set -u
+}
+
+# Signal a bounded job's process group, or the job itself when job control
+# could not give it a group of its own.
+_fm_bash_timeout_signal() {  # <signal> <pid>
+  [ -n "${2:-}" ] || return 0
+  kill "-$1" -- "-$2" 2>/dev/null || kill "-$1" "$2" 2>/dev/null || true
+}
+
+# Stop the active fm_run_bash_timeout call from a trap in the calling shell.
+# The pid variables are that call's dynamically scoped locals. A job launched
+# but not yet recorded is recovered from $!, and a reaped job is never
+# signalled because each pid is cleared as soon as it is reaped.
 fm_cancel_bash_timeout() {
-  if [ -n "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}" ]; then
-    kill -TERM -- "-$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
-  fi
+  case "${_FM_BASH_TIMEOUT_LAUNCHING:-}" in
+    child|watchdog)
+      _fm_bash_timeout_last_job
+      if [ -n "$_FM_BASH_TIMEOUT_LAST_JOB" ] \
+        && [ "$_FM_BASH_TIMEOUT_LAST_JOB" != "${_FM_BASH_TIMEOUT_PREVIOUS_JOB:-}" ]; then
+        if [ "$_FM_BASH_TIMEOUT_LAUNCHING" = child ]; then
+          _FM_BASH_TIMEOUT_CHILD_PID=$_FM_BASH_TIMEOUT_LAST_JOB
+        else
+          _FM_BASH_TIMEOUT_WATCHDOG_PID=$_FM_BASH_TIMEOUT_LAST_JOB
+        fi
+      fi
+      ;;
+  esac
+  _FM_BASH_TIMEOUT_LAUNCHING=
+  _fm_bash_timeout_signal TERM "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}"
   if [ -n "${_FM_BASH_TIMEOUT_CHILD_PID:-}" ]; then
-    kill -TERM -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+    _fm_bash_timeout_signal TERM "$_FM_BASH_TIMEOUT_CHILD_PID"
     command -p sleep 1
-    kill -KILL -- "-$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+    _fm_bash_timeout_signal KILL "$_FM_BASH_TIMEOUT_CHILD_PID"
     wait "$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
+    _FM_BASH_TIMEOUT_CHILD_PID=
   fi
   if [ -n "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}" ]; then
+    _fm_bash_timeout_signal KILL "$_FM_BASH_TIMEOUT_WATCHDOG_PID"
     wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    _FM_BASH_TIMEOUT_WATCHDOG_PID=
   fi
   [ -z "${_FM_BASH_TIMEOUT_STATUS_FILE:-}" ] \
     || command -p rm -f "$_FM_BASH_TIMEOUT_STATUS_FILE" "${_FM_BASH_TIMEOUT_DEADLINE_FILE:-}" 2>/dev/null || true
@@ -168,6 +202,7 @@ fm_cancel_bash_timeout() {
 fm_run_bash_timeout() {
   local seconds=$1 _FM_BASH_TIMEOUT_STATUS_FILE='' _FM_BASH_TIMEOUT_DEADLINE_FILE=''
   local _FM_BASH_TIMEOUT_CHILD_PID='' _FM_BASH_TIMEOUT_WATCHDOG_PID='' command_rc recorded_rc monitor_was_on=0 caller
+  local _FM_BASH_TIMEOUT_LAUNCHING='' _FM_BASH_TIMEOUT_PREVIOUS_JOB='' _FM_BASH_TIMEOUT_LAST_JOB=''
   shift
   # Its helper tools come from the default PATH (an absolute sh, command -p
   # otherwise), so a caller with a trimmed PATH still gets a real bound rather
@@ -177,8 +212,13 @@ fm_run_bash_timeout() {
   _FM_BASH_TIMEOUT_DEADLINE_FILE="${_FM_BASH_TIMEOUT_STATUS_FILE}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m
+  _fm_bash_timeout_last_job
+  _FM_BASH_TIMEOUT_PREVIOUS_JOB=$_FM_BASH_TIMEOUT_LAST_JOB
+  _FM_BASH_TIMEOUT_LAUNCHING=child
   fm_timeout_background fm_bash_timeout_child "$_FM_BASH_TIMEOUT_STATUS_FILE" "$@"
   _FM_BASH_TIMEOUT_CHILD_PID=$!
+  _FM_BASH_TIMEOUT_PREVIOUS_JOB=$_FM_BASH_TIMEOUT_CHILD_PID
+  _FM_BASH_TIMEOUT_LAUNCHING=watchdog
   # The watchdog's sleeps come from the default PATH (command -p): a bound is
   # wall-clock time even where a caller's PATH puts a stub or wrapper first.
   # Its own group outlives a caller stopped from outside, so it also ends the
@@ -201,6 +241,7 @@ fm_run_bash_timeout() {
     exit 124
   ) &
   _FM_BASH_TIMEOUT_WATCHDOG_PID=$!
+  _FM_BASH_TIMEOUT_LAUNCHING=
   [ "$monitor_was_on" -eq 1 ] || set +m
 
   if wait "$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null; then
@@ -209,16 +250,43 @@ fm_run_bash_timeout() {
     command_rc=$?
   fi
   if [ -s "$_FM_BASH_TIMEOUT_DEADLINE_FILE" ]; then
+    # The watchdog still owns the KILL escalation for the child's group.
     wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    _FM_BASH_TIMEOUT_WATCHDOG_PID=
+    _FM_BASH_TIMEOUT_CHILD_PID=
     command_rc=124
   else
-    kill -TERM -- "-$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || kill "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    _FM_BASH_TIMEOUT_CHILD_PID=
+    _fm_bash_timeout_signal TERM "$_FM_BASH_TIMEOUT_WATCHDOG_PID"
     wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
+    _FM_BASH_TIMEOUT_WATCHDOG_PID=
     recorded_rc=$(command -p cat "$_FM_BASH_TIMEOUT_STATUS_FILE" 2>/dev/null || true)
     case "$recorded_rc" in ''|*[!0-9]*) ;; *) command_rc=$recorded_rc ;; esac
   fi
   command -p rm -f "$_FM_BASH_TIMEOUT_STATUS_FILE" "$_FM_BASH_TIMEOUT_DEADLINE_FILE" 2>/dev/null || true
   return "$command_rc"
+}
+
+_fm_external_timeout_restore_traps() {
+  trap - INT TERM HUP
+  [ -z "${_FM_EXTERNAL_TIMEOUT_TRAPS:-}" ] || eval "$_FM_EXTERNAL_TIMEOUT_TRAPS"
+  _FM_EXTERNAL_TIMEOUT_TRAPS=
+  _FM_EXTERNAL_TIMEOUT_PID=
+  _FM_EXTERNAL_TIMEOUT_STATUS=
+}
+
+# shellcheck disable=SC2317,SC2329 # Invoked by the traps fm_run_external_timeout installs.
+_fm_external_timeout_forward() {  # <signal>
+  local signal=$1 pid=${_FM_EXTERNAL_TIMEOUT_PID:-} self
+  if [ -n "$pid" ]; then
+    kill "-$signal" -- "-$pid" 2>/dev/null || kill "-$signal" "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    kill -KILL -- "-$pid" 2>/dev/null || true
+  fi
+  [ -z "${_FM_EXTERNAL_TIMEOUT_STATUS:-}" ] || rm -f "$_FM_EXTERNAL_TIMEOUT_STATUS" 2>/dev/null || true
+  _fm_external_timeout_restore_traps
+  self=$(exec /bin/sh -c 'echo "$PPID"')
+  kill "-$signal" "$self"
 }
 
 fm_run_external_timeout() {
@@ -243,11 +311,20 @@ fm_run_external_timeout() {
     exit "$command_rc"
   ' _ "$status_file" "$@"
   runner_pid=$!
+  # Like the perl path, a TERM, INT or HUP sent to the caller stops the
+  # runner's group before the caller re-raises it, so no command outlives it.
+  _FM_EXTERNAL_TIMEOUT_TRAPS=$(trap -p INT TERM HUP)
+  _FM_EXTERNAL_TIMEOUT_PID=$runner_pid
+  _FM_EXTERNAL_TIMEOUT_STATUS=$status_file
+  trap '_fm_external_timeout_forward INT' INT
+  trap '_fm_external_timeout_forward TERM' TERM
+  trap '_fm_external_timeout_forward HUP' HUP
   if wait "$runner_pid"; then
     runner_rc=0
   else
     runner_rc=$?
   fi
+  _fm_external_timeout_restore_traps
   command_rc=$(cat "$status_file" 2>/dev/null || true)
   rm -f "$status_file" 2>/dev/null || true
   case "$command_rc" in
