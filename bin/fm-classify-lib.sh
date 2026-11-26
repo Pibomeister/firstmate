@@ -1667,14 +1667,15 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
       # A long cold fold saves whole-line progress every 64 lines, so a caller
       # stopped at its deadline resumes there instead of from byte 0. A caller
       # that sets _FM_OPEN_DECISIONS_DEADLINE (a $SECONDS value) stops the fold
-      # at the first checkpoint past it with status 124.
+      # at the first checkpoint past it with status 124; the fleet scans below
+      # also stop before their next task once it has passed.
       if [ "$folded_lines" -ge 64 ]; then
         _fm_status_byte_length "$folded"
         if [ "$((offset + _FM_STATUS_BYTE_LENGTH))" -lt "$size" ]; then
           offset=$((offset + _FM_STATUS_BYTE_LENGTH))
           _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" \
             || true
-          if [ -n "${_FM_OPEN_DECISIONS_DEADLINE:-}" ] && [ "$SECONDS" -ge "$_FM_OPEN_DECISIONS_DEADLINE" ]; then
+          if _fm_open_decisions_deadline_passed; then
             rm -f "$chunk_file"
             return 124
           fi
@@ -1691,6 +1692,11 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" || return 1
   fi
   printf '%s' "$open"
+}
+
+# True once a caller-set _FM_OPEN_DECISIONS_DEADLINE (a $SECONDS value) has passed.
+_fm_open_decisions_deadline_passed() {
+  [ -n "${_FM_OPEN_DECISIONS_DEADLINE:-}" ] && [ "$SECONDS" -ge "$_FM_OPEN_DECISIONS_DEADLINE" ]
 }
 
 # Byte length of <text>, independent of the caller's locale.
@@ -1717,12 +1723,16 @@ _fm_open_decisions_write_cursor() {  # <cursor> <version> <offset> <ident> <open
 # each task's status log through status_open_decisions_incremental instead of
 # the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
 # bounded by new appends rather than total lifetime log size across every task.
+# Past _FM_OPEN_DECISIONS_DEADLINE it returns 124 before folding another task;
+# every task folded so far already committed its own cursor, so a retry resumes
+# with the next one.
 scan_open_decisions_incremental() {  # <state>
   local state=$1 f task open line exclude fold_rc
   exclude=$(status_scan_parent_channel_exclude "$state")
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
+    _fm_open_decisions_deadline_passed && return 124
     task=$(basename "$f"); task="${task%.status}"
     fold_rc=0
     open=$(status_open_decisions_incremental "$f") || fold_rc=$?
@@ -2193,10 +2203,13 @@ EOF
   mv -f "$tmp" "$state/.status-presentation-cursor" || { rm -f "$tmp"; return 1; }
 }
 
+# Snapshot sibling of scan_open_decisions_incremental, with the same
+# between-task deadline.
 scan_open_decisions_snapshot() {  # <state> <task-and-endpoint-snapshot>
   local state=$1 snapshot=$2 task endpoint ident f open line fold_rc
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
+    _fm_open_decisions_deadline_passed && return 124
     f="$state/$task.status"
     fold_rc=0
     open=$(status_open_decisions_incremental "$f" "$endpoint") || fold_rc=$?
