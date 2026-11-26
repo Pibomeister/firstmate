@@ -30,31 +30,15 @@ ack_stopped_cycle() {  # <state>
     --recovery-generation "$generation"
 }
 
-reap() { kill "$1" 2>/dev/null || true; wait "$1" 2>/dev/null || true; }
-
-is_live_non_zombie() {
-  local pid=$1 stat
-  kill -0 "$pid" 2>/dev/null || return 1
-  stat=$(ps -p "$pid" -o stat= 2>/dev/null || true)
-  case "$stat" in
-    Z*) return 1 ;;
-  esac
-  return 0
-}
-
-wait_for_exit() {
-  local pid=$1 limit=${2:-50} i=0
-  while [ "$i" -lt "$limit" ]; do
-    if ! is_live_non_zombie "$pid"; then
-      wait "$pid"
-      return "$?"
-    fi
-    sleep 0.1
-    i=$((i + 1))
-  done
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  return 124
+# TERM must end an owned watcher through its EXIT cleanup. A process still
+# alive after the file's standard 100-tick budget fails here, instead of an
+# unbounded wait hanging the suite until the job timeout.
+reap() {
+  local rc
+  kill "$1" 2>/dev/null || true
+  wait_for_exit "$1" 100
+  rc=$?
+  [ "$rc" -ne 124 ] || fail "watcher pid $1 did not exit within 10s of TERM"
 }
 
 file_mtime() {
