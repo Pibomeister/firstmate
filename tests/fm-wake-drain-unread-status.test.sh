@@ -801,6 +801,36 @@ test_presentation_runner_start_failure_is_not_a_fold_timeout() {
   pass 'a presentation runner start failure still presents and is not reported as a fold timeout'
 }
 
+# A drain killed with KILL leaves its presentation worker running until the
+# worker's watchdog notices. A drain started in that window must keep the
+# scratch that live worker is still using, and remove it once the worker is gone.
+test_presentation_scratch_of_a_live_worker_outlives_its_dead_owner() {
+  local dir state dead worker scratch
+  dir=$(make_case live-worker-presentation-scratch)
+  state="$dir/state"
+  sleep 0 &
+  dead=$!
+  wait "$dead" 2>/dev/null || true
+  sleep 60 &
+  worker=$!
+  scratch="$state/.wake-drain-presentation.$dead.worker1"
+  mkdir "$scratch"
+  printf '%s\n' "$worker" > "$scratch/worker.pid"
+  printf 'chunk\n' > "$scratch/chunk"
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/drain.out" 2> "$dir/drain.err" \
+    || { kill "$worker" 2>/dev/null; fail "drain failed: $(cat "$dir/drain.err")"; }
+  if [ ! -f "$scratch/chunk" ]; then
+    kill "$worker" 2>/dev/null || true
+    fail 'a drain removed presentation scratch that a live worker still used'
+  fi
+  kill "$worker" 2>/dev/null || true
+  wait "$worker" 2>/dev/null || true
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/again.out" 2> "$dir/again.err" \
+    || fail "drain after the worker ended failed: $(cat "$dir/again.err")"
+  [ ! -e "$scratch" ] || fail 'scratch of a dead owner and dead worker was kept'
+  pass 'presentation scratch of a live worker outlives its dead owner and is removed after the worker ends'
+}
+
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
   local dir state dead
   dir=$(make_case orphan-presentation-scratch)
@@ -974,5 +1004,6 @@ test_warm_routine_history_is_bounded_without_acknowledging_it
 test_invalid_presentation_bound_falls_back_to_the_default
 test_unwritable_presentation_scratch_still_presents_outcomes_and_liveness
 test_presentation_runner_start_failure_is_not_a_fold_timeout
+test_presentation_scratch_of_a_live_worker_outlives_its_dead_owner
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed
 test_cold_decision_fold_progresses_across_presentation_deadlines

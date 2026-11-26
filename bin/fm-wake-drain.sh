@@ -902,6 +902,10 @@ print_status_presentation() {  # [<deduped-raw-rows>]
 # other than the fold bound stays silent in the exit status, as it always has.
 drain_presentation_worker() {  # [<deduped-raw-rows>]
   local branch_rc=0 status_rc=0
+  # Record this worker's own pid (Bash 3.2 has no BASHPID) so a later drain's
+  # orphan sweep keeps the directory while this worker still runs.
+  [ -z "$_FM_STATUS_SCRATCH_DIR" ] \
+    || (exec /bin/sh -c 'echo "$PPID"') > "$_FM_STATUS_SCRATCH_DIR/worker.pid" 2>/dev/null || true
   if [ -n "$_FM_STATUS_SCRATCH_DIR" ]; then
     print_status_presentation "${1:-}" || status_rc=$?
   else
@@ -917,9 +921,11 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
 # A drain killed before its exit trap ran leaves its attempt directory behind.
 # The directory name carries its owner's pid, and a live owner always has a
 # live pid, so only a directory whose owner is gone is removed. Directories
-# without an owner pid are never touched.
+# without an owner pid are never touched. A killed owner's worker can outlive
+# it until its watchdog stops it, so a directory whose recorded worker pid is
+# still live is kept too; a reused pid only delays removal to a later sweep.
 sweep_orphan_presentation_scratch() {
-  local dir owner
+  local dir owner worker
   for dir in "$STATE"/.wake-drain-presentation.*.*; do
     [ -d "$dir" ] || continue
     owner=${dir#"$STATE"/.wake-drain-presentation.}
@@ -928,6 +934,14 @@ sweep_orphan_presentation_scratch() {
     [ "$owner" != "$DRAIN_PARENT_PID" ] || continue
     kill -0 "$owner" 2>/dev/null && continue
     ps -p "$owner" >/dev/null 2>&1 && continue
+    worker=$(cat "$dir/worker.pid" 2>/dev/null || true)
+    case "$worker" in
+      ''|*[!0-9]*) ;;
+      *)
+        kill -0 "$worker" 2>/dev/null && continue
+        ps -p "$worker" >/dev/null 2>&1 && continue
+        ;;
+    esac
     rm -rf -- "$dir" 2>/dev/null || true
   done
 }
