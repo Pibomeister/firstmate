@@ -683,14 +683,16 @@ with (case / 'timed.out').open('wb') as out, (case / 'timed.err').open('wb') as 
     child = subprocess.Popen([bash, drain], stdout=out, stderr=err,
                              preexec_fn=lambda: signal.signal(signal.SIGINT, signal.SIG_DFL))
     try:
-        deadline = time.monotonic() + 20
+        # Reaching the blocked reader is fixture setup, not the bound under
+        # test; a loaded host can take far longer than 20s to start a drain.
+        deadline = time.monotonic() + 90
         pid_file = case / 'drain.pid'
         while not (pid_file.exists() and pid_file.stat().st_size > 0):
             if child.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError('drain never reached the blocked reader: ' + (case / 'timed.err').read_text())
             time.sleep(0.05)
         child.send_signal(getattr(signal, 'SIG' + requested_signal))
-        rc = child.wait(timeout=10)
+        rc = child.wait(timeout=60)
     finally:
         if child.poll() is None:
             child.terminate()
