@@ -10,11 +10,12 @@
 # fleet-state mutation.
 # The --json and --secondmate-home-summary modes are single-flight per
 # home (state/.fleet-snapshot.lock): a second run waits up to
-# FM_SNAPSHOT_SINGLE_FLIGHT_WAIT seconds (default 30) for the holder to
+# 30 seconds for the holder to
 # finish and never starts while it runs; past that bound it prints no
 # document, names the holder on stderr, and exits 75 without starting
 # its fan-out, so overlapping monitoring under load cannot multiply the
 # churn it exists to observe.
+# With FM_TEST_SEAM=1, FM_SNAPSHOT_SINGLE_FLIGHT_WAIT overrides that wait.
 #
 # Top-level fields:
 #   schema: stable schema id.
@@ -345,7 +346,7 @@ snapshot_stage() {  # <stage-name>
 # full snapshot (the --json and --secondmate-home-summary modes) holds the
 # per-home lock state/.fleet-snapshot.lock for its whole run and a second
 # run never starts while one is still running. A second run first waits
-# up to FM_SNAPSHOT_SINGLE_FLIGHT_WAIT seconds (default 30) for the holder
+# up to 30 seconds for the holder
 # to finish, because callers such as the home-summary refresh have no
 # fresher copy to fall back on; only a holder still running past that
 # bound makes it start no fan-out at all - it prints nothing on stdout,
@@ -359,11 +360,13 @@ if [ "$OUTPUT_MODE" != contribution-input ]; then
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"
   SNAPSHOT_LOCK="$STATE/.fleet-snapshot.lock"
-  SNAPSHOT_SINGLE_FLIGHT_WAIT=${FM_SNAPSHOT_SINGLE_FLIGHT_WAIT:-30}
-  case "$SNAPSHOT_SINGLE_FLIGHT_WAIT" in
-    ''|*[!0-9]*) SNAPSHOT_SINGLE_FLIGHT_WAIT=30 ;;
-    *) SNAPSHOT_SINGLE_FLIGHT_WAIT=$((10#$SNAPSHOT_SINGLE_FLIGHT_WAIT)) ;;
-  esac
+  SNAPSHOT_SINGLE_FLIGHT_WAIT=30
+  if [ "${FM_TEST_SEAM:-0}" = 1 ]; then
+    case "${FM_SNAPSHOT_SINGLE_FLIGHT_WAIT:-}" in
+      ''|*[!0-9]*) ;;
+      *) SNAPSHOT_SINGLE_FLIGHT_WAIT=$((10#$FM_SNAPSHOT_SINGLE_FLIGHT_WAIT)) ;;
+    esac
+  fi
   if ! fm_lock_acquire_wait_max "$SNAPSHOT_LOCK" "$SNAPSHOT_SINGLE_FLIGHT_WAIT"; then
     echo "fm-fleet-snapshot: another snapshot is already running in this home (pid ${FM_LOCK_HELD_PID:-unknown}); not starting a second" >&2
     exit 75

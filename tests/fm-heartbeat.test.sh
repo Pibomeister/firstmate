@@ -1212,6 +1212,45 @@ test_rearmed_ticker_anchors_due_to_last_publication() {
   pass "a re-armed ticker anchors its first due to the last publication"
 }
 
+test_failed_heartbeat_publications_keep_retry_interval() {
+  local home stub generated mode i bad
+  for mode in expired recent; do
+    home=$(make_home "watch-failed-$mode")
+    rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+    generated=$(date +%s)
+    [ "$mode" != expired ] || generated=$((generated - 60))
+    jq -n --argjson g "$generated" \
+      '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true}' \
+      > "$home/state/heartbeat.json"
+    printf '300 0.00 0.00\n' > "$home/load"
+    stub=$(launch_log_stub "watch-failed-$mode")
+    printf 'exit 1\n' >> "$stub"
+    fm_test_track_watcher_state "$home/state"
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_LOAD_FILE="$home/load" \
+      FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+      FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+      "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+    WATCH_PID=$!
+    wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the failed-publication watcher never polled"
+    i=0
+    while [ "$(launch_count "watch-failed-$mode")" -lt 3 ] && [ "$i" -lt 900 ]; do
+      kill -0 "$WATCH_PID" 2>/dev/null || fail "the failed-publication watcher exited"
+      command -p sleep 0.1
+      i=$((i + 1))
+    done
+    kill -TERM "$WATCH_PID" 2>/dev/null
+    wait "$WATCH_PID" 2>/dev/null
+    WATCH_PID=
+    [ "$(launch_count "watch-failed-$mode")" -ge 3 ] || fail "failed publications never retried"
+    assert_equals "$generated" "$(jq -r .generated_epoch "$home/state/heartbeat.json")" \
+      "the failing publisher unexpectedly advanced the ledger"
+    bad=$(awk -v mode="$mode" 'NR>(mode == "recent" ? 2 : 1) && $1-p < 11 {print $1-p} {p=$1}' \
+      "$TMP_ROOT/watch-failed-$mode.runs")
+    [ -z "$bad" ] || fail "$mode publication failures retried before the 12-second throttled interval: $bad"
+  done
+  pass "failed publications retain the throttled retry interval for expired and recent ledgers"
+}
+
 test_status_change_collects_before_grace_without_a_wake() {
   local home stub before seq i=0 child comm
   home=$(make_home watch-status-before-grace)
@@ -1544,6 +1583,7 @@ test_a_relevant_change_collects_without_waiting_for_idle
 test_a_relevant_change_collects_without_waiting_for_idle 0.2
 test_a_change_under_load_waits_for_the_throttled_idle_due
 test_rearmed_ticker_anchors_due_to_last_publication
+test_failed_heartbeat_publications_keep_retry_interval
 test_status_change_collects_before_grace_without_a_wake
 test_fractional_open_work_poll_wait
 test_fractional_checkpoint_poll_wait

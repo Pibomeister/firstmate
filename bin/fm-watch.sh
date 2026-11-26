@@ -5299,7 +5299,8 @@ fi
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
 #
-# A status signal launches the helper at once. Without one, it launches only
+# A status signal launches the helper at once when load is calm. Without one,
+# it launches only
 # when both the ledger and this watcher's last launch are older than the idle
 # gap drawn at that launch, so a stale ledger cannot cause launches on every
 # poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
@@ -5307,12 +5308,19 @@ HOME_SUMMARY_PID=
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
 home_summary_refresh_detached() {
+  local now factor
   if [ -n "$HOME_SUMMARY_PID" ]; then
     if kill -0 "$HOME_SUMMARY_PID" 2>/dev/null; then
       return 0
     fi
     wait "$HOME_SUMMARY_PID" || true
     HOME_SUMMARY_PID=
+  fi
+  fm_watch_now now
+  factor=$(fm_load_factor)
+  if [ "$factor" -gt 1 ] && [ "$HOME_SUMMARY_LAST" -gt 0 ] \
+    && [ $((now - HOME_SUMMARY_LAST)) -lt $(((HOME_SUMMARY_INTERVAL - HOME_SUMMARY_JITTER) * factor)) ]; then
+    return 0
   fi
   FM_HOME_SUMMARY_IF_IDLE=1 \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
@@ -5324,10 +5332,11 @@ home_summary_refresh_detached() {
   watch_idle_due HOME_SUMMARY_GAP 0 "$HOME_SUMMARY_INTERVAL" "$HOME_SUMMARY_JITTER"
 }
 home_summary_idle_due() {
-  local now
+  local now gap
   fm_watch_now now
-  [ $((now - HOME_SUMMARY_LAST)) -ge "$HOME_SUMMARY_GAP" ] \
-    && [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_GAP" ]
+  gap=$((HOME_SUMMARY_GAP * $(fm_load_factor)))
+  [ $((now - HOME_SUMMARY_LAST)) -ge "$gap" ] \
+    && [ "$(age_of "$STATE/home-summary.json")" -ge "$gap" ]
 }
 
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
@@ -5466,6 +5475,9 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     launch_generated=$generated
   fi
   watch_idle_due due "$anchor" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
+  if [ "$due" -le "$now" ]; then
+    watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
+  fi
   while :; do
     # Sleep one poll, or only until a nearer idle due, so the idle interval is
     # the launch interval rather than the next poll after it.
@@ -5483,13 +5495,16 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     if [ -n "$FLEET_HEARTBEAT_PID" ]; then
       wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
       FLEET_HEARTBEAT_PID=
+      fm_watch_now now
       # A launch that published nothing leaves generated_epoch unchanged.
       # Preserve the deadline anchored to that publication instead of the
       # later full interval drawn when the skipped launch started.
       if fleet_heartbeat_ledger_generated generated; then
         if [ -n "$launch_generated" ] && [ "$generated" = "$launch_generated" ]; then
           candidate=$((generated + HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))
-          [ "$candidate" -ge "$due" ] || due=$candidate
+          if [ "$candidate" -gt "$now" ] && [ "$candidate" -lt "$due" ]; then
+            due=$candidate
+          fi
         fi
         launch_generated=$generated
       else

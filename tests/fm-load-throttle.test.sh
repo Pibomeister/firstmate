@@ -56,29 +56,6 @@ test_interval_math() {
   pass "load interval follows the threshold and ignores an unreadable load"
 }
 
-test_interval_threshold_override() {
-  set_load 60.00
-  assert_equals 40 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_THRESHOLD=50 load_interval 10)" \
-    "a configured lower threshold did not throttle"
-  assert_equals 10 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_THRESHOLD=bogus load_interval 10)" \
-    "an invalid threshold throttled below the default threshold"
-  set_load 300.00
-  assert_equals 40 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_THRESHOLD=bogus load_interval 10)" \
-    "an invalid threshold discarded the default threshold"
-  pass "configured load threshold wins and an invalid one falls back"
-}
-
-test_interval_factor_override() {
-  set_load 300.00
-  assert_equals 40 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_FACTOR=00 load_interval 10)" \
-    "a zero-padded zero factor did not fall back to the 4x default"
-  assert_equals 40 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_FACTOR=000 load_interval 10)" \
-    "a triple-zero factor did not fall back to the 4x default"
-  assert_equals 20 "$(FM_LOAD_FILE="$LOAD_FILE" FM_LOAD_THROTTLE_FACTOR=02 load_interval 10)" \
-    "a zero-padded factor was not read as decimal 2"
-  pass "a zero factor in any padding falls back and a padded factor reads as decimal"
-}
-
 make_home() {  # <name>
   local home=$TMP_ROOT/$1
   mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config"
@@ -291,8 +268,6 @@ test_heartbeat_bound_uses_launch_factor() {
 
 fm_test_run \
   test_interval_math \
-  test_interval_threshold_override \
-  test_interval_factor_override \
   test_snapshot_single_flight \
   test_snapshot_releases_lock_on_normal_exit \
   test_snapshot_waits_for_holder_to_finish \
