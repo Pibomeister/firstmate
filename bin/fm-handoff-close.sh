@@ -165,8 +165,8 @@ endpoint_gone() {
       # missing; only an answer naming the pane, or no answer, keeps it present.
       out=$(fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_id}' 2>&1) || rc=$?
       if [ "$rc" = 0 ]; then
-        ! printf '%s\n' "$out" | grep -Fqx -- "$terminal"
-        return
+        if printf '%s\n' "$out" | grep -Fqx -- "$terminal"; then return 1; fi
+        return 0
       fi
       case "$out" in *"can't find"*|*"no server running"*|*"error connecting"*) return 0 ;; esac
       return 1
