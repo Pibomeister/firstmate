@@ -561,6 +561,38 @@ OWNER
   pass 'a cancellable command stops when its killed caller is a zombie not yet reaped'
 }
 
+# A caller that cancels from its TERM trap and is then killed during the cancel
+# grace must still not leave a command that ignores TERM running: the watchdog
+# outlives the grace and stops it once the caller is gone.
+test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace() {
+  local dir owner pid i=0
+  dir="$TMP_ROOT/killed-during-cancel"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+echo "$$" > "$2/owner"
+trap 'fm_cancel_bash_timeout; exit 143' TERM
+fm_run_cancellable_fn bash -c 'trap "" TERM; echo "$$" > "$1"; exec sleep 300' _ "$2/pid"
+OWNER
+  bash "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  wait_for_file "$dir/pid"
+  owner=$(cat "$dir/owner")
+  pid=$(cat "$dir/pid")
+  kill -TERM "$owner"
+  sleep 0.3
+  kill -KILL "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail 'a command that ignores TERM outlived its caller killed during the cancel grace by 10s'
+    fi
+    sleep 0.02
+  done
+  pass 'a cancelled command stops when its caller is killed during the cancel grace'
+}
+
 # A trap the caller installs during the wait, here from its own USR1 handler, is
 # the caller's: the external runner must not remove it when it restores the
 # forwarding traps it set.
@@ -1232,6 +1264,7 @@ test_run_timed_external_forwards_a_caller_term
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
 test_cancellable_command_stops_when_its_killed_caller_is_unreaped
+test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace
 test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait
 test_cancellable_runner_start_failure_is_not_a_bound
 test_timed_out_names_exactly_the_bound_statuses

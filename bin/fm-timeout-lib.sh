@@ -174,7 +174,9 @@ _fm_bash_timeout_signal() {  # <signal> <pid>
 # Stop the active fm_run_bash_timeout call from a trap in the calling shell.
 # The pid variables are that call's dynamically scoped locals. A job launched
 # but not yet recorded is recovered from $!, and a reaped job is never
-# signalled because each pid is cleared as soon as it is reaped.
+# signalled because each pid is cleared as soon as it is reaped. The watchdog
+# stays alive until the command is reaped, so a caller killed during the grace
+# below still has its command stopped.
 fm_cancel_bash_timeout() {
   case "${_FM_BASH_TIMEOUT_LAUNCHING:-}" in
     child|watchdog)
@@ -190,7 +192,6 @@ fm_cancel_bash_timeout() {
       ;;
   esac
   _FM_BASH_TIMEOUT_LAUNCHING=
-  _fm_bash_timeout_signal TERM "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}"
   if [ -n "${_FM_BASH_TIMEOUT_CHILD_PID:-}" ]; then
     _fm_bash_timeout_signal TERM "$_FM_BASH_TIMEOUT_CHILD_PID"
     command -p sleep 1

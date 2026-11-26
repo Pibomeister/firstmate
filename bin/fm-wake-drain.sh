@@ -847,8 +847,11 @@ print_status_sections() {
   if [ "$sections_rc" -ne 0 ]; then
     rm -f -- "$prepared"
     # 124 is the open-decisions fold reaching its bound; anything else failed.
-    [ "$sections_rc" -eq 124 ] || sections_rc=1
-    return "$sections_rc"
+    [ "$sections_rc" -eq 124 ] || return 1
+    # Divergence keeps no receipt, so a fold that reached its bound does not
+    # withhold it.
+    print_record_divergence_section
+    return 124
   fi
   # Reuse the unread scan instead of reading and classifying the span twice.
   acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented

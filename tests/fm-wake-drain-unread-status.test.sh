@@ -528,16 +528,26 @@ exec perl -e '
 ' "$@"
 SH
   chmod +x "$dir/slow-fold-reader"
+  # A drain whose backlog reports one record divergence, so the bounded fold
+  # can be seen not to withhold it.
+  cp -R "$ROOT/bin" "$dir/bin"
+  cat > "$dir/bin/fm-captain-hold.sh" <<'SH'
+#!/bin/sh
+[ "$1" = diverged ] || exit 2
+printf 'held-task\tdeadline\theld-key\tdeadline divergence fixture\n'
+SH
+  chmod +x "$dir/bin/fm-captain-hold.sh"
   fm_run_timed 75 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=1 \
     FM_STATUS_SPAN_READER="$dir/slow-fold-reader" FM_CONFIG_OVERRIDE="$dir/config" \
     FM_TEST_SEAM=1 FM_TEST_HARNESS=claude \
-    "$BASH" "$DRAIN" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
+    "$BASH" "$dir/bin/fm-wake-drain.sh" > "$dir/timed.out" 2> "$dir/timed.err" || rc=$?
   assert_equals 124 "$rc" "a fold past its bound must report incomplete execution: $(cat "$dir/timed.err")"
   assert_grep 'WAKE DRAIN INCOMPLETE:' "$dir/timed.err" 'product did not report its own deadline'
   assert_grep 'phase=status-open-decisions exceeded' "$dir/timed.err" 'deadline did not identify the decision fold'
   assert_grep 'WAKE_ACK_REQUIRED:' "$dir/timed.err" 'bounded presentation hid the queue acknowledgement token'
   assert_grep '[seq 1] deadline: routine outcome fixture' "$dir/timed.out" 'a fold deadline skipped branch outcomes'
   assert_grep 'WARNING: queued wakes pending' "$dir/timed.err" 'a fold deadline skipped the liveness check'
+  assert_grep 'held-task [key=held-key] reads resolved in deadline' "$dir/timed.out" 'a fold deadline withheld record divergence'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'deadline consumed an unhandled wake'
   cmp "$dir/status.before" "$status" || fail 'deadline changed a status source'
   FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" FM_TEST_SEAM=1 FM_TEST_HARNESS=claude \
@@ -547,7 +557,7 @@ SH
   assert_grep 'answer must remain unread until presented' "$dir/retry.out" 'failed presentation advanced the unread receipt'
   assert_grep '[key=held]' "$dir/retry.out" 'failed presentation lost an open decision'
   cmp "$dir/queue.before" "$state/.wake-queue" || fail 'recovery acknowledged a still-unhandled wake'
-  pass 'a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers'
+  pass 'a decision fold past its bound names its phase, still presents outcomes, divergence and liveness, preserves pending data and recovers'
 }
 
 test_large_unpresented_span_completes_without_a_presentation_deadline() {
