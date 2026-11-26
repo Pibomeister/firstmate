@@ -1,0 +1,16 @@
+== scenario 1: bounded drains converge (bound=2s, 2000 history lines)
+attempt 1 rc=124 secs=7 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=79384 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 2 rc=0 secs=7 open_decisions_shown=30 stderr_tail=WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 8s) - full banner already printed this episode.
+final attempt 2: decisions presented = 30/30; fresh note presented = 1
+status history unchanged: yes
+== repeat drain does not replay the fresh note
+repeat rc=0 fresh-note replays=0 decisions still open=30
+== scenario 2: TERM during a drain leaves no scratch and no live children
+scratch during drain: LAB/state/.wake-drain-presentation.49493.jsiiA4
+children during drain: 49493 
+~/.no-mistakes/evidence/01M8BN9D2PWSE3DQH8BKXN8M63/live-drain-scenario.sh: line 39: 49484 Terminated: 15          run FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=60 bin/fm-wake-drain.sh > "$OUT/term.out" 2> "$OUT/term.err"
+term rc=143
+scratch dirs left after TERM: 0
+children still alive after TERM: 0
+== retry after TERM presents the unread note
+after-term rc=0 second-note shown=0 decisions=30

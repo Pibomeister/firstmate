@@ -3,14 +3,15 @@ ok - failed output preserves unread notes until a successful presentation
 ok - already-presented note: lines are not re-surfaced on the next drain
 ok - a brand-new note: after presentation is surfaced without replaying handled lines
 ok - a queued status signal annotates every unread note, not only the newest
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 55229.1795688202.nivyaz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 55229.1795688202.nivyaz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 55229.1795688202.nivyaz
 ok - a pending-reply resolution buried under a later note surfaces once and closes OPEN DECISIONS
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 62167.1795667041.4KvTdz
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 11523.1795688223.8D0ecO
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 11523.1795688223.8D0ecO
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 11523.1795688223.8D0ecO
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (69740 to 69740): Operation not permitted
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 11523.1795688223.8D0ecO
 ok - a self-announced pending-reply close does not wake yet still surfaces once in UNREAD STATUS
 ok - unread status over the former byte cap preserves every line
 ok - presentation cursor advances only through its captured endpoint
@@ -18,8 +19,23 @@ ok - a reused task id starts its replacement status log unread at byte zero
 ok - fallback identity still presents and advances status state
 ok - snapshot failures are reported visibly
 ok - OPEN DECISIONS still folds needs-decision/blocked independently of unread notes
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 51172.1795667406.JY1DG3
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 6004.1795688278.S4EO9e
 ok - an empty-queue backstop presentation still preserves the status for its later signal annotation
+{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (18191 to 18191): Operation not permitted
 ok - routine working and branch-covered done lines print nothing on an empty-queue drain
-ok - a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers
-Terminated: 15
+ok - a decision fold past its bound names its phase, still presents outcomes, divergence and liveness, preserves pending data and recovers
+ok - a large unpresented span completes and commits even when it takes longer than the bound
+ok - timeout during fold cleans owned scratch and preserves a concurrent reader
+ok - TERM during preparation and fold cleans owned scratch and preserves a concurrent reader
+ok - INT during preparation and fold cleans owned scratch and preserves a concurrent reader
+ok - mixed tasks present informational rows once while preserving routine-only context
+ok - warm routine-only history completes without changing wake, decision or presentation ownership
+ok - an invalid presentation bound falls back to the default and still presents
+ok - a presentation scratch failure still presents branch outcomes and liveness
+ok - a presentation runner start failure still presents and is not reported as a fold timeout
+ok - presentation scratch of a live worker outlives its dead owner and is removed after the worker ends
+ok - fresh scratch of a dead owner with no recorded worker is kept until it is old
+ok - presentation scratch of a dead owner is removed and live scratch is kept
+ok - a cold decision fold keeps its progress across 2 two-second presentation deadlines
+ok - both open-decision scans past their deadline fold one changed task per call past an unchanged prefix and then complete
+EXIT=0
