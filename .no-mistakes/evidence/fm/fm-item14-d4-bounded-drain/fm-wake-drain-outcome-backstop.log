@@ -4,7 +4,6 @@ ok - only a strictly newer outcome for the same task can suppress its latest cap
 ok - a branch annotation and queue acknowledgement cannot consume the main drain's loss backstop
 ok - status byte position distinguishes handled and later same-second events
 ok - drain cost and suppression are independent of append-only outcome history
-{run-worktree}/bin/fm-timeout-lib.sh: child setpgid (81164 to 81164): Operation not permitted
 ok - backstop receipts prevent repeats without consuming delayed signal annotations
 ok - a failed output consumer leaves the backstop unacknowledged for retry
 ok - receipt failure may repeat a presented backstop but cannot lose it
@@ -17,4 +16,3 @@ ok - held-lock initialization accepts a descendant of the outcome lock owner
 ok - index self-heal runs only while the outcome lock is held
 ok - an over-bound unclassifiable routine event stays silent
 ok - the outcome backstop caps each item and its total task output deterministically
-EXIT=0 secs=927

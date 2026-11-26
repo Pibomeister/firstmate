@@ -1,0 +1,8 @@
+drain pid 64954: bash bin/fm-wake-drain.sh
+scratch during drain: LAB/state/.wake-drain-presentation.64954.i2aLTL
+descendants during drain: 67801 74537 67802 
+term rc=143
+scratch dirs left after TERM: 0
+descendants still alive after TERM: 0
+killed drain printed the note: 0
+retry rc=0 secs=32 note shown=1 decisions=30

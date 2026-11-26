@@ -3,29 +3,17 @@ ok - failed output preserves unread notes until a successful presentation
 ok - already-presented note: lines are not re-surfaced on the next drain
 ok - a brand-new note: after presentation is surfaced without replaying handled lines
 ok - a queued status signal annotates every unread note, not only the newest
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 80710.1795649954.yunyiI
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 80710.1795649954.yunyiI
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 80710.1795649954.yunyiI
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 8201.1795673424.64jsuG
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 8201.1795673424.64jsuG
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 8201.1795673424.64jsuG
 ok - a pending-reply resolution buried under a later note surfaces once and closes OPEN DECISIONS
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 84612.1795650046.3DlHZF
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 84612.1795650046.3DlHZF
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 84612.1795650046.3DlHZF
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 84612.1795650046.3DlHZF
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 80186.1795673450.LAVBuK
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 80186.1795673450.LAVBuK
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 80186.1795673450.LAVBuK
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 80186.1795673450.LAVBuK
 ok - a self-announced pending-reply close does not wake yet still surfaces once in UNREAD STATUS
 ok - unread status over the former byte cap preserves every line
 ok - presentation cursor advances only through its captured endpoint
 ok - a reused task id starts its replacement status log unread at byte zero
 ok - fallback identity still presents and advances status state
 ok - snapshot failures are reported visibly
-ok - OPEN DECISIONS still folds needs-decision/blocked independently of unread notes
-WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 30837.1795650506.LFxZ3K
-ok - an empty-queue backstop presentation still preserves the status for its later signal annotation
-ok - routine working and branch-covered done lines print nothing on an empty-queue drain
-ok - a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers
-ok - a large unpresented span completes and commits even when it takes longer than the bound
-ok - timeout during fold cleans owned scratch and preserves a concurrent reader
-Traceback (most recent call last):
-  File "<stdin>", line 18, in <module>
-RuntimeError: drain never reached the blocked reader: 
-not ok - presentation must preserve its terminal status (expected '143', got '1')
-EXIT=1 secs=1483

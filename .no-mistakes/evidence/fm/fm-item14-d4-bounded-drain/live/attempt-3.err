@@ -1,0 +1,2 @@
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 28s) - full banner already printed this episode.
+WAKE DRAIN INCOMPLETE: pid=2903 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.

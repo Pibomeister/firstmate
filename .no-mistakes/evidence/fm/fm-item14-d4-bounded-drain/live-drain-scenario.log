@@ -1,4 +1,21 @@
-### Scenario 1: cold fold of 40 open decisions + 2000 history lines under a 2s bound
-  attempt 1: rc=124 took=85s | WAKE DRAIN INCOMPLETE: pid=31181 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
-  attempt 2: rc=124 took=37s | WAKE DRAIN INCOMPLETE: pid=20827 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
-  attempt 3: rc=124 took=35s | WAKE DRAIN INCOMPLETE: pid=18656 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+== scenario 1: bounded drains converge (bound=2s, 3000 history lines)
+attempt 1 rc=124 secs=34 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=28171 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 2 rc=124 secs=15 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=42768 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 3 rc=124 secs=10 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=2903 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 4 rc=124 secs=10 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=25665 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 5 rc=124 secs=13 open_decisions_shown=0 stderr_tail=WAKE DRAIN INCOMPLETE: pid=54348 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+attempt 6 rc=0 secs=10 open_decisions_shown=30 stderr_tail=WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 61s) - full banner already printed this episode.
+final attempt 6: decisions presented = 30/30; fresh note presented = 1
+status history unchanged: yes
+== repeat drain does not replay the fresh note
+repeat rc=0 fresh-note replays=0 decisions still open=30
+== scenario 2: TERM during a drain leaves no scratch and no live children
+scratch during drain: LAB/state/.wake-drain-presentation.73675.UwBu09
+children during drain: 73675 
+~/.no-mistakes/evidence/01M8B72FVRP2YT49P0A2P4WW70/live-drain-scenario.sh: line 39: 73664 Terminated: 15          run FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=60 bin/fm-wake-drain.sh > "$OUT/term.out" 2> "$OUT/term.err"
+term rc=143
+scratch dirs left after TERM: 1
+children still alive after TERM: 1
+== retry after TERM presents the unread note
+after-term rc=0 second-note shown=0 decisions=30
+BOUND=2 LINES_N=3000 bash $E/live-drain-scenario.sh  $E/live  8.85s user 9.27s system 15% cpu 2:00.18 total

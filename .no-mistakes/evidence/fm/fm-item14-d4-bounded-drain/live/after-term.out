@@ -1,0 +1,33 @@
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-live [key=k00] needs-decision: live decision 00
+task-live [key=k01] needs-decision: live decision 01
+task-live [key=k02] needs-decision: live decision 02
+task-live [key=k03] needs-decision: live decision 03
+task-live [key=k04] needs-decision: live decision 04
+task-live [key=k05] needs-decision: live decision 05
+task-live [key=k06] needs-decision: live decision 06
+task-live [key=k07] needs-decision: live decision 07
+task-live [key=k08] needs-decision: live decision 08
+task-live [key=k09] needs-decision: live decision 09
+task-live [key=k10] needs-decision: live decision 10
+task-live [key=k11] needs-decision: live decision 11
+task-live [key=k12] needs-decision: live decision 12
+task-live [key=k13] needs-decision: live decision 13
+task-live [key=k14] needs-decision: live decision 14
+task-live [key=k15] needs-decision: live decision 15
+task-live [key=k16] needs-decision: live decision 16
+task-live [key=k17] needs-decision: live decision 17
+task-live [key=k18] needs-decision: live decision 18
+task-live [key=k19] needs-decision: live decision 19
+task-live [key=k20] needs-decision: live decision 20
+task-live [key=k21] needs-decision: live decision 21
+task-live [key=k22] needs-decision: live decision 22
+task-live [key=k23] needs-decision: live decision 23
+task-live [key=k24] needs-decision: live decision 24
+task-live [key=k25] needs-decision: live decision 25
+task-live [key=k26] needs-decision: live decision 26
+task-live [key=k27] needs-decision: live decision 27
+task-live [key=k28] needs-decision: live decision 28
+task-live [key=k29] needs-decision: live decision 29
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.

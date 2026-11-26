@@ -1,0 +1,7 @@
+ok - late status and routine receipts reach the return consumer while incomplete catch-up stays gated
+ok - quiet exit archives detail and reports only receipt, retaining historical blocker
+ok - quiet exit retry uses original buffer until archive receipt exists
+ok - quiet archive failure preserves buffer; presentation failure retries durable receipt
+ok - unfinished quiet exit refuses re-entry until retry; new exits own retained or empty detail
+ok - quiet receipt does not reinterpret legacy gates, bypass, or deadlock later real away gates
+ok - return catch-up owns live blocker remediation, reports itself to Bearings as content, preserves evidence once, and clears idempotently
