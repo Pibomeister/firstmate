@@ -1,0 +1,54 @@
+memory-guard: status=alarm swap_used_mb=0 top_pid=520 top_rss_mb=4464 top_comm=mds_stores mode=observe action=none
+MEMORY_GUARD_ALARM: pid 520 (mds_stores) has held 4464 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 620 (spindump) has held 797 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 707 (Orca) has held 1153 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 708 (Google Chrome) has held 896 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 877 (Slack Helper (Re) has held 522 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 965 (OrbStack Helper) has held 2600 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1237 (Google Chrome He) has held 595 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1407 (Orca Helper (Ren) has held 753 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1807 (node) has held 748 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2621 (Orca Agents) has held 671 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 4054 (Creative Cloud U) has held 553 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 13227 (Google Chrome He) has held 533 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24447 (opencode) has held 805 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33681 (bun) has held 2070 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 34705 (python3.13) has held 3409 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 36485 (mediaanalysisd) has held 1718 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 38288 (Google Chrome He) has held 550 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 87710 (2.1.332) has held 530 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 89455 (bash) has held 1148 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 89567 (2.1.332) has held 518 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 26514 (2.1.332) has held 927 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 96944 (2.1.332) has held 692 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 61384 (2.1.332) has held 697 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 77071 (2.1.332) has held 817 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 70919 (2.1.332) has held 710 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 82241 (2.1.332) has held 784 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 32280 (2.1.332) has held 670 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98674 (2.1.332) has held 581 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 22153 (2.1.332) has held 673 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 78260 (2.1.332) has held 911 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 57341 (2.1.332) has held 524 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 21216 (2.1.332) has held 859 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 87489 (2.1.332) has held 597 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98616 (2.1.332) has held 694 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2083 (2.1.332) has held 679 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 57408 (2.1.332) has held 884 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 56037 (2.1.332) has held 722 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 62561 (2.1.332) has held 676 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80334 (2.1.332) has held 1082 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 53328 (2.1.332) has held 748 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 19071 (2.1.332) has held 587 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98794 (2.1.332) has held 684 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80523 (2.1.332) has held 616 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 70326 (2.1.332) has held 650 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 44589 (2.1.332) has held 792 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 14527 (2.1.332) has held 652 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 74482 (2.1.332) has held 828 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24108 (2.1.332) has held 632 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 49617 (2.1.332) has held 731 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 46869 (2.1.332) has held 981 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 52824 (2.1.332) has held 651 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33198 (droid) has held 537 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.
+MEMORY_GUARD_ALARM: pid 12677 (2.1.332) has held 781 MB, at or over 500 MB, for 70 s (limit 1 s). Mode observe: nothing was stopped.

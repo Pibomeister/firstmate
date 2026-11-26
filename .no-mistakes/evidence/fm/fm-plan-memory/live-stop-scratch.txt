@@ -1,0 +1,54 @@
+memory-guard: status=alarm swap_used_mb=0 top_pid=520 top_rss_mb=4464 top_comm=mds_stores mode=stop-scratch action=spared:520,spared:620,spared:707,spared:708,spared:877,spared:965,spared:1237,spared:1407,spared:1807,spared:2621,spared:4054,spared:13227,spared:24447,spared:33681,spared:34705,spared:36485,spared:38288,spared:87710,stopped:89455,spared:89567,spared:26514,spared:96944,spared:61384,spared:77071,spared:70919,spared:82241,spared:32280,spared:98674,spared:22153,spared:78260,spared:57341,spared:21216,spared:87489,spared:98616,spared:2083,spared:57408,spared:56037,spared:62561,spared:80334,spared:53328,spared:19071,spared:98794,spared:80523,spared:70326,spared:44589,spared:14527,spared:74482,spared:24108,spared:49617,spared:46869,spared:52824,spared:33198,spared:12677
+MEMORY_GUARD_ALARM: pid 520 (mds_stores) has held 4464 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (another user); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 620 (spindump) has held 797 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (another user); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 707 (Orca) has held 1180 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected orca); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 708 (Google Chrome) has held 895 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 877 (Slack Helper (Re) has held 522 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 965 (OrbStack Helper) has held 2551 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1237 (Google Chrome He) has held 594 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1407 (Orca Helper (Ren) has held 755 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected orca); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1807 (node) has held 858 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (node outside a disposable temp root); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2621 (Orca Agents) has held 802 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 4054 (Creative Cloud U) has held 553 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 13227 (Google Chrome He) has held 533 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24447 (opencode) has held 805 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected opencode); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33681 (bun) has held 2070 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 34705 (python3.13) has held 3561 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 36485 (mediaanalysisd) has held 1718 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (not scratch); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 38288 (Google Chrome He) has held 553 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 87710 (2.1.332) has held 530 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 89455 (bash) has held 1148 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: disposable scratch, stopped with TERM.
+MEMORY_GUARD_ALARM: pid 89567 (2.1.332) has held 518 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 26514 (2.1.332) has held 927 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 96944 (2.1.332) has held 692 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 61384 (2.1.332) has held 697 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 77071 (2.1.332) has held 817 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 70919 (2.1.332) has held 710 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 82241 (2.1.332) has held 788 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 32280 (2.1.332) has held 670 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98674 (2.1.332) has held 582 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 22153 (2.1.332) has held 673 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 78260 (2.1.332) has held 911 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 57341 (2.1.332) has held 524 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 21216 (2.1.332) has held 859 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 87489 (2.1.332) has held 597 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98616 (2.1.332) has held 694 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2083 (2.1.332) has held 679 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 57408 (2.1.332) has held 884 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 56037 (2.1.332) has held 722 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 62561 (2.1.332) has held 676 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80334 (2.1.332) has held 1082 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 53328 (2.1.332) has held 748 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 19071 (2.1.332) has held 587 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98794 (2.1.332) has held 684 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80523 (2.1.332) has held 616 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 70326 (2.1.332) has held 650 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 44589 (2.1.332) has held 792 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 14527 (2.1.332) has held 652 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 74482 (2.1.332) has held 828 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24108 (2.1.332) has held 632 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 49617 (2.1.332) has held 731 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 46869 (2.1.332) has held 981 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 52824 (2.1.332) has held 651 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33198 (droid) has held 537 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected droid); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 12677 (2.1.332) has held 781 MB, at or over 500 MB, for 98 s (limit 1 s). Mode stop-scratch: spared (protected claude); nothing was stopped.

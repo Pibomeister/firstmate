@@ -1,0 +1,5 @@
+mode=stop-scratch
+proc_rss_mb=500
+proc_sustained_secs=1
+scratch_stop_secs=1
+alarm_repeat_secs=1
