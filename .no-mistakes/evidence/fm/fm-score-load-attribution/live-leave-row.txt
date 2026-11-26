@@ -1,0 +1,11 @@
+=== S3 leave (retry): waiter queued behind busy slot, TERM before admission
+fm-test-queue: ticket 2, position 1: all 1 slot(s) busy
+test-queue: slots=1 load_ceiling=16 load1=1 serving=1 waiting=1 stale=0 spool=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmtq-live.RKVtyV/s3
+serving ticket=1 pid=11989 age=12s task=- label=holder
+waiting position=1 ticket=2 pid=40137 age=4s task=T-wait label=waiter
+waiter exit=143
+holder exit=0
+--- workloads.tsv:
+1795717816^Iadmit^I1^Ilocal^I1^I-^I-^I-^Iholder
+1795717829^Ileave^I2^I-^I1^I143^Islots^IT-wait^Iwaiter
+1795717829^Idone^I1^Ilocal^I1^I0^I-^I-^Iholder

@@ -1,0 +1,42 @@
+=== S1 success + S2 failure + sanitized task/label (real host load probe)
+exit=0
+exit=7
+--- workloads.tsv (600):
+1795717725^Iadmit^I1^Ilocal^I102.66^I-^I-^Itask with tabs^Iok run
+1795717727^Idone^I1^Ilocal^I102.66^I0^I-^Itask with tabs^Iok run
+1795717730^Iadmit^I2^Ilocal^I107.57^I-^I-^I-^Ibad label
+1795717732^Idone^I2^Ilocal^I107.57^I7^I-^I-^Ibad label
+--- next: 3
+
+=== S3 leave: second run waits on busy slot, TERM before admission
+test-queue: slots=1 load_ceiling=16 load1=110.24 serving=1 waiting=0 stale=0 spool=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmtq-live.iasFmy/s3
+serving ticket=1 pid=82594 age=1s task=- label=holder
+waiter exit=143
+holder exit=0
+--- workloads.tsv (600):
+1795717735^Iadmit^I1^Ilocal^I110.24^I-^I-^I-^Iholder
+1795717741^Idone^I1^Ilocal^I113.19^I0^I-^I-^Iholder
+--- next: 2
+
+=== S4 adversarial: workloads.tsv is a FIFO -> run must not block, no row, status kept
+exit=3 elapsed=5s
+prw-r--r--@ 1 eduardopicazo  staff  0 Nov 26 12:29 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmtq-live.iasFmy/s4/workloads.tsv
+
+=== S5 adversarial: record is a directory (unappendable) -> run unaffected
+exit=0
+drwxr-xr-x@ 2 eduardopicazo  staff  64 Nov 26 12:29 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fmtq-live.iasFmy/s5/workloads.tsv
+
+=== S6 lost counter: stale ticket 5 present, next removed -> new ticket is 7
+0000000005
+fm-test-queue: ticket 7, position 1: load 134.50 is not below 16
+fm-test-queue: ticket 7, position 1: load 133.82 is not below 16
+fm-test-queue: ticket 7 served
+exit=0
+--- workloads.tsv (600):
+1795717753^Iadmit^I1^Ilocal^I115.80^I-^I-^I-^Ifirst
+1795717755^Idone^I1^Ilocal^I119.66^I0^I-^I-^Ifirst
+1795717759^Iadmit^I5^Ilocal^I119.66^I-^I-^I-^Iholder5
+1795717770^Idone^I5^Ilocal^I133.82^I0^I-^I-^Iholder5
+1795717772^Iadmit^I7^Ilocal^I133.82^I-^I-^I-^Iafter-loss
+1795717776^Idone^I7^Ilocal^I138.16^I0^I-^I-^Iafter-loss
+--- next: 8

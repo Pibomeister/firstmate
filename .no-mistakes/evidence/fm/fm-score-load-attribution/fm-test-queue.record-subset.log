@@ -1,0 +1,12 @@
+ok - fm-test-queue.sh: warm delta prepared in 18s; mismatch falls back and uncertain execution does not
+ok - fm-test-queue.sh: rsync paths, delta shallow, stale lock, nested staging, and quick-check self-heal hold
+ok - fm-test-queue.sh: high load offloads current source and preserves arguments and failure status
+ok - fm-test-queue.sh: run returns the command's status, keeps its stdio, and leaves
+ok - fm-test-queue.sh: a lost ticket counter never lets a new run jump the line
+ok - fm-test-queue.sh: each admitted run records one admit and one done with the returned status
+ok - fm-test-queue.sh: signals and queue errors are recorded with the status the caller received
+ok - fm-test-queue.sh: a killed wrapper records no status and an unwritable record changes nothing
+ok - fm-test-queue.sh: task and label text cannot add fields or rows to the record
+ok - fm-test-queue.sh: a lost counter skips one number above the highest ticket still in the spool
+bash $F  13.37s user 25.35s system 11% cpu 5:34.64 total
+exit=0
