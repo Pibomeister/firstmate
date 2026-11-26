@@ -54,6 +54,20 @@ The parked question itself goes on the visible status line: PR number, run id, t
 When a review opens a third round on the same causal theme of one task, do not start a third fix round on your own judgment, and do not send a reversible finding to the captain.
 Put it to the council.
 
+The two-model merge review is its own council, and it puts a finding its seats disagree on to the AgentKit council itself when its config names a roster, so never convene the watchdog council on one of its findings.
+`bin/fm-merge-review.sh` counts the review rounds of a pull request across its heads, and from round three its reviewer seats give each blocking finding one disposition; that script's header owns the rule.
+Read the result with `bin/fm-merge-review.sh findings <PR url> --head <full-sha>` and act on each state:
+
+- `deferred`: every seat called it an edge case, or the tie-break council ruled it one.
+  File the follow-up as its own backlog item first, then record it with `bin/fm-merge-review.sh followup`; the review does not approve before that record exists.
+- `dropped` or `resolved`: every seat found it unsupported or already fixed, and nothing more is owed.
+- `open`: a seat holds it as a regression or the seats do not all call it an edge case, and no tie-break council deferred it or it is a security, destructive, or data-loss finding, which never defers.
+  Send the worker one fix round that names the open finding ids.
+- `pending` or `unruled`: a seat or the tie-break council has not ruled, and no receipt at that head says BLOCK, so dispatch the review again at that head.
+
+A watchdog ruling, a follow-up record, or a rerun never clears an open finding or a BLOCK receipt; only a new head that every seat rules on does.
+The steps below are for every other review.
+
 1. Confirm the finding is reversible and is not the captain's.
    A destructive, irreversible, security, product, production-data, PII, spend, sign-in, or deploy choice still escalates under step 4 above, and so does a Fix that would materially expand the contract.
 2. Write the decision record with exactly two options: `A (recommended)`, ship the work as it stands with a filed follow-up item that names the finding, and `B`, one more fix round.
