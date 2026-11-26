@@ -12,8 +12,9 @@
 # FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds only the OPEN DECISIONS fold
 # (default 30s, positive whole seconds). That fold saves its progress every 64
 # lines, so each bounded attempt resumes where the last one stopped. Past the
-# bound it stops at its next checkpoint; the drain still presents branch
-# outcomes and liveness, then returns 124 naming phase status-open-decisions.
+# bound it stops at its next checkpoint; the drain still presents record
+# divergence, branch outcomes and liveness, then returns 124 naming phase
+# status-open-decisions.
 # Every other presentation phase runs to completion without a bound, so a
 # large unpresented span finishes slowly rather than never.
 # Already completed sections keep their receipts; incomplete status output never
