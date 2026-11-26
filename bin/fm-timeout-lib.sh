@@ -265,7 +265,10 @@ fm_run_bash_timeout() {
     command_rc=124
   else
     _FM_BASH_TIMEOUT_CHILD_PID=
-    _fm_bash_timeout_signal TERM "$_FM_BASH_TIMEOUT_WATCHDOG_PID"
+    # The command is reaped and the watchdog holds no state, so KILL ends it:
+    # a TERM ignored since this shell started would leave the wait below
+    # hanging until the bound, or forever with no deadline.
+    _fm_bash_timeout_signal KILL "$_FM_BASH_TIMEOUT_WATCHDOG_PID"
     wait "$_FM_BASH_TIMEOUT_WATCHDOG_PID" 2>/dev/null || true
     _FM_BASH_TIMEOUT_WATCHDOG_PID=
     recorded_rc=$(command -p cat "$_FM_BASH_TIMEOUT_STATUS_FILE" 2>/dev/null || true)

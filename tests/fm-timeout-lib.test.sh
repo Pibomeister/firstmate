@@ -486,6 +486,41 @@ test_run_timed_external_keeps_a_caller_trap_that_defers_term() {
   pass "fm_run_timed keeps a caller's deferring TERM trap under its external runner"
 }
 
+# A shell started with TERM ignored cannot restore it, so the watchdog and its
+# sleep ignore TERM too. A finished call must still return at once rather than
+# wait on that watchdog forever (no deadline) or until its bound (a deadline).
+test_bash_runner_returns_when_term_is_ignored_on_entry() {
+  local dir bound caller i
+  dir="$TMP_ROOT/term-ignored-on-entry"
+  mkdir -p "$dir"
+  for bound in none 30; do
+    (
+      trap '' TERM
+      exec bash -c '
+        . "$1/bin/fm-timeout-lib.sh"
+        work() { echo done; }
+        if [ "$2" = none ]; then fm_run_cancellable_fn work; else fm_run_timed_fn "$2" work; fi
+        echo "rc=$?" > "$3"
+      ' _ "$ROOT" "$bound" "$dir/rc-$bound" >/dev/null 2>&1
+    ) &
+    caller=$!
+    i=0
+    while kill -0 "$caller" 2>/dev/null; do
+      i=$((i + 1))
+      if [ "$i" -ge 500 ]; then
+        pkill -KILL -P "$caller" 2>/dev/null || true
+        kill -KILL "$caller" 2>/dev/null || true
+        fail "a finished call under bound $bound did not return within 10s when TERM was ignored on entry"
+      fi
+      sleep 0.02
+    done
+    wait "$caller" 2>/dev/null || true
+    [ "$(cat "$dir/rc-$bound" 2>/dev/null)" = rc=0 ] \
+      || fail "a finished call under bound $bound lost its status when TERM was ignored on entry"
+  done
+  pass "the bash runner returns a finished call at once even when TERM is ignored on entry"
+}
+
 test_timed_out_names_exactly_the_bound_statuses() {
   local status verdict
   for status in 124 137 0 1 125 127 143 ''; do
@@ -1104,4 +1139,5 @@ test_rejects_malformed_bounds_before_running_anything
 test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
 test_run_timed_external_forwards_a_caller_term
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
+test_bash_runner_returns_when_term_is_ignored_on_entry
 test_timed_out_names_exactly_the_bound_statuses
