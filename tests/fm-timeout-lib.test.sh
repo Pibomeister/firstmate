@@ -694,9 +694,11 @@ OWNER
 
 # A trap the caller installs during the wait, here from its own USR1 handler, is
 # the caller's: the external runner must not remove it when it restores the
-# forwarding traps it set.
+# forwarding traps it set, even when the caller's trap calls the forwarding
+# handler as one of its steps. A TERM that reaches such a trap runs it once and
+# leaves control with it rather than re-raising TERM into it.
 test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait() {
-  local dir fb tool
+  local dir fb tool action caller i=0 cleanups
   if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
     pass "fm_run_timed keeps a trap the caller set during the wait (skipped: no timeout binary on this host)"
     return 0
@@ -707,18 +709,44 @@ test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait() {
   for tool in timeout gtimeout bash sleep cat rm mktemp; do
     command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
   done
+  for action in 'echo caller-cleanup' 'echo caller-cleanup; _fm_external_timeout_forward TERM'; do
+    rm -f "$dir/trap"
+    # shellcheck disable=SC2016  # Expanded by the child shell.
+    bash -c '
+      . "$1/bin/fm-timeout-lib.sh"
+      self=$(exec /bin/sh -c "echo \$PPID")
+      trap "trap \"$4\" TERM" USR1
+      ( sleep 1; kill -USR1 "$self" ) &
+      PATH=$2 fm_run_timed 10 sleep 2
+      trap -p TERM > "$3"
+    ' _ "$ROOT" "$fb" "$dir/trap" "$action" >/dev/null 2>&1
+    grep -q 'caller-cleanup' "$dir/trap" \
+      || fail "the external runner removed the TERM trap [$action] the caller set during the wait: [$(cat "$dir/trap" 2>/dev/null)]"
+  done
+  rm -f "$dir/events"
   # shellcheck disable=SC2016  # Expanded by the child shell.
   bash -c '
     . "$1/bin/fm-timeout-lib.sh"
     self=$(exec /bin/sh -c "echo \$PPID")
-    trap "trap \"echo caller-cleanup\" TERM" USR1
-    ( sleep 1; kill -USR1 "$self" ) &
-    PATH=$2 fm_run_timed 10 sleep 2
-    trap -p TERM > "$3"
-  ' _ "$ROOT" "$fb" "$dir/trap" >/dev/null 2>&1
-  grep -q 'caller-cleanup' "$dir/trap" \
-    || fail "the external runner removed a TERM trap the caller set during the wait: [$(cat "$dir/trap" 2>/dev/null)]"
-  pass "fm_run_timed keeps a trap the caller set during the wait"
+    trap "trap \"echo cleanup >> $3/events; _fm_external_timeout_forward TERM\" TERM" USR1
+    ( sleep 1; kill -USR1 "$self"; sleep 1; kill -TERM "$self" ) &
+    PATH=$2 fm_run_timed 10 sleep 5
+    echo returned >> "$3/events"
+  ' _ "$ROOT" "$fb" "$dir" >/dev/null 2>&1 &
+  caller=$!
+  while kill -0 "$caller" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$caller" 2>/dev/null || true
+      fail "a caller trap that calls the forwarding handler still had TERM re-raised into it after 10s"
+    fi
+    sleep 0.02
+  done
+  wait "$caller" 2>/dev/null || true
+  cleanups=$(grep -c cleanup "$dir/events" 2>/dev/null || true)
+  [ "$cleanups" = 1 ] || fail "a caller trap that calls the forwarding handler ran ${cleanups:-0} times for one TERM, not once"
+  grep -q returned "$dir/events" || fail "a caller trap that calls the forwarding handler lost control: the call never returned to it"
+  pass "fm_run_timed keeps a trap the caller set during the wait, including one that calls the forwarding handler"
 }
 
 # fm_run_cancellable_fn has no deadline, so a runner that cannot start must not

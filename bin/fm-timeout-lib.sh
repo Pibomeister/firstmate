@@ -307,15 +307,21 @@ fm_run_bash_timeout() {
 # Only signals the caller left at their default disposition carry a forwarding
 # trap, so restoring resets exactly those and is a no-op once already done. A
 # trap the caller installed on one of them during the wait is the caller's and
-# stays in place.
+# stays in place, even one that calls the forwarding handler itself: a signal
+# is reset only while its trap -p text is exactly the one recorded at install.
 _fm_external_timeout_restore_traps() {
-  local signal
+  local signal current
   for signal in ${_FM_EXTERNAL_TIMEOUT_SIGNALS:-}; do
-    case "$(trap -p "$signal")" in
-      *"_fm_external_timeout_forward $signal'"*) trap - "$signal" ;;
+    current=$(trap -p "$signal")
+    [ -n "$current" ] || continue
+    case "${_FM_EXTERNAL_TIMEOUT_TRAPS:-}" in
+      *"
+$current
+"*) trap - "$signal" ;;
     esac
   done
   _FM_EXTERNAL_TIMEOUT_SIGNALS=
+  _FM_EXTERNAL_TIMEOUT_TRAPS=
   _FM_EXTERNAL_TIMEOUT_PID=
   _FM_EXTERNAL_TIMEOUT_STATUS=
 }
@@ -330,6 +336,10 @@ _fm_external_timeout_forward() {  # <signal>
   fi
   [ -z "${_FM_EXTERNAL_TIMEOUT_STATUS:-}" ] || rm -f "$_FM_EXTERNAL_TIMEOUT_STATUS" 2>/dev/null || true
   _fm_external_timeout_restore_traps
+  # A caller trap that replaced the runner's during the wait owns the signal,
+  # even when it calls this handler as one of its steps: re-raising would run
+  # that trap again without end, so control returns to it instead.
+  [ -z "$(trap -p "$signal")" ] || return 0
   self=$(exec /bin/sh -c 'echo "$PPID"')
   kill "-$signal" "$self"
 }
@@ -362,6 +372,8 @@ fm_run_external_timeout() {
   # choice: its trap stays in place, the command keeps running to its own
   # bound, and the wait resumes after that trap returns.
   _FM_EXTERNAL_TIMEOUT_SIGNALS=
+  _FM_EXTERNAL_TIMEOUT_TRAPS='
+'
   _FM_EXTERNAL_TIMEOUT_PID=$runner_pid
   _FM_EXTERNAL_TIMEOUT_STATUS=$status_file
   for signal in INT TERM HUP; do
@@ -369,6 +381,8 @@ fm_run_external_timeout() {
     _FM_EXTERNAL_TIMEOUT_SIGNALS="$_FM_EXTERNAL_TIMEOUT_SIGNALS $signal"
     # shellcheck disable=SC2064  # The signal name is fixed when the trap is set.
     trap "_fm_external_timeout_forward $signal" "$signal"
+    _FM_EXTERNAL_TIMEOUT_TRAPS="$_FM_EXTERNAL_TIMEOUT_TRAPS$(trap -p "$signal")
+"
   done
   while :; do
     if wait "$runner_pid"; then
