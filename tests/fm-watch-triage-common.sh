@@ -53,10 +53,12 @@ watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
 }
 
 # Synthetic clock for a one-cycle launch. The watcher stamps markers such as
-# .writing-since-* with real mtimes and age_of reads a mtime later than its
-# clock as "due immediately", so the clock must stay ahead of every real write
-# the cycle makes. A 30s lead covers a cycle slowed by a loaded runner while
-# staying well inside the 240s bounds the threshold tests assert against.
+# .writing-since-* with wall-clock mtimes, and age_of treats a mtime later
+# than its clock as due immediately, so the clock must stay ahead of every
+# wall-clock write the cycle makes. Heartbeat cadence files use the watch
+# clock (watch_touch) and do not need this lead. A 30s lead covers a cycle
+# slowed by a loaded runner while staying well inside the 240s bounds the
+# threshold tests assert against.
 watch_clock_now() {
   echo $(( $(date +%s) + 30 ))
 }

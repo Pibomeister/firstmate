@@ -92,4 +92,27 @@ test_working_pane_stale_outage_waits_300s_backoff() {
   pass "a provably-working stale pane is silent through 299s of backoff and queued as stale at 300s"
 }
 
-fm_test_run test_working_pane_stale_outage_waits_300s_backoff
+# A last-heartbeat mtime a year ahead of the watch clock must still be due.
+# The round-2 clamp treated every future stamp as age 0, so a forward clock
+# step hid the cadence until wall time caught up.
+test_far_future_last_heartbeat_stamp_is_due() {
+  local dir state fakebin out now
+  dir=$(make_case far-future-heartbeat)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  now=$(date +%s)
+  touch "$state/.last-heartbeat"
+  set_mtime "$((now + 365 * 24 * 3600))" "$state/.last-heartbeat"
+  touch "$state/ship.meta"
+  PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" \
+    FM_WATCH_NOW="$now" FM_WATCH_ONCE=1 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    "$WATCH" > "$out" \
+    || fail "watcher failed with a far-future last-heartbeat stamp: $(cat "$out")"
+  grep -Fx heartbeat "$out" >/dev/null \
+    || fail "a far-future last-heartbeat stamp stayed quiet: $(cat "$out")"
+  pass "a far-future last-heartbeat stamp is still treated as due"
+}
+
+fm_test_run \
+  test_working_pane_stale_outage_waits_300s_backoff \
+  test_far_future_last_heartbeat_stamp_is_due

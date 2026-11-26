@@ -462,6 +462,19 @@ fm_watch_now() {  # [output-variable]
   fi
 }
 
+# Refresh <file>'s mtime on the watch clock so age_of and a frozen FM_WATCH_NOW
+# share one domain. Unset, that clock is wall time and touch is enough.
+watch_touch() {  # <file>
+  local f=$1 now stamp
+  : >> "$f" || return
+  [ "${FM_WATCH_NOW+x}" ] || { touch "$f"; return; }
+  fm_watch_now now
+  stamp=$(TZ=UTC0 date -d "@$now" +%Y%m%d%H%M.%S 2>/dev/null) \
+    || stamp=$(TZ=UTC0 date -r "$now" +%Y%m%d%H%M.%S 2>/dev/null) \
+    || return
+  TZ=UTC0 touch -t "$stamp" "$f"
+}
+
 watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   local m now
   m=$(stat_mtime "$1") || { echo 999999; return; }
@@ -4518,8 +4531,9 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
   local f=$1 m now
   m=$(stat_mtime "$f") || { echo 999999; return; }
   fm_watch_now now
-  # Missing is overdue; a stamp ahead of the watch clock has not aged yet.
-  [ "$m" -le "$now" ] || { echo 0; return; }
+  # Missing is overdue. A stamp ahead of the watch clock is also overdue: a
+  # forward clock step must not hide the cadence until wall time catches up.
+  [ "$m" -le "$now" ] || { echo 999999; return; }
   echo $(( now - m ))
 }
 
@@ -5558,7 +5572,7 @@ reconcile_requests_detached() {
 }
 
 
-[ -e "$STATE/.last-heartbeat" ] || touch "$STATE/.last-heartbeat"
+[ -e "$STATE/.last-heartbeat" ] || watch_touch "$STATE/.last-heartbeat"
 
 # A merged poll may have queued its terminal wake and then lost the process
 # between receipt publication and fixed-path removal.
@@ -6529,7 +6543,11 @@ EOF
   # surfaced non-heartbeat wake or actionable heartbeat backstop. Attended open
   # work caps the interval below 15 minutes, bounds the terminal wait, and
   # surfaces a heartbeat the absorb branch would otherwise swallow.
-  streak=$(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0)
+  streak=0
+  if [ -f "$STATE/.heartbeat-streak" ]; then
+    IFS= read -r streak < "$STATE/.heartbeat-streak" || streak=0
+  fi
+  case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
   [ "$streak" -gt 12 ] && streak=12
   hb=$(( HEARTBEAT * (1 << streak) ))
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
@@ -6551,7 +6569,7 @@ EOF
     # every heartbeat.
     if afk_present; then
       fm_wake_append heartbeat heartbeat heartbeat || exit 1
-      touch "$STATE/.last-heartbeat"
+      watch_touch "$STATE/.last-heartbeat"
       wake "heartbeat"
     elif heartbeat_scan_finds_actionable; then
       # Backstop: a captain-relevant event the per-wake path absorbed by mistake.
@@ -6559,17 +6577,22 @@ EOF
       # next heartbeat does not re-fire it (enqueue-before-suppress preserved);
       # this wake sends firstmate to the whole fleet, so every log is read.
       fm_wake_append heartbeat heartbeat heartbeat || exit 1
-      touch "$STATE/.last-heartbeat"
+      watch_touch "$STATE/.last-heartbeat"
       mark_all_captain_relevant_surfaced || true
       wake "heartbeat" actionable
     else
       if ! mark_all_captain_relevant_surfaced || [ "$open_work" -eq 1 ]; then
         fm_wake_append heartbeat heartbeat heartbeat || exit 1
-        touch "$STATE/.last-heartbeat"
+        watch_touch "$STATE/.last-heartbeat"
         wake "heartbeat"
       fi
-      touch "$STATE/.last-heartbeat"
-      echo $(( $(cat "$STATE/.heartbeat-streak" 2>/dev/null || echo 0) + 1 )) > "$STATE/.heartbeat-streak"
+      watch_touch "$STATE/.last-heartbeat"
+      streak=0
+      if [ -f "$STATE/.heartbeat-streak" ]; then
+        IFS= read -r streak < "$STATE/.heartbeat-streak" || streak=0
+      fi
+      case "$streak" in ''|*[!0-9]*) streak=0 ;; esac
+      printf '%s\n' "$((streak + 1))" > "$STATE/.heartbeat-streak"
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
   fi
