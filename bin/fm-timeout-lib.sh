@@ -176,7 +176,9 @@ _fm_bash_timeout_signal() {  # <signal> <pid>
 # but not yet recorded is recovered from $!, and a reaped job is never
 # signalled because each pid is cleared as soon as it is reaped. The watchdog
 # stays alive until the command is reaped, so a caller killed during the grace
-# below still has its command stopped.
+# below still has its command stopped. A cancel that lands before the watchdog
+# is launched has nothing to outlive its caller, so it skips the grace and
+# KILLs the command at once.
 fm_cancel_bash_timeout() {
   case "${_FM_BASH_TIMEOUT_LAUNCHING:-}" in
     child|watchdog)
@@ -194,7 +196,7 @@ fm_cancel_bash_timeout() {
   _FM_BASH_TIMEOUT_LAUNCHING=
   if [ -n "${_FM_BASH_TIMEOUT_CHILD_PID:-}" ]; then
     _fm_bash_timeout_signal TERM "$_FM_BASH_TIMEOUT_CHILD_PID"
-    command -p sleep 1
+    [ -z "${_FM_BASH_TIMEOUT_WATCHDOG_PID:-}" ] || command -p sleep 1
     _fm_bash_timeout_signal KILL "$_FM_BASH_TIMEOUT_CHILD_PID"
     wait "$_FM_BASH_TIMEOUT_CHILD_PID" 2>/dev/null || true
     _FM_BASH_TIMEOUT_CHILD_PID=

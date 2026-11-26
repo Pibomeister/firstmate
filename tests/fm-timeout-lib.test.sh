@@ -593,6 +593,57 @@ OWNER
   pass 'a cancelled command stops when its caller is killed during the cancel grace'
 }
 
+# A cancel can land after the command starts but before its watchdog exists.
+# The owner's DEBUG trap cancels at the first command it runs after its first
+# background launch, so the caller is killed during the cancel with no
+# watchdog yet launched to outlive it.
+test_command_cancelled_before_its_watchdog_stops_when_its_caller_is_killed() {
+  local dir owner pid i=0
+  dir="$TMP_ROOT/killed-before-watchdog"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+case_dir=$2
+echo "$$" > "$case_dir/owner"
+on_term() { fm_cancel_bash_timeout; exit 143; }
+trap on_term TERM
+cancel_after_first_launch() {
+  local last nounset=0
+  case $- in *u*) nounset=1; set +u ;; esac
+  last=$!
+  [ "$nounset" -eq 0 ] || set -u
+  [ -n "$last" ] && [ ! -e "$case_dir/cancelling" ] || return 0
+  while [ ! -s "$case_dir/pid" ]; do command -p sleep 0.02; done
+  : > "$case_dir/cancelling"
+  on_term
+}
+set -T
+trap cancel_after_first_launch DEBUG
+fm_run_cancellable_fn bash -c 'trap "" TERM; echo "$$" > "$1"; exec sleep 300' _ "$case_dir/pid"
+OWNER
+  bash "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  owner=$!
+  while [ ! -e "$dir/cancelling" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 500 ] || fail 'the owner never cancelled after launching its command'
+    sleep 0.02
+  done
+  pid=$(cat "$dir/pid")
+  sleep 0.3
+  kill -KILL "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail 'a command cancelled before its watchdog outlived its caller killed during the cancel by 10s'
+    fi
+    sleep 0.02
+  done
+  pass 'a command cancelled before its watchdog stops when its caller is killed during the cancel'
+}
+
 # A trap the caller installs during the wait, here from its own USR1 handler, is
 # the caller's: the external runner must not remove it when it restores the
 # forwarding traps it set.
@@ -1265,6 +1316,7 @@ test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
 test_cancellable_command_stops_when_its_killed_caller_is_unreaped
 test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace
+test_command_cancelled_before_its_watchdog_stops_when_its_caller_is_killed
 test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait
 test_cancellable_runner_start_failure_is_not_a_bound
 test_timed_out_names_exactly_the_bound_statuses
