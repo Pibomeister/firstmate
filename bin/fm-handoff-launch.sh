@@ -427,7 +427,7 @@ quota_rc=0
 QUOTA_LINE=$(fm_failover_quota_check "$SUCC_HARNESS" "${SUCC_MODEL:-default}" "$ACCOUNT_ROOT") || quota_rc=$?
 SUCC_SOURCES_SHOWN=default
 [ "$SETTING_SOURCES_SET" = 0 ] || SUCC_SOURCES_SHOWN=${SUCC_SETTING_SOURCES:-empty}
-SUCC_RECORD="harness=$SUCC_HARNESS model=$(fm_failover_token "${SUCC_MODEL:-default}") account=$(fm_failover_token "${SUCC_ACCOUNT:-ambient}") reason=$SUCC_REASON $QUOTA_LINE"
+SUCC_RECORD="harness=$SUCC_HARNESS model=${SUCC_MODEL:-default} account=$(fm_failover_token "${SUCC_ACCOUNT:-ambient}") reason=$SUCC_REASON $QUOTA_LINE"
 SUCC_RECORD="$SUCC_RECORD effort=${SUCC_EFFORT:-default} setting_sources=$SUCC_SOURCES_SHOWN model_from=$MODEL_FROM effort_from=$EFFORT_FROM setting_sources_from=$SETTING_SOURCES_FROM"
 SUCC_RECORD="$SUCC_RECORD predecessor_model=$PRED_MODEL predecessor_effort=$PRED_EFFORT predecessor_setting_sources=$PRED_SETTING_SOURCES"
 if [ "$quota_rc" -eq 1 ]; then

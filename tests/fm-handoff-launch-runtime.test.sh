@@ -416,6 +416,7 @@ FM_HANDOFF_TEST_HARNESS=codex run_case tmux --effort max
 [ ! -s "$LAB/state/handoff-events.log" ] || fail 'a refused codex effort must not open a handoff claim'
 assert_contains "$(cat "$LAB/launch.err")" '--effort for a codex successor must be default or one of: minimal low medium high xhigh' \
   'the refusal names the codex effort levels'
+PRED_ARGS=(--model gpt-5.5 -c 'model_reasoning_effort="xhigh"')
 FM_HANDOFF_TEST_HARNESS=codex run_case tmux --harness claude
 assert_transferred_to claude 'harness change'
 argv_is 'harness change' claude --dangerously-skip-permissions PROMPT
