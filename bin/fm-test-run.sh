@@ -894,6 +894,7 @@ tests/fm-gemini-harness.test.sh 1167
 tests/fm-git-push-guard.test.sh 1333
 tests/fm-git-strip-ai-trailers.test.sh 4125
 tests/fm-gitignore-config.test.sh 67
+tests/fm-goal-digest.test.sh 27807
 tests/fm-goal-integrity.test.sh 17416
 tests/fm-gotmp.test.sh 1890
 tests/fm-grok-continuity-live-e2e.test.sh 54
@@ -1149,6 +1150,7 @@ tests/fm-hermes-harness.test.sh 35700
 tests/fm-hermes-profile-safety-live-e2e.test.sh 60
 tests/fm-hermes-signals-live-e2e.test.sh 60
 tests/fm-host-health.test.sh 35130
+tests/fm-enumeration-completeness.test.sh 827
 tests/fm-escalate.test.sh 6000
 tests/fm-escalation-class-map.test.sh 6000
 tests/fm-failover.test.sh 58247
