@@ -343,7 +343,9 @@ fm_run_external_timeout() {
     else
       runner_rc=$?
     fi
-    [ "$runner_rc" -gt 128 ] && kill -0 "$runner_pid" 2>/dev/null || break
+    if [ "$runner_rc" -le 128 ] || ! kill -0 "$runner_pid" 2>/dev/null; then
+      break
+    fi
   done
   _fm_external_timeout_restore_traps
   command_rc=$(cat "$status_file" 2>/dev/null || true)

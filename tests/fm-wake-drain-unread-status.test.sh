@@ -601,7 +601,7 @@ check_attempt_owned_presentation_scratch() {
   local mode=$1 expected_rc=124 dir state stage stages='preparation fold' rc scratch peer_pid peer_shell i peer_scratch reader_pid
   case "$mode" in TERM) expected_rc=143 ;; INT) expected_rc=130 ;; esac
   # Only the decision fold carries a deadline, so a timeout can occur only there.
-  [ "$mode" != timeout ] || stages=fold
+  [ "$mode" != timeout ] || stages='fold'
   for stage in $stages; do
     dir=$(make_case "scratch-$mode-$stage")
     state="$dir/state"
