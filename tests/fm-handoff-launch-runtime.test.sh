@@ -384,6 +384,18 @@ assert_contains "$(record)" 'effort=max setting_sources=empty model_from=predece
   'an exact empty value is carried'
 pass 'predecessor argv: ps blanks are unreadable, an exact cmdline carries an empty value'
 
+# A context-suffixed Claude model id, such as opus[1m], carries and can be named.
+PRED_ARGS=(--model 'claude-opus-4-6[1m]')
+run_case tmux
+assert_transferred_to claude 'bracketed model carry'
+argv_is 'bracketed model carry' claude --dangerously-skip-permissions --model 'claude-opus-4-6[1m]' PROMPT
+assert_contains "$(record)" 'model=claude-opus-4-6[1m] account=ambient' 'the record names the bracketed model'
+PRED_ARGS=()
+run_case tmux --model 'opus[1m]'
+assert_transferred_to claude 'bracketed model named'
+argv_is 'bracketed model named' claude --dangerously-skip-permissions --model 'opus[1m]' PROMPT
+pass 'a bracketed model id carries from the predecessor and can be named explicitly'
+
 # A Codex predecessor's model and reasoning effort carry; a harness change carries nothing.
 quota_fixture codex 55 through_reset > "$QUOTA/codex.json"
 PRED_HARNESS=codex
@@ -393,6 +405,17 @@ assert_transferred_to codex 'codex carry'
 argv_is 'codex carry' "${MARKERS[@]}" -u CODEX_HOME FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --model gpt-5.5 -c 'model_reasoning_effort="xhigh"' --dangerously-bypass-approvals-and-sandbox PROMPT
 assert_contains "$(record)" 'effort=xhigh setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unrecorded' \
   'the codex record names the carried model and effort'
+PRED_ARGS=(--model gpt-5.5 -c 'model_reasoning_effort="minimal"')
+FM_HANDOFF_TEST_HARNESS=codex run_case tmux
+assert_transferred_to codex 'codex minimal carry'
+argv_is 'codex minimal carry' "${MARKERS[@]}" -u CODEX_HOME FM_CODEX_BIN= "$ROOT/bin/fm-codex-launch.sh" --model gpt-5.5 -c 'model_reasoning_effort="minimal"' --dangerously-bypass-approvals-and-sandbox PROMPT
+assert_contains "$(record)" 'effort=minimal setting_sources=default model_from=predecessor effort_from=predecessor' \
+  'a codex minimal effort carries'
+FM_HANDOFF_TEST_HARNESS=codex run_case tmux --effort max
+[ "$(cat "$LAB/rc")" = 1 ] && [ ! -e "$LAB/state/attempts" ] || fail 'codex cannot take --effort max and must refuse before launch'
+[ ! -s "$LAB/state/handoff-events.log" ] || fail 'a refused codex effort must not open a handoff claim'
+assert_contains "$(cat "$LAB/launch.err")" '--effort for a codex successor must be default or one of: minimal low medium high xhigh' \
+  'the refusal names the codex effort levels'
 FM_HANDOFF_TEST_HARNESS=codex run_case tmux --harness claude
 assert_transferred_to claude 'harness change'
 argv_is 'harness change' claude --dangerously-skip-permissions PROMPT

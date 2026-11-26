@@ -6,10 +6,11 @@
 # account pin:
 #   --harness claude|codex|agy  successor runtime (default: this session's)
 #   --model <id>|default        successor model (default: the predecessor's)
-#   --effort <level>|default    successor reasoning effort, one of low, medium,
-#                               high, xhigh, max, ultra (default: the
-#                               predecessor's); claude and codex only, and on
-#                               Orca only together with a model
+#   --effort <level>|default    successor reasoning effort (default: the
+#                               predecessor's): low, medium, high, xhigh, max,
+#                               or ultra for claude; minimal, low, medium,
+#                               high, or xhigh for codex. claude and codex
+#                               only, and on Orca only together with a model
 #   --setting-sources <list>|default
 #                               claude settings sources, such as project,local
 #                               (default: the predecessor's); tmux only
@@ -123,17 +124,24 @@ HANDOFF=$1
 case "$HANDOFF" in /*) ;; *) HANDOFF="$(pwd -P)/$HANDOFF" ;; esac
 case "$HANDOFF" in *$'\n'*|*$'\r'*) die 'handoff path must be one line' ;; esac
 # Runtime value shapes, shared by the options and the predecessor's argv.
-valid_model() { case "$1" in ''|-*|*[!A-Za-z0-9._/:-]*) return 1 ;; esac; }
-valid_effort() { case "$1" in low|medium|high|xhigh|max|ultra) return 0 ;; esac; return 1; }
+valid_model() { case "$1" in ''|-*|*[!][A-Za-z0-9._/:-]*) return 1 ;; esac; }
+effort_levels() { # <harness>
+  case "$1" in
+    claude) printf 'low medium high xhigh max ultra' ;;
+    codex) printf 'minimal low medium high xhigh' ;;
+  esac
+}
+valid_effort() { # <harness> <level>
+  case "$2" in ''|*[!a-z]*) return 1 ;; esac
+  case " $(effort_levels "$1") " in *" $2 "*) return 0 ;; esac
+  return 1
+}
 valid_setting_sources() { case "$1" in *[!a-z,]*) return 1 ;; esac; }
 case "$SUCC_MODEL" in
   default) SUCC_MODEL= ;;
   *) [ "$GIVEN_MODEL" = 0 ] || valid_model "$SUCC_MODEL" || die '--model must be one model id' ;;
 esac
-case "$SUCC_EFFORT" in
-  default) SUCC_EFFORT= ;;
-  *) [ "$GIVEN_EFFORT" = 0 ] || valid_effort "$SUCC_EFFORT" || die '--effort must be one of default, low, medium, high, xhigh, max, ultra' ;;
-esac
+[ "$SUCC_EFFORT" != default ] || SUCC_EFFORT=
 case "$SUCC_SETTING_SOURCES" in
   default) SUCC_SETTING_SOURCES= ;;
   *) [ "$GIVEN_SETTING_SOURCES" = 0 ] || valid_setting_sources "$SUCC_SETTING_SOURCES" \
@@ -259,7 +267,7 @@ pred_lookup() {
     model) valid_model "$PV" || PV_STATE=unreadable ;;
     effort)
       PV=${PV#\"} PV=${PV%\"}
-      valid_effort "$PV" || PV_STATE=unreadable
+      valid_effort "$HARNESS" "$PV" || PV_STATE=unreadable
       ;;
     setting_sources) valid_setting_sources "$PV" || PV_STATE=unreadable ;;
   esac
@@ -287,6 +295,8 @@ resolve_field() {
   esac
   if [ "$given" = 1 ]; then
     successor_supports "$field" || die "--$(printf '%s' "$field" | tr _ -) cannot be carried by a $SUCC_HARNESS successor on $BACKEND"
+    [ "$field" != effort ] || [ -z "${!var}" ] || valid_effort "$SUCC_HARNESS" "${!var}" \
+      || die "--effort for a $SUCC_HARNESS successor must be default or one of: $(effort_levels "$SUCC_HARNESS")"
     from=explicit
     [ -z "${!var}" ] || set=1
   elif [ "$SUCC_HARNESS" != "$HARNESS" ]; then
