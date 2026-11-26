@@ -1,0 +1,8 @@
+1..5
+ok - a padded positive startup budget retains its decimal meaning
+ok - an empty fleet completes without reserving an unused endpoint window
+ok - an unfitting endpoint window is deferred without a native query
+ok - a read-only large-home digest preserves recovery context and discloses deferred endpoints
+Terminated: 15
+ok - a locked startup defers slow observations without publishing full completion
+FM_TEST_COMPLETE

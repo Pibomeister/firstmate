@@ -1,0 +1,21 @@
+The test shell had exited; tee still waited on the test output pipe.
+65240     1 71723 Thu Nov 26 17:15:52 2026     sleep 300
+
+COMMAND   PID          USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+sleep   65240 eduardopicazo  cwd    DIR               1,16     1024          1504397918 {run-worktree}
+sleep   65240 eduardopicazo  txt    REG               1,16   100976 1152921500312571411 /bin/sleep
+sleep   65240 eduardopicazo  txt    REG               1,16  2562000 1152921500312573255 /usr/lib/dyld
+sleep   65240 eduardopicazo    0r   CHR                3,2      0t0                 336 /dev/null
+sleep   65240 eduardopicazo    1   PIPE 0x1300a495978db85c    16384                     ->0x708846dab514aa76
+sleep   65240 eduardopicazo    2   PIPE 0x1300a495978db85c    16384                     ->0x708846dab514aa76
+
+COMMAND   PID          USER   FD   TYPE             DEVICE SIZE/OFF                NODE NAME
+tee     71839 eduardopicazo  cwd    DIR               1,16     1024          1504397918 {run-worktree}
+tee     71839 eduardopicazo  txt    REG               1,16   101040 1152921500312572904 /usr/bin/tee
+tee     71839 eduardopicazo  txt    REG               1,16  2562000 1152921500312573255 /usr/lib/dyld
+tee     71839 eduardopicazo    0   PIPE 0x708846dab514aa76    16384                     ->0x1300a495978db85c
+tee     71839 eduardopicazo    1w   REG               1,16     1408          1564815178 ~/.no-mistakes/evidence/01M88XCWJR8SC1QYSSYVX3R5SE/secondmate-guard-retry.log
+tee     71839 eduardopicazo    2w   REG               1,16     1408          1564815178 ~/.no-mistakes/evidence/01M88XCWJR8SC1QYSSYVX3R5SE/secondmate-guard-retry.log
+tee     71839 eduardopicazo    3w   REG               1,16     1293          1564815330 /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-test-run.96PYQX/out.0
+
+Sent TERM only to the sleep child that held the exact owned test-output pipe.

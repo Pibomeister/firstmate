@@ -1,0 +1,48 @@
+{
+  "revision": "02a93091f05e8c36b249092a2464a8104f711b21",
+  "live_scenarios": [
+    {
+      "name": "actionable-refusals",
+      "result": "pass",
+      "live": true
+    },
+    {
+      "name": "eligibility-is-not-readiness",
+      "result": "pass",
+      "live": true
+    },
+    {
+      "name": "bounded-slow-startup",
+      "result": "pass",
+      "live": true
+    },
+    {
+      "name": "valid-budget-edge-cases",
+      "result": "pass",
+      "live": true
+    }
+  ],
+  "light_suite_exits": [
+    {
+      "path": "tests/fm-watcher-readiness.test.sh",
+      "exit": 0
+    },
+    {
+      "path": "tests/fm-supervision-instructions.test.sh",
+      "exit": 0
+    },
+    {
+      "path": "tests/fm-timeout-lib.test.sh",
+      "exit": 0
+    }
+  ],
+  "secondmate_guard_exit": 0,
+  "startup_focused_exit": 0,
+  "queued_superseded_run_exit": 143,
+  "worktree_status": "",
+  "remaining_processes_naming_worktree": [],
+  "lab_scratch_absent": true,
+  "private_tmux_teardown": "Private lab tmux server: 70302|/tmp/fml.EoQB9h/tmux-501/default|%0\nNonzero terminal grid: 120x32\nkill-server exit=0\nteardown exit=0\n",
+  "linters_run": false,
+  "source_changes_made": false
+}

@@ -1,0 +1,34 @@
+$ fm-watch.sh --secondmate-selected [no current endpoint]
+exit=1
+secondmate watcher: unavailable: native endpoint registration prerequisite missing: no current tmux or Herdr pane identity; do not substitute a stale binding
+
+$ fm-watch.sh --secondmate [starter without endpoint]
+exit=1
+secondmate watcher: unavailable: native endpoint registration prerequisite missing: no current tmux or Herdr pane identity; do not substitute a stale binding
+
+$ fm-watch.sh --secondmate-selected [foreign inbox]
+exit=1
+secondmate watcher: unavailable: the caller steering inbox does not match its registered parent
+
+$ fm-watch.sh --secondmate-selected [missing parent]
+exit=1
+secondmate watcher: unavailable: a valid local secondmate parent record is required
+
+$ fm-watch.sh --secondmate-selected [away owner]
+exit=1
+secondmate watcher: unavailable: away or quiet daemon mode owns supervision
+
+$ fm-watch.sh --secondmate-selected [unmarked home]
+exit=1
+secondmate watcher: unavailable: not a genuine secondmate home
+
+No watcher lock or heartbeat was created.
+
+$ fm-watch.sh --secondmate-selected [synthetic endpoint candidate is eligible]
+exit=0
+
+$ fm-watch.sh --secondmate-status [candidate has no verified binding]
+exit=1
+secondmate watcher: not ready
+
+Synthetic route eligibility is not native endpoint proof; readiness remained refused.

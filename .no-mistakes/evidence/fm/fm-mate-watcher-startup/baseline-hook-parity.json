@@ -1,0 +1,26 @@
+[
+  {
+    "revision": "c626cb66243ed6460db678a2c2530263a3d2833b",
+    "settings_sha256": "cfaf5cd274f07b6cf1bf7ff3de72f501fb48f1303d6d7cf0caff85f6bbafcd92",
+    "tracked_entries": 18,
+    "native_claude_fixture_failures": [
+      {
+        "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-failover.sh hook captain",
+        "exit": 126,
+        "output": "bash: $LAB/bin/fm-failover.sh: No such file or directory\nbash: line 0: exec: $LAB/bin/fm-failover.sh: cannot execute: No such file or directory\n"
+      }
+    ]
+  },
+  {
+    "revision": "0a7660262ca4af0504b050cfe9e7d856cef8eb4c",
+    "settings_sha256": "cfaf5cd274f07b6cf1bf7ff3de72f501fb48f1303d6d7cf0caff85f6bbafcd92",
+    "tracked_entries": 18,
+    "native_claude_fixture_failures": [
+      {
+        "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-failover.sh hook captain",
+        "exit": 126,
+        "output": "bash: $LAB/bin/fm-failover.sh: No such file or directory\nbash: line 0: exec: $LAB/bin/fm-failover.sh: cannot execute: No such file or directory\n"
+      }
+    ]
+  }
+]

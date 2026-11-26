@@ -1,0 +1,4 @@
+All 32 metadata records are byte-identical.
+Original unhandled queue row remains:
+123	1	check	lab	preserve this unhandled lab event
+Full-startup completion and AGENTS baseline receipts are absent.

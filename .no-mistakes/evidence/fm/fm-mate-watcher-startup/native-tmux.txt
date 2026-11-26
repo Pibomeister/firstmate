@@ -1,0 +1,4 @@
+Private lab tmux server: 70302|/tmp/fml.EoQB9h/tmux-501/default|%0
+Nonzero terminal grid: 120x32
+kill-server exit=0
+teardown exit=0

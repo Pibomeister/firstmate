@@ -1,0 +1,67 @@
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=1.103s
+secondmate watcher: unavailable: native endpoint registration prerequisite missing: no current tmux or Herdr pane identity; do not substitute a stale binding
+
+$ bin/fm-watch.sh --secondmate
+exit=1 elapsed=1.061s
+secondmate watcher: unavailable: native endpoint registration prerequisite missing: no current tmux or Herdr pane identity; do not substitute a stale binding
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=0 elapsed=1.049s
+
+$ bin/fm-watch.sh --secondmate-status
+exit=1 elapsed=0.868s
+secondmate watcher: not ready
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=0.702s
+secondmate watcher: unavailable: the caller steering inbox does not match its registered parent
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=0.565s
+secondmate watcher: unavailable: away or quiet daemon mode owns supervision
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=0.518s
+secondmate watcher: unavailable: the supervision host owns this home
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=0.719s
+secondmate watcher: unavailable: a valid local secondmate parent record is required
+
+$ bin/fm-watch.sh --secondmate-selected
+exit=1 elapsed=0.896s
+secondmate watcher: unavailable: not a genuine secondmate home
+
+
+healthy-decimal-startup
+error: session lock is not a regular file; operate read-only until resolved
+●  error: session lock is not a regular file; operate read-only until resolved
+probe-00 project=- state=unknown pr=- age=55s endpoint=alive
+orphan state=working
+LAB-CONTEXT-SENTINEL
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+
+empty-fleet-large-window
+error: session lock is not a regular file; operate read-only until resolved
+●  error: session lock is not a regular file; operate read-only until resolved
+orphan state=working
+LAB-CONTEXT-SENTINEL
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+
+unfitting-window
+error: session lock is not a regular file; operate read-only until resolved
+●  error: session lock is not a regular file; operate read-only until resolved
+FLEET OBSERVATION DEFERRED: the remaining budget cannot safely verify the task sources.
+Deferred endpoint observations are unverified; no verdict is available for records not printed above.
+LAB-CONTEXT-SENTINEL
+
+stalled-real-tmux
+error: session lock is not a regular file; operate read-only until resolved
+●  error: session lock is not a regular file; operate read-only until resolved
+probe-00 project=- state=unknown pr=- age=25s endpoint=error
+FLEET OBSERVATION DEFERRED: the optional task observation reached its aggregate deadline.
+Deferred endpoint observations are unverified; no verdict is available for records not printed above.
+LAB-CONTEXT-SENTINEL
+
+Driver asserted exact preservation of seeded metadata, orphan status, queued event and refused lock; no startup completion or AGENTS baseline was created. Real private tmux server was stopped at fleet-state and resumed for teardown. No harness identity was fabricated.

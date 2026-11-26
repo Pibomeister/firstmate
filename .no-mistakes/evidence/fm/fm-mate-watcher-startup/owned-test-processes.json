@@ -1,0 +1,51 @@
+[
+  {
+    "pid": 14062,
+    "ppid": 34354,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:04:06 2026",
+    "command": "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python - /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.NCVA7v/sm-event-runtime /bin/bash /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-turnend-guard.NCVA7v/codex-harness/codex"
+  },
+  {
+    "pid": 34039,
+    "ppid": 87052,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:02:53 2026",
+    "command": "/opt/homebrew/bin/timeout -k 1 1200 bash -c \\012    status_file=$1\\012    shift\\012    \"$@\"\\012    command_rc=$?\\012    printf \"%s\\n\" \"$command_rc\" > \"$status_file\"\\012    exit \"$command_rc\"\\012   _ /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-timeout-status.OGmAH6 bash -c bash \"$1\" 2>&1 | tee \"$2\"; exit \"${PIPESTATUS[0]}\" _ tests/fm-turnend-guard.test.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-run.7hrp8o/out.3"
+  },
+  {
+    "pid": 34087,
+    "ppid": 34039,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:02:53 2026",
+    "command": "bash -c \\012    status_file=$1\\012    shift\\012    \"$@\"\\012    command_rc=$?\\012    printf \"%s\\n\" \"$command_rc\" > \"$status_file\"\\012    exit \"$command_rc\"\\012   _ /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-timeout-status.OGmAH6 bash -c bash \"$1\" 2>&1 | tee \"$2\"; exit \"${PIPESTATUS[0]}\" _ tests/fm-turnend-guard.test.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-run.7hrp8o/out.3"
+  },
+  {
+    "pid": 34249,
+    "ppid": 34087,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:02:53 2026",
+    "command": "bash -c bash \"$1\" 2>&1 | tee \"$2\"; exit \"${PIPESTATUS[0]}\" _ tests/fm-turnend-guard.test.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-run.7hrp8o/out.3"
+  },
+  {
+    "pid": 34354,
+    "ppid": 34249,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:02:53 2026",
+    "command": "bash tests/fm-turnend-guard.test.sh"
+  },
+  {
+    "pid": 34356,
+    "ppid": 34249,
+    "pgid": 34039,
+    "start": "Thu Nov 26 17:02:53 2026",
+    "command": "tee /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-test-run.7hrp8o/out.3"
+  },
+  {
+    "pid": 87052,
+    "ppid": 7851,
+    "pgid": 87052,
+    "start": "Thu Nov 26 16:52:42 2026",
+    "command": "/opt/homebrew/bin/bash bin/fm-test-run.sh --jobs 1 --per-script-timeout-secs 1200 --json ~/.no-mistakes/evidence/01M88XCWJR8SC1QYSSYVX3R5SE/targeted-suites.json tests/fm-watcher-readiness.test.sh tests/fm-session-start.test.sh tests/fm-supervision-instructions.test.sh tests/fm-turnend-guard.test.sh tests/fm-timeout-lib.test.sh"
+  }
+]

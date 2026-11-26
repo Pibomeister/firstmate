@@ -1,0 +1,56 @@
+{
+  "revision": "0a7660262ca4af0504b050cfe9e7d856cef8eb4c",
+  "verdict": "no-go",
+  "live_scenarios": [
+    {
+      "scenario": "missing registration and stale binding",
+      "result": "pass"
+    },
+    {
+      "scenario": "real tmux candidate remains unready and ownership guards refuse",
+      "result": "pass"
+    },
+    {
+      "scenario": "live tmux endpoint and no-probe decimal startup retain complete context",
+      "result": "pass"
+    },
+    {
+      "scenario": "unfitting and stopped real tmux observations defer while preserving recovery inputs",
+      "result": "pass"
+    }
+  ],
+  "initial_targeted_runner_exit": 1,
+  "retries": [
+    {
+      "label": "locked-start-retry",
+      "command": [
+        "bash",
+        "tests/fm-session-start.test.sh",
+        "test_deferred_fleet_probe_does_not_publish_completion"
+      ],
+      "environment": {},
+      "exit": 1,
+      "elapsed_seconds": 58.085
+    },
+    {
+      "label": "secondmate-guard-retry",
+      "command": [
+        "bin/fm-test-run.sh",
+        "--jobs",
+        "1",
+        "--per-script-timeout-secs",
+        "600",
+        "--json",
+        "~/.no-mistakes/evidence/01M88XCWJR8SC1QYSSYVX3R5SE/guard-retry-timing.json",
+        "tests/fm-turnend-guard.test.sh"
+      ],
+      "environment": {
+        "FM_TEST_ONLY": "secondmate-endturn"
+      },
+      "exit": 0,
+      "elapsed_seconds": 431.926
+    }
+  ],
+  "guard_retry_cleanup": "All selected assertions completed; runner exited 0 only after manual termination of its orphaned sleep holding tee open.",
+  "cleanup": "All started command sessions have returned. Real private tmux lab was stopped and removed. Original recorded test descendants are gone. Worktree status checked separately."
+}

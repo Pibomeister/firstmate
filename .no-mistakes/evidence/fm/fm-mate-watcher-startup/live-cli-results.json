@@ -1,0 +1,18 @@
+[
+  {
+    "scenario": "missing registration and stale binding",
+    "result": "pass"
+  },
+  {
+    "scenario": "real tmux candidate remains unready and ownership guards refuse",
+    "result": "pass"
+  },
+  {
+    "scenario": "live tmux endpoint and no-probe decimal startup retain complete context",
+    "result": "pass"
+  },
+  {
+    "scenario": "unfitting and stopped real tmux observations defer while preserving recovery inputs",
+    "result": "pass"
+  }
+]

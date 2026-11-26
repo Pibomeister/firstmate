@@ -1,0 +1,193 @@
+
+================================================================================
+SESSION START - {run-worktree}/.test-live-watcher-startup/startup
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 9457
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+Terminated: 15
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)
+MISSING: node (install: brew install node  # or the platform's package manager)
+MISSING: gh (install: brew install gh  # or the platform's package manager)
+MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+MISSING: chrome-devtools-axi (install: npm install -g chrome-devtools-axi && chrome-devtools-axi setup hooks)
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+PRESENTATION_UNAVAILABLE: lavish-axi (requires >=0.1.77; install: npm install -g lavish-axi && lavish-axi setup hooks) - nonvisual work may proceed with plain-text decisions and reports; install or upgrade before using Lavish
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+123	1	check	lab	preserve this unhandled lab event
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 44074.1795736176.nWukA4
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  down 1s.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  After draining queued wakes, repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: drain and acknowledge the wake, then end the turn. The Stop hook re-arms a persistent watcher. Do not start another foreground checkpoint.
+- Before handling each genuine captain message (never a wake, hook, or startup), run bin/fm-auto-away.sh captain-message; a check: auto-away wake loads /afk.
+- Captain-facing turn replies stay short and do not use tables.
+- A long report goes in a file under data/, and the reply is one line from bin/fm-context-burn.sh report with that path and its sha256.
+- A large read, including a triage table or a handoff, goes through a worker or a bounded head or search, not a full read into this session.
+- The auto-compact percentage is the external footer, never a self-estimate.
+- bin/fm-context-burn.sh records that percentage each turn, from the footer when shown and otherwise from the transcript with the handoff trigger formula, and alerts when a fresh session drops more than about 30 points in 15 minutes.
+
+Mode: Codex Stop hook.
+
+A bounded checkpoint is a tool call, not a conversation turn.
+When a checkpoint you already started is still running, poll it with `write_stdin` (empty input) until it exits, handle its wake, and do not end the turn while it runs.
+Do not start another `bin/fm-watch-checkpoint.sh` after it exits.
+
+In a secondmate home, apply the routed-work and return-channel rules in `data/charter.md` before the next supervision wait.
+
+When this session owns supervision and no away daemon is active:
+The Stop hook re-arms a persistent watcher or allows this turn to end.
+That watcher has no doorbell, so its wakes wait for the captain's next message.
+On a home that runs the supervision host, an away record stops the re-arm: the turn ends with a loud notice that away supervision is not running until the next checkpoint.
+A secondmate home keeps one outside-turn watcher instead of another checkpoint.
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`.
+   Until then the work remains durable for idempotent re-handling after interruption.
+2. Source `{run-worktree}/.test-live-watcher-startup/startup/config/x-mode.env` first when Relay is active.
+3. Poll a checkpoint only while it is still running.
+   When the call returns a still-running exec session, poll it with `write_stdin` (empty input) until it exits.
+4. Ordinary wake: if a running checkpoint prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, acknowledge it, then end the turn.
+   Do not start another foreground checkpoint.
+5. If the checkpoint exits 0 and prints `checkpoint: no actionable wake`, drain queued wakes anyway, process any queued user message now visible to Codex, then end the turn.
+   In a secondmate home, `checkpoint: firstmate instruction waiting in the steering inbox` names records to read, act on and acknowledge now, then stop.
+6. Send a reply as an interim message only while a checkpoint of yours is still running.
+   Once the queue is drained and no checkpoint of yours is running, the final answer may end the turn.
+7. Never use shell `&` or Codex background tasks for firstmate watcher supervision.
+8. Do not run `bin/fm-watch-arm.sh` as Codex's normal supervision command.
+   A denied direct `bin/fm-watch.sh` names that arm for every harness; on Codex, end the turn instead, and the Stop hook runs it.
+   If it is ever shelled anyway, a backgrounded, piped, or bundled anti-pattern is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`) registered in `.codex/hooks.json`.
+9. On a failure or a missing cycle, drain queued wakes, then end the turn so the Stop hook can re-arm or allow the stop.
+   Do not start a fresh foreground checkpoint to keep the turn open.
+
+Codex cannot reason while a foreground tool call is running.
+The bounded checkpoint returns control so a checkpoint that is already running can be polled.
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below prints once for this session start: a compact
+data/backlog.md listing, optional task and orphan-status observations,
+and the CONTEXT files (data/projects.md, data/secondmates.md, data/captain.md,
+data/captain-shared.md, data/learnings.md, and the tracked
+docs/learnings/overnight-learnings.md under the code root), each in full when
+small or INDEXED with its path, size, and outline when large.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status.
+
+Go to a source directly only when:
+  - CONTEXT marked it INDEXED and this turn needs it (read the file, or the
+    section at the line its outline names),
+  - WAKE QUEUE named a saved presentation file (read it before handling a
+    signal record or reconciling the items it left out),
+  - this digest flagged it ABSENT (rebuild or create it per AGENTS.md), or its
+    contents looked unparseable or corrupt,
+  - one task's detail is needed (bin/fm-crew-state.sh <id> for reconciled
+    state; state/<id>.meta and state/<id>.status for raw records),
+  - a full task body, or a backlog row the listing omitted or cut, is needed
+    (bin/fm-tasks-axi.sh show <id> --full, bin/fm-tasks-axi.sh ready, or
+    data/backlog.md),
+  - NETWORK CHECKS reported checks still IN PROGRESS and this turn needs their
+    verdict (bin/fm-startup-network.sh report),
+  - a FLEET OBSERVATION DEFERRED notice left that task's observation unverified
+    (use the targeted per-task reader before acting),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it,
+    or a context re-emit opened with a read cue because the harness cut the
+    digest short: that stage's sources were never emitted and must be
+    reconciled.
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+ABSENT
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+One line per live task: id, project, last recorded state, PR URL, age, endpoint.
+Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.
+
+FLEET OBSERVATION DEFERRED: the remaining budget cannot safely verify the task sources.
+Deferred endpoint observations are unverified; no verdict is available for records not printed above.
+Task and orphan-status sources remain intact. Read one task with bin/fm-crew-state.sh <id> before acting on it.
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+NETWORK_CHECKS: the deferred check worker stopped before publishing, so GitHub authentication, dead-secondmate relaunch, secondmate convergence, home code drift, pending handoff delivery, project clone refresh with its drift reporting, inactive terminal-outcome reconciliation, and unpublished task-branch reconciliation did not complete; rerun {run-worktree}/.test-live-watcher-startup/synthetic-code-root/bin/fm-startup-network.sh run --locked 1
+
+================================================================================
+CONTEXT
+================================================================================
+A file over 2048 bytes is INDEXED: its path, size, and outline print instead of its text.
+Before the first dispatch, merge, or escalation call this session, read each INDEXED captain file,
+or at least the sections its outline names for that call.
+
+docs/learnings/overnight-learnings.md (tracked fleet learnings)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/projects.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+LAB_CONTEXT_SENTINEL: recovery context must remain visible.
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+ABSENT
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'codex'.
+This script never starts supervision itself.
+
+Startup context was emitted, but task observations remain deferred and unverified.
+The READ-ONCE CONTRACT applies to emitted sources; unprinted task observations still need targeted reconciliation.
+
+SESSION_START_COMPLETION: not recorded - optional task observations were deferred.
+
+PRODUCT_EXIT=0
+WALL_SECONDS=43.910

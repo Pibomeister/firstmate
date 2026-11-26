@@ -1,0 +1,22 @@
+[
+  {
+    "name": "actionable-refusals",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "eligibility-is-not-readiness",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "bounded-slow-startup",
+    "result": "pass",
+    "live": true
+  },
+  {
+    "name": "valid-budget-edge-cases",
+    "result": "pass",
+    "live": true
+  }
+]
