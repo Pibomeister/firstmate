@@ -1,0 +1,6 @@
+ok - signal written while no watcher runs is caught on next run
+wait_for_exit: owned pid 28492 exceeded 40 polls; sending TERM
+28492 45548 S    bash {run-worktree}/bin/fm-watch.sh
+wait_for_exit: owned pid 28492 survived TERM; sending KILL
+not ok - watcher did not exit for stale pane
+rc=1 elapsed=205s

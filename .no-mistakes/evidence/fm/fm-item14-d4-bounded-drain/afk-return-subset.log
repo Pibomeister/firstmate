@@ -1,0 +1,4 @@
+ok - late status and routine receipts reach the return consumer while incomplete catch-up stays gated
+ok - a drain that cannot record its branch-outcome presentation keeps the return's catch-up gated until a check records it
+ok - the return brief points at the drain for branch outcomes on a host home and leaves the read cursor to it, and a Pi home's brief is unchanged
+rc=0 elapsed=786s

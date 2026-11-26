@@ -1,0 +1,25 @@
+ok - a note: answer buried under a later routine note: is surfaced with both lines
+ok - failed output preserves unread notes until a successful presentation
+ok - already-presented note: lines are not re-surfaced on the next drain
+ok - a brand-new note: after presentation is surfaced without replaying handled lines
+ok - a queued status signal annotates every unread note, not only the newest
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 40640.1795666886.SZ6vFm
+ok - a pending-reply resolution buried under a later note surfaces once and closes OPEN DECISIONS
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 62167.1795667041.4KvTdz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 62167.1795667041.4KvTdz
+ok - a self-announced pending-reply close does not wake yet still surfaces once in UNREAD STATUS
+ok - unread status over the former byte cap preserves every line
+ok - presentation cursor advances only through its captured endpoint
+ok - a reused task id starts its replacement status log unread at byte zero
+ok - fallback identity still presents and advances status state
+ok - snapshot failures are reported visibly
+ok - OPEN DECISIONS still folds needs-decision/blocked independently of unread notes
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 51172.1795667406.JY1DG3
+ok - an empty-queue backstop presentation still preserves the status for its later signal annotation
+ok - routine working and branch-covered done lines print nothing on an empty-queue drain
+ok - a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers
+Terminated: 15

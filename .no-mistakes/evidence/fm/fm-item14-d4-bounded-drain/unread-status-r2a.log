@@ -1,0 +1,4 @@
+1..7
+ok - a large unpresented span completes and commits even when it takes longer than the bound
+ok - timeout during fold cleans owned scratch and preserves a concurrent reader
+Terminated: 15

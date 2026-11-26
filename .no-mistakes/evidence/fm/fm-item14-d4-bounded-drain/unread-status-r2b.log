@@ -1,0 +1,6 @@
+1..6
+ok - a presentation scratch failure still presents branch outcomes and liveness
+ok - a presentation runner start failure still presents and is not reported as a fold timeout
+ok - presentation scratch of a live worker outlives its dead owner and is removed after the worker ends
+ok - fresh scratch of a dead owner with no recorded worker is kept until it is old
+ok - presentation scratch of a dead owner is removed and live scratch is kept

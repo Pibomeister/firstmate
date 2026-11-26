@@ -1,0 +1,6 @@
+### Scenario 1: cold fold of 40 open decisions + 20000 history lines under a 1s bound
+  attempt 1: rc=124 took=157s | WAKE DRAIN INCOMPLETE: pid=55123 phase=status-open-decisions exceeded 1s decision-fold bound; retry unfinished presentation.
+  attempt 2: rc=124 took=132s | WAKE DRAIN INCOMPLETE: pid=88822 phase=status-open-decisions exceeded 1s decision-fold bound; retry unfinished presentation.
+  attempt 3: rc=124 took=149s | WAKE DRAIN INCOMPLETE: pid=47974 phase=status-open-decisions exceeded 1s decision-fold bound; retry unfinished presentation.
+  attempt 4: rc=124 took=149s | WAKE DRAIN INCOMPLETE: pid=48937 phase=status-open-decisions exceeded 1s decision-fold bound; retry unfinished presentation.
+  attempt 5: rc=124 took=143s | WAKE DRAIN INCOMPLETE: pid=63405 phase=status-open-decisions exceeded 1s decision-fold bound; retry unfinished presentation.

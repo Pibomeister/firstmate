@@ -1,0 +1,23 @@
+### Scenario 1: cold fold of 40 open decisions + 200 history lines under a 4s bound
+  attempt 1: rc=124 took=27s | WAKE DRAIN INCOMPLETE: pid=86920 phase=status-open-decisions exceeded 4s decision-fold bound; retry unfinished presentation.
+  attempt 2: rc=0 took=21s 
+  PASS: bounded attempts converge to a completed drain (attempts=2, last rc=0)
+  PASS: status history is byte-identical (no record cleared)
+  completed attempt presented 40 keyed decisions
+  PASS: every one of the 40 open decisions is presented once the fold completes
+  PASS: no presentation scratch left behind in state/
+  (saw a bounded 124 attempt: 1)
+### Scenario 2: a TERM during a drain leaves no scratch and loses no pending note
+~/.no-mistakes/evidence/01M8B0C6GHG6PGXW20V4JFKB7K/live-drain-scenario.sh: line 48:  9423 Terminated: 15          D bash bin/fm-wake-drain.sh > "$LAB/t.out" 2> "$LAB/t.err"
+  terminated drain rc=143
+  PASS: TERM leaves no presentation scratch in state/
+  PASS: TERM did not rewrite status history
+  next drain rc=0
+  PASS: the next drain completes
+  PASS: the appended decision is presented by the interrupted or the next drain
+### Scenario 3: an invalid bound falls back to the 30s default
+  stderr: wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT is not positive whole seconds; using 30
+  stderr: WARNING: watcher still down (same stale episode; last beat: never, grace 300s; down 85s) - full banner already printed this episode.
+  PASS: invalid bound warns and still completes (rc=0)
+RESULT: failures=0
+rc=0 elapsed=107s
