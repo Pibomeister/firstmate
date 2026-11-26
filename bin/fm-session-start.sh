@@ -8,10 +8,10 @@
 # data/projects.md, data/secondmates.md, data/captain.md,
 # data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
-# and every state/*.status. The digest now prints one line per live task and
+# and every state/*.status. The digest now prints one line per observed task and
 # points at bin/fm-crew-state.sh for full detail.
-# Every one of those reads is UNCONDITIONAL at every session start, so they
-# belong in a script, not in N agent turns.
+# These startup reads belong in a script, not in N agent turns; optional task
+# observations follow the RUNTIME BOUND contract below.
 #
 # COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
 # fm-wake-drain.sh, and fm-startup-network.sh as real subprocesses and prints
@@ -78,7 +78,7 @@
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
 #   6. fleet digest   - a compact data/backlog.md identity/metadata listing,
-#                       one line per live task (id, project, last recorded
+#                       one line per observed task (id, project, last recorded
 #                       state, recorded PR URL, age, and a bounded per-task
 #                       endpoint-liveness read folded into that same line),
 #                       one line per orphan status log, the away posture
@@ -194,7 +194,8 @@
 #   - An in-flight row is listed once: one the held group already lists, or a
 #     plain one (no hold, no blocked_by) whose state/<id>.meta exists, is left
 #     out of the in-flight group, and its id is named in a disclosure line,
-#     because the held group or Work under way prints it.
+#     because the held group prints it or Work under way observes it subject
+#     to the RUNTIME BOUND contract below.
 #   - Only the plain queued (dispatchable-now) listing is bounded, by
 #     FM_SESSION_START_QUEUED_LIMIT, default 5. Anything it omits is disclosed
 #     with an exact remainder count and the command that shows the rest, so a
@@ -218,8 +219,8 @@
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
-# WORK-UNDER-WAY LINES: the fleet digest prints exactly one line per live
-# task - id, project, last recorded state word, recorded PR URL, age, and the
+# WORK-UNDER-WAY LINES: within the RUNTIME BOUND below, the fleet digest prints
+# one line per observed task - id, project, last recorded state word, recorded PR URL, age, and the
 # endpoint verdict - instead of the full meta body plus a status tail it used
 # to re-print. A status line is a wake EVENT rather than current state
 # (AGENTS.md section 8), so the state word is only the last recorded event;
@@ -235,8 +236,9 @@
 # stays under 30 KB (tests/fm-session-start.test.sh pins that on a fixture
 # home). Nothing safety-relevant is cut to get there: the lock verdict, CAPTAIN
 # ORDERS, every wake record, OPEN DECISIONS, UNREAD STATUS, the
-# WAKE_ACK_REQUIRED line, actionable diagnostics, and every live task id print
-# in every case. Long, stable material is summarized or pointed at instead:
+# WAKE_ACK_REQUIRED line, and actionable diagnostics stay visible. Optional task
+# observations follow the RUNTIME BOUND below. Long, stable material is
+# summarized or pointed at instead:
 #   - A CONTEXT file over FM_SESSION_START_CONTEXT_INLINE_MAX bytes (default
 #     2048) is INDEXED: its absolute path, size, and a line-numbered outline of
 #     its headings, or of its list items when it has at most a title heading,
@@ -263,8 +265,9 @@
 # (default 10s). So the whole digest still runs as ONE bounded child of this
 # script (FM_SESSION_START_TIMEOUT, default 120s).
 # Optional task observation uses the existing function timeout owner and half
-# the remaining body budget. If too little time remains for a full endpoint
-# read, that probe is deferred without starting one. Observations needing no
+# the remaining body budget. An endpoint read is deferred without starting
+# when its configured window exceeds that initial observation budget; the
+# aggregate deadline can still interrupt a later read. Observations needing no
 # endpoint read can still complete. A deferred observation leaves
 # its input records intact, prints a targeted reconciliation cue, and does not
 # publish a fresh full-startup completion or AGENTS baseline receipt.
