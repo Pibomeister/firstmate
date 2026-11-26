@@ -491,6 +491,56 @@ test_holds_without_the_lock_keep_every_row() {
   pass "requests held at the same time without the lock each stay held, also while a waiting request is asked again"
 }
 
+# A call stopped at one of the route's pause points holds its place, lock
+# included, until the case lets it go, so another writer can act in that gap.
+# paused <home> <point> <route arguments...>: start that call with its stdin
+# and return once it stands at the point. Sets PAUSED_PID.
+paused() {
+  local home=$1 point=$2 n=0
+  shift 2
+  mkdir -p "$home/pause"
+  FM_TEST_SEAM=1 FM_PERMISSION_ROUTE_PAUSE_AT=$point FM_PERMISSION_ROUTE_PAUSE_DIR="$home/pause" \
+    FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 AK_LIFECYCLE_POLICY=unattended bash "$ROUTE" "$@" &
+  PAUSED_PID=$!
+  while [ ! -e "$home/pause/$point.reached" ] && [ "$n" -lt 200 ]; do
+    sleep 0.1
+    n=$((n + 1))
+  done
+  [ -e "$home/pause/$point.reached" ] || fail "the call never reached $point"
+}
+
+release() {  # <home> <point>
+  : >"$1/pause/$2.go"
+  wait "$PAUSED_PID"
+}
+
+test_pane_clear_keeps_a_request_held_after_its_check() {
+  local home
+  home=$(new_home pane-clear-late)
+  request "$home" "$(bash_payload 'echo hello')"
+  paused "$home" pane-clear-close claude-settled "$home/state" task pane-clear </dev/null
+  # The stopped call holds the lock, so this request is held without it.
+  request "$home" "$(bash_payload 'echo later')"
+  release "$home" pane-clear-close
+  assert_equals "$HELD" "$(open_keys "$home")" "a request held after the pane was checked keeps the key open through that close"
+  assert_equals "$HELD" "$(bash "$ROUTE" held-keys "$home/state" task)" "and the route still names its key"
+  settle "$home" tool-finished "$(finished_payload 'echo later')"
+  assert_equals "" "$(open_keys "$home")" "the key closes when that request finishes: the pane-clear call ended only the request it had checked"
+  pass "a pane-clear close never ends a request held after its check"
+}
+
+test_hold_answers_a_close_written_while_it_ran() {
+  local home
+  home=$(new_home hold-recheck)
+  paused "$home" hold-recheck claude-request "$home/state" task < <(bash_payload 'echo hello')
+  # Another writer, the watchdog for one, closes the key at that moment.
+  printf '%s\n' "resolved [key=$HELD]: permission prompt no longer waiting" >>"$home/state/task.status"
+  release "$home" hold-recheck
+  assert_equals "$HELD" "$(open_keys "$home")" "a hold whose key another writer closed while it ran opens the key again"
+  assert_equals "$HELD" "$(bash "$ROUTE" held-keys "$home/state" task)" "and the route names its key"
+  pass "a hold answers a close written while it ran with a new line"
+}
+
 test_asked_again_never_hides_the_held_set() {
   local home pid i missing=0
   home=$(new_home refresh)
@@ -643,6 +693,8 @@ fm_test_run \
   test_pane_clear_closes_only_a_settled_ordinary_hold \
   test_reserved_request_is_always_reported \
   test_holds_without_the_lock_keep_every_row \
+  test_pane_clear_keeps_a_request_held_after_its_check \
+  test_hold_answers_a_close_written_while_it_ran \
   test_asked_again_never_hides_the_held_set \
   test_held_set_follows_the_latest_requests \
   test_unreadable_payload_never_matches_a_finished_call \

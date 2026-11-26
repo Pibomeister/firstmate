@@ -35,7 +35,9 @@
 #       closes nothing while the newest hold is younger than
 #       FM_PERMISSION_ROUTE_PANE_CLEAR_SECS (default 15), because the hold is
 #       written a moment before the prompt is drawn, and it never closes the
-#       owner-reserved key. Always exits 0.
+#       owner-reserved key. It ends only the requests of the read it checked
+#       that age on, so a request held after that read stays held. Always
+#       exits 0.
 #       A finished request closes its row under each key that holds one:
 #       under the owner-reserved key only a call with the same whole input.
 #   fm-permission-route.sh held-keys <state-dir> <id>
@@ -137,6 +139,12 @@
 # adapter contract puts permission prompts outside its guarantees), so this
 # route has no allow outcome. An allow outcome needs such a published policy
 # first, and it would be read in claude_request where the refusal is decided.
+#
+# Test seam, honoured only with FM_TEST_SEAM=1: FM_PERMISSION_ROUTE_PAUSE_AT
+# names one point (pane-clear-close, before a pane-clear close ends its rows,
+# or hold-recheck, before a hold's last look at its key) and
+# FM_PERMISSION_ROUTE_PAUSE_DIR a directory. The hook makes <point>.reached
+# there and waits up to 30 seconds for <point>.go.
 #
 # The reserved scan decides hold against refuse, never whether a command runs.
 # A reserved command the word lists miss is refused, not held; it still does
@@ -459,6 +467,17 @@ EOF_ENDED
   marker_read || true
 }
 
+pause_at() {  # <point>: the test seam the header names
+  local n=0
+  [ "${FM_TEST_SEAM:-}" = 1 ] && [ "${FM_PERMISSION_ROUTE_PAUSE_AT:-}" = "$1" ] || return 0
+  [ -d "${FM_PERMISSION_ROUTE_PAUSE_DIR:-}" ] || return 0
+  : >"$FM_PERMISSION_ROUTE_PAUSE_DIR/$1.reached" 2>/dev/null || return 0
+  while [ ! -e "$FM_PERMISSION_ROUTE_PAUSE_DIR/$1.go" ] && [ "$n" -lt 300 ]; do
+    sleep 0.1
+    n=$((n + 1))
+  done
+}
+
 hold_note() {  # <key>: who answers a prompt held under that key
   if [ "$1" = "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ]; then
     printf 'it names or may name an owner-reserved category, so only the owner answers it in the worker terminal'
@@ -527,8 +546,10 @@ lock_release() {
 # The row is appended before the line, and both are checked after they are
 # written: a request that is not new still gets a line when its key is not
 # open, and a row that another hook ended in the same moment is held again.
+# The key is read once more at the end, so a close written by another writer
+# while this hold ran, the watchdog's among them, is answered with a new line.
 hold() {  # <category> [nolock]: nolock when the caller just failed to lock
-  local key hash=$REQUEST_HASH new=0
+  local key hash=$REQUEST_HASH new=0 line
   key=$(hold_key "$1")
   [ "$key" != "$FM_PERMISSION_ROUTE_HARDSTOP_KEY" ] || hash=$REQUEST_FULL_HASH
   [ "${2-}" = nolock ] || lock_acquire || true
@@ -544,11 +565,17 @@ hold() {  # <category> [nolock]: nolock when the caller just failed to lock
     fi
   fi
   marker_put "$key" "$hash" || true
+  line="[key=$key]: permission prompt waiting on a $TOOL request, held as $1; nothing was answered, and $(hold_note "$key")"
   if [ "$new" -eq 1 ] || ! key_open "$key"; then
-    status_append "blocked [at=$(date +%s)] [key=$key]: permission prompt waiting on a $TOOL request, held as $1; nothing was answered, and $(hold_note "$key")" || true
+    status_append "blocked [at=$(date +%s)] $line" || true
   fi
   if marker_read && [ "$(held_rows "$key" "$hash")" -eq 0 ]; then
     marker_put "$key" "$hash" || true
+  fi
+  pause_at hold-recheck
+  key_open "$key"
+  if [ "$?" -eq 1 ]; then
+    status_append "blocked [at=$(date +%s)] $line" || true
   fi
   lock_release
 }
@@ -691,14 +718,17 @@ claude_settled() {  # <state-dir> <id> <event>
     pane-clear)
       # The caller proved an empty composer with no prompt on the worker pane.
       # The owner-reserved key is never closed from the pane: only requests
-      # another writer already resolved are ended.
+      # another writer already resolved are ended. The prune reads the set
+      # again, so it runs first: the quiet period is checked on the read whose
+      # rows the close ends, and a request held after that read stays held.
       quiet=$(int_or "${FM_PERMISSION_ROUTE_PANE_CLEAR_SECS:-}" 15)
       marker_read && [ -n "$HELD" ] || return 0
       lock_acquire || return 0
       if marker_read; then
+        marker_prune
         newest=$(printf '%s\n' "$HELD" | awk -F '\t' '$3 + 0 > n { n = $3 + 0 } END { print n + 0 }')
         if [ "$(( $(date +%s) - $(int_or "$newest" 0) ))" -ge "$quiet" ]; then
-          marker_prune
+          pause_at pane-clear-close
           close_key "$FM_PERMISSION_ROUTE_HELD_KEY" 'the worker pane shows an empty composer and no permission prompt'
         fi
       fi
