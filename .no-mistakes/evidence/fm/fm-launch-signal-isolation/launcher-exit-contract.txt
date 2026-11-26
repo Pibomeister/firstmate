@@ -1,0 +1,10 @@
+$ fm-agent-pgrp.sh no-such-agent
+error: fm-agent-pgrp.sh could not run no-such-agent: No such file or directory
+rc=127
+$ fm-agent-pgrp.sh sh -c "exit 7"
+rc=7
+$ fm-agent-pgrp.sh sh -c "kill -KILL \$\$"
+rc=137
+$ fm-agent-pgrp.sh (no args)
+usage: fm-agent-pgrp.sh <command> [args...]
+rc=2

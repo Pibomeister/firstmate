@@ -1,0 +1,9 @@
+== wrapped after Escape keystroke on the pane
+agent-exit=0
+    PID    PGID   TPGID STAT COMMAND
+1174261 1174261 1174261 Ss+  bash
+1178460 1174261 1174261 S+   sleep
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel
+Claude Code didn't start because this folder isn't trusted.
+Run claude again and choose Yes, or run it in another folder.

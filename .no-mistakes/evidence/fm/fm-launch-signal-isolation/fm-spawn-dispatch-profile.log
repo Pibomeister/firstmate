@@ -1,0 +1,9 @@
+ok - allowlist=absent preserves the operational floor and filters only when opted in
+ok - allowlist=missing-config preserves the operational floor and filters only when opted in
+ok - allowlist=enabled preserves the operational floor and filters only when opted in
+ok - allowlist=empty preserves the operational floor and filters only when opted in
+not ok - ship inherited foreign FM variables or lost its own values: FM_HOME=/tmp/fm-spawn-dispatch-profile.e7PZmU/foreign-env-ship/home
+FM_SEND_RETRIES=7
+FM_TASK_ID=foreign-env-ship
+FM_TASK_INBOX=/tmp/fm-spawn-dispatch-profile.e7PZmU/foreign-env-ship/home/state/foreign-env-ship.inbox
+TEST_CREDENTIAL=keep

@@ -1,0 +1,4 @@
+ok - fm-agent-pgrp: exit status, signal death, and a missing command are reported as a shell would
+ok - fm-agent-pgrp: a sibling's group signal kills an unwrapped agent but not an isolated one, and a signal to the agent still stops it
+ok - fm-agent-pgrp: in a real pane, a stray group signal kills an unwrapped agent but not an isolated one, which still owns the terminal and takes its interrupt
+ok - fm-agent-pgrp: closing the endpoint still stops the isolated agent

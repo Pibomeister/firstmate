@@ -1,0 +1,27 @@
+== unwrapped before
+    PID    PGID     SID   TPGID STAT COMMAND
+1174259 1174259 1174259 1174259 Ss+  bash
+1174266 1174259 1174259 1174259 S+   bash
+1174267 1174259 1174259 1174259 Sl+  claude
+1174268 1174259 1174259 1174259 S+   sleep
+-- pane tail:
+ take a moment to review what's in this folder first.
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel
+== wrapped before
+    PID    PGID     SID   TPGID STAT COMMAND
+1174261 1174261 1174261 1174271 Ss   bash
+1174263 1174261 1174261 1174271 S    bash
+1174264 1174261 1174261 1174271 S    perl
+1174265 1174261 1174261 1174271 S    sleep
+1174271 1174271 1174261 1174271 Sl+  claude
+-- pane tail:
+ take a moment to review what's in this folder first.
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel

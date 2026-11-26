@@ -1,0 +1,16 @@
+== raw: pane shell pid=1379597 pgid=1379597; agent pid=1379643 pgid=1379597 terminal_fg_pgid=1379597
+-- stray cleanup signals the pane shell's group: kill -TERM -1379597
+agent 1379643 KILLED
+== wrapped: pane shell pid=1379597 pgid=1379597; agent pid=1379758 pgid=1379758 terminal_fg_pgid=1379758
+-- stray cleanup signals the pane shell's group: kill -TERM -1379597
+agent 1379758 SURVIVED
+-- deliberate interrupt: Ctrl-C keystroke in pane
+agent stopped by interrupt
+== pane transcript
+bash-5.3$ set +m; PS1="$ "
+$ sleep 4141; echo AGENT_EXIT=$?
+AGENT_EXIT=143
+$ {run-worktree}/bin/fm-agent-pgrp.sh sleep 4242; ec
+ho AGENT_EXIT=$?
+^CAGENT_EXIT=130
+$

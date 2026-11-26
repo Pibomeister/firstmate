@@ -1,0 +1,5 @@
+ok - allowlist=absent preserves the operational floor and filters only when opted in
+ok - allowlist=missing-config preserves the operational floor and filters only when opted in
+ok - allowlist=enabled preserves the operational floor and filters only when opted in
+ok - allowlist=empty preserves the operational floor and filters only when opted in
+not ok - raw launch left the pane shell, reloaded rc or kept a foreign home: rc=ok fm=/tmp/fm-spawn-dispatch-profile.0boZPN/rc-function-launch/home
