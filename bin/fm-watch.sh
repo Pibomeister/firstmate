@@ -4602,8 +4602,12 @@ watch_record_progress_beat() {
 # the liveness mtime above; they must not advance this file, or a same-poll
 # touch in the next second looks like the next cycle's top.
 watch_record_poll_top() {
-  local n
-  n=$(cat "$STATE/.last-watcher-poll" 2>/dev/null || echo 0)
+  local n=0
+  # Read in this shell: a command substitution here is a stop-signal window
+  # (watcher_stop_signals).
+  if [ -f "$STATE/.last-watcher-poll" ]; then
+    IFS= read -r n < "$STATE/.last-watcher-poll" || n=0
+  fi
   case "$n" in
     ''|*[!0-9]*) n=0 ;;
   esac
@@ -4615,7 +4619,8 @@ watch_record_poll_top() {
 # terminal wait so a helper can return without sleeping out FM_POLL.
 watch_record_poll_done() {
   local n
-  n=$(cat "$STATE/.last-watcher-poll" 2>/dev/null || echo 0)
+  [ -f "$STATE/.last-watcher-poll" ] || return 0
+  IFS= read -r n < "$STATE/.last-watcher-poll" || return 0
   case "$n" in
     ''|*[!0-9]*) return 0 ;;
   esac
