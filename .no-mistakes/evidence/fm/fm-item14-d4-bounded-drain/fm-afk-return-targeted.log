@@ -1,0 +1,5 @@
+1..2
+ok - late status and routine receipts reach the return consumer while incomplete catch-up stays gated
+ok - an unavailable held listing gates catch-up until a successful reread
+FM_TEST_COMPLETE
+EXIT=0 secs=513

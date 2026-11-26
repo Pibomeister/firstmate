@@ -1,0 +1,7 @@
+1..4
+ok - warm routine-only history completes without changing wake, decision or presentation ownership
+ok - mixed tasks present informational rows once while preserving routine-only context
+ok - a presentation scratch failure still presents branch outcomes and liveness
+ok - presentation scratch of a dead owner is removed and live scratch is kept
+FM_TEST_COMPLETE
+EXIT=0 secs=572

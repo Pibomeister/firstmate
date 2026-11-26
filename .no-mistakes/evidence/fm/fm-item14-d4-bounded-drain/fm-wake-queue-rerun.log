@@ -1,0 +1,15 @@
+ok - branch grant release lock acquisition: failure
+ok - branch grant deactivate lock acquisition: failure
+ok - branch grant activate lock acquisition: failure
+ok - branch grant publish lock acquisition: failure
+ok - branch grant release lock acquisition: success
+ok - branch grant deactivate lock acquisition: success
+ok - branch grant activate lock acquisition: success
+ok - branch grant publish lock acquisition: success
+ok - an abandoned same-process lock hold is reclaimed; a parent's live hold is not
+{run-worktree}/bin/fm-wake-lib.sh: line 630: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-wake-tests.8jSKX3/lock-dir-removed/state/.fixture.lock.owner.VNIJ5z/pid: No such file or directory
+ok - a lock wait returns within its bound once its directory is removed
+ok - without BASHPID a subshell cannot release or reclaim its parent lock and owns its own hold
+ok - bounded acquire hands ownership to the waiting caller after contention
+not ok - presentation lock delayed the drain for 23s
+EXIT=1 secs=146

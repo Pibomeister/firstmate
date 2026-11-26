@@ -1,0 +1,38 @@
+
+=== Scenario B: cold large decision fold under a 2s bound returns 124, keeps the queue, progresses, then completes
+attempt 1 rc=124 secs=33 fold-cursor=2582/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=97209 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 2 rc=124 secs=67 fold-cursor=5014/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=13267 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 3 rc=124 secs=31 fold-cursor=7446/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=75710 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 4 rc=124 secs=32 fold-cursor=9878/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=15215 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 5 rc=124 secs=35 fold-cursor=12310/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=61859 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 6 rc=124 secs=23 fold-cursor=14742/16490 leftover-scratch=[]
+WAKE DRAIN INCOMPLETE: pid=12351 phase=status-open-decisions exceeded 2s decision-fold bound; retry unfinished presentation.
+  wake row still presented: 1
+attempt 7 rc=0 secs=69 fold-cursor=16490/16490 leftover-scratch=[]
+completed after 7 attempts in 293s
+open decisions presented: 30/30
+queue unchanged across bounded attempts: yes
+
+=== Scenario C: TERM during the cold fold leaves no attempt-owned scratch; next drain succeeds
+scratch while running: [.wake-drain-presentation.32952.p49mvx ]
+terminated drain rc=143
+scratch after TERM: []
+orphan workers: 0
+follow-up drain rc=0
+term decision presented after recovery: 1
+scratch after follow-up: []
+
+=== Scenario D: invalid bound falls back to 30s with a note
+rc=0
+wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT is not positive whole seconds; using 30
+EXIT=0

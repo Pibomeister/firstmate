@@ -1,0 +1,6 @@
+1..3
+ok - a decision fold past its bound names its phase, still presents outcomes and liveness, preserves pending data and recovers
+ok - a large unpresented span completes and commits even when it takes longer than the bound
+ok - an invalid presentation bound falls back to the default and still presents
+FM_TEST_COMPLETE
+EXIT=0 secs=269

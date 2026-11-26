@@ -1,0 +1,5 @@
+1..2
+ok - TERM during preparation and fold cleans owned scratch and preserves a concurrent reader
+ok - INT during preparation and fold cleans owned scratch and preserves a concurrent reader
+FM_TEST_COMPLETE
+EXIT=0 secs=330
