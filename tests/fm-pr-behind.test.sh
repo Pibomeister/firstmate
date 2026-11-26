@@ -201,6 +201,24 @@ test_diverged_is_reported_without_relaunch() {
   pass "a diverged branch is reported for manual reconciliation with no relaunch"
 }
 
+test_settled_head_outlives_the_ledger_trim() {
+  fixture trim
+  cm "$WT" local-only
+  publish fix1
+  scan
+  assert_contains "$OUT" "pr-behind-diverged-$TASK-" "trim: diverged reported once"
+  local i reports=0
+  for i in $(seq 1 65); do
+    age_ledger
+    scan
+    case "$OUT" in *pr-behind-diverged-*) reports=$((reports + 1)) ;; esac
+  done
+  assert_equals 0 "$reports" "trim: the diverged head is never reported again"
+  assert_equals 64 "$(wc -l < "$S/.pr-behind-$TASK" | tr -d '[:space:]')" "trim: the ledger stays trimmed"
+  assert_equals 0 "$(calls)" "trim: no relaunch"
+  pass "a settled head stays settled after more sweeps than the ledger keeps"
+}
+
 test_refused_control_retries_later() {
   fixture deferred
   publish fix1
@@ -388,6 +406,7 @@ fm_test_run \
   test_active_run_is_recorded_without_relaunch \
   test_not_behind_does_nothing \
   test_diverged_is_reported_without_relaunch \
+  test_settled_head_outlives_the_ledger_trim \
   test_refused_control_retries_later \
   test_ineligible_ships_are_skipped \
   test_steer_after_done_is_probed \

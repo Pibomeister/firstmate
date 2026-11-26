@@ -49,7 +49,8 @@
 # Ledger: state/.pr-behind-<id>, rows `<epoch>\t<event>\t<head>`, newest last,
 # trimmed to the last 64 rows. Events: probe current dirty held active diverged
 # refused requested relaunched unsynced deferred failed unreadable
-# hold-unknown.
+# hold-unknown. A sweep that finds the same settled head re-records its
+# settling row, so the trim never drops it and reopens that head.
 #
 # Output: one `<wake-key>\t<check reason>` line per event the supervisor should
 # see; bin/fm-watch.sh appends each as a durable check wake. Silence means
@@ -118,11 +119,11 @@ last_probe() { awk -F '\t' '$1 ~ /^[0-9]+$/ { t = $1 } END { print t + 0 }' "$LE
 # or a divergence the relaunch would also refuse. A `refused` check may be
 # transient, so it never closes a head. `deferred` (the
 # control plane proved nothing was sent) and `unsynced` reopen it.
-settled_head() {
+settled_row() {
   awk -F '\t' '
-    $2 ~ /^(current|requested|relaunched|failed|diverged)$/ { h = $3 }
+    $2 ~ /^(current|requested|relaunched|failed|diverged)$/ { e = $2; h = $3 }
     $2 ~ /^(deferred|unsynced)$/ && $3 == h { h = "" }
-    END { print h }' "$LEDGER" 2>/dev/null
+    END { if (h != "") print e " " h }' "$LEDGER" 2>/dev/null
 }
 seen_event() { awk -F '\t' -v e="$1" -v h="$2" '$2 == e && $3 == h { f = 1 } END { exit !f }' "$LEDGER" 2>/dev/null; }
 # Report an event once per head; the row is recorded either way.
@@ -187,7 +188,8 @@ for meta in "$STATE"/*.meta; do
     *[!0-9a-f]*) record unreadable - || true; continue ;;
   esac
   if [ "$pub" = "$local_head" ]; then record current "$pub" || true; continue; fi
-  if [ "$pub" = "$(settled_head)" ]; then record probe "$pub" || true; continue; fi
+  settled=$(settled_row)
+  if [ -n "$settled" ] && [ "$pub" = "${settled#* }" ]; then record "${settled%% *}" "$pub" || true; continue; fi
 
   # --check fetches objects only and moves no ref, so it classifies a dirty
   # copy too; an ahead copy with uncommitted edits is ordinary work, not news.
