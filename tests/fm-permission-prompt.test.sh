@@ -962,7 +962,9 @@ test_hook_hold_and_pane_are_one_decision() {
   # The same, with the hold too young to trust the pane yet.
   worker hy claude "$FIX/claude-2.1.325-after-escape.txt"
   hook_request hy 'echo hello'
-  run_wd 100 once >/dev/null 2>&1
+  # The quiet period runs on the real clock, so pin it far above any pass
+  # length: a slow host must not age the hold past it mid-pass.
+  FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=86400 run_wd 100 once >/dev/null 2>&1
   assert_equals 0 "$(grep -c '^resolved ' "$H/state/hy.status")" "a hold written a moment ago is not closed from the pane"
   PP_COMPOSER=unknown FM_PERMISSION_ROUTE_PANE_CLEAR_SECS=0 run_wd 200 once >/dev/null 2>&1
   assert_equals 0 "$(grep -c '^resolved ' "$H/state/hy.status")" "a pane whose composer cannot be read proves nothing"
