@@ -38,8 +38,11 @@
 # the browser's command. A final `summary:` line counts each action.
 #
 # Exit status: 0 when the inventory was read (and, with --apply, every reap
-# succeeded or was safely skipped); 1 when an inventory read failed, including
-# an unreadable home, task record, or secondmate registry, in which case
+# succeeded or was safely skipped, a truncated title recheck skipping that
+# terminal as now-unreadable); 1 when an inventory read failed, including an
+# unreadable home, task record, or secondmate registry, or an initial Orca
+# terminal inventory that is truncated or lists fewer terminals than its
+# totalCount, in which case
 # nothing is closed; 2 on a usage error; 3 when --apply hit a failure.
 #
 # Owners. The script reads this home's state/*.meta records and, through each
@@ -416,7 +419,8 @@ if (mode === "terminals") {
   if (!mem || mem.ok === false || !mem.result || !Array.isArray(mem.result.worktrees)) {
     console.error("error: orca diagnostics memory returned no process sweep"); process.exit(1);
   }
-  if (data.result.truncated) console.error("warning: Orca truncated the terminal list; unlisted terminals are not judged");
+  const total = Number(data.result.totalCount ?? data.result.total_count ?? 0);
+  if (data.result.truncated || total > data.result.terminals.length) { console.error("error: Orca terminal list is truncated or short of its totalCount; enumeration incomplete, nothing was closed"); process.exit(1); }
   const pidOf = new Map(), dup = new Set();
   for (const wt of mem.result.worktrees) for (const s of (wt && wt.sessions) || []) {
     if (!s || typeof s.sessionId !== "string") continue;
@@ -632,6 +636,7 @@ lane_now() {
 current_title() {  # <handle>
   orca terminal list --json 2>/dev/null | node -e '
 let d; try { d = JSON.parse(require("fs").readFileSync(0, "utf8")); } catch (_) { process.exit(1); }
+if (d && d.result && d.result.truncated) process.exit(1);
 const ts = d && d.ok !== false && d.result && Array.isArray(d.result.terminals) ? d.result.terminals : null;
 if (!ts) process.exit(1);
 const t = ts.find((x) => x && x.handle === process.argv[1]);

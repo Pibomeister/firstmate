@@ -123,6 +123,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
+- Opt-in dispatch claim receipts under `state/ledger-claims/` (`bin/fm-ledger.sh`).
 - Relay guard pass status, action log, probe streaks, relay logs, and pass lock under `state/relay-guard/` (`bin/fm-relay-guard.sh`).
 - The default host-health beacon log, `state/host-health-beacon.log` (`bin/fm-host-health.sh`).
 - Registered external lanes under `state/external-lanes/`, one record per lane that a launcher outside Firstmate started (`bin/fm-lane-register.sh`).
@@ -1116,7 +1117,7 @@ Each `captains[]` object:
 ## Mission ledger (config/mission-ledger)
 
 The mission ledger is the backlog itself, read as a per-project plan with a ready queue deep enough to last the night.
-[`bin/fm-ledger.sh`](../bin/fm-ledger.sh) files each approved proposal and captain order as its own item, prints the plan and the next ready item, writes handoffs from the ledger, and runs the ready-depth check; its header owns the exact output and exit codes.
+[`bin/fm-ledger.sh`](../bin/fm-ledger.sh) files each approved proposal and captain order as its own item, prints the plan and the next ready item, claims ready items when opted in, writes handoffs from the ledger, and runs the ready-depth check; its header owns the exact output and exit codes.
 At 17:00 and 23:00 in the quiet-hours zone (`config/escalation`), the check sends the supervisor one notification naming every active project with fewer ready items than the target.
 Session start arms the check in a home with a tasks-axi backlog.
 
@@ -1126,9 +1127,15 @@ The optional local, gitignored `config/mission-ledger` file holds one `key=value
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `min-ready` | `3` | Ready items each active project needs at each check time; `0` turns the scheduled check off. |
+| `claim-project` | absent (off) | Exact project slug allowed for home-local self-service dispatch; repeat for each project inside the home's approved charter. |
 
-Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
+Blank lines and lines that start with `#` are ignored, and an unusable `min-ready` value keeps its default.
 A check time is reported only within 6 hours after it passes, so a watcher that was down overnight does not report a stale morning reading.
+Claim grants are stricter: a malformed grant, or a symlinked or unreadable configuration, refuses claims and secondmate launch.
+Enable `claim-project` in one pilot home first, only for work already approved and routed to that home.
+It grants no cross-home routing, charter changes, new work, or merge authority.
+The home supervisor can retire an abandoned claim with `claim-release`; the ledger refuses release while task ownership or possible worker delivery remains unproven.
+The atomic reservation, spawn token, approval recheck, and crash-recovery commands are owned by the [`fm-ledger.sh` header](../bin/fm-ledger.sh).
 
 ## Escalation quiet hours (config/escalation)
 
@@ -1395,6 +1402,24 @@ Only one check runs at a time per home, and each check records its outcome in `s
 The ceiling is `max-load1` above unless the optional `config/load-relief` file sets `ceiling`, `resume-below`, `sustain-secs`, or `pause-per-check`.
 [`bin/fm-load-relief.sh`](../bin/fm-load-relief.sh) owns that file's format, the priority order, and the pause records.
 The script's header owns the report line, the published document's fields, the verdict, the beat freshness rules, the host-constraint thresholds, and the probe fallbacks.
+
+## Goal digest (config/goal-digest)
+
+The optional local, gitignored `config/goal-digest` file configures [`bin/fm-goal-digest.sh`](../bin/fm-goal-digest.sh), a read-only recurring digest.
+The script header and `--help` own the configuration format, supported keys, source locations, scheduling commands and output contract.
+A neutral example is:
+
+```text
+repo = example-org/example-repo
+status = Example status | /path/to/status.txt
+review = Example review | /path/to/review.status
+```
+
+`fm-goal-digest.sh install` installs a macOS LaunchAgent that runs every 20 minutes.
+The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
+The script header defines output paths, merge-window recovery, supported native owner-action records, wait-age semantics, explicit unknown coverage and summary-runner behavior.
+The job never merges, deploys, tags, pushes or messages anyone.
+Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.
 
 ## Disk alarm
 

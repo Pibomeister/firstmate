@@ -18,11 +18,11 @@ log=${FM_FAKE_SELF_HEAL_GH_LOG:?FM_FAKE_SELF_HEAL_GH_LOG must be set}
 printf '%s\n' "$*" >> "$log"
 sub="${1:-} ${2:-}"
 shift 2
-positional= repo= state= json= jq= labels=
+positional= repo= state= json= jq= labels= limit=30
 while [ "$#" -gt 0 ]; do
   case "$sub:$1" in
     *:--repo) repo=$2; shift 2 ;;
-    "label list:--limit" | "issue list:--limit") shift 2 ;;
+    "label list:--limit" | "issue list:--limit") limit=$2; shift 2 ;;
     "label list:--json" | "issue list:--json") json=$2; shift 2 ;;
     "label list:--jq" | "issue list:--jq") jq=$2; shift 2 ;;
     "issue list:--state") state=$2; shift 2 ;;
@@ -38,7 +38,7 @@ done
 case $sub in
   'label list')
     [ "$json" = name ] && [ -n "$jq" ] || exit 1
-    cat "$FM_FAKE_SELF_HEAL_LABELS"
+    head -n "$limit" "$FM_FAKE_SELF_HEAL_LABELS"
     ;;
   'label create')
     [ -n "$positional" ] || exit 1
@@ -160,6 +160,29 @@ test_existing_labels_not_recreated() {
   run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't' --evidence 'e' >/dev/null
   assert_not_contains "$(cat "$home/gh.log")" 'label create' "existing labels must not be recreated"
   pass "existing labels are not recreated"
+}
+
+test_labels_beyond_bound_refuse_visibly() {
+  local home name i out rc
+  for name in self-heal failure-class:demo; do
+    home="$TMP_ROOT/labels-bound-${name//:/-}"
+    prep_home "$home"
+    if [ "$name" = failure-class:demo ]; then
+      printf 'self-heal\n' >> "$home/labels.txt"
+    fi
+    for i in $(seq 1 500); do
+      printf 'other-%s\n' "$i" >> "$home/labels.txt"
+    done
+    printf '%s\n' "$name" >> "$home/labels.txt"
+    rc=0
+    out=$(run_script "$home" --repo Pibomeister/firstmate --failure-class demo --title 't') || rc=$?
+    assert_equals 1 "$rc" "a label past the 500-row bound must not be declared missing"
+    assert_contains "$out" "label enumeration incomplete; presence of $name is unknown" \
+      "an incomplete label lookup must refuse visibly"
+    assert_not_contains "$(cat "$home/gh.log")" 'label create' "an incomplete lookup must not overwrite labels"
+    assert_not_contains "$(cat "$home/gh.log")" 'issue create' "an incomplete lookup must not file an issue"
+  done
+  pass "both label probes refuse visibly when the requested label is beyond the bound"
 }
 
 test_no_evidence_new_issue() {
@@ -398,6 +421,7 @@ fm_test_run \
   test_repo_is_owner_name_only \
   test_new_issue_labels_and_body \
   test_existing_labels_not_recreated \
+  test_labels_beyond_bound_refuse_visibly \
   test_no_evidence_new_issue \
   test_dedupe_comments \
   test_dedupe_comment_without_evidence \

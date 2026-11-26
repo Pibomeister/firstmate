@@ -9,16 +9,18 @@
 #   fm-ledger.sh unfiled
 #   fm-ledger.sh plan [--project <name>] [--limit <n>]
 #   fm-ledger.sh next [--project <name>]
+#   fm-ledger.sh claim --project <name> [--resume <id>]
+#   fm-ledger.sh claim-release <id> --token <nonce>
 #   fm-ledger.sh depth [--scheduled]
 #   fm-ledger.sh handoff --doc <file> (--note <text> | --note-file <path> | --note-file -)
 #   fm-ledger.sh arm [--if-enabled]
 #   fm-ledger.sh disarm
 #
-# The ledger is the backlog. There is no second store: every read and write goes
-# through bin/fm-tasks-axi.sh, so the configured tasks-axi backend owns task
-# state, and this command only composes views over it and files new items.
-# The one file it adds, <data>/ledger-intake.tsv, records where each filed item
-# came from (see INTAKE), never task state.
+# The ledger is the backlog. Backlog reads and writes go through
+# bin/fm-tasks-axi.sh, so the configured tasks-axi backend owns task state.
+# Claims reserve dispatch identity without creating another backlog.
+# <data>/ledger-intake.tsv records where each filed item came from (see INTAKE),
+# never task state. Opt-in dispatch receipts are described under CLAIM.
 #
 # INTAKE. `intake` files one approved proposal, one captain order, or one ask
 # as its own queued backlog item the moment it arrives. The source names its
@@ -75,6 +77,59 @@
 # it to see what comes next; it dispatches nothing. It exits 3 when nothing is
 # ready.
 #
+# CLAIM. Opt-in via config/mission-ledger claim-project (see docs/configuration.md).
+# Claims only this home's queued, ready, ledger-sourced items with a prepared
+# brief and a project clone under this home's projects directory. An exact
+# project grant is the operator's machine-readable charter scope, never inferred
+# from another home's registry. Main-owned/in-flight tasks are never adopted.
+# Selection and receipt publication hold the home claim lock and the selected
+# task's spawn lock. An existing claim, metadata, or pending close is excluded.
+# Success prints CLAIM <id> project=<name> phase=reserved token=<nonce>.
+# Pass the id and --claim <nonce> to fm-spawn with its normal arguments.
+# next remains read-only and includes reserved items; claim skips them.
+#
+# state/ledger-claims/<id>.json is a dispatch receipt, not a second backlog.
+# It binds the home, project path, source, complete item and brief. Spawn checks
+# these again, together with readiness, standing holds, open status decisions
+# and the current lane budget, before any endpoint allocation. All ordinary
+# spawn profile, disk, capacity and budget gates still apply. Standing holds
+# conservatively refuse claims until the owner reconciles them.
+# --resume recovers a lost claim reply with the SAME token. A reserved receipt
+# is reusable only while its approval inputs match; changed inputs refuse and
+# require owner reconciliation, never automatic reapproval. Receipts never expire.
+# A dispatching receipt is written before endpoint allocation. A crash after
+# that fence returns exit 4 on resume. Before worker delivery, spawn records
+# launching and saves the exact endpoint metadata in the receipt. With metadata
+# still present use fm-control; without it, the supervisor uses claim-release.
+# A launched receipt returns its identity without starting anything.
+# Source orders must remain pending or acked; done/parked revokes approval.
+# Project paths are physically contained within this home's projects root.
+# Order authority and standing holds are rechecked under the claim lock as the
+# last authority reads before publishing a reservation or dispatch transition.
+#
+# RELEASE. claim-release is supervisor-only (no FM_TASK_ID and main actor),
+# binds the exact current token, and takes the claim, spawn and metadata locks.
+# It refuses while dispatch/lifecycle work, a task record or a backlog close
+# remains. Reserved/dispatching receipts prove no worker delivery was
+# attempted and may be released after a pre-metadata crash. After delivery, the
+# saved endpoint must be proven gone by fm-control's existing backend classifier,
+# and no process may retain the recorded worktree as cwd. Unknown/unsupported
+# absence proof refuses; there is no override.
+# Release never destroys an endpoint, worktree or backlog item. It archives the
+# receipt under released/<id>-<token>.json; claiming again rechecks current
+# authority and issues a different token, so stale spawn calls remain fenced.
+# Any pre-launch allocations left by a crash still use normal owner cleanup.
+#
+# Spawn-only entry points: claim-check, claim-begin, claim-launch, claim-fence, claim-finish <id> <token>
+# <canonical-project-path>. They require the direct caller to hold .spawn-<id>.lock.
+# begin changes reserved -> dispatching; launch saves the endpoint and changes
+# dispatching -> launching after metadata publication and before worker delivery;
+# fence re-reads claim authority at the delivery point without moving the receipt;
+# finish changes launching -> launched after delivery and backlog commit.
+# A missing token refuses an existing claim. Relaunch of a launched receipt is
+# the recovery path after delivery. Relaunch of a launching receipt re-runs fence
+# and may finish; a claim that has not launched still refuses.
+#
 # DEPTH. `depth` reports every active project whose ready queue is below the
 # target, so the night always has work:
 #   SHORT <name> ready=<n> min=<m> in_flight=<n> blocked=<n> held=<n>
@@ -119,14 +174,16 @@
 #
 # CONFIG (config/mission-ledger, optional; docs/configuration.md "Mission
 # ledger" owns the schema). Absent means the defaults.
-#   min-ready=<n>     ready items each active project needs (default 3; 0
-#                     turns the scheduled check off)
-# Blank lines and lines starting with # are ignored; an unusable value keeps
-# its default.
+#   min-ready=<n>         ready items each active project needs (default 3; 0
+#                         turns the scheduled check off)
+#   claim-project=<slug>  repeatable exact project grant for claim (see CLAIM)
+# Blank lines and lines starting with # are ignored; an unusable min-ready
+# keeps its default, while unsafe files or malformed claim-project grants
+# refuse claims.
 #
 # Exit status: 0 success; 1 refusal or failure; 2 usage error; 3 a result to
 # act on (unfiled order, short project, nothing ready, handoff refused for an
-# unfiled order).
+# unfiled order); 4 an uncertain claimed dispatch requiring task recovery.
 #
 # Environment: FM_HOME selects the home; FM_DATA_OVERRIDE, FM_STATE_OVERRIDE,
 # and FM_CONFIG_OVERRIDE override its directories. With FM_TEST_SEAM=1, FM_NOW
@@ -419,6 +476,317 @@ EOF
   tasks show "$id" --full
 }
 
+# --- claims --------------------------------------------------------------------
+
+claim_init() {
+  # Receipts bind the physical home spelling spawn resolves, never a
+  # relative FM_HOME the caller happened to use.
+  FM_HOME=$(cd "$FM_HOME" && pwd -P) || die "claim home is unavailable"
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  # shellcheck source=bin/fm-classify-lib.sh
+  . "$SCRIPT_DIR/fm-classify-lib.sh"
+  # shellcheck source=bin/fm-secondmate-charter-lib.sh
+  . "$SCRIPT_DIR/fm-secondmate-charter-lib.sh"
+  CLAIM_DIR="$STATE/ledger-claims"
+  CLAIM_TASK_LOCK=
+  CLAIM_META_LOCK=
+  CLAIM_RELEASE_TMP=
+  CLAIM_STAGE_TMP=
+  [ ! -L "$CLAIM_DIR" ] || die "claim directory is a symlink"
+  mkdir -p "$CLAIM_DIR" || die "cannot create claim directory"
+  CLAIM_LOCK="$STATE/.ledger-claim.lock"
+  fm_lock_acquire_wait "$CLAIM_LOCK" || die "cannot acquire claim lock"
+  trap 'if [ -n "$CLAIM_RELEASE_TMP" ]; then rm -f "$CLAIM_RELEASE_TMP"; fi; if [ -n "$CLAIM_STAGE_TMP" ]; then rm -f "$CLAIM_STAGE_TMP" "$CLAIM_STAGE_TMP.next"; fi; if [ -n "$CLAIM_META_LOCK" ]; then fm_lock_release "$CLAIM_META_LOCK"; fi; if [ -n "$CLAIM_TASK_LOCK" ]; then fm_lock_release "$CLAIM_TASK_LOCK"; fi; fm_lock_release "$CLAIM_LOCK"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+}
+
+claim_slug() {
+  case "$1" in ''|.|..|*[!A-Za-z0-9._-]*) die "invalid claim id or project: $1" ;; esac
+}
+
+claim_scope() {
+  local projects home cfg
+  # The grant must come from this home's own config directory: a config
+  # path that resolves outside the physical home borrows another grant.
+  home=$(cd "$FM_HOME" && pwd -P) || die "claim home is unavailable"
+  cfg=$(cd "$CONFIG" && pwd -P) || die "claim config directory is unavailable"
+  case "$cfg/" in "$home/"*) ;; *) die "claim config directory is outside this home" ;; esac
+  projects=$(fm_secondmate_claim_projects "$CONFIG") || die "invalid claim-project configuration"
+  printf '%s\n' "$projects" | grep -Fx -- "$1" >/dev/null || die "claims are not enabled for project $1 in this home"
+}
+
+claim_project_path() { # <project>: both the projects root and clone stay in this home
+  local home projects path
+  claim_slug "$1"
+  home=$(cd "$FM_HOME" && pwd -P) || die "claim home is unavailable"
+  projects=$(cd "${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}" && pwd -P) || die "claim projects root is unavailable"
+  case "$projects/" in "$home/"*) ;; *) die "claim projects root is outside this home" ;; esac
+  path=$(cd "$projects/$1" && pwd -P) || die "claim project is unavailable"
+  case "$path/" in "$projects/"?*) ;; *) die "claim project escapes this home's projects root" ;; esac
+  printf '%s\n' "$path"
+}
+
+claim_order_active() { # <source>
+  local out rc=0
+  case "$1" in
+    order:*)
+      out=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" verify "${1#order:}") || rc=$?
+      [ "$rc" = 0 ] || [ "$rc" = 3 ] || die "claim source order cannot be read"
+      case "$out" in
+        "unacked ${1#order:} state=pending "*|"acked ${1#order:} state=acked") ;;
+        *) die "claim source order is no longer active (done or parked): $out" ;;
+      esac
+      ;;
+  esac
+}
+
+claim_holds_clear() {
+  local holds
+  holds=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-order.sh" holds --relay) || die "cannot read standing holds"
+  [ -z "$holds" ] || die "standing holds require owner reconciliation before claiming"
+}
+
+claim_publication_authorized() { # <id> <project>; caller holds the claim lock
+  local source
+  source=$(awk -F '\t' -v id="$1" -v p="$2" '$4 == id && $5 == p { print $3 }' "$INTAKE_LOG") || die "cannot read claim source"
+  valid_source "$source" || die "claim source changed before publication"
+  claim_order_active "$source"
+  # Keep this the final authority read before the atomic receipt publication.
+  claim_holds_clear
+}
+
+claim_snapshot() { # <id> <project>; prints the exact approval-input digest
+  local id=$1 project=$2 row source item body first open brief="$DATA/$1/brief.md"
+  claim_scope "$project"
+  claim_project_path "$project" >/dev/null || return 1
+  load_backlog
+  row=$(classified_rows | awk -F '\t' -v id="$id" -v p="$project" '$1 == p && $2 == "ready" && $5 == id { print }')
+  [ -n "$row" ] || die "claim $id is no longer queued and ready in project $project"
+  # tasks-axi ready may include an In-flight row; never adopt it.
+  printf '%s\n' "$OPEN_ROWS" | awk -F '\t' -v id="$id" '$1 == id && $2 == "queued" { found=1 } END { exit !found }' || die "claim $id is not queued"
+  row=$(awk -F '\t' -v id="$id" -v p="$project" '$4 == id && $5 == p { print }' "$INTAKE_LOG" 2>/dev/null) || die "claim $id has no ledger source"
+  [ -n "$row" ] && [ "$(printf '%s\n' "$row" | wc -l | tr -d ' ')" = 1 ] || die "claim $id has no unique ledger source"
+  source=$(printf '%s\n' "$row" | cut -f3)
+  valid_source "$source" || die "claim $id has an invalid approval source"
+  claim_order_active "$source"
+  item=$(tasks show "$id" --full) || die "cannot read claim $id"
+  body=$(printf '%s\n' "$item" | sed -n 's/^  body: //p' | head -n 1)
+  case "$body" in
+    \"*\") body=$(printf '%s' "$body" | jq -r 'if type == "string" then . else "" end' 2>/dev/null) || body='' ;;
+  esac
+  first=${body%%$'\n'*}
+  [ "$first" = "Ledger source: $source" ] || die "claim $id approval source changed"
+  [ -f "$brief" ] && [ -s "$brief" ] && [ -r "$brief" ] && [ ! -L "$brief" ] || die "claim $id needs a prepared brief"
+  if [ -e "$STATE/$id.status" ] || [ -L "$STATE/$id.status" ]; then
+    [ -f "$STATE/$id.status" ] && [ -r "$STATE/$id.status" ] && [ ! -L "$STATE/$id.status" ] || die "claim $id status is unreadable"
+    open=$(status_open_decisions "$STATE/$id.status") || die "cannot read claim decisions"
+    [ -z "$open" ] || die "claim $id has an open decision or blocker"
+  fi
+  claim_holds_clear
+  "$SCRIPT_DIR/fm-task-budget.sh" prelaunch "$FM_HOME" >&2 || die "claim budget refused"
+  { printf '%s\n' "$row" "$item"; cat "$brief"; } | shasum -a 256 | awk '{print $1}'
+}
+
+claim_read() {
+  local file="$CLAIM_DIR/$1.json"
+  [ -f "$file" ] && [ -r "$file" ] && [ ! -L "$file" ] || die "missing or unsafe claim receipt for $1"
+  jq -e --arg id "$1" --arg home "$FM_HOME" '
+    .version == 2 and .id == $id and .home == $home and
+    (.token | type == "string" and test("^[a-f0-9]{32}$")) and
+    (.snapshot | type == "string" and test("^[a-f0-9]{64}$")) and
+    (.project | type == "string") and (.path | type == "string") and
+    (.phase == "reserved" or .phase == "dispatching" or .phase == "launching" or .phase == "launched") and
+    (if .phase == "reserved" or .phase == "dispatching" then .launch_attempted == false
+     else .launch_attempted == true and (.endpoint_meta | type == "string" and length > 0) end)
+  ' "$file" >/dev/null || die "invalid claim receipt for $1"
+  CLAIM_PROJECT=$(jq -r .project "$file")
+  CLAIM_TOKEN=$(jq -r .token "$file")
+  CLAIM_PHASE=$(jq -r .phase "$file")
+  CLAIM_PATH=$(jq -r .path "$file")
+  CLAIM_SNAPSHOT=$(jq -r .snapshot "$file")
+}
+
+claim_print() {
+  printf 'CLAIM %s project=%s phase=%s token=%s\n' "$1" "$CLAIM_PROJECT" "$CLAIM_PHASE" "$CLAIM_TOKEN"
+}
+
+claim_validate() {
+  local snapshot path
+  claim_slug "$CLAIM_PROJECT"
+  path=$(claim_project_path "$CLAIM_PROJECT") || return 1
+  [ "$path" = "$CLAIM_PATH" ] || die "claim project path changed"
+  snapshot=$(claim_snapshot "$1" "$CLAIM_PROJECT") || return 1
+  [ "$snapshot" = "$CLAIM_SNAPSHOT" ] || die "claim $1 approval inputs changed; owner reconciliation required"
+}
+
+cmd_claim() {
+  local project='' resume='' id row path snapshot token file tmp
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --project|--resume)
+        [ "$#" -ge 2 ] || usage_die "$1 needs a value"
+        case "$1" in --project) project=$2 ;; --resume) resume=$2 ;; esac
+        shift 2 ;;
+      *) usage_die "claim: unknown argument: $1" ;;
+    esac
+  done
+  claim_slug "$project"
+  claim_init
+  if [ -n "$resume" ]; then
+    claim_slug "$resume"
+    claim_read "$resume"
+    [ "$project" = "$CLAIM_PROJECT" ] || die "claim belongs to another project"
+    # A dispatch that never launched re-runs every authority check before
+    # recovery may deliver its first worker; a launched dispatch is fenced
+    # by its saved endpoint evidence instead.
+    if [ "$CLAIM_PHASE" = reserved ] || [ "$CLAIM_PHASE" = dispatching ]; then claim_validate "$resume" || return 1; fi
+    claim_print "$resume"
+    if [ "$CLAIM_PHASE" = dispatching ] || [ "$CLAIM_PHASE" = launching ]; then
+      printf 'claim %s: dispatch incomplete; use claim-release with the token if no task record remains, otherwise recover the existing task\n' "$resume" >&2
+      return 4
+    fi
+    return 0
+  fi
+  claim_scope "$project"
+  path=$(claim_project_path "$project") || return 1
+  load_backlog
+  while IFS=$'\t' read -r _ _ _ _ id _; do
+    [ -n "$id" ] || continue
+    claim_slug "$id"
+    file="$CLAIM_DIR/$id.json"
+    [ ! -e "$file" ] && [ ! -L "$file" ] || continue
+    fm_lock_try_acquire "$STATE/.spawn-$id.lock" || continue
+    CLAIM_TASK_LOCK="$STATE/.spawn-$id.lock"
+    if [ -e "$STATE/$id.meta" ] || [ -L "$STATE/$id.meta" ] ||
+      [ -e "$STATE/$id.backlog-close" ] || [ -L "$STATE/$id.backlog-close" ]; then
+      fm_lock_release "$CLAIM_TASK_LOCK"; CLAIM_TASK_LOCK=; continue
+    fi
+    # Missing preparation or a held item parks only that item.
+    if ! snapshot=$(claim_snapshot "$id" "$project"); then
+      fm_lock_release "$CLAIM_TASK_LOCK"; CLAIM_TASK_LOCK=; continue
+    fi
+    path=$(claim_project_path "$project") || return 1
+    token=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+    [ "${#token}" = 32 ] || die "cannot create claim nonce"
+    tmp=$(mktemp "$CLAIM_DIR/.receipt.XXXXXX") || die "cannot stage claim"
+    CLAIM_STAGE_TMP=$tmp
+    jq -n --arg id "$id" --arg home "$FM_HOME" --arg project "$project" --arg path "$path" --arg token "$token" --arg snapshot "$snapshot" \
+      '{version:2,id:$id,home:$home,project:$project,path:$path,token:$token,snapshot:$snapshot,phase:"reserved",launch_attempted:false}' > "$tmp" || die "cannot stage claim"
+    claim_publication_authorized "$id" "$project" || return 1
+    mv "$tmp" "$file" || die "cannot publish claim"
+    CLAIM_STAGE_TMP=
+    claim_read "$id"
+    claim_print "$id"
+    return 0
+  done <<EOF
+$(classified_rows | awk -F '\t' -v p="$project" '$1 == p && $2 == "ready"' | LC_ALL=C sort -t "$(printf '\t')" -k3,3n -k4,4n)
+EOF
+  printf 'claim: nothing claimable for project %s\n' "$project"
+  return 3
+}
+
+cmd_claim_spawn() { # <check|begin|launch|fence|finish> <id> <token> <project-path>
+  local action=$1 id=$2 token=$3 path=$4 tmp
+  claim_slug "$id"
+  [ "$(cat "$STATE/.spawn-$id.lock/pid" 2>/dev/null)" = "$PPID" ] || die "claim transition requires the caller's spawn lock"
+  claim_init
+  if [ ! -e "$CLAIM_DIR/$id.json" ] && [ ! -L "$CLAIM_DIR/$id.json" ]; then
+    [ -z "$token" ] && [ "$action" = check ] && return 0
+    die "no claim receipt for $id"
+  fi
+  claim_read "$id"
+  [ -n "$token" ] && [ "$token" = "$CLAIM_TOKEN" ] || die "task $id is reserved; its claim token is required"
+  path=$(cd "$path" && pwd -P) || die "claim project is unavailable"
+  [ "$path" = "$CLAIM_PATH" ] || die "task $id claim belongs to another project path"
+  [ "$(claim_project_path "$CLAIM_PROJECT")" = "$path" ] || die "claim project path is outside its approved home"
+  if [ "$action" = fence ]; then
+    # Final authority read at the point of delivery: a hold or revocation
+    # published after the launch fence still refuses the worker launch.
+    # Read-only under the claim lock; the receipt does not move.
+    [ "$CLAIM_PHASE" = launching ] || die "claim $id is not launching"
+    claim_publication_authorized "$id" "$CLAIM_PROJECT" || return 1
+    return 0
+  fi
+  if [ "$action" = finish ]; then
+    [ "$CLAIM_PHASE" = launching ] || die "claim $id is not launching"
+    [ -f "$STATE/$id.meta" ] || die "claim $id has no task record"
+    CLAIM_PHASE=launched
+  elif [ "$action" = launch ]; then
+    [ "$CLAIM_PHASE" = dispatching ] || die "claim $id is not dispatching"
+    [ -f "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || die "claim $id needs its endpoint record before launch"
+    claim_validate "$id" || return 1
+    CLAIM_PHASE=launching
+  else
+    [ "$CLAIM_PHASE" = reserved ] || die "claim $id is $CLAIM_PHASE; use task recovery, never repeat fresh spawn"
+    claim_validate "$id" || return 1
+    [ "$action" = begin ] || return 0
+    CLAIM_PHASE=dispatching
+  fi
+  tmp=$(mktemp "$CLAIM_DIR/.receipt.XXXXXX") || die "cannot stage claim transition"
+  CLAIM_STAGE_TMP=$tmp
+  jq --arg phase "$CLAIM_PHASE" '.phase=$phase' "$CLAIM_DIR/$id.json" > "$tmp" || die "cannot stage claim transition"
+  if [ "$action" = launch ]; then
+    jq --rawfile endpoint "$STATE/$id.meta" '.launch_attempted=true | .endpoint_meta=$endpoint' "$tmp" > "$tmp.next" || die "cannot stage launch fence"
+    mv "$tmp.next" "$tmp" || die "cannot publish launch fence stage"
+  fi
+  if [ "$action" != finish ]; then claim_publication_authorized "$id" "$CLAIM_PROJECT" || return 1; fi
+  mv "$tmp" "$CLAIM_DIR/$id.json" || die "cannot publish claim transition"
+  CLAIM_STAGE_TMP=
+}
+
+cmd_claim_release() { # <id> --token <nonce>
+  [ "$#" = 3 ] && [ "$2" = --token ] || usage_die "claim-release <id> --token <nonce>"
+  local id=$1 token=$3 attempted saved backend target wt absence pids archive
+  [ -z "${FM_TASK_ID:-}" ] && [ "${FM_SUPERVISION_ACTOR:-main}" = main ] || die "claim-release is supervisor-only"
+  claim_slug "$id"
+  claim_init
+  fm_lock_try_acquire "$STATE/.spawn-$id.lock" || die "claim $id has an active dispatcher"
+  CLAIM_TASK_LOCK="$STATE/.spawn-$id.lock"
+  fm_lock_try_acquire "$STATE/.meta-$id.lock" || die "claim $id has an active lifecycle operation"
+  CLAIM_META_LOCK="$STATE/.meta-$id.lock"
+  claim_read "$id"
+  [ "$token" = "$CLAIM_TOKEN" ] || die "claim-release token does not match the current reservation"
+  [ ! -e "$STATE/$id.meta" ] && [ ! -L "$STATE/$id.meta" ] || die "claim $id still has a task record; use normal task recovery or teardown"
+  [ ! -e "$STATE/$id.backlog-close" ] && [ ! -L "$STATE/$id.backlog-close" ] || die "claim $id has a pending backlog close"
+  attempted=$(jq -r .launch_attempted "$CLAIM_DIR/$id.json")
+  if [ "$attempted" != false ]; then
+    # Preserve uncertain delivery. Only the existing backend absence proof plus
+    # the worktree-process check can retire a receipt after worker delivery.
+    saved=$(mktemp "$CLAIM_DIR/.release-$id.XXXXXX") || die "cannot stage endpoint proof"
+    CLAIM_RELEASE_TMP=$saved
+    jq -er '.endpoint_meta | select(type == "string" and length > 0)' "$CLAIM_DIR/$id.json" > "$saved" || die "claim has no endpoint evidence"
+    # shellcheck source=bin/fm-backend.sh
+    . "$SCRIPT_DIR/fm-backend.sh"
+    # shellcheck source=bin/fm-control-lib.sh
+    . "$SCRIPT_DIR/fm-control-lib.sh"
+    # shellcheck source=bin/fm-timeout-lib.sh
+    . "$SCRIPT_DIR/fm-timeout-lib.sh"
+    fm_backend_validate_task_endpoint "$saved" "$id" >/dev/null || die "claim endpoint evidence is invalid"
+    backend=$FM_BACKEND_VALIDATED_BACKEND target=$FM_BACKEND_VALIDATED_TARGET
+    wt=$(fm_backend_meta_exact_value "$saved" worktree) || die "claim worktree evidence is missing"
+    if [ "$backend" = orca ]; then
+      absence=$(fm_control_endpoint_absence_verdict "$backend" "$target" "$wt" "$saved")
+    else
+      absence=$(fm_control_endpoint_absence_verdict "$backend" "$target" "$saved")
+    fi
+    rm -f "$saved"
+    CLAIM_RELEASE_TMP=
+    case "$absence" in gone$'\t'*) ;; *) die "claim endpoint absence is not proven: $absence" ;; esac
+    # shellcheck disable=SC2016 # parameters belong to the bounded child
+    pids=$(fm_run_timed 20 bash -c '. "$1/fm-bash-compat-lib.sh"; . "$1/fm-control-lib.sh"; fm_control_pids_with_cwd_under "$2"' _ "$SCRIPT_DIR" "$wt") || die "claim worktree process absence is not proven"
+    [ -z "$pids" ] || die "claim worktree still has processes"
+  fi
+  archive="$CLAIM_DIR/released"
+  [ ! -L "$archive" ] || die "claim release archive is a symlink"
+  mkdir -p "$archive" || die "cannot create claim release archive"
+  [ ! -e "$archive/$id-$token.json" ] && [ ! -L "$archive/$id-$token.json" ] || die "claim release archive already exists"
+  mv "$CLAIM_DIR/$id.json" "$archive/$id-$token.json" || die "cannot archive released claim"
+  printf 'RELEASED %s token=%s; claim again to recheck approval with a new token\n' "$id" "$token"
+}
+
 # --- intake --------------------------------------------------------------------
 
 valid_source() {
@@ -457,6 +825,10 @@ record_intake() {  # <source> <item-id> <project> <title>
 }
 
 cmd_intake() {
+  # The intake log is the recorded approval a claim later verifies against,
+  # so only a supervisor session may write it; a worker filing its own
+  # proposal reference would be supplying its own approval evidence.
+  [ -z "${FM_TASK_ID:-}" ] || die "intake is supervisor-only"
   local id='' mint=0 project='' title='' source='' kind='' priority='' body='' body_file='' have_body=0
   local -a blocked=() args=()
   local out new_id tmp already first repo got_title
@@ -810,6 +1182,13 @@ case "${1:-}" in
   unfiled) shift; cmd_unfiled "$@" ;;
   plan) shift; cmd_plan "$@" ;;
   next) shift; cmd_next "$@" ;;
+  claim) shift; cmd_claim "$@" ;;
+  claim-release) shift; cmd_claim_release "$@" ;;
+  claim-check|claim-begin|claim-launch|claim-fence|claim-finish)
+    action=${1#claim-}; shift
+    [ "$#" -eq 3 ] || usage_die "claim transition needs id, token and project path"
+    cmd_claim_spawn "$action" "$@"
+    ;;
   depth)
     shift
     case "$*" in
