@@ -1,0 +1,16 @@
+[
+  {
+    "name": "A read-only full snapshot preserves a synthetic stateless home without creating operational state",
+    "result": "fail",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/live-boundaries.txt",
+    "reason": "target read-only snapshot created state/; base preserved the stateless home"
+  },
+  {
+    "name": "Full snapshot reports presence of a real private tmux pane for synthetic secondmate records",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/live-boundaries.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

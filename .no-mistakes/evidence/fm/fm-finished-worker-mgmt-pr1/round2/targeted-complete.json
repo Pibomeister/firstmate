@@ -1,0 +1,58 @@
+{
+  "completed": true,
+  "results": [
+    {
+      "command": [
+        "bash",
+        "tests/fm-load-throttle.test.sh"
+      ],
+      "exit": 0,
+      "seconds": 280.52,
+      "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/fm-load-throttle.test.log"
+    },
+    {
+      "command": [
+        "bash",
+        "tests/fm-heartbeat.test.sh",
+        "test_ledger_schema_and_clean_run",
+        "test_watcher_runs_one_heartbeat_at_a_time",
+        "test_stale_bound_is_the_watcher_cycle_plus_the_grace",
+        "test_worst_age_of_a_busy_healthy_home_stays_within_the_bound",
+        "test_a_relevant_change_collects_without_waiting_for_idle",
+        "test_a_change_under_load_waits_for_the_throttled_idle_due",
+        "test_rearmed_ticker_anchors_due_to_last_publication",
+        "test_failed_heartbeat_publications_keep_retry_interval"
+      ],
+      "exit": 1,
+      "seconds": 35.45,
+      "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/fm-heartbeat.test.log"
+    },
+    {
+      "command": [
+        "bash",
+        "tests/fm-home-summary-refresh.test.sh"
+      ],
+      "exit": 1,
+      "seconds": 221.27,
+      "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/fm-home-summary-refresh.test.log"
+    },
+    {
+      "command": [
+        "bash",
+        "tests/fm-fleet-snapshot-view.test.sh"
+      ],
+      "exit": 1,
+      "seconds": 141.59,
+      "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/fm-fleet-snapshot-view.test.log"
+    },
+    {
+      "command": [
+        "bash",
+        "tests/fm-watch-triage.test.sh"
+      ],
+      "exit": 0,
+      "seconds": 335.08,
+      "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/fm-watch-triage.test.log"
+    }
+  ]
+}

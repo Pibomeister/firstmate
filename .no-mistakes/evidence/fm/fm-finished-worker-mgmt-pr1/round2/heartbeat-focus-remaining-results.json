@@ -1,0 +1,38 @@
+[
+  {
+    "selector": "test_stale_bound_is_the_watcher_cycle_plus_the_grace",
+    "env": {},
+    "exit": -9,
+    "seconds": 240.39
+  },
+  {
+    "selector": "test_worst_age_of_a_busy_healthy_home_stays_within_the_bound",
+    "env": {},
+    "exit": 0,
+    "seconds": 49.31
+  },
+  {
+    "selector": "test_a_relevant_change_collects_without_waiting_for_idle",
+    "env": {},
+    "exit": 0,
+    "seconds": 28.68
+  },
+  {
+    "selector": "test_a_change_under_load_waits_for_the_throttled_idle_due",
+    "env": {},
+    "exit": 0,
+    "seconds": 43.15
+  },
+  {
+    "selector": "test_rearmed_ticker_anchors_due_to_last_publication",
+    "env": {},
+    "exit": 0,
+    "seconds": 55.56
+  },
+  {
+    "selector": "test_failed_heartbeat_publications_keep_retry_interval",
+    "env": {},
+    "exit": 0,
+    "seconds": 88.4
+  }
+]

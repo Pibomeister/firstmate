@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Concurrent full snapshots serialize; cheap reads remain available and normal exits release the lock",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Real snapshot-backed heartbeat throttles above 200, tolerates startup jitter, and restores calm bounds",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Real watcher defers a loaded change to the throttled due and resumes calm change-driven publication",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

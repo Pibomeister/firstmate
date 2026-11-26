@@ -1,0 +1,11 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-home-summary-refresh.test.sh"
+  ],
+  "env": {
+    "FM_SNAPSHOT_REGISTRY_TIMEOUT": "15"
+  },
+  "exit": 143,
+  "seconds": 192.99
+}

@@ -1,0 +1,18 @@
+START cmux-task shell=62174
+START scout-task shell=62760
+START secondmate-task shell=63012
+START ship-task shell=63377
+EXISTS scout-task true
+EXISTS secondmate-task true
+id=scout-task backend=tmux target=firstmate:fm-scout-task kind=scout probe_rc=0 probe_out=endpoint_exists=true
+agent_alive=not_checked
+EXISTS ship-task true
+id=ship-task backend=tmux target=firstmate:fm-ship-task kind=ship probe_rc=0 probe_out=endpoint_exists=true
+agent_alive=not_checked
+id=cmux-task backend=cmux target=workspace:surface kind=ship probe_rc=0 probe_out=
+id=secondmate-task backend=tmux target=firstmate:fm-secondmate-task kind=secondmate probe_rc=0 probe_out=
+TIMEOUT_RETURN pane_readable firstmate:fm-secondmate-task command_rc=0 child=73289 watchdog=73295 recorded=0
+TIMEOUT_RETURN pane_readable firstmate:fm-ship-task command_rc=0 child=73833 watchdog=73884 recorded=0
+TIMEOUT_RETURN pane_readable firstmate:fm-scout-task command_rc=0 child=73686 watchdog=73711 recorded=0
+TIMEOUT_RETURN fm_backend_capture tmux firstmate:fm-scout-task 40 fm-scout-task command_rc=0 child=75735 watchdog=75741 recorded=0
+TIMEOUT_RETURN fm_backend_capture tmux firstmate:fm-ship-task 40 fm-ship-task command_rc=0 child=75737 watchdog=75747 recorded=0

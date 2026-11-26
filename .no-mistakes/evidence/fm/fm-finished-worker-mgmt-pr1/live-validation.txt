@@ -1,0 +1,54 @@
+=== live-monitoring.txt ===
+08:29:58 Concurrent full snapshot: exit=75, stdout='', stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 58340); not starting a second
+08:29:58 Cheap contribution read while full snapshot is stopped: exit=0, nonempty=True
+08:29:59 First real snapshot resumed, printed valid JSON, and released its lock.
+08:30:04 Second real snapshot waited while the holder was stopped; both completed after resume with no lock left.
+08:30:20 Real snapshot-backed heartbeat: load 200 bound=571, load 300 bound=871, throttled=True.
+08:30:20 Repeated hot launch inside skip window preserved the published ledger byte-for-byte.
+08:30:25 Hot heartbeat one second short of the 400-second interval published again; no doubled skip gap.
+08:30:30 Watcher-passed factor 4 with a calm load file still published the extended stale bound.
+08:30:33 Calm direct launch resumed publication immediately and restored the ordinary bound.
+08:30:44 Watcher first publication: generated=1795703435, published=1795703443, bound=511.
+08:30:49 Injected a durable wake under load; no early heartbeat publication followed.
+08:31:21 Real watcher with base idle 10s and load 300 published again after 40s; prior bound covered the gap.
+08:31:27 Load fell and a durable wake triggered calm publication; generated gap=7s.
+08:31:27 All driver-owned process groups stopped; disposable homes removed.
+
+
+=== live-summary-rerun.txt ===
+08:37:56 Watcher published real home summary: generated=1795703866, load=300, base interval=8s, loaded interval=32s.
+08:38:00 A synthetic task/status append did not bypass the loaded summary gap.
+08:38:42 Real home-summary producer ran again after 45s; watcher liveness beat advanced during throttling.
+08:39:05 Calm status append published a new real summary after 29s.
+08:39:17 All secondary driver-owned process groups stopped; disposable homes removed.
+
+
+=== live-secondary.txt ===
+08:31:49 Watcher published real home summary: generated=1795703508, load=300, base interval=8s, loaded interval=32s.
+08:31:53 A synthetic task/status append did not bypass the loaded summary gap.
+08:32:48 Real home-summary producer ran again after 56s; watcher liveness beat advanced during throttling.
+08:33:04 Calm status append published a new real summary after 15s.
+08:33:16 FAIL Real home summaries coalesce synthetic status activity above load 200, keep liveness beats, and resume calm publication: [Errno 1] Operation not permitted
+08:33:26 One real watcher cycle at load 300, heartbeat age 901s and open goal: exit=0, stdout='heartbeat', durable wake='1795703605\t1\theartbeat\theartbeat\theartbeat'
+08:33:31 Filesystem-protected ledger rejected a real heartbeat publication: mv: rename {run-worktree}/.gate-tests/live-secondary/failed-publication/state/.heartbeat-work.R6gtDL/heartbeat.json to {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json: Operation not permitted
+fm-heartbeat: could not write {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json
+08:33:35 Observed real heartbeat collection attempt at 1795703615.187
+08:33:55 Observed real heartbeat collection attempt at 1795703635.512
+08:34:17 Observed real heartbeat collection attempt at 1795703657.052
+08:34:17 Failed publication retries kept loaded interval 20s; actual collection gaps=[20.32, 21.54]; old ledger remained intact.
+08:34:19 All secondary driver-owned process groups stopped; disposable homes removed.
+
+
+=== live-boundaries.txt ===
+08:41:29 base real --json against a home without state: exit=0, state directory created=False.
+08:41:31 target real --json against a home without state: exit=0, state directory created=True.
+08:41:31 FAIL A read-only full snapshot preserves a synthetic stateless home without creating operational state: target read-only snapshot created state/; base preserved the stateless home
+08:41:36 base real snapshot of a private tmux endpoint: [('lab-one', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:32Z', 'freshness': 'fresh'}), ('lab-three', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:32Z', 'freshness': 'fresh'}), ('lab-two', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:32Z', 'freshness': 'fresh'})]
+08:41:40 target real snapshot of a private tmux endpoint: [('lab-one', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:36Z', 'freshness': 'fresh'}), ('lab-three', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:36Z', 'freshness': 'fresh'}), ('lab-two', {'target': 'endpoint:0.0', 'exists': True, 'agent_alive': 'dead', 'status': 'dead', 'observed_at': '2026-11-26T14:41:36Z', 'freshness': 'fresh'})]
+08:41:41 Boundary checks stopped all owned process groups and the private tmux server; disposable homes removed.
+
+
+=== live-rearm.txt ===
+08:45:57 A real watcher re-arm skipped its immediate publication with a 20-second-old launch in a 40-second loaded cycle.
+08:46:24 Rearmed real watcher: next generated_epoch gap=42s; observed publication after 32.87s; prior stale bound=511s.
+08:46:25 Stopped all re-arm driver process groups; disposable home removed.

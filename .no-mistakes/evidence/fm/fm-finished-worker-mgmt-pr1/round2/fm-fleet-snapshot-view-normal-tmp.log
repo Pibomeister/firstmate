@@ -1,0 +1,68 @@
+1..19
+ok - the fleet snapshot and view read the lock sidecar endpoint
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+not ok - terminal secondmate with a matching in-flight row must not produce terminal_in_flight: {
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-26T15:26:09Z",
+  "generated_epoch": 1795706769,
+  "home": "/private/tmp/fm-fleet-snapshot.IHYlWB/summary-secondmate-only",
+  "valid": false,
+  "reason": "child current state unavailable: mate",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "mate"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "queued": [],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "mate",
+      "state": "unknown",
+      "source": "none",
+      "endpoint": {
+        "target": "firstmate:fm-mate",
+        "exists": null,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-26T15:26:09Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 1
+  },
+  "omitted": []
+}

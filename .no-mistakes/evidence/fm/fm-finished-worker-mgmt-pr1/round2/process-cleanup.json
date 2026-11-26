@@ -1,0 +1,12 @@
+{
+  "surviving_owned_processes": [],
+  "removed_transients": [
+    "fm-timeout-status.tB6KfP",
+    "fm-timeout-status.ShXdaK",
+    "fm-timeout-status.zvrKUJ",
+    "fm-fleet-tasks.xqxdRf",
+    "fm-bash-timeout-command.czVZtK",
+    "fm-bash-timeout-command.czVZtK.deadline"
+  ],
+  "git_status": " M tests/fm-heartbeat.test.sh\n"
+}

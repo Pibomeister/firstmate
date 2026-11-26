@@ -1,0 +1,16 @@
+[
+  {
+    "selector": "test_ledger_schema_and_clean_run",
+    "env": {
+      "FM_HEARTBEAT_READ_TIMEOUT": "15"
+    },
+    "exit": 0,
+    "seconds": 17.1
+  },
+  {
+    "selector": "test_watcher_runs_one_heartbeat_at_a_time",
+    "env": {},
+    "exit": 0,
+    "seconds": 59.58
+  }
+]

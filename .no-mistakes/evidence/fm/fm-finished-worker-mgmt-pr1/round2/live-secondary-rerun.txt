@@ -1,0 +1,5 @@
+09:03:49 Watcher published real home summary: generated=1795705407, load=300, base interval=8s, loaded interval=32s.
+09:03:54 A synthetic task/status append did not bypass the loaded summary gap.
+09:04:39 Real home-summary producer ran again after 47s; watcher liveness beat advanced during throttling.
+09:05:32 Calm status append published a new real summary after 58s.
+09:05:37 All secondary driver-owned process groups stopped; disposable homes removed.

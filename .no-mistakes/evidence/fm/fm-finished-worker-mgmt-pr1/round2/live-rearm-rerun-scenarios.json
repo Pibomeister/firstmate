@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Re-arming a real watcher anchors the next loaded publication to the prior ledger after its immediate launch skips",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-rearm-rerun.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

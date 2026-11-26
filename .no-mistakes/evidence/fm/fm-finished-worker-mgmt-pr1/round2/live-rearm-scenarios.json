@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Re-arming a real watcher anchors the next loaded publication to the prior ledger after its immediate launch skips",
+    "result": "fail",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-rearm.txt",
+    "reason": "timed out waiting for publication anchored to prior launch"
+  }
+]

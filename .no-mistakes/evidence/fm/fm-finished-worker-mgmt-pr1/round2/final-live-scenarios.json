@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Concurrent full snapshots serialize; cheap reads remain available and normal exits release the lock",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Real snapshot-backed heartbeat throttles above 200, tolerates startup jitter, and restores calm bounds",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Real watcher defers a loaded change to the throttled due and resumes calm change-driven publication",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Re-arming a real watcher anchors the next loaded publication to the prior ledger after its immediate launch skips",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-rearm-rerun.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Real home summaries coalesce synthetic status activity above load 200, keep liveness beats, and resume calm publication",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-secondary-rerun.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "A real watcher with an open goal still queues its heartbeat within the 15-minute cap under load 300",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-secondary.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "A real watcher retries filesystem-rejected heartbeat publications at the loaded interval without a retry storm",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-secondary.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "A read-only full snapshot preserves a synthetic stateless home without creating operational state",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-boundaries.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Full snapshot reports presence of a real private tmux pane for synthetic secondmate records",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/round2/live-boundaries.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

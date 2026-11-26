@@ -1,0 +1,20 @@
+[
+  {
+    "suite": "fm-load-throttle",
+    "exit": 0,
+    "seconds": 91.5,
+    "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/fm-load-throttle.log"
+  },
+  {
+    "suite": "fm-fleet-snapshot-view",
+    "exit": 1,
+    "seconds": 206.7,
+    "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/fm-fleet-snapshot-view.log"
+  },
+  {
+    "suite": "fm-fleet-snapshot-contribution-input",
+    "exit": 0,
+    "seconds": 4.6,
+    "log": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/fm-fleet-snapshot-contribution-input.log"
+  }
+]

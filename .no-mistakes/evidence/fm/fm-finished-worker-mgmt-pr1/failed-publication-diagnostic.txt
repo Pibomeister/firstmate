@@ -1,0 +1,2 @@
+mv: rename {run-worktree}/.gate-tests/live-secondary/failed-publication/state/.heartbeat-work.R6gtDL/heartbeat.json to {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json: Operation not permitted
+fm-heartbeat: could not write {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json

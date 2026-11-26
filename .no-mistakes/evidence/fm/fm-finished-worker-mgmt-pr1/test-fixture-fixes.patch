@@ -1,0 +1,54 @@
+diff --git a/tests/fm-fleet-snapshot-view.test.sh b/tests/fm-fleet-snapshot-view.test.sh
+index 5325b897..8b41f324 100755
+--- a/tests/fm-fleet-snapshot-view.test.sh
++++ b/tests/fm-fleet-snapshot-view.test.sh
+@@ -794,7 +794,9 @@ test_view_renders_snapshot() {
+   home=$(make_home view)
+   write_fixture "$home"
+   fakebin=$(make_fakebin "$home")
+-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
++  # This checks rendering, not the endpoint deadline. A loaded host can
++  # spend the production two-second bound starting the fixture probe.
++  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
+   assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9" \
+     "view should render ship row from snapshot"
+   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
+@@ -823,7 +825,7 @@ test_view_renders_dead_secondmate_agent_status() {
+     "projects=alpha, beta"
+   printf 'working: watching delegated scope\n' > "$home/state/dead-secondmate.status"
+   fakebin=$(make_fakebin "$home")
+-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
++  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
+   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead |" \
+     "view should distinguish a present secondmate endpoint from a dead agent"
+   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead | - | $home/secondmate-home (absent) |" \
+diff --git a/tests/fm-heartbeat.test.sh b/tests/fm-heartbeat.test.sh
+index b8b3f0ca..4bc8eec6 100755
+--- a/tests/fm-heartbeat.test.sh
++++ b/tests/fm-heartbeat.test.sh
+@@ -1189,7 +1189,10 @@ test_rearmed_ticker_anchors_due_to_last_publication() {
+   local home stub generated
+   home=$(make_home watch-rearm-anchor)
+   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+-  generated=$(( $(date +%s) - 6 ))
++  # A 40-second loaded cycle with a 20-second-old launch leaves enough
++  # startup margin on a busy host. A reset to the full cycle still cannot
++  # make a second launch inside the 25-second observation window below.
++  generated=$(( $(date +%s) - 20 ))
+   jq -n --argjson g "$generated" \
+     '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true,stale_after_secs:1671}' \
+     > "$home/state/heartbeat.json"
+@@ -1199,11 +1202,11 @@ test_rearmed_ticker_anchors_due_to_last_publication() {
+   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+     FM_LOAD_FILE="$TMP_ROOT/watch-rearm-anchor.load" \
+     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+-    FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
++    FM_HEARTBEAT_LEDGER_IDLE_SECS=10 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+     "$WATCH" > "$TMP_ROOT/watch-rearm-anchor.out" 2> "$TMP_ROOT/watch-rearm-anchor.err" &
+   WATCH_PID=$!
+   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+-  command -p sleep 8
++  command -p sleep 25
+   kill -KILL "$WATCH_PID" 2>/dev/null
+   wait "$WATCH_PID" 2>/dev/null
+   WATCH_PID=

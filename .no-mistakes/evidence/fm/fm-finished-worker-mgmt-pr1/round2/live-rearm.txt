@@ -1,0 +1,3 @@
+09:00:01 A real watcher re-arm skipped its immediate publication with a 20-second-old launch in a 40-second loaded cycle.
+09:00:39 FAIL Re-arming a real watcher anchors the next loaded publication to the prior ledger after its immediate launch skips: timed out waiting for publication anchored to prior launch
+09:00:40 Stopped all re-arm driver process groups; disposable home removed.

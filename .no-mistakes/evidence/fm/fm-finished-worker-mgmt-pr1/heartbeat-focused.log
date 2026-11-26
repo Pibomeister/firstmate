@@ -1,0 +1,4 @@
+1..5
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+ok - a change under load waits for the throttled idle due instead of resetting it
+not ok - a re-armed ticker reset its first due to a full throttled interval after a skipped launch

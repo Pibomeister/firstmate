@@ -1,0 +1,13 @@
+08:31:49 Watcher published real home summary: generated=1795703508, load=300, base interval=8s, loaded interval=32s.
+08:31:53 A synthetic task/status append did not bypass the loaded summary gap.
+08:32:48 Real home-summary producer ran again after 56s; watcher liveness beat advanced during throttling.
+08:33:04 Calm status append published a new real summary after 15s.
+08:33:16 FAIL Real home summaries coalesce synthetic status activity above load 200, keep liveness beats, and resume calm publication: [Errno 1] Operation not permitted
+08:33:26 One real watcher cycle at load 300, heartbeat age 901s and open goal: exit=0, stdout='heartbeat', durable wake='1795703605\t1\theartbeat\theartbeat\theartbeat'
+08:33:31 Filesystem-protected ledger rejected a real heartbeat publication: mv: rename {run-worktree}/.gate-tests/live-secondary/failed-publication/state/.heartbeat-work.R6gtDL/heartbeat.json to {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json: Operation not permitted
+fm-heartbeat: could not write {run-worktree}/.gate-tests/live-secondary/failed-publication/state/heartbeat.json
+08:33:35 Observed real heartbeat collection attempt at 1795703615.187
+08:33:55 Observed real heartbeat collection attempt at 1795703635.512
+08:34:17 Observed real heartbeat collection attempt at 1795703657.052
+08:34:17 Failed publication retries kept loaded interval 20s; actual collection gaps=[20.32, 21.54]; old ledger remained intact.
+08:34:19 All secondary driver-owned process groups stopped; disposable homes removed.

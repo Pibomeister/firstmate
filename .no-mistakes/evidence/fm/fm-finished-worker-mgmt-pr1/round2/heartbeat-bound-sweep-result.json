@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_stale_bound_is_the_watcher_cycle_plus_the_grace"
+  ],
+  "exit": 0,
+  "seconds": 395.48
+}

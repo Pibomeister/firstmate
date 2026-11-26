@@ -1,0 +1,4 @@
+1..2
+ok - failed publications retain the throttled retry interval for expired and recent ledgers
+ok - AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp
+FM_TEST_COMPLETE

@@ -1,0 +1,89 @@
+[
+  {
+    "artifact": "heartbeat-at-threshold",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705183,
+    "published_epoch": 1795705212,
+    "stale_after_secs": 571,
+    "throttled": false
+  },
+  {
+    "artifact": "heartbeat-hot",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705216,
+    "published_epoch": 1795705241,
+    "stale_after_secs": 871,
+    "throttled": true
+  },
+  {
+    "artifact": "heartbeat-calm-probe-hot-launch",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705259,
+    "published_epoch": 1795705267,
+    "stale_after_secs": 871,
+    "throttled": true
+  },
+  {
+    "artifact": "heartbeat-calm-recovered",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705267,
+    "published_epoch": 1795705286,
+    "stale_after_secs": 571,
+    "throttled": false
+  },
+  {
+    "artifact": "ticker-first",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705294,
+    "published_epoch": 1795705304,
+    "stale_after_secs": 511,
+    "throttled": true
+  },
+  {
+    "artifact": "ticker-second",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705339,
+    "published_epoch": 1795705366,
+    "stale_after_secs": 511,
+    "throttled": true
+  },
+  {
+    "artifact": "ticker-calm",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705375,
+    "published_epoch": 1795705415,
+    "stale_after_secs": 481,
+    "throttled": false
+  },
+  {
+    "artifact": "rearm-seeded-publication",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705321,
+    "published_epoch": 1795705380,
+    "stale_after_secs": 591,
+    "throttled": true
+  },
+  {
+    "artifact": "rearm-next-publication",
+    "schema": "fm-heartbeat.v1",
+    "generated_epoch": 1795705444,
+    "published_epoch": 1795705472,
+    "stale_after_secs": 591,
+    "throttled": true
+  },
+  {
+    "artifact": "summary-first",
+    "schema": "fm-secondmate-home-summary.v1",
+    "generated_epoch": 1795705407
+  },
+  {
+    "artifact": "summary-second",
+    "schema": "fm-secondmate-home-summary.v1",
+    "generated_epoch": 1795705454
+  },
+  {
+    "artifact": "summary-calm",
+    "schema": "fm-secondmate-home-summary.v1",
+    "generated_epoch": 1795705512
+  }
+]

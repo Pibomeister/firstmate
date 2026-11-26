@@ -1,0 +1,16 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_ledger_schema_and_clean_run",
+    "test_watcher_runs_one_heartbeat_at_a_time",
+    "test_stale_bound_is_the_watcher_cycle_plus_the_grace",
+    "test_worst_age_of_a_busy_healthy_home_stays_within_the_bound",
+    "test_a_relevant_change_collects_without_waiting_for_idle",
+    "test_a_change_under_load_waits_for_the_throttled_idle_due",
+    "test_rearmed_ticker_anchors_due_to_last_publication",
+    "test_failed_heartbeat_publications_keep_retry_interval"
+  ],
+  "exit": 1,
+  "seconds": 53.25
+}

@@ -1,0 +1,4 @@
+1..2
+ok - summary idle refreshes slow above load 200 and resume ordinary pacing below it
+ok - status signals respect the loaded summary gap and refresh promptly when calm
+FM_TEST_COMPLETE

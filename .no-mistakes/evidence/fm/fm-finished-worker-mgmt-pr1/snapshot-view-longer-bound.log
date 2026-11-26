@@ -1,0 +1,4 @@
+1..2
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+FM_TEST_COMPLETE

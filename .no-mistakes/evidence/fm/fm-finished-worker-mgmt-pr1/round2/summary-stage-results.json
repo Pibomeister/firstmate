@@ -1,0 +1,20 @@
+[
+  {
+    "revision": "base",
+    "command": [
+      "bash",
+      "tests/.gate-stage-diagnostic.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 45.21
+  },
+  {
+    "revision": "target",
+    "command": [
+      "bash",
+      "tests/.gate-stage-diagnostic.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 46.41
+  }
+]

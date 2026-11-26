@@ -1,0 +1,5 @@
+id=ship-task backend=tmux target=firstmate:fm-ship-task kind=ship probe_rc=0 probe_out=endpoint_exists=true
+agent_alive=not_checked
+id=cmux-task backend=cmux target=workspace:surface kind=ship probe_rc=0 probe_out=
+id=scout-task backend=tmux target=firstmate:fm-scout-task kind=scout probe_rc=0 probe_out=
+id=secondmate-task backend=tmux target=firstmate:fm-secondmate-task kind=secondmate probe_rc=0 probe_out=

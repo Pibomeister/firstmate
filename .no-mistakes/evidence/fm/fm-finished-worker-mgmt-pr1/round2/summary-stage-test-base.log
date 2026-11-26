@@ -1,0 +1,2 @@
+Terminated: 15
+not ok - the slow stage was not named in the failure log: [2026-11-26T15:26:39Z] refresh exceeded its 3-second deadline in stage backlog (stages: lock-wait@0 producer@1 backlog@1)

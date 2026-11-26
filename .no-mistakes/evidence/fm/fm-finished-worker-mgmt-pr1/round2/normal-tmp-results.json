@@ -1,0 +1,18 @@
+[
+  {
+    "command": [
+      "bash",
+      "tests/fm-home-summary-refresh.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 527.5
+  },
+  {
+    "command": [
+      "bash",
+      "tests/fm-fleet-snapshot-view.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 197.37
+  }
+]

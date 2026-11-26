@@ -1,0 +1,8 @@
+{
+  "backlog": {
+    "present": true,
+    "path": "{run-worktree}/.gate-tests/live/locks/data/backlog.md",
+    "records": []
+  },
+  "tasks": []
+}

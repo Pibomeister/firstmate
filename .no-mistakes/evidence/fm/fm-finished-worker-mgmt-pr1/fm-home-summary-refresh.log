@@ -1,0 +1,6 @@
+COMMAND: bash tests/fm-home-summary-refresh.test.sh
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+not ok - fleet snapshot created operational state for transport files
+
+EXIT: 1; ELAPSED_SECONDS: 97.5

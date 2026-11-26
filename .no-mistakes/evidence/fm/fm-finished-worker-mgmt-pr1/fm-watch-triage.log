@@ -1,0 +1,5 @@
+COMMAND: bash tests/fm-watch-triage.test.sh
+1..136
+not ok - expired stream did not enter inspection timer
+
+EXIT: 1; ELAPSED_SECONDS: 9.5

@@ -1,0 +1,12 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-home-summary-refresh.test.sh",
+    "test_summary_idle_pacing_follows_load",
+    "test_summary_status_pacing_follows_load",
+    "test_summary_jitter_shortens_idle_launches",
+    "test_failed_summary_refresh_waits_for_idle"
+  ],
+  "exit": 0,
+  "seconds": 305.82
+}

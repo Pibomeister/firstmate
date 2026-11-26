@@ -1,6 +1,5 @@
-bash tests/fm-load-throttle.test.sh  3.04s user 57.26s system 5% cpu 18:22.87 total
-onfigured load threshold wins and an invalid one falls back
-ok - a zero factor in any padding falls back and a padded factor reads as decimal
+1..10
+ok - load interval follows the threshold and ignores an unreadable load
 ok - a second fleet snapshot never starts while one holds the home lock
 ok - a fleet snapshot releases the home lock when it exits normally
 ok - a second fleet snapshot waits for the running one instead of overlapping it
@@ -8,7 +7,3 @@ ok - contribution-input stays outside the snapshot single-flight lock
 ok - heartbeat skips a publication inside the throttled interval
 ok - heartbeat publishes on the ordinary cadence when calm and again once a throttled interval elapses
 ok - the first launch under load publishes the extended bound and the next one skips
-ok - heartbeat stale bound counts the throttled cycle
-ok - heartbeat stale bound follows the throttle factor its launch was scheduled with
-FM_TEST_COMPLETE
-exit=0 secs=97

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Real home summaries coalesce synthetic status activity above load 200, keep liveness beats, and resume calm publication",
+    "result": "fail",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/live-secondary.txt",
+    "reason": "[Errno 1] Operation not permitted"
+  },
+  {
+    "name": "A real watcher with an open goal still queues its heartbeat within the 15-minute cap under load 300",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/live-secondary.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "A real watcher retries filesystem-rejected heartbeat publications at the loaded interval without a retry storm",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/live-secondary.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

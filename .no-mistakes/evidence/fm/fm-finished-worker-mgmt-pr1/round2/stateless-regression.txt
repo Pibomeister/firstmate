@@ -1,0 +1,4 @@
+{"revision": "e45b1314", "mode": "json", "exit": 0, "state_created": true, "schema": "fm-fleet-snapshot.v1"}
+{"revision": "e45b1314", "mode": "secondmate-home-summary", "exit": 0, "state_created": true, "schema": "fm-secondmate-home-summary.v1"}
+{"revision": "d7ab247e", "mode": "json", "exit": 0, "state_created": false, "schema": "fm-fleet-snapshot.v1"}
+{"revision": "d7ab247e", "mode": "secondmate-home-summary", "exit": 0, "state_created": false, "schema": "fm-secondmate-home-summary.v1"}

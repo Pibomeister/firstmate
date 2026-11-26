@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "{run-worktree}/.gate-tests/baseline/tests/fm-heartbeat.test.sh",
+    "test_ledger_schema_and_clean_run"
+  ],
+  "exit": 0,
+  "seconds": 20.44
+}

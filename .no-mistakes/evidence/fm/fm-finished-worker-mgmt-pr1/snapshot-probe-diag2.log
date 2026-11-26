@@ -1,0 +1,32 @@
+1..2
+not ok - view should show secondmate endpoint agent liveness (missing: '| secondmate-task | working / status-log | secondmate | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/secondmate-home | tmux | present / alive |')
+--- output ---
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cmux-task | unknown / none | ship | alpha | cmux | unknown | - | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/projects/missing-cmux (absent) | bin/fm-peek.sh fm-cmux-task |
+| scout-task | unknown / pane | scout | alpha | tmux | present | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/data/scout-task/report.md | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/projects/scout-worktree | bin/fm-peek.sh fm-scout-task |
+| secondmate-task | working / status-log | secondmate | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/secondmate-home | tmux | unknown / not_checked | - | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/secondmate-home | bin/fm-send.sh fm-secondmate-task '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9 | {run-worktree}/.gate-tests/tmp/fm-fleet-snapshot.0oXD0P/view/projects/alpha-worktree | bin/fm-peek.sh fm-ship-task |
+
+## Queued
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| queued-task | Queued Task | alpha | ship | ship-task | - |
+| - | handoff note without canonical syntax | - | - | - | - |
+
+## Done
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| done-task | Done Task | alpha | ship | - | https://github.com/kunchenguid/firstmate/pull/7 |
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+## Ready PRs awaiting a decision
