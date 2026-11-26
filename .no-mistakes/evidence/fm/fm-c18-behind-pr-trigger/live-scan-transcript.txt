@@ -1,0 +1,18 @@
+== local d513494 vs PR head 24c90b8
+== sweep 1
+pr-behind-relaunched-live-24c90b81cd0a	check: live relaunched because its local branch fm/live (d513494a1a7c) was behind its PR head 24c90b81cd0a (https://github.com/example/repo/pull/9) - the relaunch resynced it; reconcile its current state rather than relaunching it again
+exit=0
+== relaunch calls:
+fm-control live relaunch --note Automatic relaunch: the watcher found this task's local branch fm/live at d513494a1a7cd0d5e6e501e8ad47c612de6605b9, strictly behind its pull request head 24c90b81cd0a9d96ffee9e98003e2bd9e96884e8 on origin (https://github.com/example/repo/pull/9), with a clean local copy and no active no-mistakes run.
+It restarted the worker so the relaunch could move the branch to that published head through bin/fm-pr-resync.sh; no local commit was discarded.
+Its newest status events, oldest first:
+    working [at=1]: building
+Re-read your instructions, check `git status` and `git log`, check `no-mistakes axi status` for any run on this branch, then continue from the published head. gen=2
+== local now 24c90b8
+== sweep 2 (same head, past interval)
+exit=0
+== relaunch calls total:        5
+== ledger:
+1	requested	24c90b81cd0a9d96ffee9e98003e2bd9e96884e8
+1	relaunched	24c90b81cd0a9d96ffee9e98003e2bd9e96884e8
+1795709058	current	24c90b81cd0a9d96ffee9e98003e2bd9e96884e8

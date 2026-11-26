@@ -1,0 +1,21 @@
+1..18
+ok - a clean ship strictly behind its PR head gets exactly one relaunch request
+ok - the same PR head never draws a second relaunch request, and a new head draws one
+ok - each task is probed at most once per interval
+ok - a dirty copy is recorded once with no relaunch, and relaunched once it is clean
+ok - an active no-mistakes run is recorded once with no relaunch
+ok - a branch at or ahead of its PR head, dirty or not, draws no request and no report
+ok - a diverged branch is reported for manual reconciliation with no relaunch
+ok - a settled head stays settled after more sweeps than the ledger keeps
+ok - a relaunch the control plane proved it never sent is retried on a later sweep
+ok - a ship with no merge poll, a terminal status, a deliberate stop or a remote host is never probed
+ok - a finished ship steered after its done line is probed, and one steered only before it is not
+ok - a relaunch that leaves the branch behind its PR head is reported honestly and retried
+ok - a captain hold that cannot be read blocks the relaunch until a later sweep can read it
+ok - a refused resync check does not close the head, so a later sweep relaunches it
+ok - a relaunch that lands on a newer PR head than the probed one counts as resynced
+ok - the steer check stops at the newest record, which here predates the done line
+ok - the watcher's merge-poll sweep queues and wakes on one behind-head relaunch
+ok - the scan verb is required, and --help prints the contract
+FM_TEST_COMPLETE
+exit=0

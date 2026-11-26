@@ -1,0 +1,2 @@
+1..2
+not ok - trim: the diverged head is never reported again (expected '0', got '1')
