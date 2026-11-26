@@ -9,6 +9,8 @@
 # pane received with the harness binary replaced by a probe that exits 0 or
 # kills itself with SIGTERM, and read back state/<id>.agent-exit. The oracle is
 # POSIX shell semantics: a command killed by SIGTERM reports status 128+15.
+# The same executed launch also proves the agent runs outside the process
+# group of the shell that launched it (bin/fm-agent-pgrp.sh).
 set -u
 
 # shellcheck source=tests/fixtures.sh
@@ -37,9 +39,12 @@ $1
 EOF
 }
 
-# The probe stands in for codex and ends the way <how> names.
-install_probe() {  # <fakebin> <clean|sigterm>
-  if [ "$2" = sigterm ]; then
+# The probe stands in for codex and ends the way <how> names; a pgrp probe
+# records its own process group in <file> and exits cleanly.
+install_probe() {  # <fakebin> <clean|sigterm|pgrp> [file]
+  if [ "$2" = pgrp ]; then
+    printf '#!/bin/sh\nps -o pgid= -p $$ | tr -d " " > %s\nexit 0\n' "'$3'" > "$1/codex"
+  elif [ "$2" = sigterm ]; then
     printf '#!/bin/sh\nkill -TERM $$\nsleep 5\n' > "$1/codex"
   else
     printf '#!/bin/sh\nexit 0\n' > "$1/codex"
@@ -95,6 +100,31 @@ test_launch_records_clean_and_signal_exit_with_the_incarnation() {
     done
   done
   pass "the launch records the agent's clean or SIGTERM exit status with its spawn_gen in both allowlist postures"
+}
+
+# This script runs without job control, so a command the launching shell runs
+# directly shares this script's process group; the agent must not.
+test_launch_runs_the_agent_outside_the_launching_group() {
+  local setting id rec out status own agent
+  own=$(ps -o pgid= -p $$ | tr -d ' ')
+  for setting in absent enabled; do
+    id="pgrp-$setting-a1"
+    rec=$(make_case "pgrp-$setting" "$id")
+    read_case "$rec"
+    [ "$setting" = absent ] || : > "$HOME_DIR/config/launch-env-allowlist"
+    : > "$LAUNCH_LOG"; : > "$PANE_LOG"
+    out=$(FM_FAKE_LAUNCH_LOG="$LAUNCH_LOG" FM_FAKE_PANE_LOG="$PANE_LOG" \
+      fm_test_run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR" --mode no-mistakes --yolo off)
+    status=$?
+    expect_code 0 "$status" "spawn with allowlist=$setting should succeed: $out"
+    install_probe "$FAKEBIN_DIR" pgrp "$CASE_DIR/agent.pgrp"
+    run_launch "$FAKEBIN_DIR" "$LAUNCH_LOG"
+    agent=$(cat "$CASE_DIR/agent.pgrp" 2>/dev/null)
+    [ -n "$agent" ] || fail "allowlist=$setting: the launched agent never ran"
+    [ "$agent" != "$own" ] \
+      || fail "allowlist=$setting: the launched agent shares the launching shell's process group $own"
+  done
+  pass "the launch runs the agent in a process group of its own in both allowlist postures"
 }
 
 test_fresh_spawn_clears_an_intentional_stop_marker() {
@@ -250,6 +280,7 @@ test_allowlist_absent_launch_records_exit_status_under_fish() {
 }
 
 test_launch_records_clean_and_signal_exit_with_the_incarnation
+test_launch_runs_the_agent_outside_the_launching_group
 test_fresh_spawn_clears_an_intentional_stop_marker
 test_exit_records_the_stop_and_relaunch_clears_it
 test_allowlist_absent_launch_records_exit_status_under_fish

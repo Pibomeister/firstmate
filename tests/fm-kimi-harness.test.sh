@@ -400,7 +400,7 @@ test_kimi_launch_then_send_is_verified() {
   assert_contains "$out" "spawned $id harness=kimi" "kimi spawn did not report success"
 
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; '$ROOT/bin/fm-agent-pgrp.sh' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$FAKEBIN_DIR/kimi' --model 'kimi-code/k3' --auto" ] \
     || fail "kimi launch did not use the absolute binary, model, and --auto only: $launch"
   assert_not_contains "$launch" "--effort" "kimi launch emitted a nonexistent effort flag"
   assert_not_contains "$launch" "turn-ended" "kimi launch embedded a turn-end path"
@@ -932,7 +932,7 @@ test_kimi_falls_back_to_expanded_home_binary() {
   rc=$?
   expect_code 0 "$rc" "Kimi HOME fallback spawn should succeed"
   launch=$(cat "$CASE_DIR/launch.log")
-  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
+  [ "$(fm_test_launch_without_env_scrub "$(fm_test_launch_unframe "$launch")")" = "export FM_TASK_ID=$id; export COMPACT_ADVISER_DISABLE=1; $(task_inbox_export "$HOME_DIR" "$id")$(fm_test_launch_git_prefix "$(fm_test_launch_unframe "$launch")")export FM_HOME='$HOME_DIR'; '$ROOT/bin/fm-agent-pgrp.sh' env -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI '$fallback' --auto" ] \
     || fail "Kimi fallback did not expand HOME into an absolute executable: $launch"
   pass "fm-spawn: Kimi fallback expands the active HOME"
 }
