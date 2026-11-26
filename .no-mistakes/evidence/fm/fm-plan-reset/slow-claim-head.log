@@ -1,0 +1,4 @@
+not ok - a slow initial claim must leave time for two actual backend launches: successor: harness=claude model=default account=ambient reason=handoff verdict=unknown why=no_valid_claude_snapshot
+HANDOFF v1 ts=1795723533 event=handoff_started nonce=743cc087b4c01534859bc741c328d127 attempt=1 pid=91757 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795723567 event=handoff_failed nonce=96f535f91faab835555d80f473ec6ce4 attempt=2 pid=91757 handle=none reason=deadline
+exit=1

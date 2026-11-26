@@ -1,0 +1,7 @@
+1..10
+ok - a late refused successor is ended once, with its nonce proven on screen and the screen saved
+ok - the lock owner, the caller, the captain handle, task endpoints and handoff parties are never ended
+ok - no terminal is touched while a handoff claim or a lock change is in progress
+ok - a foreign, unproven or unclosable terminal is left open and reported once
+not ok - the unread terminal is ended once its screen reads (expected 'retired nonce_proven', got '')
+exit=1

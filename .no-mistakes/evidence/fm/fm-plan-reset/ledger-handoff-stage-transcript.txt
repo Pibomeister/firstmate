@@ -1,0 +1,21 @@
+## H1 fm-ledger.sh handoff writes the doc and stages the reset-audit snapshot
+$ ls -A /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Dt7V9n/state
+[exit 0]
+$ bin/fm-ledger.sh handoff --doc /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Dt7V9n/handoff.md --note lab handoff
+handoff: wrote 0 open order(s) into /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Dt7V9n/handoff.md
+handoff: wrote /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.Dt7V9n/handoff.md from the ledger
+[exit 0]
+$ ls -A /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Dt7V9n/state
+.order-handoff
+reset-audit-staged.json
+[exit 0]
+staged backlog ids: ['lab-eps']
+## H2 next session's bootstrap-style begin --if-staged records the handoff; settle --now -> PASS
+$ bin/fm-reset-audit.sh begin --kind handoff --if-staged
+[exit 0]
+$ bin/fm-reset-audit.sh settle --now
+PASS kind=handoff at=1795722271
+[exit 0]
+$ cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.Dt7V9n/state/reset-audit.tsv
+1795722271	handoff	PASS	-
+[exit 0]

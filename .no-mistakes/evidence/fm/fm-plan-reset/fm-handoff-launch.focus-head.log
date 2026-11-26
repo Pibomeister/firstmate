@@ -1,0 +1,29 @@
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1795731003 event=handoff_started nonce=771c128a2ad8664df0baea8c821f9620 attempt=1 pid=17005 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731005 event=handoff_failed nonce=771c128a2ad8664df0baea8c821f9620 attempt=1 pid=17005 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795731018 event=handoff_started nonce=cdaabe9d230bf0b99c5f2d241089e73d attempt=1 pid=75149 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731019 event=handoff_failed nonce=cdaabe9d230bf0b99c5f2d241089e73d attempt=1 pid=75149 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795731074 event=handoff_retry nonce=3ae76dceff896a721f2c2f890ce10ffe attempt=2 pid=28156 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731085 event=handoff_ack nonce=3ae76dceff896a721f2c2f890ce10ffe attempt=0 pid=36247 handle=%9 reason=lock_transferred
+ok - DRILL tmux-display-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795731141 event=handoff_retry nonce=c143de618e8ed44a9bf2a49fe5fa0305 attempt=2 pid=4164 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731150 event=handoff_ack nonce=c143de618e8ed44a9bf2a49fe5fa0305 attempt=0 pid=95458 handle=%9 reason=lock_transferred
+ok - DRILL tmux-has-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795731165 event=handoff_started nonce=561ca4f5c12488e137ff98d656c1ebf3 attempt=1 pid=40725 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731180 event=handoff_ack nonce=561ca4f5c12488e137ff98d656c1ebf3 attempt=0 pid=66388 handle=term_lab_1 reason=lock_transferred
+ok - DRILL interrupt-after-ack: one completion outcome, no contradictory failure
+ok - DRILL precommit: completion waits for the committed transfer, not an uncommitted read
+HANDOFF v1 ts=1795731219 event=handoff_started nonce=2672e1483549b331f46bb6c7c188735a attempt=1 pid=25319 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731232 event=handoff_failed nonce=2672e1483549b331f46bb6c7c188735a attempt=1 pid=25319 handle=none reason=interrupted
+ok - DRILL cleanup-contention: failure is reported only after the claim is fenced
+ok - DRILL cleanup-second-signal: a second signal during cleanup still emits exactly one failure
+HANDOFF v1 ts=1795731312 event=handoff_started nonce=ccdab445c0578a15e620861b4662de95 attempt=1 pid=55851 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731324 event=handoff_retry nonce=357bf255cc9f4b033905f3bded5c30de attempt=2 pid=55851 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795731336 event=handoff_failed nonce=357bf255cc9f4b033905f3bded5c30de attempt=2 pid=55851 handle=none reason=deadline
+ok - DRILL slow-claim: a slow initial claim still fails within the total budget
+exit=0

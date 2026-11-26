@@ -1,0 +1,6 @@
+HANDOFF v1 ts=1795723532 event=handoff_started nonce=86980017fe5a2ed06494c3126cbe2a05 attempt=1 pid=91615 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795723549 event=handoff_retry nonce=1c22239bcaf44208fc20f272bba77460 attempt=2 pid=91615 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795723567 event=handoff_failed nonce=1c22239bcaf44208fc20f272bba77460 attempt=2 pid=91615 handle=none reason=deadline
+ok - DRILL slow-claim: a slow initial claim still fails within the total budget
+FM_TEST_COMPLETE
+exit=0

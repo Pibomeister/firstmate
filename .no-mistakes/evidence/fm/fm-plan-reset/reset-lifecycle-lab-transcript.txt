@@ -1,0 +1,64 @@
+## L1 handoff: stage, then two racing begin --if-staged; exactly one records
+$ bin/fm-reset-audit.sh stage
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-staged.json
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-staged.json
+[exit 0]
+b1 exit 0
+b2 exit 0
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending
+1795721005-handoff-40384.json
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh
+[exit 0]
+## L2 compaction begin takes a snapshot now
+$ bin/fm-reset-audit.sh begin --kind compaction
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending
+1795721005-handoff-40384.json
+1795721007-compaction-50943.json
+[exit 0]
+## L3 settle before due time does nothing
+$ bin/fm-reset-audit.sh settle
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending
+1795721005-handoff-40384.json
+1795721007-compaction-50943.json
+[exit 0]
+## L4 session drops lab-delta without Done evidence; settle --now
+$ bin/fm-tasks-axi.sh rm lab-delta
+ok: removed lab-delta
+help[1]:
+  - Run `tasks-axi list` to see remaining tasks
+[exit 0]
+$ bin/fm-reset-audit.sh settle --now
+reset audit: open work went missing across the handoff at 1795721005: backlog:lab-delta (state/reset-audit.tsv)
+reset audit: open work went missing across the compaction at 1795721007: backlog:lab-delta (state/reset-audit.tsv)
+[exit 0]
+$ cat /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.tsv
+1795721005	handoff	FAIL	backlog:lab-delta
+1795721007	compaction	FAIL	backlog:lab-delta
+[exit 0]
+$ ls -A /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending
+[exit 0]
+## L5 sweep with nothing waiting disarms the check
+$ bin/fm-reset-audit.sh sweep
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh: No such file or directory
+[exit 1]
+## L6 arm --if-needed on idle home keeps no check
+$ bin/fm-reset-audit.sh arm --if-needed
+[exit 0]
+$ ls /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh
+ls: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit.check.sh: No such file or directory
+[exit 1]
+## L7 override guard: FM_STATE_OVERRIDE to a foreign dir changes nothing
+$ FM_STATE_OVERRIDE=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/foreign bin/fm-reset-audit.sh begin --kind compaction
+[exit 0]
+$ ls -A /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/foreign /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/foreign:
+
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yaRlV3/state/reset-audit-pending:
+[exit 0]

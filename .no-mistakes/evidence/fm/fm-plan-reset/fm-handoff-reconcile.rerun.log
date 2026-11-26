@@ -1,0 +1,4 @@
+1..10
+ok - a late refused successor is ended once, with its nonce proven on screen and the screen saved
+not ok - a task window is kept (expected 'kept task_endpoint', got '')
+exit=1

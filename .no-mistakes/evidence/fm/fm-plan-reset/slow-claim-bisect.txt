@@ -1,0 +1,12 @@
+Targeted repro: tests/fm-handoff-launch.test.sh trimmed to its fixture setup + the "DRILL slow-claim" case only,
+run side by side from git-archive copies, host load ~130-150.
+  base 85d135ef                         -> ok   (DRILL slow-claim: a slow initial claim still fails within the total budget)
+  head a64d783a (run 1)                 -> not ok: a slow initial claim must leave time for two actual backend launches
+  head a64d783a (run 2)                 -> not ok: a slow initial claim must not push failure past the total budget
+  head minus reconcile pre-budget call  -> not ok: a slow initial claim must not push failure past the total budget
+  head minus reset-audit stage call     -> ok
+Full-suite head runs (fm-handoff-launch.log, fm-handoff-launch.rerun.log) failed the same case both times; all 31 other cases passed,
+including the new assertion that only a verified transfer records one handoff reset and claims the staged snapshot.
+Cause: bin/fm-handoff-launch.sh runs `fm-reset-audit.sh stage --if-absent --for $TIMEOUT` synchronously before DEADLINE;
+stage's take_snapshot is bounded at 30 s, so under load the launch (and its failure report) is delayed by up to ~30 s
+beyond the time the slow-claim contract allows.

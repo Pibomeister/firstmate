@@ -1,0 +1,110 @@
+## setup: lab home with two backlog items, one captain hold, two captain orders
+$ bin/fm-tasks-axi.sh add lab-alpha Lab task alpha
+ok: added lab-alpha -> Queued
+task:
+  id: lab-alpha
+  title: Lab task alpha
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start lab-alpha` to move it to in flight
+  - Run `tasks-axi block lab-alpha --by <other>` to record a dependency
+[exit 0]
+$ bin/fm-tasks-axi.sh add lab-beta Lab task beta
+ok: added lab-beta -> Queued
+task:
+  id: lab-beta
+  title: Lab task beta
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start lab-beta` to move it to in flight
+  - Run `tasks-axi block lab-beta --by <other>` to record a dependency
+[exit 0]
+$ bin/fm-captain-hold.sh hold lab-beta --reason lab decision
+lab-beta
+[exit 0]
+orders: 1795720901-ab34fa76 1795720905-286464ca
+$ bin/fm-reset-audit.sh snapshot --out /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.od1qa0/before.json
+[exit 0]
+## S1 unchanged home -> PASS
+$ bin/fm-reset-audit.sh compare --before /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.od1qa0/before.json --kind handoff
+PASS kind=handoff
+[exit 0]
+## S2 order finished with outcome record -> PASS
+$ bin/fm-order.sh ack 1795720901-ab34fa76
+acked 1795720901-ab34fa76
+  kind=order from=lab at=2026-11-26T19:21:41Z
+--
+lab order one
+--
+When finished: bin/fm-order.sh finish 1795720901-ab34fa76 done|parked <outcome>
+[exit 0]
+$ bin/fm-order.sh finish 1795720901-ab34fa76 done lab done
+done 1795720901-ab34fa76
+[exit 0]
+$ bin/fm-reset-audit.sh compare --before /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.od1qa0/before.json --kind handoff
+PASS kind=handoff
+[exit 0]
+## S3 adversarial: second order silently deleted -> FAIL DRIFT order
+$ bin/fm-reset-audit.sh compare --before /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.od1qa0/before.json --kind handoff
+FAIL kind=handoff DRIFT order:1795720905-286464ca
+[exit 1]
+## S4 adversarial: hold lifted with bare unhold (no recorded resolution) -> DRIFT hold
+$ bin/fm-tasks-axi.sh unhold lab-beta
+ok: unhold lab-beta -> cleared
+task:
+  id: lab-beta
+  title: Lab task beta
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: "Captain hold set: 2026-11-26T19:21:22Z"
+help[1]:
+  - Run `tasks-axi ready` to see dispatchable work
+[exit 0]
+$ bin/fm-reset-audit.sh compare --before /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.od1qa0/before.json --kind handoff --no-strict
+FAIL kind=handoff DRIFT hold:lab-beta,order:1795720905-286464ca
+[exit 0]
+## state/reset-audit.tsv
+1795720919	handoff	PASS	-
+1795720929	handoff	PASS	-
+1795720934	handoff	FAIL	order:1795720905-286464ca
+1795720943	handoff	FAIL	hold:lab-beta,order:1795720905-286464ca

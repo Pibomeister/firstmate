@@ -1,0 +1,4 @@
+not ok - a slow initial claim must not push failure past the total budget: HANDOFF v1 ts=1795723728 event=handoff_started nonce=b256117cef835c57a54d117a89d64996 attempt=1 pid=85646 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795723759 event=handoff_retry nonce=04e12a10ad7d3849bbec1edc8cc24071 attempt=2 pid=85646 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795723769 event=handoff_failed nonce=04e12a10ad7d3849bbec1edc8cc24071 attempt=2 pid=85646 handle=none reason=deadline
+exit=1

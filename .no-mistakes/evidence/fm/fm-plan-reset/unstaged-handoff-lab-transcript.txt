@@ -1,0 +1,95 @@
+## lab home at head e15c7f29; launcher's no-staged-snapshot path (record_completion else-branch)
+$ bin/fm-tasks-axi.sh add lab-alpha Lab task alpha
+ok: added lab-alpha -> Queued
+task:
+  id: lab-alpha
+  title: Lab task alpha
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start lab-alpha` to move it to in flight
+  - Run `tasks-axi block lab-alpha --by <other>` to record a dependency
+[exit 0]
+$ bin/fm-tasks-axi.sh add lab-beta Lab task beta
+ok: added lab-beta -> Queued
+task:
+  id: lab-beta
+  title: Lab task beta
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+help[2]:
+  - Run `tasks-axi start lab-beta` to move it to in flight
+  - Run `tasks-axi block lab-beta --by <other>` to record a dependency
+[exit 0]
+$ bin/fm-captain-hold.sh hold lab-beta --reason lab decision
+lab-beta
+[exit 0]
+## S1: nothing staged -> begin --kind handoff snapshots now; successor begin --if-staged is a no-op; settle -> one PASS row
+staged present: no
+$ bin/fm-reset-audit.sh begin --kind handoff
+[exit 0]
+$ bin/fm-reset-audit.sh begin --kind handoff --if-staged
+[exit 0]
+pending: 1795732198-handoff-52282.json 
+$ bin/fm-reset-audit.sh settle --now
+PASS kind=handoff at=1795732198
+[exit 0]
+## S2 adversarial: unstaged handoff, then hold lifted with bare unhold (lost captain hold) -> FAIL drift
+$ bin/fm-reset-audit.sh begin --kind handoff
+[exit 0]
+$ bin/fm-tasks-axi.sh unhold lab-beta
+ok: unhold lab-beta -> cleared
+task:
+  id: lab-beta
+  title: Lab task beta
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: task
+  repo: "-"
+  priority: "-"
+  created: 2026-11-26
+  closed: "-"
+  deps: none
+  links: none
+  body: "Captain hold set: 2026-11-26T22:29:49Z"
+help[1]:
+  - Run `tasks-axi ready` to see dispatchable work
+[exit 0]
+$ bin/fm-reset-audit.sh settle --now
+reset audit: open work went missing across the handoff at 1795732207: hold:lab-beta (state/reset-audit.tsv)
+[exit 0]
+## state/reset-audit.tsv
+1795732198	handoff	PASS	-
+1795732207	handoff	FAIL	hold:lab-beta
+## lab removed
