@@ -409,8 +409,8 @@ esac
 # The primary home's open-goal predicate is shared with watcher arming.
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
-# Host-load throttling of the periodic monitoring cadences below (the
-# heartbeat ticker's launch interval and the heartbeat wake cadence); the
+# Host-load throttling of the periodic monitoring cadences below (home-summary
+# refreshes, the heartbeat ticker and the heartbeat wake cadence); the
 # library owns the probe, threshold, and interval arithmetic.
 # shellcheck source=bin/fm-load-lib.sh
 . "$SCRIPT_DIR/fm-load-lib.sh"
@@ -497,10 +497,11 @@ HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
 # Expensive idle collection (the home summary and the heartbeat ledger) runs on
-# a relevant change and otherwise once per idle interval. Each idle due is drawn
+# a relevant change when calm and otherwise once per idle interval. Each idle due is drawn
 # from [interval - jitter, interval], so homes started together drift apart and
 # no idle due exceeds the interval. Cheap liveness (the watcher beat) and
-# event delivery keep the poll period.
+# event delivery keep the poll period. The collection scheduling sections below
+# own how the load policy modifies each cadence.
 watch_secs_or() {  # <output-variable> <value> <default>: a whole positive count, else the default
   case "$2" in
     ''|*[!0-9]*) printf -v "$1" '%s' "$3" ;;
@@ -5299,11 +5300,13 @@ fi
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
 #
-# A status signal launches the helper at once when load is calm. Without one,
-# it launches only
-# when both the ledger and this watcher's last launch are older than the idle
-# gap drawn at that launch, so a stale ledger cannot cause launches on every
-# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
+# A status signal launches the helper at once when load is calm. Under load,
+# subsequent launches in this watcher wait at least the load-scaled minimum
+# idle gap (interval minus jitter) after its last launch. Without a status
+# signal, it launches only when both the ledger and this watcher's last launch
+# are older than the idle gap drawn at that launch, scaled by the current load
+# factor, so a stale ledger cannot cause launches on every poll.
+# fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL

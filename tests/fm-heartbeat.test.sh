@@ -216,7 +216,9 @@ wait_for_file() {  # <path> <seconds>
 test_ledger_schema_and_clean_run() {
   local home
   home=$(make_home clean)
-  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  # This fixture checks a clean publication, not the production read deadline.
+  # Allow ancestry discovery to finish on the loaded hosts this change targets.
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_HEARTBEAT_READ_TIMEOUT=15
   assert_ledger "$home" '
     .schema == "fm-heartbeat.v1"
     and .generated == "2026-10-30T12:00:00Z"

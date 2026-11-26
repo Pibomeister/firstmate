@@ -3877,6 +3877,11 @@ The two read files use different parsing rules:
 
 Runtime tuning via environment variables (defaults shown):
 
+Watcher monitoring intervals follow the host-load policy in [`bin/fm-load-lib.sh`](../bin/fm-load-lib.sh).
+While load throttling applies, heartbeat ledger collections defer relevant changes to the idle deadline, and home-summary refreshes pace status-driven launches as well as idle launches.
+[`bin/fm-watch.sh`](../bin/fm-watch.sh) owns those scheduling rules; the attended open-work wake cap still applies after load scaling.
+Full fleet snapshot locking is owned by the [`bin/fm-fleet-snapshot.sh` header](../bin/fm-fleet-snapshot.sh).
+
 ```sh
 FM_HOME=                 # optional operational home for most scripts, unset means this repo root; fm-send requires it explicitly
 FM_ROOT_OVERRIDE=        # override firstmate repo root, tangle-guard target, and zellij/cmux/tern home-title hash; also legacy whole-root override when FM_HOME is unset
@@ -3916,7 +3921,7 @@ FM_TASKS_AXI_CHECK_REASON=   # internal one-hop handoff of the reason behind tha
 FM_GUARD_READ_ONLY=0    # internal/read-only guard mode: keep alarms but suppress drain, supervision repair, and checkout repair commands
 FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the guarded operation WILL still run.'   # banner continuation line; fm-send.sh overrides it to name the requested message specifically
 FM_POLL=15              # seconds between watcher poll cycles
-FM_HOME_SUMMARY_INTERVAL=300   # idle refresh interval for state/home-summary.json; the watcher checks both ledger age and time since its last launch against the jittered interval, and skips a launch while a refresh is running; invalid or zero values use 300
+FM_HOME_SUMMARY_INTERVAL=300   # base idle refresh interval for state/home-summary.json; scheduling and host-load pacing are owned by bin/fm-watch.sh; invalid or zero values use 300
 FM_HOME_SUMMARY_JITTER=60      # seconds each idle refresh may come before FM_HOME_SUMMARY_INTERVAL, drawn at random per refresh; invalid values use 60, and values at or above the interval use the interval less one
 FM_HOME_SUMMARY_TIMEOUT=60     # shared seconds budget for home-summary lock acquisition through publication; see bin/fm-home-summary-refresh.sh's header for cleanup and diagnostic bounds; invalid or zero-prefixed values use 60
 FM_HOME_SUMMARY_ERROR_LOG_MAX_BYTES=65536   # approximate size cap for state/.home-summary-refresh.log before it is trimmed to the newest 200 lines; invalid or zero values use 65536
@@ -3931,13 +3936,13 @@ FM_SNAPSHOT_CACHE_DIR=$FM_HOME/state/secondmate-summary-cache   # private parent
 FM_SNAPSHOT_UNDATED_HOLD_AGE_DAYS=14  # floored elapsed-day threshold at which an undated captain hold (no hold-until; age from its UTC hold-set timestamp, falling back to since for legacy unstamped holds) is projected as a Charted Next gate instead of a live Captain's Call; 0 applies once the computed age is non-negative
 FM_RECONCILE_REQUEST_MAX_BYTES=1048576   # maximum captured Bearings or fleet snapshot accepted for durable reconcile-notify request publication
 FM_HEARTBEAT=600        # base seconds between heartbeat scans; attended open work is capped at 15 minutes and wakes on no change
-FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap
+FM_HEARTBEAT_MAX=7200   # heartbeat backoff cap before host-load scaling and the attended open-work cap
 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=120   # seconds bounding the fleet snapshot read inside bin/fm-heartbeat.sh; invalid or zero values use 120
 FM_HEARTBEAT_READ_TIMEOUT=3        # seconds bounding each primary and per-task read inside bin/fm-heartbeat.sh; invalid or zero values use 3
 FM_HEARTBEAT_NM_TIMEOUT=2          # seconds bounding each no-mistakes query inside bin/fm-heartbeat.sh; invalid or zero values use 2
 FM_HEARTBEAT_QUOTA_TIMEOUT=10      # seconds bounding the one quota-axi read inside bin/fm-heartbeat.sh; invalid or zero values use 10
 FM_HEARTBEAT_DEADLINE=240           # seconds after which bin/fm-heartbeat.sh starts no new task reads and publishes unknown rows for the rest; invalid or zero values use 240
-FM_HEARTBEAT_LEDGER_IDLE_SECS=300   # idle collection interval for state/heartbeat.json; the independent ticker checks for a new wake, status signal, or idle deadline each poll, waits for any running collection, then launches; invalid or zero values use 300
+FM_HEARTBEAT_LEDGER_IDLE_SECS=300   # base idle collection interval for state/heartbeat.json; scheduling and host-load pacing are owned by bin/fm-watch.sh; invalid or zero values use 300
 FM_HEARTBEAT_LEDGER_JITTER=120      # seconds each idle collection may come before FM_HEARTBEAT_LEDGER_IDLE_SECS, drawn at random per launch; invalid values use 120, and values at or above the idle interval use it less one
 FM_HEARTBEAT_CYCLE_SECS=            # internal input for the stale bound; bin/fm-watch.sh owns its calculation and bin/fm-heartbeat.sh owns its use
 FM_HEARTBEAT_LOAD_FACTOR=           # internal input: the host-load throttle factor the watcher's ticker used for this launch; bin/fm-watch.sh sets it and bin/fm-heartbeat.sh owns its use

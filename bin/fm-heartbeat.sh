@@ -29,6 +29,7 @@
 #   fm_home           resolved operational home
 #   stale_after_secs  the stale bound: the watcher's configured cycle period
 #                     (bin/fm-watch.sh), passed as FM_HEARTBEAT_CYCLE_SECS,
+#                     scaled by this launch's load factor (see below),
 #                     never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
 #                     (default 60; docs/configuration.md), plus one whole-run cap;
@@ -55,8 +56,8 @@
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
 #                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,
-#                     so the watcher's default 300 s idle cycle and a 60 s
-#                     grace give a 771 s delay.
+#                     so without load throttling the watcher's default 300 s
+#                     idle cycle and a 60 s grace give a 771 s delay.
 #   throttled         true when this publication's stale_after_secs counted the
 #                     host-load throttled cycle (see the throttle paragraph
 #                     below), else false
@@ -126,8 +127,8 @@
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
 # bin/fm-watch.sh runs --write detached and single-flight from an independent
-# ticker on a relevant change and otherwise once per idle interval (its header
-# owns that cadence), so no read here can hold a watcher poll and no watcher
+# ticker under the cadence owned by bin/fm-watch.sh's collection scheduling
+# section, so no read here can hold a watcher poll and no watcher
 # loop work can delay a launch.
 #
 # Host-load throttle (bin/fm-load-lib.sh owns the probe and arithmetic):

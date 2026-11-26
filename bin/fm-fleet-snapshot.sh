@@ -8,13 +8,14 @@
 # atomically refresh parent-side cached copies of remote home summaries under
 # state/secondmate-summary-cache; those observational cache writes are its only
 # fleet-state mutation.
-# The --json and --secondmate-home-summary modes are single-flight per
-# home (state/.fleet-snapshot.lock): a second run waits up to
-# 30 seconds for the holder to
+# In a home with an existing state directory, the --json and
+# --secondmate-home-summary modes are single-flight per home
+# (state/.fleet-snapshot.lock): a second run waits up to 30 seconds for the holder to
 # finish and never starts while it runs; past that bound it prints no
 # document, names the holder on stderr, and exits 75 without starting
 # its fan-out, so overlapping monitoring under load cannot multiply the
 # churn it exists to observe.
+# A home without state stays stateless; --contribution-input never takes this lock.
 # With FM_TEST_SEAM=1, FM_SNAPSHOT_SINGLE_FLIGHT_WAIT overrides that wait.
 #
 # Top-level fields:
