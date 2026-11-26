@@ -44,6 +44,11 @@
 #   (s) a branch merging both diverged default branches -> the unrelated merge
 #       bases are reported rather than picked silently
 #   (t) meta records base_branch= -> base stays origin/<base_branch>
+# Later review rounds:
+#   (u) --since <reviewed head> -> only the change since that head, and the
+#       default call still shows the whole change
+#   (v) --since a commit the branch no longer descends from -> the delta is
+#       shown with a note, and an unknown or short sha is refused
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -171,6 +176,81 @@ plant_task_branch() { # <case-dir> <ref>
   printf 'task work\n' > "$case_dir/wt/task-change.txt"
   git -C "$case_dir/wt" add task-change.txt
   git -C "$case_dir/wt" commit -qm "task work"
+}
+
+# Two commits on the task branch: the first is the head an earlier round
+# reviewed (FIRST_SHA), the second is the fix made after it.
+reviewed_then_fixed_commits() { # <case-dir>
+  local case_dir=$1
+  printf 'first round\n' > "$case_dir/wt/first.txt"
+  git -C "$case_dir/wt" add first.txt
+  git -C "$case_dir/wt" commit -qm "first round work"
+  FIRST_SHA=$(git -C "$case_dir/wt" rev-parse HEAD)
+  printf 'fix round\n' > "$case_dir/wt/fix.txt"
+  git -C "$case_dir/wt" add fix.txt
+  git -C "$case_dir/wt" commit -qm "fix after review"
+}
+
+test_since_shows_only_the_change_after_a_reviewed_head() {
+  local case_dir out
+  case_dir=$(make_case since-delta)
+  reviewed_then_fixed_commits "$case_dir"
+  write_task_meta "$case_dir"
+
+  out=$(run_review_diff "$case_dir" task-x1 --since "$FIRST_SHA" 2> "$case_dir/stderr")
+  assert_contains "$out" "delta since: $FIRST_SHA" "since-delta: the delta did not name the reviewed head"
+  assert_contains "$out" '+fix round' "since-delta: the delta is missing the change made after the reviewed head"
+  assert_not_contains "$out" '+first round' "since-delta: the delta repeated the change already reviewed"
+  assert_not_contains "$(cat "$case_dir/stderr")" 'does not descend' \
+    "since-delta: a descendant head was reported as rewritten"
+
+  out=$(run_review_diff "$case_dir" task-x1 --stat --since "$FIRST_SHA" 2> "$case_dir/stderr")
+  assert_contains "$out" 'fix.txt' "since-delta: --stat with --since did not list the changed file"
+  assert_not_contains "$out" '+fix round' "since-delta: --stat with --since printed the full delta"
+
+  out=$(run_review_diff "$case_dir" task-x1 2> "$case_dir/stderr")
+  assert_contains "$out" '+first round' "since-delta: the default review lost the first commit"
+
+  # A caller that passes an option it left empty gets the default review.
+  assert_equals "$out" "$(run_review_diff "$case_dir" task-x1 '' 2> "$case_dir/stderr")" \
+    "since-delta: an empty second argument did not give the default review"
+  assert_contains "$out" '+fix round' "since-delta: the default review lost the fix commit"
+  pass "fm-review-diff --since shows only the change after a reviewed head, and the default stays the whole change"
+}
+
+test_since_reports_a_rewritten_branch_and_refuses_a_bad_commit() {
+  local case_dir out rc=0
+  case_dir=$(make_case since-rewritten)
+  reviewed_then_fixed_commits "$case_dir"
+  # Rewrite the branch so it no longer descends from the reviewed head.
+  git -C "$case_dir/wt" reset -q --hard main
+  printf 'rewritten\n' > "$case_dir/wt/rewritten.txt"
+  git -C "$case_dir/wt" add rewritten.txt
+  git -C "$case_dir/wt" commit -qm "rewritten branch"
+  write_task_meta "$case_dir"
+
+  out=$(run_review_diff "$case_dir" task-x1 --since "$FIRST_SHA" 2> "$case_dir/stderr")
+  assert_contains "$out" '+rewritten' "since-rewritten: the delta is missing the rewritten content"
+  assert_contains "$(cat "$case_dir/stderr")" "does not descend from $FIRST_SHA" \
+    "since-rewritten: a rewritten branch was not reported"
+
+  out=$(run_review_diff "$case_dir" task-x1 --since deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2> "$case_dir/stderr") || rc=$?
+  expect_code 1 "$rc" "since-rewritten: a commit that is not in the worktree"
+  assert_contains "$(cat "$case_dir/stderr")" 'is not a commit' "since-rewritten: the unknown commit was not named"
+  assert_not_contains "$out" 'diff --git' "since-rewritten: a diff was printed for an unknown commit"
+
+  # An annotated tag's object id peels to a commit but names another object.
+  rc=0
+  git -C "$case_dir/wt" -c user.email=t@t -c user.name=t tag -a -m reviewed reviewed "$FIRST_SHA"
+  out=$(run_review_diff "$case_dir" task-x1 --since "$(git -C "$case_dir/wt" rev-parse reviewed)" 2> "$case_dir/stderr") || rc=$?
+  expect_code 1 "$rc" "since-rewritten: an annotated tag object id"
+  assert_not_contains "$out" 'diff --git' "since-rewritten: a diff was printed from a tag object id"
+
+  rc=0
+  out=$(run_review_diff "$case_dir" task-x1 --since abc123 2> "$case_dir/stderr") || rc=$?
+  expect_code 1 "$rc" "since-rewritten: a short sha"
+  assert_contains "$(cat "$case_dir/stderr")" 'full lowercase commit sha' "since-rewritten: a short sha was not refused"
+  pass "fm-review-diff --since reports a rewritten branch and refuses an unknown or short commit"
 }
 
 test_pr_meta_uses_pr_head_not_stale_local() {
@@ -571,6 +651,8 @@ test_opted_in_base_branch_stays_on_origin() {
   pass "fm-review-diff keeps an opted-in named base branch on origin's copy"
 }
 
+test_since_shows_only_the_change_after_a_reviewed_head
+test_since_reports_a_rewritten_branch_and_refuses_a_bad_commit
 test_pr_meta_uses_pr_head_not_stale_local
 test_pr_meta_fetches_pull_head_without_recorded_sha
 test_stale_recorded_pr_head_loses_to_fetched_pull_head
