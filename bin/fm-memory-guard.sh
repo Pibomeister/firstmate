@@ -130,8 +130,9 @@
 #     a script (its first argument, which must not be an option) under a
 #     disposable temp root (/tmp/fm-*, /private/tmp/fm-*,
 #     /var/folders/<a>/<b>/T/fm-*, or $TMPDIR/fm-*) with no . or ..
-#     segment; the script is an existing regular file, not a symlink, no
-#     sibling extends its name with a space, it is still under a temp root
+#     segment, where a run of slashes counts as one slash; the script is an
+#     existing regular file, not a symlink, no sibling extends its name with
+#     a space, it is still under a temp root
 #     once its directory symlinks are resolved, and the resolved path
 #     carries no protection. A native binary under a temp root is never
 #     scratch, and Bun and Deno never are because they take subcommands.
@@ -165,8 +166,7 @@
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
 # clock, FM_MEMORY_GUARD_CLOCK names a file whose first line is the clock at
 # each reading, FM_MEMORY_GUARD_ELAPSED adds seconds to the time the pass has
-# run, FM_MEMORY_GUARD_STOP_START_SECS replaces the 15 s stop-start budget,
-# FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
+# run, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
 # FM_MEMORY_GUARD_MEMINFO replaces /proc/meminfo. ps, pgrep, and sysctl come
 # from PATH.
 set -u
@@ -222,7 +222,6 @@ if [ "${FM_TEST_SEAM:-}" = 1 ]; then
   fixed_now=${FM_MEMORY_GUARD_NOW:-}
   clock_file=${FM_MEMORY_GUARD_CLOCK:-}
   case "${FM_MEMORY_GUARD_ELAPSED:-}" in '' | *[!0-9]*) ;; *) elapsed_extra=$FM_MEMORY_GUARD_ELAPSED ;; esac
-  case "${FM_MEMORY_GUARD_STOP_START_SECS:-}" in '' | *[!0-9]*) ;; *) STOP_START_MAX_SECS=$FM_MEMORY_GUARD_STOP_START_SECS ;; esac
   os=${FM_MEMORY_GUARD_OS:-}
   meminfo=${FM_MEMORY_GUARD_MEMINFO:-$meminfo}
 fi
@@ -392,7 +391,10 @@ scratch_roots() {
 # code (-c, -e, -) and an interpreter with no operand have no program path.
 classify_candidates() {  # <candidates-file> <self-pids>
   awk -F'\t' -v cands="$1" -v selfs="$2" -v names="$PROTECTED_NAMES" -v roots="$(scratch_roots | tr '\n' '\t')" -v uid="$(id -u)" '
+    # A run of slashes names the same file as one slash, as in the
+    # "$TMPDIR/fm-x" a trailing-slash macOS TMPDIR gives.
     function under_root(t,   i, n, r) {
+      gsub(/\/\/+/, "/", t)
       if (t == "" || t ~ /(^|\/)\.\.?(\/|$)/) return 0
       n = split(roots, r, "\t")
       for (i = 1; i <= n; i++) if (r[i] != "" && index(t, r[i]) == 1) return 1

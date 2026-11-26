@@ -139,19 +139,34 @@ guard_slow() {
 }
 
 # guard_live [check args...]: one pass on the real clock and the real ps,
-# which shows only the pids listed in $H/ps/allow. The only test seam set
-# widens the stop-start budget, so a slow pass on a loaded host still reaches
-# its stops; the budget itself is covered with FM_MEMORY_GUARD_ELAPSED.
+# which shows only the pids listed in $H/ps/allow. No test seam is set.
 guard_live() {
   RC=0
   OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
-    FM_FAKE_PS_MODE=live FM_FAKE_SWAP_USED=0.00M FM_TEST_SEAM=1 FM_MEMORY_GUARD_STOP_START_SECS=600 \
-    FM_HOME="$H" "$GUARD" check "$@" 2>&1) || RC=$?
+    FM_FAKE_PS_MODE=live FM_FAKE_SWAP_USED=0.00M FM_HOME="$H" "$GUARD" check "$@" 2>&1) || RC=$?
 }
 
-summary() { printf '%s\n' "$OUT" | grep '^memory-guard: status=' | head -n 1; }
+# guard_live_stop: guard_live for a pass that must reach its stops. On a
+# loaded host a pass can use up the 15 s stop-start budget and defer a stop;
+# such a pass is run again, a bounded number of times, and the case fails when
+# the last attempt still deferred. A pass may stop one process and defer the
+# next, so OUT keeps every attempt's output and RC is the last attempt's. The
+# stop cases set alarm_repeat_secs=1, so a retry prints its alarms again.
+guard_live_stop() {
+  local attempt all=''
+  for attempt in 1 2 3 4 5; do
+    guard_live
+    all="$all${all:+$'\n'}$OUT"
+    printf '%s\n' "$OUT" | grep '^memory-guard: status=' | sed -n 's/.* action=//p' | tr ',' '\n' | grep -q '^stop-deferred:' || { OUT=$all; return 0; }
+  done
+  OUT=$all
+  fail "the last of $attempt passes still deferred a stop (the pass had no time left): $OUT"
+}
+
+# summary: the status line of each pass in OUT (one, except after a retry).
+summary() { printf '%s\n' "$OUT" | grep '^memory-guard: status='; }
 alarms() { printf '%s\n' "$OUT" | grep -c '^MEMORY_GUARD_ALARM: ' | tr -d ' '; }
-# action_has <token>: the summary's action list holds exactly that token.
+# action_has <token>: an action list in the summary holds exactly that token.
 action_has() { summary | sed -n 's/.* action=//p' | tr ',' '\n' | grep -Fxq -- "$1"; }
 
 start_sleep() {  # [cwd] -> pid of a real, detached sleep this suite owns
@@ -719,7 +734,8 @@ test_stop_scratch_spares_live_agents_and_operator_apps() {
 
 LIVE_CONF='mode=stop-scratch
 proc_rss_mb=2
-swap_warn_mb=99999999'
+swap_warn_mb=99999999
+alarm_repeat_secs=1'
 
 test_stop_scratch_stops_only_real_scratch() {
   local scratch worker parent kid sneaky sneakykid named p
@@ -746,7 +762,7 @@ scratch_stop_secs=1"
   assert_contains "$(summary)" "mode=stop-scratch action=none" "nothing is stopped at first sight"
   alive "$scratch" || fail "the scratch process was signaled at first sight"
   sleep 2
-  guard_live
+  guard_live_stop
   assert_equals 3 "$RC" "a stop is an alarm: $OUT"
   action_has "stopped:$scratch" || fail "the real scratch process is not named as stopped: $OUT"
   wait_gone "$scratch" || fail "the real scratch process is still running: $OUT"
@@ -789,7 +805,7 @@ scratch_stop_secs=600"
   sleep 2
   # A stop that cannot be recorded first is not started.
   mkdir "$H/state/memory-guard-stops.tsv"
-  guard_live
+  guard_live_stop
   assert_equals 3 "$RC" "a stop that cannot be recorded is an alarm: $OUT"
   action_has "stop-failed:$stubborn" || fail "an unrecorded stop is not named as failed: $OUT"
   assert_contains "$OUT" "the stop failed (the stop could not be recorded" "the alarm says the record could not be written"
@@ -798,7 +814,7 @@ scratch_stop_secs=600"
   guard_live --observe
   assert_contains "$(summary)" "mode=observe action=none" "--observe overrides stop-scratch on a real scratch process: $OUT"
   alive "$stubborn" || fail "--observe signaled the real scratch process"
-  guard_live
+  guard_live_stop
   assert_equals 3 "$RC" "a stop by KILL is an alarm: $OUT"
   action_has "stopped:$stubborn" || fail "the stubborn process is not named as stopped: $OUT"
   wait_gone "$stubborn" || fail "the stubborn process is still running: $OUT"
@@ -821,7 +837,7 @@ scratch_stop_secs=1"
   guard_live
   assert_equals 0 "$RC" "first sight is watch: $OUT"
   sleep 2
-  guard_live
+  guard_live_stop
   [ -s "$TMP_ROOT/stopme/spawner.sh.kid" ] || fail "the scratch job did not receive TERM: $OUT"
   kid=$(cat "$TMP_ROOT/stopme/spawner.sh.kid")
   SLEEPS="$SLEEPS $kid"
@@ -837,6 +853,49 @@ stop-failed it started a child after TERM and was not signalled again" "$(stop_r
   action_has "spared:$spawner" || fail "a scratch job with a child is not spared on the next pass: $OUT"
   alive "$spawner" || fail "a scratch job with a child was signaled on the next pass: $OUT"
   pass "stop-scratch never sends KILL to a process that started a child after TERM"
+}
+
+# A doubled slash names the same file, as macOS TMPDIR's trailing slash gives
+# in "$TMPDIR/fm-x/job.pl", so it is judged as the single-slash path.
+test_doubled_slash_script_path() {
+  local dbl_tmp dbl_out name pid
+  new_home 'mode=reap-scratch'
+  dbl_tmp="${TMP_ROOT%/*}//${TMP_ROOT##*/}"
+  dbl_out="${OUT_ROOT%/*}//${OUT_ROOT##*/}"
+  P_dbl='' P_dblsup='' P_dblagent='' P_dblout='' P_dbldot=''
+  REAP_ROWS="dbl|bash|me|1|bash $dbl_tmp//runaway.sh
+dblsup|bash|me|1|bash $dbl_tmp/live//bin/fm-watchdog.sh run
+dblagent|node|me|1|node $dbl_tmp//claude-code/cli.js
+dblout|bash|me|1|bash $dbl_out//repo/helper.sh
+dbldot|bash|me|1|bash $dbl_tmp//.//runaway.sh"
+  sustain
+  assert_equals 3 "$RC" "the sustained rows alarm: $OUT"
+  action_has "would-stop:$P_dbl" || fail "a doubled-slash scratch script under a temp root is not named as would-stop: $OUT"
+  for name in dblsup dblagent dblout dbldot; do
+    eval "pid=\$P_$name"
+    action_has "spared:$pid" || fail "the doubled-slash $name is not spared: $(summary)"
+    alive "$pid" || fail "reap-scratch signaled $name"
+  done
+  assert_contains "$OUT" "Mode reap-scratch: spared (firstmate supervisor script)" "a doubled slash keeps a supervisor protected"
+  assert_contains "$OUT" "Mode reap-scratch: spared (protected claude)" "a doubled slash keeps an agent protected"
+  [ "$(printf '%s\n' "$OUT" | grep -c 'spared (not scratch)')" = 2 ] || fail "a doubled slash let an out-of-root or . path count as scratch: $OUT"
+  alive "$P_dbl" || fail "reap-scratch signaled the scratch row"
+  # A real holder started through a doubled-slash path is stopped.
+  new_home "$LIVE_CONF
+proc_sustained_secs=1
+scratch_stop_secs=1"
+  start_hold "$dbl_tmp/stopme//dbl.sh"
+  printf '%s\n' "$HOLD_PID" > "$H/ps/allow"
+  guard_live
+  assert_equals 0 "$RC" "first sight is watch: $OUT"
+  sleep 2
+  guard_live_stop
+  assert_equals 3 "$RC" "a stop is an alarm: $OUT"
+  action_has "stopped:$HOLD_PID" || fail "a real scratch process run through a doubled-slash path is not stopped: $OUT"
+  wait_gone "$HOLD_PID" || fail "the doubled-slash scratch process is still running: $OUT"
+  assert_equals "signal TERM
+stopped TERM" "$(stop_rows "$HOLD_PID")" "the stop record holds the signal and the outcome"
+  pass "a doubled slash in a script path is judged as one slash, for scratch and for protection"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -865,4 +924,5 @@ fm_test_run \
   test_stop_scratch_spares_live_agents_and_operator_apps \
   test_stop_scratch_stops_only_real_scratch \
   test_stop_scratch_escalates_to_kill \
-  test_stop_scratch_does_not_kill_after_a_new_child
+  test_stop_scratch_does_not_kill_after_a_new_child \
+  test_doubled_slash_script_path
