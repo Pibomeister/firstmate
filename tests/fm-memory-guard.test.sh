@@ -139,11 +139,14 @@ guard_slow() {
 }
 
 # guard_live [check args...]: one pass on the real clock and the real ps,
-# which shows only the pids listed in $H/ps/allow. No test seam is set.
+# which shows only the pids listed in $H/ps/allow. The only test seam set
+# widens the stop-start budget, so a slow pass on a loaded host still reaches
+# its stops; the budget itself is covered with FM_MEMORY_GUARD_ELAPSED.
 guard_live() {
   RC=0
   OUT=$(PATH="$FAKE:$BASE_PATH" FM_FAKE_BASE_PATH="$BASE_PATH" FM_FAKE_PS_DIR="$H/ps" FM_FAKE_PS_LOG="$H/ps.log" \
-    FM_FAKE_PS_MODE=live FM_FAKE_SWAP_USED=0.00M FM_HOME="$H" "$GUARD" check "$@" 2>&1) || RC=$?
+    FM_FAKE_PS_MODE=live FM_FAKE_SWAP_USED=0.00M FM_TEST_SEAM=1 FM_MEMORY_GUARD_STOP_START_SECS=600 \
+    FM_HOME="$H" "$GUARD" check "$@" 2>&1) || RC=$?
 }
 
 summary() { printf '%s\n' "$OUT" | grep '^memory-guard: status=' | head -n 1; }

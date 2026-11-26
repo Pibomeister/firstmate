@@ -165,7 +165,8 @@
 # Test seams, honoured only with FM_TEST_SEAM=1: FM_MEMORY_GUARD_NOW fixes the
 # clock, FM_MEMORY_GUARD_CLOCK names a file whose first line is the clock at
 # each reading, FM_MEMORY_GUARD_ELAPSED adds seconds to the time the pass has
-# run, FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
+# run, FM_MEMORY_GUARD_STOP_START_SECS replaces the 15 s stop-start budget,
+# FM_MEMORY_GUARD_OS (Darwin|Linux) picks the parser, and
 # FM_MEMORY_GUARD_MEMINFO replaces /proc/meminfo. ps, pgrep, and sysctl come
 # from PATH.
 set -u
@@ -221,6 +222,7 @@ if [ "${FM_TEST_SEAM:-}" = 1 ]; then
   fixed_now=${FM_MEMORY_GUARD_NOW:-}
   clock_file=${FM_MEMORY_GUARD_CLOCK:-}
   case "${FM_MEMORY_GUARD_ELAPSED:-}" in '' | *[!0-9]*) ;; *) elapsed_extra=$FM_MEMORY_GUARD_ELAPSED ;; esac
+  case "${FM_MEMORY_GUARD_STOP_START_SECS:-}" in '' | *[!0-9]*) ;; *) STOP_START_MAX_SECS=$FM_MEMORY_GUARD_STOP_START_SECS ;; esac
   os=${FM_MEMORY_GUARD_OS:-}
   meminfo=${FM_MEMORY_GUARD_MEMINFO:-$meminfo}
 fi
