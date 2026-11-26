@@ -582,6 +582,32 @@ test_summary_status_pacing_follows_load() {
   pass "status signals respect the loaded summary gap and refresh promptly when calm"
 }
 
+test_snapshot_preserves_absent_state() {
+  local mode schema
+  mkdir -p "$STATELESS_HOME/data" "$STATELESS_HOME/config" \
+    "$STATELESS_HOME/projects"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' \
+    > "$STATELESS_HOME/data/backlog.md"
+  # Read-only output must preserve an absent state directory. Loading a
+  # mutating library merely to collect a snapshot must fail this contract.
+  for mode in json secondmate-home-summary; do
+    case "$mode" in
+      json) schema=fm-fleet-snapshot.v1 ;;
+      secondmate-home-summary) schema=fm-secondmate-home-summary.v1 ;;
+    esac
+    PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$STATELESS_HOME" \
+      "$SNAPSHOT" "--$mode" > "$TMP_ROOT/stateless-snapshot.json" \
+      || fail "fleet snapshot $mode mode failed without a state directory"
+    jq -e --arg schema "$schema" '.schema == $schema and
+      ((if $schema == "fm-fleet-snapshot.v1" then .tasks else .active_children end) == [])' \
+      "$TMP_ROOT/stateless-snapshot.json" >/dev/null \
+      || fail "stateless fleet snapshot $mode output was not valid"
+    [ ! -e "$STATELESS_HOME/state" ] \
+      || fail "fleet snapshot $mode created operational state"
+  done
+  pass "fleet snapshot transport does not require or mutate operational state"
+}
+
 if [ "$#" -gt 0 ]; then
   fm_test_run "$@"
   exit
@@ -736,20 +762,7 @@ jq -e '.schema == "fm-secondmate-home-summary.v1"' \
   || fail "large secondmate home-summary was not published"
 pass "large backlog snapshots and home-summary publication stay within exec limits"
 
-mkdir -p "$STATELESS_HOME/data" "$STATELESS_HOME/config" \
-  "$STATELESS_HOME/projects"
-printf '%s\n' '## In flight' '' '## Queued' '' '## Done' \
-  > "$STATELESS_HOME/data/backlog.md"
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$STATELESS_HOME" \
-  FM_SNAPSHOT_NOW="$NOW_ONE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_ONE" \
-  "$SNAPSHOT" --json > "$TMP_ROOT/stateless-snapshot.json" \
-  || fail "fleet snapshot json mode failed without a state directory"
-jq -e '.schema == "fm-fleet-snapshot.v1" and (.tasks | length) == 0' \
-  "$TMP_ROOT/stateless-snapshot.json" >/dev/null \
-  || fail "stateless fleet snapshot output was not valid"
-[ ! -e "$STATELESS_HOME/state" ] \
-  || fail "fleet snapshot created operational state for transport files"
-pass "fleet snapshot transport does not require or mutate operational state"
+test_snapshot_preserves_absent_state
 
 mkdir -p "$LARGE_CHILD_HOME/state" "$LARGE_CHILD_HOME/data" \
   "$LARGE_CHILD_HOME/config" "$LARGE_CHILD_HOME/projects" "$LARGE_CHILD_HOME/bin"

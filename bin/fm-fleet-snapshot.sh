@@ -354,8 +354,10 @@ snapshot_stage() {  # <stage-name>
 # the caller to retry on its next cycle, whose interval
 # bin/fm-load-lib.sh owns. A dead holder's lock is reclaimed by the lock
 # helper as usual. The cheap --contribution-input mode performs no worker
-# observations and is not single-flighted.
-if [ "$OUTPUT_MODE" != contribution-input ]; then
+# observations and is not single-flighted. A home without state has no
+# local worker records to fan out over; leave it stateless instead of initializing
+# operational state just to lock a read.
+if [ "$OUTPUT_MODE" != contribution-input ] && [ -d "$STATE" ]; then
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091
   . "$SCRIPT_DIR/fm-wake-lib.sh"

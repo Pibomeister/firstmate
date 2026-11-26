@@ -1189,7 +1189,10 @@ test_rearmed_ticker_anchors_due_to_last_publication() {
   local home stub generated
   home=$(make_home watch-rearm-anchor)
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
-  generated=$(( $(date +%s) - 6 ))
+  # A 40-second loaded cycle with a 20-second-old launch leaves enough
+  # startup margin on a busy host. A reset to the full cycle still cannot
+  # make a second launch inside the 25-second observation window below.
+  generated=$(( $(date +%s) - 20 ))
   jq -n --argjson g "$generated" \
     '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true,stale_after_secs:1671}' \
     > "$home/state/heartbeat.json"
@@ -1199,11 +1202,11 @@ test_rearmed_ticker_anchors_due_to_last_publication() {
   FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
     FM_LOAD_FILE="$TMP_ROOT/watch-rearm-anchor.load" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
-    FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=10 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
     "$WATCH" > "$TMP_ROOT/watch-rearm-anchor.out" 2> "$TMP_ROOT/watch-rearm-anchor.err" &
   WATCH_PID=$!
   wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
-  command -p sleep 8
+  command -p sleep 25
   kill -KILL "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=

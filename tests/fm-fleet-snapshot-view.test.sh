@@ -794,7 +794,9 @@ test_view_renders_snapshot() {
   home=$(make_home view)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  # This checks rendering, not the endpoint deadline. A loaded host can
+  # spend the production two-second bound starting the fixture probe.
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
   assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9" \
     "view should render ship row from snapshot"
   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
@@ -823,7 +825,7 @@ test_view_renders_dead_secondmate_agent_status() {
     "projects=alpha, beta"
   printf 'working: watching delegated scope\n' > "$home/state/dead-secondmate.status"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead |" \
     "view should distinguish a present secondmate endpoint from a dead agent"
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead | - | $home/secondmate-home (absent) |" \
