@@ -1668,7 +1668,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
       # stopped at its deadline resumes there instead of from byte 0. A caller
       # that sets _FM_OPEN_DECISIONS_DEADLINE (a $SECONDS value) stops the fold
       # at the first checkpoint past it with status 124; the fleet scans below
-      # also stop before their next task once it has passed.
+      # also stop before their next task once a fold past it made progress.
       if [ "$folded_lines" -ge 64 ]; then
         _fm_status_byte_length "$folded"
         if [ "$((offset + _FM_STATUS_BYTE_LENGTH))" -lt "$size" ]; then
@@ -1699,6 +1699,15 @@ _fm_open_decisions_deadline_passed() {
   [ -n "${_FM_OPEN_DECISIONS_DEADLINE:-}" ] && [ "$SECONDS" -ge "$_FM_OPEN_DECISIONS_DEADLINE" ]
 }
 
+# The decision-fold cursor's current text for <status-file>, empty when absent;
+# the fleet scans compare it around a fold to see whether that fold made progress.
+_fm_open_decisions_cursor_text() {  # <status-file>
+  local cf
+  cf=$(_fm_open_decisions_cursor_path "$1")
+  [ -f "$cf" ] || return 0
+  LC_ALL=C command cat "$cf" 2>/dev/null || true
+}
+
 # Byte length of <text>, independent of the caller's locale.
 _fm_status_byte_length() {  # <text>; sets _FM_STATUS_BYTE_LENGTH
   local LC_ALL=C
@@ -1723,20 +1732,24 @@ _fm_open_decisions_write_cursor() {  # <cursor> <version> <offset> <ident> <open
 # each task's status log through status_open_decisions_incremental instead of
 # the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
 # bounded by new appends rather than total lifetime log size across every task.
-# Past _FM_OPEN_DECISIONS_DEADLINE it returns 124 before folding another task;
-# every task folded so far already committed its own cursor, so a retry resumes
-# with the next one.
+# Past _FM_OPEN_DECISIONS_DEADLINE it returns 124 before folding another task,
+# but only once this call has moved some task's cursor after the deadline: each
+# folded task already committed its own cursor, so a retry resumes past it, and
+# an unchanged prefix of warm tasks can never use the whole bound on every retry.
 scan_open_decisions_incremental() {  # <state>
-  local state=$1 f task open line exclude fold_rc
+  local state=$1 f task open line exclude fold_rc late=0 before
   exclude=$(status_scan_parent_channel_exclude "$state")
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    _fm_open_decisions_deadline_passed && return 124
+    [ "$late" -ne 2 ] || return 124
     task=$(basename "$f"); task="${task%.status}"
+    [ "$late" -ne 0 ] || ! _fm_open_decisions_deadline_passed || late=1
+    [ "$late" -eq 0 ] || before=$(_fm_open_decisions_cursor_text "$f")
     fold_rc=0
     open=$(status_open_decisions_incremental "$f") || fold_rc=$?
     [ "$fold_rc" -ne 124 ] || return 124
+    [ "$late" -eq 0 ] || [ "$before" = "$(_fm_open_decisions_cursor_text "$f")" ] || late=2
     [ "$fold_rc" -eq 0 ] || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -2204,16 +2217,19 @@ EOF
 }
 
 # Snapshot sibling of scan_open_decisions_incremental, with the same
-# between-task deadline.
+# progress-gated between-task deadline.
 scan_open_decisions_snapshot() {  # <state> <task-and-endpoint-snapshot>
-  local state=$1 snapshot=$2 task endpoint ident f open line fold_rc
+  local state=$1 snapshot=$2 task endpoint ident f open line fold_rc late=0 before
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
-    _fm_open_decisions_deadline_passed && return 124
+    [ "$late" -ne 2 ] || return 124
     f="$state/$task.status"
+    [ "$late" -ne 0 ] || ! _fm_open_decisions_deadline_passed || late=1
+    [ "$late" -eq 0 ] || before=$(_fm_open_decisions_cursor_text "$f")
     fold_rc=0
     open=$(status_open_decisions_incremental "$f" "$endpoint") || fold_rc=$?
     [ "$fold_rc" -ne 124 ] || return 124
+    [ "$late" -eq 0 ] || [ "$before" = "$(_fm_open_decisions_cursor_text "$f")" ] || late=2
     [ "$fold_rc" -eq 0 ] || return 1
     [ -n "$open" ] || continue
     while IFS= read -r line; do

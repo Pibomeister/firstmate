@@ -1008,61 +1008,71 @@ test_cold_decision_fold_progresses_across_presentation_deadlines() {
   pass "a cold decision fold keeps its progress across $attempt two-second presentation deadlines"
 }
 
-# Many short task logs never reach a 64-line checkpoint, so only the fleet
-# scan's own between-task check can hold the fold to its bound.
-test_many_short_decision_logs_stop_between_tasks_at_the_deadline() {
-  local dir state i rc attempt=0 started elapsed folded unfolded offset size task tasks=60
-  dir=$(make_case many-short-decision-logs)
-  state="$dir/state"
-  i=0
-  while [ "$i" -lt "$tasks" ]; do
-    task=$(printf 'task-short-%03d' "$i")
-    printf 'kind=ship\n' > "$state/$task.meta"
-    {
-      printf 'needs-decision [key=s%03d]: short decision %03d\n' "$i" "$i"
-      awk 'BEGIN { for (j=0;j<10;j++) print "working: short historical context" }'
-    } > "$state/$task.status"
-    i=$((i + 1))
-  done
-  FM_STATE_OVERRIDE="$state" /bin/bash -c '
-    . "$1"
-    snapshot=$(status_presentation_snapshot "$2") || exit 1
-    status_commit_presentation_snapshot "$2" "$snapshot"
-  ' _ "$ROOT/bin/fm-classify-lib.sh" "$state" || fail 'could not record the presentation receipt'
-  while :; do
-    rc=0
-    started=$SECONDS
-    fm_run_timed 300 env FM_STATE_OVERRIDE="$state" FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=2 \
-      "$BASH" "$DRAIN" > "$dir/attempt.out" 2> "$dir/attempt.err" || rc=$?
-    elapsed=$((SECONDS - started))
-    attempt=$((attempt + 1))
-    folded=0
-    unfolded=0
+# Short task logs never reach a 64-line checkpoint, so the fleet scans' own
+# between-task stop holds the fold to its bound. A scan called with a deadline
+# that has already passed must still fold one changed task per call, past any
+# prefix of unchanged ones, so retries always converge.
+test_open_decision_scans_past_the_deadline_fold_one_changed_task_per_call() {
+  local dir state mode i rc call folded previous task tasks=8 warm=4
+  for mode in incremental snapshot; do
+    dir=$(make_case "past-deadline-scan-$mode")
+    state="$dir/state"
     i=0
     while [ "$i" -lt "$tasks" ]; do
       task=$(printf 'task-short-%03d' "$i")
-      size=$(LC_ALL=C wc -c < "$state/$task.status" | tr -d '[:space:]')
-      offset=$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_cursor_offset "$2"' \
-        _ "$ROOT/bin/fm-classify-lib.sh" "$state/$task.status")
-      if [ "$offset" = "$size" ]; then folded=$((folded + 1)); else unfolded=$((unfolded + 1)); fi
+      printf 'kind=ship\n' > "$state/$task.meta"
+      {
+        printf 'needs-decision [key=s%03d]: short decision %03d\n' "$i" "$i"
+        printf 'working: short historical context\n'
+      } > "$state/$task.status"
+      # The first tasks are warm: their cursors already cover every line.
+      if [ "$i" -lt "$warm" ]; then
+        FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_incremental "$2" >/dev/null' \
+          _ "$ROOT/bin/fm-classify-lib.sh" "$state/$task.status" || fail "could not warm $task"
+      fi
       i=$((i + 1))
     done
-    if [ "$attempt" -eq 1 ]; then
-      assert_equals 124 "$rc" "the first two-second attempt folded all $tasks short task logs in ${elapsed}s instead of stopping between tasks: $(cat "$dir/attempt.err")"
-      [ "$folded" -gt 0 ] || fail 'a bounded attempt folded no task before its deadline'
-      [ "$unfolded" -gt 0 ] || fail 'a bounded attempt that reported its deadline left no task unfolded'
-    fi
-    [ "$rc" -ne 0 ] || break
-    assert_equals 124 "$rc" "a short-log fold attempt failed for a reason other than its deadline: $(cat "$dir/attempt.err")"
-    [ "$attempt" -lt 120 ] || fail "the short-log fold never finished across $attempt bounded attempts"
+    previous=$warm
+    call=0
+    while :; do
+      call=$((call + 1))
+      rc=0
+      FM_STATE_OVERRIDE="$state" /bin/bash -c '
+        . "$1"
+        _FM_OPEN_DECISIONS_DEADLINE=0
+        if [ "$3" = snapshot ]; then
+          snapshot=$(status_presentation_snapshot "$2") || exit 1
+          scan_open_decisions_snapshot "$2" "$snapshot"
+        else
+          scan_open_decisions_incremental "$2"
+        fi
+      ' _ "$ROOT/bin/fm-classify-lib.sh" "$state" "$mode" > "$dir/scan.out" 2> "$dir/scan.err" || rc=$?
+      folded=0
+      i=0
+      while [ "$i" -lt "$tasks" ]; do
+        task=$(printf 'task-short-%03d' "$i")
+        [ "$(FM_STATE_OVERRIDE="$state" /bin/bash -c '. "$1"; status_open_decisions_cursor_offset "$2"' \
+          _ "$ROOT/bin/fm-classify-lib.sh" "$state/$task.status")" = \
+          "$(LC_ALL=C wc -c < "$state/$task.status" | tr -d '[:space:]')" ] && folded=$((folded + 1))
+        i=$((i + 1))
+      done
+      assert_equals $((previous + 1)) "$folded" "$mode scan call $call past its deadline did not fold exactly one more changed task (rc=$rc): $(cat "$dir/scan.err")"
+      previous=$folded
+      if [ "$folded" -lt "$tasks" ]; then
+        assert_equals 124 "$rc" "$mode scan call $call past its deadline did not stop after one changed task: $(cat "$dir/scan.err")"
+        continue
+      fi
+      assert_equals 0 "$rc" "$mode scan call that folded the last changed task did not complete: $(cat "$dir/scan.err")"
+      break
+    done
+    i=0
+    while [ "$i" -lt "$tasks" ]; do
+      assert_grep "$(printf '%s\ts%03d\t' "task-short-$(printf '%03d' "$i")" "$i")" "$dir/scan.out" \
+        "the completed $mode scan did not list short decision $i"
+      i=$((i + 1))
+    done
   done
-  assert_equals "$tasks" "$folded" 'the completed bounded attempts left a short task log unfolded'
-  i=0
-  while [ "$i" -lt "$tasks" ]; do
-    assert_grep "$(printf '[key=s%03d]' "$i")" "$dir/attempt.out" "the completed drain did not present short decision $i"
-    i=$((i + 1))
-  done
-  pass "a fold over $tasks short task logs stops between tasks at its deadline and finishes across $attempt attempts"
+  pass "both open-decision scans past their deadline fold one changed task per call past an unchanged prefix and then complete"
 }
 
 if [ "$#" -gt 0 ]; then
@@ -1099,4 +1109,4 @@ test_presentation_scratch_of_a_live_worker_outlives_its_dead_owner
 test_fresh_unregistered_scratch_of_a_dead_owner_is_kept
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed
 test_cold_decision_fold_progresses_across_presentation_deadlines
-test_many_short_decision_logs_stop_between_tasks_at_the_deadline
+test_open_decision_scans_past_the_deadline_fold_one_changed_task_per_call
