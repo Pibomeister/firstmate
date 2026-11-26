@@ -1,0 +1,9 @@
+== base
+ci-workflow: commands.test not configured in .no-mistakes.yaml
+exit=1
+== head
+ci-workflow: commands.test not configured in .no-mistakes.yaml
+exit=1
+== malformed YAML control
+ci-workflow: parse repo config: yaml: line 58: did not find expected ',' or ']'
+exit=1
