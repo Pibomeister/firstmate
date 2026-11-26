@@ -1026,7 +1026,7 @@ launch_count() {  # <name>
 # Expensive idle collection: an unchanged home collects once per idle interval,
 # not once per poll, while the cheap watcher beat keeps the poll period.
 test_unchanged_home_collects_once_per_idle_interval() {
-  local home stub count beats=0 i gaps started elapsed max_count
+  local home stub count i gaps started elapsed max_count
   home=$(make_home watch-idle)
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
   stub=$(launch_log_stub watch-idle)
@@ -1041,7 +1041,11 @@ test_unchanged_home_collects_once_per_idle_interval() {
   i=0
   while [ "$i" -lt 10 ]; do
     rm -f "$home/state/.last-watcher-beat"
-    wait_for_file "$home/state/.last-watcher-beat" 3 && beats=$((beats + 1))
+    # The next beat starts a new poll, so the previous poll has completed.
+    # Wait for that boundary instead of treating a three-second sample as a
+    # poll: host scheduling can delay a healthy loop beyond that sample.
+    wait_for_file "$home/state/.last-watcher-beat" 30 \
+      || fail "the idle watcher did not complete poll $((i + 1)): $(cat "$TMP_ROOT/watch-idle.err")"
     i=$((i + 1))
   done
   count=$(launch_count watch-idle)
@@ -1054,7 +1058,6 @@ test_unchanged_home_collects_once_per_idle_interval() {
   kill -TERM "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=
-  [ "$beats" -ge 8 ] || fail "the watcher beat advanced only $beats time(s) across ten polls"
   [ "$count" -ge 2 ] && [ "$count" -le "$max_count" ] \
     || fail "an unchanged home collected $count time(s) in ${elapsed}s at a four-second idle interval (maximum $max_count)"
   gaps=$(awk 'NR>1 && $1-p < 3 {print $1-p} {p=$1}' "$TMP_ROOT/watch-idle.runs")

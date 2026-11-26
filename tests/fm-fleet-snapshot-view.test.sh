@@ -557,6 +557,10 @@ EOF
 
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
+  # This fixture checks parsing, overrides, and rendering, not read deadlines.
+  # Give the nested endpoint read and its enclosing state read time to finish
+  # on a loaded host instead of asserting against a timed-out observation.
+  local -x FM_CREW_STATE_PANE_TIMEOUT=15 FM_SNAPSHOT_CREW_STATE_TIMEOUT=30
   home=$(make_home overrides)
   data=$TMP_ROOT/override-data
   projects=$TMP_ROOT/override-projects
@@ -685,6 +689,10 @@ EOF
       and .paths.report.path == ($data + "/bold-task/report.md")
       and .paths.report.present == true
   ' >/dev/null || fail "bold task did not join to override-backed backlog and report"
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "bold-task")
+    | .current_state.state == "done" and .current_state.source == "status-log"
+  ' >/dev/null || fail "override task observation did not resolve its done status: $out"
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$data" FM_PROJECTS_OVERRIDE="$projects" "$VIEW")
   assert_contains "$view" "| bold-task | done / status-log | scout | alpha | tmux | present | $data/bold-task/report.md" \
     "view should render bold in-flight row from snapshot"
