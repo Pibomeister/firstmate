@@ -451,6 +451,49 @@ test_run_timed_external_forwards_a_caller_term() {
   pass "fm_run_timed forwards a caller TERM through its external runner"
 }
 
+test_run_timed_external_forwards_a_caller_term_under_a_trapping_parent() {
+  local dir fb tool parent caller pid i=0
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed forwards a subshell caller's TERM under a parent that traps every forwarded signal (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term-trapping-parent"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  # The parent's traps are not the subshell caller's, though newer Bash still
+  # reports their text inside the subshell until its first trap change.
+  (
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    (
+      . "$ROOT/bin/fm-timeout-lib.sh"
+      PATH=$fb fm_run_timed 60 bash -c 'trap "" TERM; echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
+    ) &
+    echo "$!" > "$dir/caller"
+    wait
+  ) &
+  parent=$!
+  wait_for_file "$dir/pid"
+  wait_for_file "$dir/caller"
+  pid=$(cat "$dir/pid")
+  caller=$(cat "$dir/caller")
+  kill -TERM "$caller"
+  wait "$parent" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 250 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "a TERM-ignoring command outlived its subshell caller's TERM under a parent that traps every forwarded signal"
+    fi
+    sleep 0.02
+  done
+  pass "fm_run_timed forwards a subshell caller's TERM under a parent that traps every forwarded signal"
+}
+
 test_run_timed_external_keeps_a_caller_trap_that_defers_term() {
   local dir fb tool caller rc=0 out
   if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
@@ -1388,6 +1431,7 @@ test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
 test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
 test_run_timed_external_forwards_a_caller_term
+test_run_timed_external_forwards_a_caller_term_under_a_trapping_parent
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
 test_cancellable_command_stops_when_its_killed_caller_is_unreaped

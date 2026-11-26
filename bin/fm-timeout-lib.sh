@@ -376,6 +376,10 @@ fm_run_external_timeout() {
 '
   _FM_EXTERNAL_TIMEOUT_PID=$runner_pid
   _FM_EXTERNAL_TIMEOUT_STATUS=$status_file
+  # In a subshell, Bash 4.3+ still reports a parent's inactive trap text until
+  # the first trap change; this no-op change drops it, so only the caller's own
+  # traps and inherited ignores count as the caller's choice.
+  trap - KILL
   for signal in INT TERM HUP; do
     [ -z "$(trap -p "$signal")" ] || continue
     _FM_EXTERNAL_TIMEOUT_SIGNALS="$_FM_EXTERNAL_TIMEOUT_SIGNALS $signal"
