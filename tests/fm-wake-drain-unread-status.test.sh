@@ -831,6 +831,29 @@ test_presentation_scratch_of_a_live_worker_outlives_its_dead_owner() {
   pass 'presentation scratch of a live worker outlives its dead owner and is removed after the worker ends'
 }
 
+# A worker records its pid just after it starts, so scratch whose owner died in
+# that gap has no recorded worker yet. A drain must not remove it while it is
+# fresh, and removes it once it is old enough that no worker can still start.
+test_fresh_unregistered_scratch_of_a_dead_owner_is_kept() {
+  local dir state dead scratch
+  dir=$(make_case fresh-unregistered-presentation-scratch)
+  state="$dir/state"
+  sleep 0 &
+  dead=$!
+  wait "$dead" 2>/dev/null || true
+  scratch="$state/.wake-drain-presentation.$dead.fresh01"
+  mkdir "$scratch"
+  printf 'chunk\n' > "$scratch/chunk"
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/drain.out" 2> "$dir/drain.err" \
+    || fail "drain failed: $(cat "$dir/drain.err")"
+  [ -f "$scratch/chunk" ] || fail 'a drain removed fresh scratch whose worker had not yet recorded its pid'
+  touch -t 202001010000 "$scratch"
+  FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/again.out" 2> "$dir/again.err" \
+    || fail "drain on aged scratch failed: $(cat "$dir/again.err")"
+  [ ! -e "$scratch" ] || fail 'aged scratch of a dead owner with no recorded worker was kept'
+  pass 'fresh scratch of a dead owner with no recorded worker is kept until it is old'
+}
+
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
   local dir state dead
   dir=$(make_case orphan-presentation-scratch)
@@ -840,6 +863,7 @@ test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
   wait "$dead" 2>/dev/null || true
   mkdir "$state/.wake-drain-presentation.$dead.orphan1" "$state/.wake-drain-presentation.$$.live001" \
     "$state/.wake-drain-presentation.legacy1"
+  touch -t 202001010000 "$state/.wake-drain-presentation.$dead.orphan1"
   FM_STATE_OVERRIDE="$state" "$BASH" "$DRAIN" > "$dir/drain.out" 2> "$dir/drain.err" \
     || fail "drain failed: $(cat "$dir/drain.err")"
   [ ! -e "$state/.wake-drain-presentation.$dead.orphan1" ] || fail 'a dead owner left its presentation scratch behind'
@@ -1005,5 +1029,6 @@ test_invalid_presentation_bound_falls_back_to_the_default
 test_unwritable_presentation_scratch_still_presents_outcomes_and_liveness
 test_presentation_runner_start_failure_is_not_a_fold_timeout
 test_presentation_scratch_of_a_live_worker_outlives_its_dead_owner
+test_fresh_unregistered_scratch_of_a_dead_owner_is_kept
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed
 test_cold_decision_fold_progresses_across_presentation_deadlines

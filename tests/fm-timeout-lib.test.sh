@@ -521,6 +521,75 @@ test_bash_runner_returns_when_term_is_ignored_on_entry() {
   pass "the bash runner returns a finished call at once even when TERM is ignored on entry"
 }
 
+# A caller killed before its parent reaps it is a zombie that still answers
+# kill -0. Its cancellable call has no deadline, so the watchdog must treat the
+# zombie as gone and stop the command.
+test_cancellable_command_stops_when_its_killed_caller_is_unreaped() {
+  local dir holder owner pid state i=0
+  dir="$TMP_ROOT/unreaped-caller"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+echo "$$" > "$2/owner"
+fm_run_cancellable_fn bash -c 'echo "$$" > "$1"; exec sleep 300' _ "$2/pid"
+OWNER
+  # sh becomes a sleep that never reaps, so the killed caller stays a zombie.
+  sh -c 'bash "$1" "$2" "$3" & exec sleep 60' _ "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  holder=$!
+  wait_for_file "$dir/pid"
+  owner=$(cat "$dir/owner")
+  pid=$(cat "$dir/pid")
+  kill -KILL "$owner"
+  while :; do
+    state=$(ps -o stat= -p "$owner" 2>/dev/null || true)
+    case "$state" in *Z*) break ;; '') kill -KILL "$pid" "$holder" 2>/dev/null; fail 'fixture: the killed caller was reaped, so the case is vacuous' ;; esac
+    i=$((i + 1))
+    [ "$i" -lt 250 ] || { kill -KILL "$pid" "$holder" 2>/dev/null; fail 'fixture: the killed caller never became a zombie'; }
+    sleep 0.02
+  done
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" "$holder" 2>/dev/null || true
+      fail 'a cancellable command outlived its killed, unreaped caller by 10s'
+    fi
+    sleep 0.02
+  done
+  kill -KILL "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass 'a cancellable command stops when its killed caller is a zombie not yet reaped'
+}
+
+# A trap the caller installs during the wait, here from its own USR1 handler, is
+# the caller's: the external runner must not remove it when it restores the
+# forwarding traps it set.
+test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait() {
+  local dir fb tool
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed keeps a trap the caller set during the wait (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-caller-trap"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  # shellcheck disable=SC2016  # Expanded by the child shell.
+  bash -c '
+    . "$1/bin/fm-timeout-lib.sh"
+    self=$(exec /bin/sh -c "echo \$PPID")
+    trap "trap \"echo caller-cleanup\" TERM" USR1
+    ( sleep 1; kill -USR1 "$self" ) &
+    PATH=$2 fm_run_timed 10 sleep 2
+    trap -p TERM > "$3"
+  ' _ "$ROOT" "$fb" "$dir/trap" >/dev/null 2>&1
+  grep -q 'caller-cleanup' "$dir/trap" \
+    || fail "the external runner removed a TERM trap the caller set during the wait: [$(cat "$dir/trap" 2>/dev/null)]"
+  pass "fm_run_timed keeps a trap the caller set during the wait"
+}
+
 # fm_run_cancellable_fn has no deadline, so a runner that cannot start must not
 # report the bound status 124; a finite bound keeps its 124 refusal.
 test_cancellable_runner_start_failure_is_not_a_bound() {
@@ -1162,5 +1231,7 @@ test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
 test_run_timed_external_forwards_a_caller_term
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
+test_cancellable_command_stops_when_its_killed_caller_is_unreaped
+test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait
 test_cancellable_runner_start_failure_is_not_a_bound
 test_timed_out_names_exactly_the_bound_statuses

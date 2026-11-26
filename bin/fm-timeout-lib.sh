@@ -207,6 +207,14 @@ fm_cancel_bash_timeout() {
     || command -p rm -f "$_FM_BASH_TIMEOUT_STATUS_FILE" "${_FM_BASH_TIMEOUT_DEADLINE_FILE:-}" 2>/dev/null || true
 }
 
+# A killed caller its parent has not reaped yet still answers kill -0, so a
+# zombie counts as gone.
+_fm_bash_timeout_caller_alive() {  # <pid>
+  kill -0 "$1" 2>/dev/null || return 1
+  case "$(command -p ps -o stat= -p "$1" 2>/dev/null)" in *Z*) return 1 ;; esac
+  return 0
+}
+
 fm_run_bash_timeout() {
   local seconds=$1 _FM_BASH_TIMEOUT_STATUS_FILE='' _FM_BASH_TIMEOUT_DEADLINE_FILE=''
   local _FM_BASH_TIMEOUT_CHILD_PID='' _FM_BASH_TIMEOUT_WATCHDOG_PID='' command_rc recorded_rc monitor_was_on=0 caller
@@ -239,11 +247,11 @@ fm_run_bash_timeout() {
   (
     set +m
     case "$seconds" in
-      none) while kill -0 "$caller" 2>/dev/null; do command -p sleep 1; done ;;
+      none) while _fm_bash_timeout_caller_alive "$caller"; do command -p sleep 1; done ;;
       *[!0-9]*) command -p sleep "$seconds" ;;
       *)
         i=0
-        while [ "$i" -lt "$seconds" ] && kill -0 "$caller" 2>/dev/null; do
+        while [ "$i" -lt "$seconds" ] && _fm_bash_timeout_caller_alive "$caller"; do
           command -p sleep 1
           i=$((i + 1))
         done ;;
@@ -285,11 +293,15 @@ fm_run_bash_timeout() {
 }
 
 # Only signals the caller left at their default disposition carry a forwarding
-# trap, so restoring resets exactly those and is a no-op once already done.
+# trap, so restoring resets exactly those and is a no-op once already done. A
+# trap the caller installed on one of them during the wait is the caller's and
+# stays in place.
 _fm_external_timeout_restore_traps() {
   local signal
   for signal in ${_FM_EXTERNAL_TIMEOUT_SIGNALS:-}; do
-    trap - "$signal"
+    case "$(trap -p "$signal")" in
+      *"_fm_external_timeout_forward $signal'"*) trap - "$signal" ;;
+    esac
   done
   _FM_EXTERNAL_TIMEOUT_SIGNALS=
   _FM_EXTERNAL_TIMEOUT_PID=

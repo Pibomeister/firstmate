@@ -903,9 +903,11 @@ print_status_presentation() {  # [<deduped-raw-rows>]
 drain_presentation_worker() {  # [<deduped-raw-rows>]
   local branch_rc=0 status_rc=0
   # Record this worker's own pid (Bash 3.2 has no BASHPID) so a later drain's
-  # orphan sweep keeps the directory while this worker still runs.
+  # orphan sweep keeps the directory while this worker still runs. Scratch this
+  # worker cannot register in is treated as scratch that could not be created.
   [ -z "$_FM_STATUS_SCRATCH_DIR" ] \
-    || (exec /bin/sh -c 'echo "$PPID"') > "$_FM_STATUS_SCRATCH_DIR/worker.pid" 2>/dev/null || true
+    || (exec /bin/sh -c 'echo "$PPID"') > "$_FM_STATUS_SCRATCH_DIR/worker.pid" 2>/dev/null \
+    || _FM_STATUS_SCRATCH_DIR=
   if [ -n "$_FM_STATUS_SCRATCH_DIR" ]; then
     print_status_presentation "${1:-}" || status_rc=$?
   else
@@ -924,6 +926,8 @@ drain_presentation_worker() {  # [<deduped-raw-rows>]
 # without an owner pid are never touched. A killed owner's worker can outlive
 # it until its watchdog stops it, so a directory whose recorded worker pid is
 # still live is kept too; a reused pid only delays removal to a later sweep.
+# A worker records its pid just after it starts, so a directory with no
+# recorded worker is removed only once it is older than a minute.
 sweep_orphan_presentation_scratch() {
   local dir owner worker
   for dir in "$STATE"/.wake-drain-presentation.*.*; do
@@ -936,7 +940,9 @@ sweep_orphan_presentation_scratch() {
     ps -p "$owner" >/dev/null 2>&1 && continue
     worker=$(cat "$dir/worker.pid" 2>/dev/null || true)
     case "$worker" in
-      ''|*[!0-9]*) ;;
+      ''|*[!0-9]*)
+        [ -n "$(find "$dir" -prune -mmin +1 2>/dev/null)" ] || continue
+        ;;
       *)
         kill -0 "$worker" 2>/dev/null && continue
         ps -p "$worker" >/dev/null 2>&1 && continue
