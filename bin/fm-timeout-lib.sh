@@ -46,7 +46,8 @@
 #       own process group until it returns, with its own status. A trap in the
 #       calling shell stops and reaps it through fm_cancel_bash_timeout, and
 #       the group also ends within about two seconds of the calling shell's
-#       death.
+#       death. It returns 125 without running the call when the runner cannot
+#       start (no temporary file), never the bound status 124.
 #
 #   fm_exec_timed <seconds> <grace-seconds> <command> [args...]
 #       Replaces the calling shell with the bounded command, so it must be the
@@ -215,7 +216,12 @@ fm_run_bash_timeout() {
   # otherwise), so a caller with a trimmed PATH still gets a real bound rather
   # than an immediate 124.
   caller=$(exec /bin/sh -c 'echo "$PPID"')
-  _FM_BASH_TIMEOUT_STATUS_FILE=$(command -p mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null) || return 124
+  # With no deadline there is no bound to report, so a runner that cannot
+  # start says so with 125 instead of the bound status.
+  if ! _FM_BASH_TIMEOUT_STATUS_FILE=$(command -p mktemp "${TMPDIR:-/tmp}/fm-bash-timeout-command.XXXXXX" 2>/dev/null); then
+    [ "$seconds" != none ] || return 125
+    return 124
+  fi
   _FM_BASH_TIMEOUT_DEADLINE_FILE="${_FM_BASH_TIMEOUT_STATUS_FILE}.deadline"
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m

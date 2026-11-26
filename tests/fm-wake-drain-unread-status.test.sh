@@ -782,6 +782,25 @@ exec %s "$@"\n' "$real" > "$fake/mktemp"
   pass 'a presentation scratch failure still presents branch outcomes and liveness'
 }
 
+test_presentation_runner_start_failure_is_not_a_fold_timeout() {
+  local dir state rc=0
+  dir=$(make_case presentation-runner-start-failure)
+  state="$dir/state"
+  printf 'note: runner start fixture\n' > "$state/task-runner.status"
+  append_wake "$state" check runner 'unhandled runner fixture' || fail 'could not seed runner wake'
+  seed_routine_branch_outcome "$dir" runner
+  TMPDIR="$dir/missing-tmp" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/config" \
+    FM_TEST_SEAM=1 FM_TEST_HARNESS=claude "$BASH" "$DRAIN" \
+    > "$dir/drain.out" 2> "$dir/drain.err" || rc=$?
+  [ "$rc" -ne 124 ] || fail "a runner start failure reported the fold bound status: $(cat "$dir/drain.err")"
+  assert_no_grep 'decision-fold bound' "$dir/drain.err" 'a runner start failure was blamed on the decision fold'
+  assert_grep 'runner could not start' "$dir/drain.err" 'a runner start failure was silent'
+  assert_grep 'runner start fixture' "$dir/drain.out" 'a runner start failure skipped unread status'
+  assert_grep '[seq 1] runner: routine outcome fixture' "$dir/drain.out" 'a runner start failure skipped branch outcomes'
+  assert_grep 'WARNING: queued wakes pending' "$dir/drain.err" 'a runner start failure skipped the liveness check'
+  pass 'a presentation runner start failure still presents and is not reported as a fold timeout'
+}
+
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed() {
   local dir state dead
   dir=$(make_case orphan-presentation-scratch)
@@ -954,5 +973,6 @@ test_mixed_tasks_preserve_routine_presentation_ownership
 test_warm_routine_history_is_bounded_without_acknowledging_it
 test_invalid_presentation_bound_falls_back_to_the_default
 test_unwritable_presentation_scratch_still_presents_outcomes_and_liveness
+test_presentation_runner_start_failure_is_not_a_fold_timeout
 test_orphaned_presentation_scratch_of_a_dead_owner_is_removed
 test_cold_decision_fold_progresses_across_presentation_deadlines

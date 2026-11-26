@@ -521,6 +521,28 @@ test_bash_runner_returns_when_term_is_ignored_on_entry() {
   pass "the bash runner returns a finished call at once even when TERM is ignored on entry"
 }
 
+# fm_run_cancellable_fn has no deadline, so a runner that cannot start must not
+# report the bound status 124; a finite bound keeps its 124 refusal.
+test_cancellable_runner_start_failure_is_not_a_bound() {
+  local dir rc_none=0 rc_bound=0 ran
+  dir="$TMP_ROOT/cancellable-start-failure"
+  mkdir -p "$dir"
+  ran="$dir/ran"
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    TMPDIR="$dir/missing" fm_run_cancellable_fn touch "$ran"
+  ) || rc_none=$?
+  [ "$rc_none" -eq 125 ] || fail "a cancellable runner that could not start returned $rc_none, not 125"
+  [ ! -e "$ran" ] || fail "a cancellable runner that could not start still ran its command"
+  fm_timed_out "$rc_none" && fail "a cancellable runner start failure reads as a fired bound"
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    TMPDIR="$dir/missing" fm_run_timed_fn 5 touch "$ran"
+  ) || rc_bound=$?
+  [ "$rc_bound" -eq 124 ] || fail "a bounded runner that could not start returned $rc_bound, not its 124 refusal"
+  pass "a cancellable runner start failure reports 125, never the bound status"
+}
+
 test_timed_out_names_exactly_the_bound_statuses() {
   local status verdict
   for status in 124 137 0 1 125 127 143 ''; do
@@ -1140,4 +1162,5 @@ test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
 test_run_timed_external_forwards_a_caller_term
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
+test_cancellable_runner_start_failure_is_not_a_bound
 test_timed_out_names_exactly_the_bound_statuses

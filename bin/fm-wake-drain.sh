@@ -938,6 +938,15 @@ run_drain_presentation() {  # [<deduped-raw-rows>]
   _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.$DRAIN_PARENT_PID.XXXXXX" 2>/dev/null) \
     || _FM_STATUS_SCRATCH_DIR=
   fm_run_cancellable_fn drain_presentation_worker "${1:-}" || rc=$?
+  if [ "$rc" -eq 125 ]; then
+    # The cancellable runner could not start, so the worker never ran. Present
+    # in a plain subshell so branch outcomes and liveness still run; an
+    # interrupt then waits for that subshell instead of reaping it.
+    printf 'WAKE DRAIN NOTE: pid=%s cancellable presentation runner could not start (no temporary file); presenting without it.\n' \
+      "$DRAIN_PARENT_PID" >&2
+    rc=0
+    ( drain_presentation_worker "${1:-}" ) || rc=$?
+  fi
   if [ "$rc" -eq 124 ]; then
     printf 'WAKE DRAIN INCOMPLETE: pid=%s phase=status-open-decisions exceeded %ss decision-fold bound; retry unfinished presentation.\n' \
       "$DRAIN_PARENT_PID" "$DRAIN_PRESENTATION_TIMEOUT" >&2
