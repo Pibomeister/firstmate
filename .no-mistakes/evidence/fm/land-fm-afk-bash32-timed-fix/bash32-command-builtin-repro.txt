@@ -1,0 +1,13 @@
+Scenario: timed function runs 'command fm-fake-program', then echoes 'after' and returns 5, via fm_run_timed_fn (bash watchdog mechanism)
+Expected: program_output='fake-ran' function_stdout='after' rc=5
+[Bash 3.2.57 base e5b56a86] bash=3.2.57(2)-release program_output='fake-ran' function_stdout='after' rc=5
+[Bash 3.2.57 head 089eee9c] bash=3.2.57(2)-release program_output='fake-ran' function_stdout='after' rc=5
+[Bash 3.2.0 base] bash=3.2.0(2)-release program_output='fake-ran' function_stdout='after' rc=5
+[Bash 3.2.0 head] bash=3.2.0(2)-release program_output='fake-ran' function_stdout='after' rc=5
+[system bash base] bash=5.3.9(1)-release program_output='fake-ran' function_stdout='after' rc=5
+[system bash head] bash=5.3.9(1)-release program_output='fake-ran' function_stdout='after' rc=5
+
+--- build provenance
+GNU bash, version 3.2.57(2)-release (x86_64-unknown-linux-gnu)
+GNU bash, version 3.2.0(2)-release (x86_64-unknown-linux-gnu)
+Built from ftp.gnu.org bash-3.2.57.tar.gz / bash-3.2.tar.gz in a temp dir (parser regenerated with locally built byacc)

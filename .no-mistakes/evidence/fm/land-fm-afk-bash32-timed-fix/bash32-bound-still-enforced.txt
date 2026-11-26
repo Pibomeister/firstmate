@@ -1,0 +1,5 @@
+Scenario: timed function whose program outlives a 2s bound
+[head bash=3.2.57(2)-release] rc=124 elapsed=3s program_still_alive=no (expected rc=124, ~2-3s, alive=no)
+[base bash=3.2.57(2)-release] rc=124 elapsed=3s program_still_alive=no (expected rc=124, ~2-3s, alive=no)
+[head bash=5.3.9(1)-release] rc=124 elapsed=3s program_still_alive=no (expected rc=124, ~2-3s, alive=no)
+[base bash=5.3.9(1)-release] rc=124 elapsed=3s program_still_alive=no (expected rc=124, ~2-3s, alive=no)
