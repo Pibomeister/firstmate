@@ -1146,20 +1146,77 @@ test_a_relevant_change_collects_without_waiting_for_idle() {
 # due, so no change-driven launch inside the heartbeat's too-soon window can
 # reset that due past the previous publication's stale bound.
 test_a_change_under_load_waits_for_the_throttled_idle_due() {
-  local home stub first next
+  local home stub first next clockbin epoch offset i observed real_date real_sleep
   home=$(make_home watch-loaded-change)
   rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
   printf '300 0.00 0.00\n' > "$TMP_ROOT/watch-loaded-change.load"
   stub=$(launch_log_stub watch-loaded-change)
+  clockbin=$home/clock-bin
+  mkdir -p "$clockbin"
+  real_date=$(command -v date)
+  real_sleep=$(command -v sleep)
+  epoch=$(date +%s)
+  printf '%s\n' "$epoch" > "$home/clock"
+  # Control both portable date reads and Bash 4.2+'s builtin epoch clock.
+  # Every other date/printf operation keeps its normal behavior.
+  cat > "$clockbin/date" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" = 1 ] && [ "$1" = +%s ]; then
+  cat "$FM_HOME/clock"
+else
+  exec "$FM_TEST_REAL_DATE" "$@"
+fi
+SH
+  cat > "$home/clock.env" <<'SH'
+printf() {
+  if [ "$#" = 4 ] && [ "$1" = -v ] && [ "$3" = '%(%s)T' ] && [ "$4" = -1 ]; then
+    read -r "$2" < "$FM_HOME/clock"
+  else
+    builtin printf "$@"
+  fi
+}
+SH
+  # A sleep request from the watcher's child acknowledges a completed ticker
+  # poll. Hold it until the test advances time, independent of host scheduling.
+  cat > "$clockbin/sleep" <<'SH'
+#!/usr/bin/env bash
+owner=$(cat "$FM_HOME/watcher.pid")
+parent=$(ps -o ppid= -p "$PPID" | tr -d ' ')
+args=$(ps -o args= -p "$PPID")
+if [ "$parent" = "$owner" ]; then
+  case "$args" in
+    *"$FM_TEST_WATCH_PATH"*)
+      read -r now < "$FM_HOME/clock"
+      printf '%s\n' "$now" > "$FM_HOME/polled.tmp"
+      mv "$FM_HOME/polled.tmp" "$FM_HOME/polled"
+      while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ] && kill -0 "$owner" 2>/dev/null; do
+        read -r next < "$FM_HOME/clock" || exit 1
+        [ "$next" = "$now" ] || exit 0
+        "$FM_TEST_REAL_SLEEP" 0.05
+      done
+      exit 1
+      ;;
+  esac
+fi
+exec "$FM_TEST_REAL_SLEEP" "$@"
+SH
+  chmod +x "$clockbin/date" "$clockbin/sleep"
   fm_test_track_watcher_state "$home/state"
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+  PATH="$clockbin:$PATH" BASH_ENV="$home/clock.env" \
+    FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_SLEEP="$real_sleep" FM_TEST_WATCH_PATH="$WATCH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
     FM_LOAD_FILE="$TMP_ROOT/watch-loaded-change.load" \
     FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
     FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
-    "$WATCH" > "$TMP_ROOT/watch-loaded-change.out" 2> "$TMP_ROOT/watch-loaded-change.err" &
+    bash -c 'printf "%s\n" "$$" > "$FM_HOME/watcher.pid"; exec "$1"' _ "$WATCH" \
+    > "$TMP_ROOT/watch-loaded-change.out" 2> "$TMP_ROOT/watch-loaded-change.err" &
   WATCH_PID=$!
-  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
-  command -p sleep 2
+  wait_for_file "$home/polled" 60 || fail "ticker never polled"
+  i=0
+  while [ "$(launch_count watch-loaded-change)" = 0 ] && [ "$i" -lt 600 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
   [ "$(launch_count watch-loaded-change)" = 1 ] || fail "expected one first collection, saw $(launch_count watch-loaded-change)"
   first=$(head -n 1 "$TMP_ROOT/watch-loaded-change.runs")
   (
@@ -1170,17 +1227,35 @@ test_a_change_under_load_waits_for_the_throttled_idle_due() {
     . "$ROOT/bin/fm-wake-lib.sh"
     fm_wake_append check hb-test-producer "an appended wake under load"
   ) || fail "could not append a wake"
-  command -p sleep 4
-  [ "$(launch_count watch-loaded-change)" = 1 ] \
-    || fail "a change under load collected before the throttled idle due"
-  command -p sleep 10
+  # The policy stretches three seconds to twelve. Check before that deadline
+  # and at it; a change that resets the deadline to eighteen must fail.
+  for offset in 6 11 12; do
+    printf '%s\n' "$((epoch + offset))" > "$home/clock.next"
+    mv "$home/clock.next" "$home/clock"
+    i=0 observed=
+    while [ "$i" -lt 600 ]; do
+      read -r observed < "$home/polled"
+      [ "$observed" != "$((epoch + offset))" ] || break
+      kill -0 "$WATCH_PID" 2>/dev/null || fail "the loaded watcher exited"
+      command -p sleep 0.1
+      i=$((i + 1))
+    done
+    [ "$observed" = "$((epoch + offset))" ] || fail "ticker did not finish the ${offset}s poll"
+    [ "$offset" = 12 ] || [ "$(launch_count watch-loaded-change)" = 1 ] \
+      || fail "a change under load collected before the throttled idle due"
+  done
+  i=0
+  while [ "$(launch_count watch-loaded-change)" -lt 2 ] && [ "$i" -lt 600 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
   kill -KILL "$WATCH_PID" 2>/dev/null
   wait "$WATCH_PID" 2>/dev/null
   WATCH_PID=
   [ "$(launch_count watch-loaded-change)" -ge 2 ] || fail "no collection at the throttled idle due"
   next=$(sed -n 2p "$TMP_ROOT/watch-loaded-change.runs")
-  [ $((next - first)) -le 14 ] \
-    || fail "the next collection came $((next - first))s after the first, past the 12s throttled idle due"
+  [ $((next - first)) -eq 12 ] \
+    || fail "the next collection came $((next - first))s after the first, expected the 12s throttled idle due"
   pass "a change under load waits for the throttled idle due instead of resetting it"
 }
 
