@@ -1135,23 +1135,24 @@ mr_tree_manifest() {  # <dir>
 # matches the path's name apart from letter case.
 mr_verify_path_free() {  # <repo> <commit> <path>
   local repo=$1 commit=$2 path=$3 want entry found=0 lower
-  want=$(printf '%s' "${path#tests/}" | tr '[:upper:]' '[:lower:]')
+  # The C locale keeps the case fold to ASCII, matching the --path grammar.
+  want=$(printf '%s' "${path#tests/}" | LC_ALL=C tr '[:upper:]' '[:lower:]')
   while IFS= read -r -d '' entry; do
-    [ "$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')" = tests ] || continue
+    [ "$(printf '%s' "$entry" | LC_ALL=C tr '[:upper:]' '[:lower:]')" = tests ] || continue
     [ "$entry" = tests ] && [ "$(git --no-replace-objects -C "$repo" cat-file -t "$commit:tests" 2>/dev/null)" = tree ] \
       || mr_die "$commit holds a tests entry ($entry) that is not the tests/ directory; refusing to place a reproduction there"
     found=1
   done < <(git --no-replace-objects -C "$repo" ls-tree -z --name-only "$commit" 2>/dev/null)
   [ "$found" = 1 ] || return 0
   while IFS= read -r -d '' entry; do
-    lower=$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')
+    lower=$(printf '%s' "$entry" | LC_ALL=C tr '[:upper:]' '[:lower:]')
     [ "$lower" != "$want" ] \
       || mr_die "--path $path names the committed tests/$entry at $commit apart from letter case; a reproduction may only add a new test file"
   done < <(git --no-replace-objects -C "$repo" ls-tree -z --name-only "$commit:tests" 2>/dev/null)
 }
 
 mr_verify_stop_group() {
-  local scratch=$1 group pid identity pids
+  local scratch=$1 group pid identity pids i
   [ -s "$scratch/group" ] || return 0
   group=$(tr -d '[:space:]' < "$scratch/group") || return 1
   case "$group" in '' | 0 | *[!0-9]*) return 1 ;; esac
@@ -1163,11 +1164,26 @@ mr_verify_stop_group() {
     fm_snapshot_descendants "$pid" "$scratch/children"
   done
   fm_reap_ledger "$scratch/children" 1 || return 1
+  # SIGKILL is delivered asynchronously, so a killed child can still look
+  # alive for a moment; only one that survives the bounded wait is a failure.
+  i=0
+  while mr_verify_group_survives "$scratch/children"; do
+    [ "$i" -lt 50 ] || return 1
+    sleep 0.1
+    i=$((i + 1))
+  done
+  rm -f "$scratch/group"
+}
+
+# Return 0 while a process the ledger names is alive with its recorded
+# identity.
+mr_verify_group_survives() {  # <ledger>
+  local pid identity
   while IFS="$(printf '\t')" read -r pid identity; do
     fm_pid_alive "$pid" || continue
-    [ "$(fm_pid_identity_line "$pid")" != "$identity" ] || return 1
-  done < "$scratch/children"
-  rm -f "$scratch/group"
+    [ "$(fm_pid_identity_line "$pid")" != "$identity" ] || return 0
+  done < "$1"
+  return 1
 }
 
 # Run the reproduction in one snapshot and print its result word.
@@ -1182,6 +1198,10 @@ mr_verify_side() {  # <scratch> <path> <log>
   # Temporary files, the timeout helper's included, stay inside the scratch.
   export TMPDIR="$scratch/tmp"
   cp "$MR_VERIFY_REPRO" "$scratch/snapshot/$path" || return 1
+  [ "$(mr_sha256 "$scratch/snapshot/$path")" = "$MR_VERIFY_REPRO_SHA" ] || {
+    printf 'error: the reproduction copied into the snapshot does not match repro_sha256\n' >&2
+    return 1
+  }
   before=$(mr_tree_manifest "$scratch/snapshot") || return 1
   (
     # shellcheck disable=SC2016 # The child shell expands $$, $1, and $2.
@@ -1253,14 +1273,14 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
   fi
   mr_sha256 "$0" >/dev/null || mr_die 'shasum or sha256sum is required'
   { [ -f "$repro" ] && [ -r "$repro" ]; } || mr_die "--repro $repro is not a readable file"
-  [ "$(mr_file_bytes "$repro")" -le 262144 ] || mr_die '--repro is larger than 262144 bytes'
   name=${path#tests/}
   case "$path" in
     tests/*) ;;
     *) mr_die "--path $path is outside tests/; a reproduction may only add a test file there" ;;
   esac
   case "$name" in
-    '' | */* | .* | *[!A-Za-z0-9._-]* | *..*) mr_die "--path $path must name one file directly under tests/" ;;
+    # Spelled-out letters keep the match ASCII in every locale.
+    '' | */* | .* | *[!abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-]* | *..*) mr_die "--path $path must name one file directly under tests/" ;;
     *.test.sh) ;;
     *) mr_die "--path $path must be a tests/<name>.test.sh file the project test command runs" ;;
   esac
@@ -1291,8 +1311,6 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
     fi
   done
   mkdir -p "$out" || mr_die "cannot create --out $out"
-  repro_sha=$(mr_sha256 "$repro") || mr_die 'cannot hash the reproduction'
-  MR_VERIFY_REPRO=$repro
 
   # shellcheck source=bin/fm-wake-lib.sh
   . "$SCRIPT_DIR/fm-wake-lib.sh"
@@ -1305,6 +1323,14 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
   mr_scratch_outside_repositories "$MR_VERIFY_WORK" \
     || mr_die 'temporary directory is inside a repository; use a TMPDIR outside repositories'
   mkdir "$MR_VERIFY_WORK/head" "$MR_VERIFY_WORK/base" || mr_die 'cannot prepare the snapshots'
+  # Read the caller's file once: both sides run this frozen copy, and the
+  # size limit and repro_sha256 describe exactly its bytes.
+  cp "$repro" "$MR_VERIFY_WORK/repro" && chmod 0400 "$MR_VERIFY_WORK/repro" \
+    || mr_die 'cannot freeze a copy of the reproduction'
+  [ "$(mr_file_bytes "$MR_VERIFY_WORK/repro")" -le 262144 ] || mr_die '--repro is larger than 262144 bytes'
+  repro_sha=$(mr_sha256 "$MR_VERIFY_WORK/repro") || mr_die 'cannot hash the reproduction'
+  MR_VERIFY_REPRO="$MR_VERIFY_WORK/repro"
+  MR_VERIFY_REPRO_SHA=$repro_sha
 
   mr_snapshot "$repo" "$MR_HEAD" "$MR_VERIFY_WORK/head"
   mr_verify_run_side "$MR_VERIFY_WORK/head" "$path" "$MR_VERIFY_WORK/head.log" || mr_die 'cannot run the reproduction at the head'
@@ -1321,11 +1347,18 @@ mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
     *) result=no-evidence ;;
   esac
   line="verify-finding: $result head=$MR_HEAD head_result=$head_result base=$MR_BASE base_result=$base_result path=$path repro_sha256=$repro_sha"
-  # Publish logs before the result that marks completed evidence.
-  cp "$MR_VERIFY_WORK/head.log" "$out/head.log" || mr_die "cannot record the head log in $out"
-  [ "$base_result" = skipped ] || cp "$MR_VERIFY_WORK/base.log" "$out/base.log" \
-    || mr_die "cannot record the merge-base log in $out"
-  printf '%s\n' "$line" > "$out/result" || mr_die "cannot record the result in $out"
+  # Publish logs before the result that marks completed evidence. noclobber
+  # opens each file with O_EXCL, so publication never replaces evidence a
+  # concurrent run wrote or follows a link placed while the reproduction ran.
+  { [ -d "$out" ] && [ ! -L "$out" ]; } || mr_die "--out $out is no longer a real directory"
+  ( set -C; cat "$MR_VERIFY_WORK/head.log" > "$out/head.log" ) 2>/dev/null \
+    || mr_die "cannot record the head log in $out; evidence is never replaced"
+  if [ "$base_result" != skipped ]; then
+    ( set -C; cat "$MR_VERIFY_WORK/base.log" > "$out/base.log" ) 2>/dev/null \
+      || mr_die "cannot record the merge-base log in $out; evidence is never replaced"
+  fi
+  ( set -C; printf '%s\n' "$line" > "$out/result" ) 2>/dev/null \
+    || mr_die "cannot record the result in $out; evidence is never replaced"
   printf '%s\n' "$line"
 }
 

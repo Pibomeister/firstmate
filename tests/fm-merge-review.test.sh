@@ -1218,6 +1218,44 @@ set_case_base_file() {  # <file> <content>
   HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
 }
 
+test_verify_finding_waits_for_a_child_that_ignores_sigterm() {
+  local rc=0
+  make_case verify-ignore-term
+  write_repro repro.sh '( trap "" TERM; sleep 60 ) &
+if [ -f feature.txt ]; then exit 1; fi'
+  run_verify repro.sh tests/repro-ignore-term.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify ignore-term: $(cat "$CASE/stderr")"
+  expect_verify_field 'introduced' "verify ignore-term"
+  pass "verify-finding: a background child that ignores SIGTERM is killed and the result is still reported"
+}
+
+test_verify_finding_runs_one_frozen_copy_on_both_sides() {
+  local rc=0 sha
+  make_case verify-frozen
+  # At the head the reproduction rewrites the caller's file to always fail.
+  # The merge base must still run the bytes the head ran.
+  write_repro repro.sh "if [ -f feature.txt ]; then printf '#!/usr/bin/env bash\nexit 1\n' > '$CASE/repro.sh'; exit 1; fi"
+  sha=$({ shasum -a 256 "$CASE/repro.sh" 2>/dev/null || sha256sum "$CASE/repro.sh"; } | awk '{print $1}')
+  run_verify repro.sh tests/repro-frozen.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 0 "$rc" "verify frozen"
+  expect_verify_field 'introduced' "verify frozen: the base ran a rewritten reproduction"
+  expect_verify_field "repro_sha256=$sha" "verify frozen"
+  pass "verify-finding: both sides run one frozen copy, the one repro_sha256 names"
+}
+
+test_verify_finding_never_replaces_evidence_written_during_the_run() {
+  local rc=0
+  make_case verify-noclobber
+  mkdir -p "$CASE/evidence"
+  write_repro repro.sh "printf 'planted\n' > '$CASE/evidence/result'
+if [ -f feature.txt ]; then exit 1; fi"
+  run_verify repro.sh tests/repro-noclobber.test.sh --out "$CASE/evidence" || rc=$?
+  expect_code 2 "$rc" "verify noclobber"
+  assert_grep 'evidence is never replaced' "$CASE/stderr" "verify noclobber: the refusal is not named"
+  assert_equals planted "$(cat "$CASE/evidence/result")" "verify noclobber: evidence written during the run was replaced"
+  pass "verify-finding: publication refuses to replace evidence that appeared while the reproduction ran"
+}
+
 test_verify_finding_red_at_both_keeps_the_finding_blocking() {
   local rc=0
   make_case verify-red-at-both
@@ -1531,6 +1569,10 @@ test_verify_finding_stops_the_reproduction_on_a_process_group_signal() {
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
   done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL -- "-$pid" 2>/dev/null || true
+    fail "verify group signal: the run outlived its process-group signal"
+  fi
   rc=0
   wait "$pid" || rc=$?
   [ "$rc" -ne 0 ] || fail "verify group signal: a terminated run reported success"
@@ -1705,6 +1747,19 @@ fm_test_run \
   test_a_new_head_started_in_the_same_second_is_the_next_round \
   test_receipts_read_tokens_from_top_level_usage \
   test_metrics_count_rounds_calls_and_tokens_per_pull_request \
+  test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
+  test_verify_finding_waits_for_a_child_that_ignores_sigterm \
+  test_verify_finding_runs_one_frozen_copy_on_both_sides \
+  test_verify_finding_never_replaces_evidence_written_during_the_run \
+  test_verify_finding_red_at_both_keeps_the_finding_blocking \
+  test_verify_finding_red_at_both_on_a_script_the_head_adds \
+  test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
+  test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
+  test_verify_finding_green_at_head_gives_no_evidence \
+  test_verify_finding_timeout_and_outside_writes_give_no_evidence \
+  test_verify_finding_reaps_background_children_before_returning \
+  test_verify_finding_reaps_children_before_the_final_manifest \
+  test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors \
   test_two_families_approve_and_a_supervisor_reads_one_line \
   test_run_refuses_in_a_supervisor_session \
   test_reviewers_work_read_only_outside_every_repository \
@@ -1761,14 +1816,4 @@ fm_test_run \
   test_verify_finding_runs_the_reproduction_without_firstmate_home_or_task_scope \
   test_verify_finding_stops_the_reproduction_on_a_process_group_signal \
   test_verify_finding_refuses_a_head_already_in_the_base \
-  test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions \
-  test_verify_finding_red_at_head_and_green_at_base_is_introduced_evidence \
-  test_verify_finding_red_at_both_keeps_the_finding_blocking \
-  test_verify_finding_red_at_both_on_a_script_the_head_adds \
-  test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
-  test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \
-  test_verify_finding_green_at_head_gives_no_evidence \
-  test_verify_finding_timeout_and_outside_writes_give_no_evidence \
-  test_verify_finding_reaps_background_children_before_returning \
-  test_verify_finding_reaps_children_before_the_final_manifest \
-  test_verify_finding_refuses_paths_outside_new_test_files_and_supervisors
+  test_verify_finding_refuses_when_the_tree_manifest_cannot_read_permissions
