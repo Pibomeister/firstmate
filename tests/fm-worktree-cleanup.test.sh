@@ -518,6 +518,32 @@ test_pull_request_lookup_failure_removes_nothing() {
   pass "a failed pull request lookup removes nothing"
 }
 
+# The fake forge honors --limit like gh: 21 pull requests exist, the first 20
+# merged at the worktree head and the open one past the 20-row bound.
+test_pull_request_list_at_the_bound_removes_nothing() {
+  local sha i rows=''
+  begin_case prbound
+  cat > "$CASE_DIR/bin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_GH_LOG:?}"
+limit=30
+while [ "$#" -gt 0 ]; do
+  [ "$1" = --limit ] && { limit=$2; shift; }
+  shift
+done
+jq --argjson n "$limit" '.[:$n]' "${FM_TEST_GH_JSON_FILE:?}"
+SH
+  chmod +x "$CASE_DIR/bin/gh"
+  sha=$(git -C "$CASE_WT" rev-parse HEAD) || fail "could not read the worktree head"
+  for i in $(seq 1 20); do rows="$rows$(pr_row "$i" MERGED "$sha"),"; done
+  printf '[%s%s]\n' "$rows" "$(pr_row 21 OPEN "$sha")" > "$CASE_DIR/pr.json"
+  capture_clean "$CASE_DIR"
+  assert_kept
+  assert_branch "$CASE_REPO" feature
+  assert_out "pull request lookup failed"
+  pass "a pull request list at its 20-row bound removes nothing and reports the lookup"
+}
+
 test_locked_worktree_is_not_removed() {
   begin_case locked
   publish_pr MERGED
@@ -1056,6 +1082,48 @@ test_spent_lane_record_is_forgotten() {
   pass "a lane whose worktree and terminal are both gone is forgotten"
 }
 
+test_incomplete_lane_terminal_inventory_is_reported() {
+  local shape mode record
+  for shape in missing-worktree missing-repository no-worktree; do
+    begin_lane_case "lane-incomplete-$shape"
+    printf '[]\n' > "$CASE_DIR/pr.json"
+    git -C "$CASE_REPO" worktree remove "$CASE_WT"
+    case "$shape" in
+      missing-repository) rm -rf "$CASE_REPO" ;;
+      no-worktree)
+        rm "$LANE_RECORD"
+        FM_HOME="$CASE_DIR" "$ROOT/bin/fm-lane-register.sh" "$LANE_ID" --repo "$CASE_REPO" \
+          --terminal term-lane >/dev/null || fail "could not register a terminal-only lane"
+        ;;
+    esac
+    jq -n '{ok: true, result: {worktrees: [],
+      terminals: [range(0; 200) | {handle: ("term-" + tostring)}],
+      truncated: true, totalCount: 211}}' > "$CASE_DIR/orca.json"
+    record=$(cat "$LANE_RECORD")
+    for mode in direct scan; do
+      if [ "$mode" = scan ]; then
+        : > "$CASE_DIR/state/worktree-cleanup.log"
+        capture_pass "$CASE_DIR" scan
+        assert_equals '' "$CAP_OUT" "a watcher scan must keep its output in the log"
+        CAP_OUT=$(cat "$CASE_DIR/state/worktree-cleanup.log")
+      else
+        capture_pass "$CASE_DIR"
+      fi
+      assert_out 'lane terminal term-lane inventory is unreadable or incomplete'
+      assert_equals "$record" "$(cat "$LANE_RECORD")" "an incomplete inventory must preserve the lane record"
+      assert_not_contains "$CAP_OUT" 'forget lane' "an incomplete inventory must not forget the lane"
+    done
+    lane_orca_json term-lane
+    capture_pass "$CASE_DIR"
+    [ -f "$LANE_RECORD" ] || fail "a live terminal lost its lane record"
+    lane_orca_json ''
+    capture_pass "$CASE_DIR"
+    assert_out "forget lane $LANE_ID"
+    [ ! -e "$LANE_RECORD" ] || fail "a complete absent-terminal proof did not retire the lane"
+  done
+  pass "every lane-record cleanup path visibly refuses an incomplete terminal inventory"
+}
+
 test_registered_lane_cache_files_are_kept() {
   begin_lane_case lane-cache
   publish_pr MERGED
@@ -1190,6 +1258,7 @@ fm_test_run \
   test_unknown_process_scan_removes_nothing \
   test_scan_is_silent_and_logged \
   test_pull_request_lookup_failure_removes_nothing \
+  test_pull_request_list_at_the_bound_removes_nothing \
   test_locked_worktree_is_not_removed \
   test_disabled_scan_leaves_the_worktree \
   test_task_record_keeps_the_worktree \
@@ -1220,6 +1289,7 @@ fm_test_run \
   test_targeted_pass_keeps_a_registered_lane_until_its_terminal_closes \
   test_registered_lane_dry_run_changes_nothing \
   test_spent_lane_record_is_forgotten \
+  test_incomplete_lane_terminal_inventory_is_reported \
   test_registered_lane_cache_files_are_kept \
   test_registered_lane_orca_does_not_list_is_removed_by_git \
   test_lane_record_is_kept_when_orca_is_absent \

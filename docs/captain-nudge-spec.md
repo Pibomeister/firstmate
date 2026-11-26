@@ -40,6 +40,7 @@ Readers must ignore unknown keys.
 | `skipped_input_not_empty` | `info` | Composer or Orca `draft` holds text |
 | `blocker` | `medium` | Modal/picker/permission visible, composer unknown, pane send failed, or composer unproven |
 | `skip_pane_missing` | `medium` | Configured terminal or pane not found |
+| `skip_enumeration_incomplete` | `medium` | Orca terminal list reports truncation or a total greater than the returned count; pane presence is unknown and nothing is typed |
 | `skip_read_failed` | `medium` | Pane read failed |
 | `nudge_no_progress` | `high` | Two consecutive nudges with no output/commit/heartbeat advance; nudging this captain stops until progress resumes |
 

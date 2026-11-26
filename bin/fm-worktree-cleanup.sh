@@ -19,7 +19,9 @@
 # files, do not block removal. Decision lines name the worktree and the
 # reason. They never include file contents.
 # Only pull requests whose head repository owner is the base repository owner
-# count. With none open and at least one merged or closed, the highest-numbered
+# count. A lookup returning 20 pull requests reaches the query bound and is
+# reported as failed; the worktree stays in place because completeness is
+# unknown. With none open and at least one merged or closed, the highest-numbered
 # of those decides. A worktree whose HEAD is not an ancestor of that pull
 # request's head commit is reported and left in place. A head commit that is
 # missing locally is fetched from origin's refs/pull/<n>/head, and a worktree is
@@ -72,7 +74,9 @@
 # project argument also reads each lane repository's other worktrees once for
 # the nesting check, and deletes a record whose worktree is gone, or that names
 # no worktree, or whose repository and worktree are both gone, once Orca no
-# longer lists its terminal. A clone-path pass leaves every other lane record
+# longer lists its terminal. An unreadable or incomplete terminal inventory
+# is reported and preserves the lane record even when its worktree is gone.
+# A clone-path pass leaves every other lane record
 # alone.
 #
 # Usage:
@@ -324,6 +328,9 @@ pr_rows() {
   command -v gh >/dev/null 2>&1 || return 2
   command -v jq >/dev/null 2>&1 || return 2
   json=$(cd "$wt" && gh pr list --json number,state,headRefOid,url,headRepositoryOwner --head "$branch" --state all --limit 20 2>/dev/null) || return 1
+  # At the bound the list may be truncated with no flag: refuse to conclude
+  # no-PR / landed from it (caller reports the lookup failed, visibly).
+  [ "$(printf '%s' "$json" | jq 'if type == "array" then length else 0 end' 2>/dev/null)" -lt 20 ] || return 1
   rows=$(printf '%s' "$json" | jq -r '
     if type != "array" then
       error("pull request list is not an array")
@@ -885,6 +892,9 @@ lane_terminal_closed() {
   local rc=0
   [ -n "$1" ] || return 0
   orca_lists_handle "$1" || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    emit "worktree-cleanup: report lane terminal $1 inventory is unreadable or incomplete"
+  fi
   [ "$rc" -eq 1 ]
 }
 

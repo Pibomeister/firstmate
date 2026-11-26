@@ -344,8 +344,12 @@ path_present_json() {  # <contract-path> [<observed-path>]
     '{path:$path,present:$present}'
 }
 
-meta_value() {  # <meta-file> <key>
-  fm_meta_get "$1" "$2"
+# Task id of a <dir>/<id>.meta path into <out-var>: the bytes
+# `basename <path> .meta` prints, without forking basename.
+snapshot_meta_id_into() {  # <out-var> <meta-path>
+  local __fm_smi_id=${2##*/}
+  [ "$__fm_smi_id" = .meta ] || __fm_smi_id=${__fm_smi_id%.meta}
+  printf -v "$1" '%s' "$__fm_smi_id"
 }
 
 last_nonempty_line() {  # <file>
@@ -370,7 +374,7 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
       FM_CONFIG_OVERRIDE="$CONFIG" \
       "$SCRIPT_DIR/fm-crew-state.sh" "$id" 2>/dev/null || true
   )
-  raw=$(printf '%s\n' "$raw" | head -1)
+  raw=${raw%%$'\n'*}
   sep=' · '
   state=unknown
   source=none
@@ -391,13 +395,13 @@ crew_state_json() {  # <id> [<captured-meta>] [<captured-status>]
 }
 
 status_event_json() {  # <observed-status-log> [<contract-path>]
-  local log=$1 path=${2:-$1} present=0 raw='' verb='' note='' epoch=null age=null
+  local log=$1 path=${2:-$1} present=false raw='' verb='' note='' epoch=null age=null
   if [ -f "$log" ]; then
-    present=1
+    present=true
     raw=$(last_nonempty_line "$log" || true)
-    verb=$(status_line_verb "$raw")
-    note=$(status_line_note "$raw")
-    epoch=$(status_line_at_epoch "$raw") || epoch=null
+    status_line_verb "$raw" verb
+    status_line_note "$raw" note
+    status_line_at_epoch "$raw" epoch || epoch=null
     if [ "$epoch" != null ] && [ "$epoch" -le "$SNAPSHOT_EPOCH" ]; then
       age=$((SNAPSHOT_EPOCH - epoch))
     fi
@@ -408,7 +412,7 @@ status_event_json() {  # <observed-status-log> [<contract-path>]
     --arg verb "$verb" \
     --arg note "$note" \
     --argjson age "$age" \
-    --argjson present "$(bool_json "$present")" \
+    --argjson present "$present" \
     '{path:$path,present:$present,kind:"event_history",last_event:{state:$verb,note:$note,raw:$raw,age_seconds:$age}}'
 }
 
@@ -684,9 +688,9 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   local captured_meta=$1 id=$2 current_meta captured_gen current_gen captured_contents current_contents
   current_meta="$STATE/$id.meta"
   [ -f "$current_meta" ] || return 1
-  captured_gen=$(meta_value "$captured_meta" spawn_gen)
+  fm_meta_get_into captured_gen "$captured_meta" spawn_gen
   if [ -n "$captured_gen" ]; then
-    current_gen=$(meta_value "$current_meta" spawn_gen)
+    fm_meta_get_into current_gen "$current_meta" spawn_gen
     [ "$current_gen" = "$captured_gen" ]
   else
     # Legacy metadata has no generation token. Exact equality is the strongest
@@ -718,7 +722,7 @@ prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture
   local kind backend target endpoint_exists=null agent_alive=not_checked generation_current=1
-  remote_host=$(meta_value "$meta" remote_host)
+  fm_meta_get_into remote_host "$meta" remote_host
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
   endpoint_file="$SNAPSHOT_TASK_DIR/$id.endpoint"
   status_log="$STATE/$id.status"
@@ -739,7 +743,7 @@ prefetch_task_observations() {  # <meta> <id>
   elif [ "$generation_current" = 1 ]; then
     crew_state_json "$id" "$meta" "$status_capture" > "$current_file" &
     current_pid=$!
-    kind=$(meta_value "$meta" kind)
+    fm_meta_get_into kind "$meta" kind
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
     if [ -n "$target" ]; then
@@ -793,7 +797,7 @@ prefetch_task_current_states() {
   # composition one coherent task manifest even if publication or teardown races it.
   for meta in "$STATE"/*.meta; do
     [ -e "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    snapshot_meta_id_into id "$meta"
     captured_meta="$SNAPSHOT_TASK_DIR/$id.meta"
     if ! cp -- "$meta" "$captured_meta" 2>"$captured_meta.copy-error"; then
       # Teardown may unlink a task after the glob selected it but before cp opens
@@ -814,7 +818,7 @@ prefetch_task_current_states() {
   snapshot_window_reset
   while [ "$index" -lt "$SNAPSHOT_TASK_META_COUNT" ]; do
     meta=${SNAPSHOT_TASK_METAS[index]}
-    id=$(basename "$meta" .meta)
+    snapshot_meta_id_into id "$meta"
     snapshot_window_reap "$FM_SNAPSHOT_LOCAL_READ_CONCURRENCY"
     prefetch_task_observations "$meta" "$id" &
     snapshot_window_add $!
@@ -832,36 +836,37 @@ prefetch_task_current_states() {
 task_row_json() {  # <captured-meta>
   local meta=$1 original_meta id kind harness mode yolo project worktree home projects spawn_gen backend target status_log report_path
   local branch remote_host remote_root current_file endpoint_file observation_line
-  local pr pr_source event_json current_json endpoint_exists agent_alive meta_json status_json report_json worktree_json home_json
-  local last_event_raw current_state current_source pending_decision blocked_event report_present=0 pr_from_status
-  local open_decisions_tsv open_decisions_json
+  local pr pr_source event_json current_json endpoint_exists agent_alive
+  local current_state current_source report_present=false pr_from_status pr_head
+  local open_decisions_tsv meta_present=false report_file_present=false worktree_present=false home_present=false
 
-  id=$(basename "$meta" .meta)
+  snapshot_meta_id_into id "$meta"
   original_meta="$STATE/$id.meta"
-  kind=$(meta_value "$meta" kind)
+  fm_meta_get_into kind "$meta" kind
   [ -n "$kind" ] || kind=ship
-  harness=$(meta_value "$meta" harness)
-  mode=$(meta_value "$meta" mode)
-  yolo=$(meta_value "$meta" yolo)
-  project=$(meta_value "$meta" project)
-  worktree=$(meta_value "$meta" worktree)
-  home=$(meta_value "$meta" home)
-  projects=$(meta_value "$meta" projects)
-  spawn_gen=$(meta_value "$meta" spawn_gen)
-  branch=$(meta_value "$meta" branch)
-  remote_host=$(meta_value "$meta" remote_host)
-  remote_root=$(meta_value "$meta" remote_root)
+  fm_meta_get_into harness "$meta" harness
+  fm_meta_get_into mode "$meta" mode
+  fm_meta_get_into yolo "$meta" yolo
+  fm_meta_get_into project "$meta" project
+  fm_meta_get_into worktree "$meta" worktree
+  fm_meta_get_into home "$meta" home
+  fm_meta_get_into projects "$meta" projects
+  fm_meta_get_into spawn_gen "$meta" spawn_gen
+  fm_meta_get_into branch "$meta" branch
+  fm_meta_get_into remote_host "$meta" remote_host
+  fm_meta_get_into remote_root "$meta" remote_root
   if [ -n "$remote_host" ]; then
-    backend=$(meta_value "$meta" remote_backend)
+    fm_meta_get_into backend "$meta" remote_backend
     [ -n "$backend" ] || backend=unknown
-    target=$(meta_value "$meta" remote_target)
+    fm_meta_get_into target "$meta" remote_target
   else
     backend=$(fm_backend_of_meta "$meta")
     target=$(fm_backend_target_of_meta "$meta")
   fi
   status_log="$SNAPSHOT_TASK_DIR/$id.status"
   report_path="$SNAPSHOT_TASK_DIR/$id.report"
-  pr=$(meta_value "$meta" pr)
+  fm_meta_get_into pr "$meta" pr
+  fm_meta_get_into pr_head "$meta" pr_head
   pr_source=meta
   if [ -z "$pr" ]; then
     pr_from_status=$(first_pr_url_in_file "$status_log" || true)
@@ -877,7 +882,6 @@ task_row_json() {  # <captured-meta>
     return 1
   }
   event_json=$(status_event_json "$status_log" "$STATE/$id.status")
-  last_event_raw=$(printf '%s' "$event_json" | jq -r '.last_event.raw // ""')
   read -r current_state current_source < <(
     printf '%s' "$current_json" | jq -r '[.state // "", .source // ""] | @tsv'
   )
@@ -906,12 +910,6 @@ task_row_json() {  # <captured-meta>
        || { [ "$current_state" = "done" ] || [ "$current_state" = "failed" ]; }; }; then
     open_decisions_tsv=""
   fi
-  open_decisions_json=$(printf '%s' "$open_decisions_tsv" | jq -R -s '
-    [ splits("\n") | select(length > 0)
-      | (capture("^(?<key>[^\t]*)\t(?<verb>[^\t]*)\t(?<summary>.*)$")?)
-      | select(. != null) ]')
-  pending_decision=$(printf '%s' "$open_decisions_json" | jq 'if any(.[]; .verb == "needs-decision") then 1 else 0 end')
-  blocked_event=$(printf '%s' "$open_decisions_json" | jq 'if any(.[]; .verb == "blocked") then 1 else 0 end')
 
   endpoint_exists=null
   agent_alive=not_checked
@@ -924,17 +922,17 @@ task_row_json() {  # <captured-meta>
   done < "$endpoint_file" || {
     return 1
   }
-  [ -f "$report_path" ] && report_present=1 || report_present=0
-  meta_json=$(path_present_json "$original_meta" "$meta")
-  status_json=$event_json
-  report_json=$(path_present_json "$DATA/$id/report.md" "$report_path")
-  if [ -n "$worktree" ]; then worktree_json=$(path_present_json "$worktree"); else worktree_json=$(jq -n '{path:null,present:false}'); fi
+  [ -f "$report_path" ] && report_present=true
+  # Path objects keep path_present_json's {path,present} shape; the row's one
+  # jq call builds them, and the open-decision rows and their flags, instead
+  # of one jq process each.
+  [ -e "$meta" ] && meta_present=true
+  [ -e "$report_path" ] && report_file_present=true
+  if [ -n "$worktree" ] && [ -e "$worktree" ]; then worktree_present=true; fi
   if [ -n "$home" ] && [ -n "$remote_host" ]; then
-    home_json=$(jq -n --arg path "$home" '{path:$path,present:null}')
-  elif [ -n "$home" ]; then
-    home_json=$(path_present_json "$home")
-  else
-    home_json=$(jq -n '{path:null,present:false}')
+    home_present=null
+  elif [ -n "$home" ] && [ -e "$home" ]; then
+    home_present=true
   fi
 
   jq -n \
@@ -955,22 +953,25 @@ task_row_json() {  # <captured-meta>
     --arg remote_root "$remote_root" \
     --arg pr "$pr" \
     --arg pr_source "$pr_source" \
-    --arg pr_head "$(meta_value "$meta" pr_head)" \
+    --arg pr_head "$pr_head" \
     --arg agent_alive "$agent_alive" \
     --arg observed_at "$SNAPSHOT_NOW" \
-    --arg last_event_raw "$last_event_raw" \
     --argjson current_state "$current_json" \
-    --argjson meta_path "$meta_json" \
-    --argjson status_log "$status_json" \
-    --argjson report "$report_json" \
-    --argjson worktree_path "$worktree_json" \
-    --argjson home_path "$home_json" \
+    --arg meta_file "$original_meta" \
+    --argjson meta_present "$meta_present" \
+    --argjson status_log "$event_json" \
+    --arg report_file "$DATA/$id/report.md" \
+    --argjson report_file_present "$report_file_present" \
+    --argjson worktree_present "$worktree_present" \
+    --argjson home_present "$home_present" \
     --argjson endpoint_exists "$endpoint_exists" \
-    --argjson open_decisions "$open_decisions_json" \
-    --argjson pending_decision "$(bool_json "$pending_decision")" \
-    --argjson blocked_event "$(bool_json "$blocked_event")" \
-    --argjson report_present "$(bool_json "$report_present")" \
-    '{
+    --arg open_decisions_tsv "$open_decisions_tsv" \
+    --argjson report_present "$report_present" \
+    '($open_decisions_tsv
+      | [ splits("\n") | select(length > 0)
+          | (capture("^(?<key>[^\t]*)\t(?<verb>[^\t]*)\t(?<summary>.*)$")?)
+          | select(. != null) ]) as $open_decisions
+    | {
       id:$id,
       kind:$kind,
       harness:($harness // ""),
@@ -982,11 +983,11 @@ task_row_json() {  # <captured-meta>
       backend:$backend,
       remote:(if $remote_host == "" then null else {host:$remote_host,root:$remote_root} end),
       paths:{
-        meta:$meta_path,
+        meta:{path:$meta_file,present:$meta_present},
         status_log:$status_log,
-        worktree:$worktree_path,
-        home:$home_path,
-        report:$report
+        worktree:{path:($worktree | if . == "" then null else . end),present:$worktree_present},
+        home:{path:($home | if . == "" then null else . end),present:$home_present},
+        report:{path:$report_file,present:$report_file_present}
       },
       secondmate_projects:($projects | if . == "" then [] else split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(. != "")) end),
       current_state:($current_state + {observed_at:$observed_at,freshness:"fresh"}),
@@ -997,11 +998,11 @@ task_row_json() {  # <captured-meta>
         observed_at:$observed_at,freshness:"fresh"},
       pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end)},
       hints:{
-        pending_decision:$pending_decision,
-        blocked_event:$blocked_event,
+        pending_decision:any($open_decisions[]; .verb == "needs-decision"),
+        blocked_event:any($open_decisions[]; .verb == "blocked"),
         open_decisions:$open_decisions,
         scout_report_present:$report_present,
-        last_event_text:$last_event_raw
+        last_event_text:($status_log.last_event.raw // "")
       },
       actions:(
         if $kind == "secondmate" then
@@ -1029,7 +1030,7 @@ task_json_lines() {
   while [ "$index" -lt "$SNAPSHOT_TASK_META_COUNT" ]; do
     meta=${SNAPSHOT_TASK_METAS[index]}
     index=$((index + 1))
-    id=$(basename "$meta" .meta)
+    snapshot_meta_id_into id "$meta"
     row_files[${#row_files[@]}]="$SNAPSHOT_TASK_DIR/rows/$id.json"
     snapshot_window_reap "$FM_SNAPSHOT_LOCAL_READ_CONCURRENCY"
     task_row_json "$meta" > "$SNAPSHOT_TASK_DIR/rows/$id.json" &
@@ -2075,33 +2076,33 @@ secondmate_landed_from_current_json() {  # <secondmate-current-json-file> <outpu
 }
 
 scout_report_lines() {
-  local report id
   if [ ! -d "$DATA" ]; then
     jq -n '[]'
     return 0
   fi
+  # find prints each match as <data>/<id>/report.md, so the id is the
+  # second-to-last path component.
   LC_ALL=C find "$DATA" -mindepth 2 -maxdepth 2 -type f -name report.md -print \
     | sort \
-    | while IFS= read -r report; do
-      id=$(basename "$(dirname "$report")")
-      jq -n --arg id "$id" --arg path "$report" '{id:$id,path:$path}'
-    done \
-    | jq -s 'sort_by(.id)'
+    | jq -R -n '[inputs | {id:(split("/") | .[-2]), path:.}] | sort_by(.id)'
 }
 
 snapshot_stage backlog
 BACKLOG_JSON=$(backlog_json) || { echo "fm-fleet-snapshot: backlog read failed" >&2; exit 1; }
 contribution_tasks_json() {
-  local meta id merge_authority
+  local meta id merge_authority kind pr pr_head
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
-    id=$(basename "$meta" .meta)
+    snapshot_meta_id_into id "$meta"
     merge_authority=unknown
     if fm_merge_authority_resolve "$FM_HOME" "$STATE" "$meta" "$id"; then
       merge_authority=$FM_MERGE_AUTHORITY
     fi
-    jq -n --arg id "$id" --arg kind "$(meta_value "$meta" kind)" \
-      --arg url "$(meta_value "$meta" pr)" --arg head "$(meta_value "$meta" pr_head)" \
+    fm_meta_get_into kind "$meta" kind
+    fm_meta_get_into pr "$meta" pr
+    fm_meta_get_into pr_head "$meta" pr_head
+    jq -n --arg id "$id" --arg kind "$kind" \
+      --arg url "$pr" --arg head "$pr_head" \
       --arg merge_authority "$merge_authority" '{id:$id,kind:$kind,pr:{url:$url,head:$head},merge_authority:$merge_authority}'
   done | jq -s .
 }
