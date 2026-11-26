@@ -4518,7 +4518,8 @@ age_of() {  # seconds since file mtime; "due immediately" if missing
   local f=$1 m now
   m=$(stat_mtime "$f") || { echo 999999; return; }
   fm_watch_now now
-  [ "$m" -le "$now" ] || { echo 999999; return; }
+  # Missing is overdue; a stamp ahead of the watch clock has not aged yet.
+  [ "$m" -le "$now" ] || { echo 0; return; }
   echo $(( now - m ))
 }
 
