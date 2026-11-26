@@ -38,7 +38,11 @@
 # its presentation worker before removing that directory; other readers' scratch
 # is left intact.
 # A later drain removes a directory whose owning pid is no longer alive, which
-# covers an owner killed before its exit trap could run.
+# covers an owner killed before its exit trap could run, unless the worker pid
+# recorded there is still alive or, with none recorded, the directory is under
+# a minute old.
+# When the cancellable presentation runner cannot start, the drain prints a
+# WAKE DRAIN NOTE and presents without it rather than reporting a fold timeout.
 # When that directory cannot be created, the drain prints STATUS PRESENTATION
 # INCOMPLETE, still presents branch outcomes and liveness, and exits 1.
 # An invalid FM_WAKE_DRAIN_PRESENTATION_TIMEOUT falls back to 30 seconds with a
