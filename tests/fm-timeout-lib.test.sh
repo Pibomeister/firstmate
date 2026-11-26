@@ -561,6 +561,54 @@ OWNER
   pass 'a cancellable command stops when its killed caller is a zombie not yet reaped'
 }
 
+# The zombie probe forks a ps process, and most bounded commands finish inside
+# the watchdog's first second, so a check made before the watchdog has slept
+# must not probe. The caller's xtrace, which the watchdog inherits, shows every
+# probe it runs; a command that lasts past a sleep proves the trace reaches it.
+test_watchdog_does_not_probe_for_a_zombie_before_its_first_sleep() {
+  local dir kind probes
+  dir="$TMP_ROOT/first-check-probe"
+  mkdir -p "$dir"
+  cat > "$dir/caller.sh" <<'CALLER'
+. "$1/bin/fm-timeout-lib.sh"
+dir=$2
+caller=$$
+watchdog_slept() {
+  local w n=0
+  while :; do
+    for w in $(pgrep -P "$caller"); do
+      pgrep -P "$w" -f '^sleep 1$' >/dev/null && return 0
+    done
+    n=$((n + 1))
+    [ "$n" -lt 500 ] || return 3
+    command -p sleep 0.02
+  done
+}
+traced() {  # <trace-name> <runner...>
+  local name=$1 rc=0
+  shift
+  set -x
+  "$@" 2> "$dir/$name.trace" || rc=$?
+  set +x
+  echo "$rc" > "$dir/$name.rc"
+}
+traced bounded fm_run_timed_fn 30 watchdog_slept
+traced cancellable fm_run_cancellable_fn watchdog_slept
+traced long fm_run_timed_fn 30 command -p sleep 2.5
+CALLER
+  bash "$dir/caller.sh" "$ROOT" "$dir" >/dev/null 2>&1
+  for kind in bounded cancellable long; do
+    [ "$(cat "$dir/$kind.rc" 2>/dev/null)" = 0 ] || fail "fixture: the $kind call did not finish cleanly"
+  done
+  probes=$(grep -cE '^[+]+ (command -p )?ps( |$)' "$dir/long.trace" || true)
+  [ "$probes" -gt 0 ] || fail 'fixture: the trace never showed the watchdog probe after a sleep, so the case is vacuous'
+  for kind in bounded cancellable; do
+    probes=$(grep -cE '^[+]+ (command -p )?ps( |$)' "$dir/$kind.trace" || true)
+    [ "$probes" -eq 0 ] || fail "a $kind call forked $probes zombie probe(s) before the watchdog first slept"
+  done
+  pass 'the watchdog does not fork a zombie probe before its first sleep'
+}
+
 # A caller that cancels from its TERM trap and is then killed during the cancel
 # grace must still not leave a command that ignores TERM running: the watchdog
 # outlives the grace and stops it once the caller is gone.
@@ -1315,6 +1363,7 @@ test_run_timed_external_forwards_a_caller_term
 test_run_timed_external_keeps_a_caller_trap_that_defers_term
 test_bash_runner_returns_when_term_is_ignored_on_entry
 test_cancellable_command_stops_when_its_killed_caller_is_unreaped
+test_watchdog_does_not_probe_for_a_zombie_before_its_first_sleep
 test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace
 test_command_cancelled_before_its_watchdog_stops_when_its_caller_is_killed
 test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait

@@ -212,8 +212,12 @@ fm_cancel_bash_timeout() {
 
 # A killed caller its parent has not reaped yet still answers kill -0, so a
 # zombie counts as gone.
-_fm_bash_timeout_caller_alive() {  # <pid>
+# The zombie probe costs a ps process, so a check made before the watchdog has
+# slept uses kill -0 alone: most bounded commands finish inside that first
+# second, and a caller that dies sooner is still caught one second later.
+_fm_bash_timeout_caller_alive() {  # <pid> <seconds-slept>
   kill -0 "$1" 2>/dev/null || return 1
+  [ "$2" -gt 0 ] || return 0
   case "$(command -p ps -o stat= -p "$1" 2>/dev/null)" in *Z*) return 1 ;; esac
   return 0
 }
@@ -250,11 +254,16 @@ fm_run_bash_timeout() {
   (
     set +m
     case "$seconds" in
-      none) while _fm_bash_timeout_caller_alive "$caller"; do command -p sleep 1; done ;;
+      none)
+        i=0
+        while _fm_bash_timeout_caller_alive "$caller" "$i"; do
+          command -p sleep 1
+          i=1
+        done ;;
       *[!0-9]*) command -p sleep "$seconds" ;;
       *)
         i=0
-        while [ "$i" -lt "$seconds" ] && _fm_bash_timeout_caller_alive "$caller"; do
+        while [ "$i" -lt "$seconds" ] && _fm_bash_timeout_caller_alive "$caller" "$i"; do
           command -p sleep 1
           i=$((i + 1))
         done ;;
