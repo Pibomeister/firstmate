@@ -370,6 +370,7 @@ test_a_refused_successor_records_its_harness_pid() {
   local rc pid harness
   new_home refusedpid
   event 300 handoff_started "$N1" term_owner awaiting_ack
+  # shellcheck disable=SC2016 # expanded by the inner shell, not here
   env -u ORCA_TERMINAL_HANDLE -u TMUX -u TMUX_PANE -u ZELLIJ -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION \
     -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META -u FM_STATE_OVERRIDE \
     -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
