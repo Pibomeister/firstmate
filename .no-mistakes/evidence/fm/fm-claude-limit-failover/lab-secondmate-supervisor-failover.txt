@@ -1,0 +1,21 @@
+# Lab: second mate m1 on Claude, pinned to ordinary(gmail); claude-accounts=ordinary,charlie; custom config/failover-order = droid, codex (worker-only list)
+$ fm-supervisor-failover.sh secondmate m1
+candidate harness=claude model=default account=ordinary skip=current_account
+candidate harness=claude model=default account=~/.claude-charlie verdict=unknown why=claude_quota_unavailable
+candidate harness=agy model=gemini-4-neon-high account=ambient verdict=unknown why=stale_agy_quota
+candidate harness=muse model=muse-wonder-1.0 account=none skip=refused why=muse_is_unverified_as_a_secondmate_and_refused
+candidate harness=codex model=gpt-6.2-sol account=ambient verdict=ok scope=all_models remaining=94 runway=through_reset
+choice scope=secondmate:m1 from=claude:default:pin harness=codex model=gpt-6.2-sol account=ambient via=runtime_switch reason=claude_pool_exhausted verdict=ok scope=all_models remaining=94 runway=through_reset
+error: no-mistakes gate agent must not drive the fleet (NO_MISTAKES_GATE set)
+failed rc=3 scope=secondmate:m1 from=claude:default:pin harness=codex model=gpt-6.2-sol account=ambient via=runtime_switch reason=claude_pool_exhausted verdict=ok scope=all_models remaining=94 runway=through_reset
+exit=3
+$ cmp pin before/after
+pin unchanged
+
+# Same second mate, usage-limit refusal path, shipped default order
+$ fm-failover.sh worker m1 --reason usage_limit
+candidate runtime=claude@.claude-charlie eligible verdict=unknown why=claude_quota_unavailable
+failed task=m1 to=claude@.claude-charlie rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+none task=m1 from=claude reason=usage_limit why=every_relaunch_failed
+exit=1
+pin unchanged

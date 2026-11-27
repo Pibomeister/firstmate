@@ -1,0 +1,29 @@
+# Real relaunch: lab tmux window fm:fm-w1 runs real claude on ordinary(gmail); usage-limit failover
+candidate runtime=claude@.claude-charlie eligible verdict=unknown why=claude_quota_unavailable
+failed task=w1 to=claude@.claude-charlie rc=3 detail=error:_refusing_fleet_lifecycle_from_inside_a_no-mistakes_gate_worktree__/Users/eduardopicazo/.no-mistakes/repos/075d7f40c28a.git_
+none task=w1 from=claude@ordinary reason=usage_limit why=every_relaunch_failed
+exit=1
+# Retry with resolved FM_HOME
+candidate runtime=claude@.claude-charlie eligible verdict=unknown why=claude_quota_unavailable
+failed task=w1 to=claude@.claude-charlie rc=1 detail=REFUSED:_task_w1_has_a_missing__empty__or_ambiguous_project_identity__preserving_task_state.
+none task=w1 from=claude@ordinary reason=usage_limit why=every_relaunch_failed
+exit=1
+────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+ /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.sot6MO/wt
+ Quick safety check: Is this a project you created or one you trust? (Like your
+ own code, a well-known open source project, or work from your team). If not,
+ take a moment to review what's in this folder first.
+ Claude Code'll be able to read, edit, and execute files here.
+ Security guide
+ ❯ No, exit
+   Yes, I trust this folder
+ Enter to confirm · Esc to cancel
+window=fm:fm-w1
+kind=ship
+harness=claude
+worktree=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.sot6MO/wt
+backend=tmux
+spawn_gen=s1.w1
+branch=fm/w1
+account=ordinary

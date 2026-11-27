@@ -1,0 +1,4 @@
+1..1
+ok - real relaunch keeps the task worktree, branch, brief, work, and gates
+FM_TEST_COMPLETE
+exit=0

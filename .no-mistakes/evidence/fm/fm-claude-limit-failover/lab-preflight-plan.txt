@@ -1,0 +1,19 @@
+$ cat config/claude-accounts
+ordinary
+~/.claude-charlie
+$ FM_HOME=$LAB bin/fm-failover.sh preflight  (no config/failover-order: shipped default)
+preflight runtime=claude@ordinary verdict=eligible call=ok five_hour=unknown weekly=unknown why=five_hour_unmeasured
+preflight runtime=claude@.claude-charlie verdict=eligible call=ok five_hour=unknown weekly=unknown why=five_hour_unmeasured
+preflight runtime=agy:gemini-4-neon-high verdict=unmeasured call=unsupported five_hour=unknown weekly=unknown why=no_probe_for_harness
+preflight runtime=muse:muse-wonder-1.0 verdict=unmeasured call=unsupported five_hour=unknown weekly=unknown why=no_probe_for_harness
+preflight runtime=codex:gpt-6.2-sol verdict=eligible call=ok five_hour=unknown weekly=94 why=five_hour_unmeasured
+preflight runtime=kimi:kimi-code/k3.1-pro verdict=unmeasured call=unsupported five_hour=unknown weekly=unknown why=no_probe_for_harness
+exit=0
+$ FM_HOME=$LAB bin/fm-failover.sh plan
+plan runtime=claude@ordinary verdict=eligible why=five_hour_unmeasured
+plan runtime=claude@.claude-charlie verdict=eligible why=five_hour_unmeasured
+plan runtime=agy:gemini-4-neon-high verdict=unmeasured why=no_probe_for_harness
+plan runtime=muse:muse-wonder-1.0 verdict=unmeasured why=no_probe_for_harness
+plan runtime=codex:gpt-6.2-sol verdict=eligible why=five_hour_unmeasured
+plan runtime=kimi:kimi-code/k3.1-pro verdict=unmeasured why=no_probe_for_harness
+exit=0

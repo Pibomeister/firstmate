@@ -1,0 +1,49 @@
+# Lab home: config/claude-accounts = ordinary(gmail), ~/.claude-charlie; shipped default order; task w1 = ship on claude account=ordinary (gmail)
+$ fm-failover.sh worker w1 --reason usage_limit   (FM_FAILOVER_MAX_ATTEMPTS=1)
+candidate runtime=claude@.claude-charlie eligible verdict=unknown why=claude_quota_unavailable
+failed task=w1 to=claude@.claude-charlie rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+none task=w1 from=claude@ordinary reason=usage_limit why=every_relaunch_failed
+exit=1
+
+# Same, worker now on charlie (listed LAST): must try gmail before any other runtime
+candidate runtime=claude@ordinary eligible verdict=unknown why=claude_quota_unavailable
+failed task=w1 to=claude@ordinary rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+none task=w1 from=claude@.claude-charlie reason=usage_limit why=every_relaunch_failed
+exit=1
+
+# Lists reversed (charlie first), worker on gmail(ordinary, listed LAST)
+candidate runtime=claude@.claude-charlie eligible verdict=unknown why=claude_quota_unavailable
+failed task=w1 to=claude@.claude-charlie rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+none task=w1 from=claude@ordinary reason=usage_limit why=every_relaunch_failed
+exit=1
+
+# Only gmail declared (no second account to hand off to): comparable models in order, max 5 attempts
+candidate runtime=agy:gemini-4-neon-high skip=claude_tooling_blocks_leaving_claude
+candidate runtime=muse:muse-wonder-1.0 skip=claude_tooling_blocks_leaving_claude
+candidate runtime=codex:gpt-6.2-sol skip=claude_tooling_blocks_leaving_claude
+candidate runtime=kimi:kimi-code/k3.1-pro skip=claude_tooling_blocks_leaving_claude
+none task=w1 from=claude@ordinary reason=usage_limit why=no_eligible_runtime
+exit=1
+
+# Same, HOME pointed at a lab dir whose ~/.claude has no hooks/MCP (claude-tooling allows leaving Claude)
+candidate runtime=agy:gemini-4-neon-high eligible verdict=unknown why=agy_quota_error
+failed task=w1 to=agy:gemini-4-neon-high rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+candidate runtime=agy:gemini-4-neon-high skip=refused_in_window
+candidate runtime=muse:muse-wonder-1.0 eligible verdict=unknown why=no_valid_meta_snapshot
+failed task=w1 to=muse:muse-wonder-1.0 rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+candidate runtime=agy:gemini-4-neon-high skip=refused_in_window
+candidate runtime=muse:muse-wonder-1.0 skip=refused_in_window
+candidate runtime=codex:gpt-6.2-sol eligible verdict=unknown why=codex_quota_auth_required
+failed task=w1 to=codex:gpt-6.2-sol rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+candidate runtime=agy:gemini-4-neon-high skip=refused_in_window
+candidate runtime=muse:muse-wonder-1.0 skip=refused_in_window
+candidate runtime=codex:gpt-6.2-sol skip=refused_in_window
+candidate runtime=kimi:kimi-code/k3.1-pro eligible verdict=unknown why=kimi_quota_auth_required
+failed task=w1 to=kimi:kimi-code/k3.1-pro rc=3 detail=error:_no-mistakes_gate_agent_must_not_drive_the_fleet__NO_MISTAKES_GATE_set_
+candidate runtime=agy:gemini-4-neon-high skip=refused_in_window
+candidate runtime=muse:muse-wonder-1.0 skip=refused_in_window
+candidate runtime=codex:gpt-6.2-sol skip=refused_in_window
+candidate runtime=kimi:kimi-code/k3.1-pro skip=refused_in_window
+candidate runtime=claude@ordinary skip=refused_in_window
+none task=w1 from=claude@ordinary reason=usage_limit why=every_relaunch_failed
+exit=1
