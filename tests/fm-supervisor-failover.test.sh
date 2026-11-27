@@ -323,12 +323,16 @@ quota_fixture claude 0 exhausted_now > "$TMP_ROOT/acctB/quota.json"
 cp "$QUOTA/agy.json" "$TMP_ROOT/agy.saved"
 quota_fixture agy 50 through_reset model:gemini-4-neon-high > "$QUOTA/agy.json"
 mv "$LAB/config/supervisor-failover-candidates" "$TMP_ROOT/candidates.saved"
+printf 'codex:gpt-5.5\ndroid\n' > "$LAB/config/failover-order"
 failover tmux secondmate mate-c
+rm -f "$LAB/config/failover-order"
 mv "$TMP_ROOT/candidates.saved" "$LAB/config/supervisor-failover-candidates"
 cp "$TMP_ROOT/agy.saved" "$QUOTA/agy.json"
 [ "$RC" = 0 ] || fail "the default comparable models must serve a mate: $OUT"
 assert_contains "$OUT" 'replaced scope=secondmate:mate-c' 'the mate is replaced'
 assert_contains "$OUT" 'harness=agy model=gemini-4-neon-high' 'gemini neon is the first comparable model after the Claude accounts'
+assert_not_contains "$OUT" 'model=gpt-5.5' 'a custom worker failover order never supplies supervisor candidates'
+assert_not_contains "$OUT" 'harness=droid' 'a custom worker failover order never supplies supervisor candidates'
 assert_contains "$(cat "$LAB/delegate.argv")" "$(printf 'relaunch\n--harness\nagy\n--model\ngemini-4-neon-high')" 'the mate is relaunched on gemini neon'
 rm -rf "$LAB/config/secondmate-accounts" "$LAB/state/mate-c.meta"
 pass 'secondmate account step: another signed-in Claude account first, then the default comparable models, pin untouched'

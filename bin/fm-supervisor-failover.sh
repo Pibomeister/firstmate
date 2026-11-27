@@ -10,15 +10,17 @@
 #                                repeatable. Without one, the candidates come
 #                                from config/supervisor-failover-candidates
 #                                (docs/configuration.md "Supervisor failover"),
-#                                and without that file from the local entries
-#                                of the provider failover order other than
-#                                claude (bin/fm-failover-lib.sh).
+#                                and without that file from the non-Claude
+#                                entries of the shipped default failover order
+#                                (FM_FAILOVER_DEFAULT_ORDER in
+#                                bin/fm-failover-lib.sh); a custom
+#                                config/failover-order is never read here.
 #   --reason <token>             why the supervisor needs replacing
 #                                (default: <current harness>_pool_exhausted)
 #
 # The captain declares which models are comparable: a candidate must keep the
-# supervisor's reasoning class, so this script never invents one, and an empty
-# list leaves only the Claude account step.
+# supervisor's reasoning class, so this script never invents one: without a
+# declared list it uses only the shipped comparable models.
 # Candidates are judged in this order, and the first with measured headroom
 # wins (bin/fm-supervisor-failover-lib.sh owns the quota verdict):
 #   1. each other config/claude-accounts entry that is already signed in
@@ -122,15 +124,11 @@ if [ "${#CANDIDATES[@]}" -eq 0 ] && [ -e "$CONFIG/supervisor-failover-candidates
   done < "$CONFIG/supervisor-failover-candidates"
 fi
 if [ "${#CANDIDATES[@]}" -eq 0 ]; then
-  # The provider failover order is the captain's comparable-model list too:
-  # its local non-Claude entries, in order (Claude accounts are step 1).
-  err=$(fm_failover_order_load "$CONFIG") || die "${err#error: }"
-  fm_failover_order_load "$CONFIG" >/dev/null
-  for entry in ${FM_FO_ENTRIES[@]+"${FM_FO_ENTRIES[@]}"}; do
-    IFS=$FM_FO_SEP read -r fo_harness fo_model _fo_account fo_host <<< "$entry"
-    [ "$fo_harness" != claude ] && [ -z "$fo_host" ] || continue
-    CANDIDATES+=("$fo_harness:${fo_model:-default}")
-  done
+  # The shipped comparable models, in order (Claude accounts are step 1).
+  while IFS= read -r line; do
+    case "$line" in claude|claude[:@]*) continue ;; esac
+    CANDIDATES+=("$line")
+  done <<< "$FM_FAILOVER_DEFAULT_ORDER"
 fi
 for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   case "$c" in

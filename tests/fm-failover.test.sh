@@ -940,13 +940,18 @@ test_worker_account_identity_is_its_config_root() {
   printf 'codex host=hetzner\ncodex\ndroid\nclaude@next\n' > "$LAB/config/failover-order"
   make_worker w8last claude "$ACCTS/D"
   fo worker w8last --reason rate_limit
-  expect_code 0 "$RC" "the last Claude account wraps to a local worker runtime: $OUT"
-  assert_contains "$OUT" 'switched task=w8last from=claude@D to=codex' 'worker order wraps past its final entry'
+  expect_code 0 "$RC" "the last Claude account wraps to the first Claude account: $OUT"
+  assert_contains "$OUT" 'switched task=w8last from=claude@D to=claude@.claude' 'the last declared account wraps to the earlier one before any other runtime'
   make_worker w8last2 claude "$ACCTS/D"
-  printf '%s\tattempt\tclaude@D\tcodex\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w8last2"
+  printf '%s\tattempt\tclaude@D\tclaude@.claude\trate_limit\n' "$(date +%s)" > "$LAB/state/.failover-w8last2"
   fo worker w8last2 --reason rate_limit
+  expect_code 0 "$RC" "with the other Claude account attempted, the order wraps to a local worker runtime: $OUT"
+  assert_contains "$OUT" 'switched task=w8last2 from=claude@D to=codex' 'worker order wraps past its final entry'
+  make_worker w8last3 claude "$ACCTS/D"
+  printf '%s\tattempt\tclaude@D\tclaude@.claude\trate_limit\n%s\tattempt\tclaude@D\tcodex\trate_limit\n' "$(date +%s)" "$(date +%s)" > "$LAB/state/.failover-w8last3"
+  fo worker w8last3 --reason rate_limit
   expect_code 0 "$RC" 'the wrapped worker order excludes an attempted target'
-  assert_contains "$OUT" 'switched task=w8last2 from=claude@D to=droid' 'worker wrap skips attempted Codex'
+  assert_contains "$OUT" 'switched task=w8last3 from=claude@D to=droid' 'worker wrap skips attempted Codex'
   pass 'account identity: ordinary, the home config root, and a trailing slash are one account'
 }
 
@@ -1011,6 +1016,31 @@ test_default_order_prefers_another_claude_account() {
   assert_equals 'd5 relaunch --harness kimi --model kimi-code/k3.1-pro --provider-failover' "$(relaunch_line 1)" 'kimi is named by its provider model'
   drop_runtimes
   pass 'default order: ordinary Claude moves to charlie, then gemini neon, muse wonder, gpt sol, and kimi k3.1 pro'
+}
+
+# Either declared account moves to the other one first, whichever order the
+# accounts are listed in, so gmail -> charlie and charlie -> gmail both hold.
+test_default_order_tries_the_other_claude_account_in_any_list_order() {
+  default_order_lab
+  rm -rf "$ACCTS/gmail"
+  mkdir -p "$ACCTS/gmail"
+  touch "$ACCTS/gmail/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/gmail/quota.json"
+  printf '%s\n' "$ACCTS/charlie" "$ACCTS/gmail" > "$LAB/config/claude-accounts"
+  make_worker g1 claude "$ACCTS/gmail"
+  fo worker g1 --reason usage_limit
+  expect_code 0 "$RC" "gmail listed last: $OUT"
+  assert_contains "$OUT" 'switched task=g1 from=claude@gmail to=claude@charlie' 'gmail moves to charlie listed before it'
+  assert_not_contains "$OUT" 'runtime=agy:' 'no other runtime is weighed before charlie'
+  printf '%s\n' "$ACCTS/gmail" "$ACCTS/charlie" > "$LAB/config/claude-accounts"
+  make_worker g2 claude "$ACCTS/charlie"
+  rm -f "$LAB/control.n"
+  fo worker g2 --reason usage_limit
+  expect_code 0 "$RC" "charlie listed last: $OUT"
+  assert_contains "$OUT" 'switched task=g2 from=claude@charlie to=claude@gmail' 'charlie on the last account moves to gmail listed before it'
+  assert_not_contains "$OUT" 'runtime=agy:' 'no other runtime is weighed before gmail'
+  drop_runtimes
+  pass 'default order: the agent on either Claude account, listed first or last, moves to the other account before any other runtime'
 }
 
 test_worker_skips_a_move_off_claude_that_fm_control_would_refuse() {
@@ -1084,5 +1114,6 @@ fm_test_run \
   test_watch_bounds_stay_inside_the_stale_grace \
   test_worker_account_identity_is_its_config_root \
   test_default_order_prefers_another_claude_account \
+  test_default_order_tries_the_other_claude_account_in_any_list_order \
   test_worker_skips_a_move_off_claude_that_fm_control_would_refuse \
   test_secondmate_follows_the_same_order_on_its_pin

@@ -592,7 +592,7 @@ A primary is replaced through the verified handoff above, and a secondmate throu
 It never signs in, spends, or edits an account pin, and it reports the replacement and the reason, or that no candidate has headroom.
 Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.
 
-The comparable models come from `--candidate`, from `config/supervisor-failover-candidates`, which is local to each home and not inherited, or else from the local non-Claude entries of the [provider failover order](#provider-failover-configfailover-order).
+The comparable models come from `--candidate`, from `config/supervisor-failover-candidates`, which is local to each home and not inherited, or else from the non-Claude entries of the shipped default [provider failover order](#provider-failover-configfailover-order); a custom `config/failover-order` never supplies supervisor candidates.
 Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
 List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
 A provider refusal (429, rate, usage, or billing limit) instead moves the agent automatically under [provider failover](#provider-failover-configfailover-order).

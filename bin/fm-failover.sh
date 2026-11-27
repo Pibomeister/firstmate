@@ -179,26 +179,36 @@ load_order() {
   # Preflight verdicts and log lines name a runtime by its label, and a label
   # keeps only an account path's last segment, so two such paths would answer
   # for each other.
-  err=$(expand_entries 1 '' | awk -F "$FM_FO_SEP" '($5 in acct) && acct[$5] != $3 { print $5; exit } { acct[$5] = $3 }')
+  err=$(expand_entries | awk -F "$FM_FO_SEP" '($5 in acct) && acct[$5] != $3 { print $5; exit } { acct[$5] = $3 }')
   [ -z "$err" ] || die "two Claude accounts in the failover order share the label $err; give each declared account directory a distinct last path segment"
 }
 
-# expand_entries <include-current-account:0|1> <current-claude-account>
+# expand_entries [current-claude-account]
 # Prints `<harness> <model> <account> <host> <label>`, joined by FM_FO_SEP, per
-# runtime, with
-# claude@next expanded to every declared account other than the current one
-# (all of them when the first argument is 1).
+# runtime, with claude@next expanded to every declared account, starting at the
+# current one and wrapping inside that group, so every other declared account
+# comes right after it.
 expand_entries() {
-  local all=$1 current=$2 entry harness model account host listed a
+  local current=${1:-} entry harness model account host listed a i n start=0
+  local -a accts=()
   listed=$(fm_worker_account_list claude "$CONFIG" 2>/dev/null) || listed=''
+  while IFS= read -r a; do
+    [ -z "$a" ] || accts+=("$a")
+  done <<< "$listed"
+  n=${#accts[@]}
+  for ((i = 0; i < n; i++)); do
+    if same_account "${accts[$i]}" "$current"; then
+      start=$i
+      break
+    fi
+  done
   for entry in ${FM_FO_ENTRIES[@]+"${FM_FO_ENTRIES[@]}"}; do
     IFS=$FM_FO_SEP read -r harness model account host <<< "$entry"
     if [ "$account" = next ]; then
-      while IFS= read -r a; do
-        [ -n "$a" ] || continue
-        [ "$all" = 1 ] || ! same_account "$a" "$current" || continue
+      for ((i = 0; i < n; i++)); do
+        a=${accts[$(((start + i) % n))]}
         printf "%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s\n" "$harness" "$model" "$a" "$host" "$(fm_failover_label "$harness" "$model" "$a")"
-      done <<< "$listed"
+      done
     else
       printf "%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s$FM_FO_SEP%s\n" "$harness" "$model" "$account" "$host" "$(fm_failover_label "$harness" "$model" "$account")"
     fi
@@ -283,7 +293,7 @@ evaluate() {
   local scope=$1 from_h=$2 from_m=$3 from_a=$4 backend=$5 ledger=$6 h m a host label pv why quota rc root rows current=0 index=0
   CAND=()
   FM_EVALUATE_DEADLINE=''
-  rows=$(expand_entries 1 '')
+  if [ "$from_h" = claude ]; then rows=$(expand_entries "$from_a"); else rows=$(expand_entries); fi
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
     index=$((index + 1))
@@ -446,7 +456,7 @@ why_text() {  # <class>: what ended the previous runtime's turn, for the notes
 cmd_plan() {
   local h m a host label pv rows
   load_order
-  rows=$(expand_entries 1 '')
+  rows=$(expand_entries)
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
     if [ -n "$host" ]; then
@@ -535,7 +545,7 @@ cmd_preflight() {
   load_order
   mkdir -p "$STATE"
   tmp=$(mktemp "$STATE/.failover-preflight.XXXXXX") || die 'cannot stage state/failover-preflight.tsv'
-  rows=$(expand_entries 1 '')
+  rows=$(expand_entries)
   while IFS=$FM_FO_SEP read -r h m a host label; do
     [ -n "$h" ] || continue
     t=$(now)

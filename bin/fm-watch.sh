@@ -2395,8 +2395,9 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # or remote task is left to the ordinary stale path. Returns 0 when it ran and
 # queued a check wake, 1 when the window is out of scope or nothing ran.
 provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
-  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason kept='its local copy, branch, and gates were kept'
   case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
+  [ "$kind" != secondmate ] || kept='its home and records were kept'
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   seen="$STATE/$task.failover-seen"
   [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
@@ -2429,7 +2430,7 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   fm_watch_now now
   key="failover-$task-$now"
   case "$rc" in
-    0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - its local copy, branch, and gates were kept; reconcile its current state rather than relaunching it again" ;;
+    0) reason="check: $task moved to the next runtime after a $class refusal from its provider (${line#switched }) - $kept; reconcile its current state rather than relaunching it again" ;;
     1) reason="check: $task stopped on a $class refusal from its provider and no runtime in the failover order took over (${line:-no result line}) - relaunch it by hand on an available runtime, or queue it until the limit resets" ;;
     3) reason="check: $task stopped on a $class refusal from its provider again, and automatic failover paused at its attempt bound (${line:-no result line}) - recover it by hand" ;;
     5) rm -f "$seen"; return 1 ;;
