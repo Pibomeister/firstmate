@@ -12,6 +12,7 @@ set -u
 RECONCILE="$ROOT/bin/fm-handoff-reconcile.sh"
 TMP_ROOT=$(fm_test_tmproot fm-handoff-reconcile)
 FAKEBIN=$(fm_fakebin "$TMP_ROOT")
+ln -s /bin/bash "$FAKEBIN/claude"
 TAB=$(printf '\t')
 NOW=$(date +%s)
 N1=0123456789abcdef0123456789abcdef
@@ -366,13 +367,20 @@ test_a_reused_terminal_that_still_shows_the_nonce_is_left_open() {
 }
 
 test_a_refused_successor_records_its_harness_pid() {
-  local rc pid
+  local rc pid harness
   new_home refusedpid
   event 300 handoff_started "$N1" term_owner awaiting_ack
-  refuse "$N1"; rc=$?
+  env -u ORCA_TERMINAL_HANDLE -u TMUX -u TMUX_PANE -u ZELLIJ -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION \
+    -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META -u FM_STATE_OVERRIDE \
+    -u CODEX_THREAD_ID -u CODEX_SESSION_ID -u CLAUDE_PID -u CLAUDE_CODE_SESSION_ID \
+    PATH="$FAKEBIN:$PATH" FAKE_ORCA="$FAKE_ORCA" FM_HOME="$HOME_DIR" FM_SUPERVISOR_TARGET=term_late \
+    ACK="$ROOT/bin/fm-handoff-ack.sh" NONCE="$N1" PIDFILE="$HOME_DIR/harness.pid" \
+    claude -c 'printf "%s\n" "$$" > "$PIDFILE"; bash "$ACK" "$NONCE" 0 >/dev/null 2>&1; rc=$?; exit "$rc"'
+  rc=$?
   expect_code 1 "$rc" "a late acknowledgement"
+  harness=$(cat "$HOME_DIR/harness.pid")
   pid=$(awk '$4 == "event=handoff_reject" { for (i = 5; i <= NF; i++) if ($i ~ /^pid=/) print substr($i, 5) }' "$HOME_DIR/state/handoff-events.log")
-  case "$pid" in '' | *[!0-9]* | 0) fail "the reject recorded no harness pid: '$pid'" ;; esac
+  assert_equals "$harness" "$pid" "the reject records the pid of the harness the successor runs under"
   pass "a refused successor records its own harness pid with the reject"
 }
 
