@@ -1,0 +1,26 @@
+== run 1
+1..1
+not ok - converge repro-off: a closure round with a reproduction and no opt-in: expected exit 1, got 2
+--- stdout
+--- stderr
+ak review: git merge-base 6df389ccec7100ff7d16d1797fa48339f68e3df9 ead5684ff6bacb305069b5f85d2738b422e31aba failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-merge-review-tests.ILBtA3/converge-repro-off
+FM_TEST_COMPLETE
+== run 2
+1..1
+not ok - converge repro-off: a closure round with a reproduction and no opt-in: expected exit 1, got 2
+--- stdout
+--- stderr
+ak review: git merge-base 5a16992fce1527424ef300ac6786a61d440e2e39 3a537612017145c75008cd0e4419ace7bfa66b46 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head
+/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-merge-review-tests.vc9U36/converge-repro-off
+FM_TEST_COMPLETE
+== run 3
+1..1
+ok - without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking
+FM_TEST_COMPLETE

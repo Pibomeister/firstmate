@@ -1,0 +1,12 @@
+== test_converge_a_moved_merge_base_never_approves_the_old_round attempt 1
+ok - a head whose merge base moved after its round calls no seat and stays incomplete, never approved
+== test_converge_an_unchanged_delta_carries_without_seats attempt 1
+ok - a head with the same patch carries the earlier verdict and calls no seat
+== test_converge_a_changed_ledger_never_approves attempt 1
+ok - a ledger changed after its round never approves
+== test_converge_the_round_cap_parks_without_approving attempt 1
+not ok - converge cap: round 2 ( ak review: git merge-base 9365293bf9c320d425e6d28eb670a9b5509e9a2d 123325d7dd1fa349f72bd22494f2e928d916b2d3 failed: unknown option --no-replace-objects
+== test_converge_the_round_cap_parks_without_approving attempt 2
+ok - at the three-round cap the review parks and never approves
+== test_converge_configuration_refuses_an_unsafe_ak attempt 1
+ok - an ak setting refuses a relative path and seats that share one agent-kit seat id
