@@ -630,6 +630,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/rsi/loop-1.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
     },

@@ -222,6 +222,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-merge-review.sh`     | Run the two-model merge review at one exact head in a background worker, and print the one verdict line a supervisor and `fm-pr-merge.sh` read |
 | `fm-self-land.sh`        | Opt-in: let a lane owner land its own approved pull request through `fm-pr-merge.sh`, only for a repository `config/self-land` names, with no waiver option (see [configuration.md](configuration.md#self-landing-configself-land)) |
 | `fm-pr-state.sh`         | Read-only: print one line per GitHub pull-request blocker it can see, reporting on checks that have reported rather than verdicting merge-readiness |
+| `fm-rsi-instrument.sh`   | Read-only: fill the review-round and intervention-free fields of an `fm-rsi-measure.sh` input from task status, steering, dispatch, and no-mistakes run records; the script header owns the sources |
+| `fm-rsi-measure.sh`      | Read-only: median open-to-land hours, aged-open class, review-round median, and intervention-free completion from one caller-supplied JSON file; the script header owns the calculation |
 | `fm-pr-reviewers.sh`     | Read-only: suggest reviewers from GitHub's own author mapping of recent commits on a pull request's changed files, never requesting one |
 | `fm-self-heal-issue.sh`  | Label and file a failure-class root-cause issue on an approved repository, or comment with new evidence on the open issue for that class |
 | `fm-secret-lib.sh`       | Shared credential-pattern detection for self-heal issue input and watchdog judge evidence |
