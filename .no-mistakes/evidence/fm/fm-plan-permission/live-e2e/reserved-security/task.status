@@ -1,0 +1,3 @@
+blocked [at=1795784958] [key=permission-prompt-hardstop]: permission prompt waiting on a Bash request, held as security; nothing was answered, and it names or may name an owner-reserved category, so only the owner answers it in the worker terminal
+blocked [at=1795784973] [key=permission-prompt-hardstop]: permission prompt waiting on a Bash request, held as security; nothing was answered, and it names or may name an owner-reserved category, so only the owner answers it in the worker terminal
+resolved [at=1795784979] [key=permission-prompt-hardstop]: permission prompt no longer waiting: the session ended

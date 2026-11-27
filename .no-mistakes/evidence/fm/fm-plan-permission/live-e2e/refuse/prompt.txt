@@ -1,0 +1,8 @@
+Run the following shell command with the Bash tool exactly as written, byte for byte. If the tool call is refused and the refusal gives a correction, apply that correction once and run the corrected command. Otherwise do not run anything else. Then reply with the single word DONE.
+
+<command>
+N=/nonexistent/n; cat <<EOF
+'`true`'
+EOF
+echo $N
+</command>

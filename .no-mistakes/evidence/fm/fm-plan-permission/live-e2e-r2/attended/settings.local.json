@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{run-worktree}/bin/fm-permission-route.sh claude-request /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state task 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -e /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state/task.permission-held ] || {run-worktree}/bin/fm-permission-route.sh claude-settled /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state task tool-finished 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ ! -e /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state/task.permission-held ] || {run-worktree}/bin/fm-permission-route.sh claude-settled /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state task tool-finished 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{run-worktree}/bin/fm-permission-route.sh claude-settled /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-permission-route-live.XvnK5K/attended/home/state task session-end 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

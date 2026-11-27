@@ -1,0 +1,9 @@
+1..218
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback claim: competing stale recovery preserves the fresh owner
+ok - feedback claim: legacy owners are recovered only after they exit
+ok - feedback claim: release preserves another live owner
+create window failed: fork failed: Device not configured
+can't find window: wd2
+not ok - make_home: the captain pane never drew its screen
+exit=1

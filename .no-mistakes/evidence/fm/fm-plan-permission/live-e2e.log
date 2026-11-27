@@ -1,0 +1,2 @@
+not ok - 2.1.332 (Claude Code): refuse: the harness raised no permission request for the established command class, so the route was never consulted; refresh the cause evidence for this version
+exit=1

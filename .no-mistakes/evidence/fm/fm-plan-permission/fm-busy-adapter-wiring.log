@@ -1,0 +1,2 @@
+not ok - the stall gate never observed the frozen queue while the mate was busy
+exit=1

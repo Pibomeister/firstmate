@@ -1,0 +1,1 @@
+blocked [at=1795787460] [key=permission-prompt-hardstop]: permission prompt waiting on a Bash request, held as sign-in; nothing was answered, and it names or may name an owner-reserved category, so only the owner answers it in the worker terminal

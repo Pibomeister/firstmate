@@ -1,0 +1,7 @@
+1..19
+ok - real Claude 2.1.325 prompts: tool approval routes only on claude, trust relaunches, and the cancelled screen is clear
+ok - declining-cursor dialogs: imports, bypass, hook review, and a moved cursor are held, and their fixed text names no stop
+ok - hard stops: credential, sign-in, spend, destructive, and release prompts are named and never routed
+ok - structure, not words: conversation above a prompt and phrases inside a command never change its verdict
+ok - Antigravity trust: its recorded screen is read before the dialog detector, and is held
+ok - decline cap: failed declines count toward the hourly cap
