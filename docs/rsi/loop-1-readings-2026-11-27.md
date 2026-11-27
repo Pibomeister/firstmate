@@ -15,8 +15,8 @@ The instrument command wrote its object to stdout, and that object was the measu
 Its SHA-256 is `343c2406b08ee13a2da1c4a0d652cc75d47e015f7d572f9dcc7c6d8557fc759c`.
 
 ```
-bin/fm-rsi-instrument.sh --input /Users/eduardopicazo/orca/projects/firstmate/data/fm-rsi-loop1-measure/forge-input.json --home /Users/eduardopicazo/orca/projects/firstmate --nm-db /Users/eduardopicazo/.no-mistakes/state.sqlite
-bin/fm-rsi-measure.sh --input /Users/eduardopicazo/orca/projects/firstmate/data/fm-rsi-loop1-measure/instrument-output.json --now 1795822063 --window-start 2026-11-20T06:00:00Z --window-end 2026-11-27T06:00:00Z
+bin/fm-rsi-instrument.sh --input $FM_HOME/data/fm-rsi-loop1-measure/forge-input.json --home "$FM_HOME" --nm-db ~/.no-mistakes/state.sqlite
+bin/fm-rsi-measure.sh --input $FM_HOME/data/fm-rsi-loop1-measure/instrument-output.json --now 1795822063 --window-start 2026-11-20T06:00:00Z --window-end 2026-11-27T06:00:00Z
 ```
 
 The forge file has 28 merged Firstmate rows, 13 merged AgentKit rows, 30 open Firstmate rows, and 2 open AgentKit rows.
