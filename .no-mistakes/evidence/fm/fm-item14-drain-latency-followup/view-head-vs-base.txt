@@ -1,0 +1,4 @@
+head run1 rc=0 secs=168 load=[194.86 188.42 176.67] fails=0 
+base run1 rc=1 secs=154 load=[170.87 174.94 172.84] fails=1 not ok - view should show secondmate endpoint agent liveness (missing: '| secondmate-task ;
+head run2 rc=0 secs=164 load=[229.10 189.11 178.31] fails=0 
+base run2 rc=1 secs=280 load=[91.78 147.80 163.43] fails=1 not ok - view should distinguish a present secondmate endpoint from a dead agent (missing:;

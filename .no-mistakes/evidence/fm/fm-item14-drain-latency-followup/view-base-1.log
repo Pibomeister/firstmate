@@ -1,0 +1,49 @@
+1..19
+ok - the fleet snapshot and view read the lock sidecar endpoint
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - undated captain holds age after a configurable threshold, decided only from structured fields
+ok - captain-hold buckets are total, mutually exclusive, and never decided by prose
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+not ok - view should show secondmate endpoint agent liveness (missing: '| secondmate-task | working / status-log | secondmate | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/secondmate-home | tmux | present / alive |')
+--- output ---
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| cmux-task | unknown / none | ship | alpha | cmux | unknown | - | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/projects/missing-cmux (absent) | bin/fm-peek.sh fm-cmux-task |
+| scout-task | unknown / pane | scout | alpha | tmux | present | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/data/scout-task/report.md | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/projects/scout-worktree | bin/fm-peek.sh fm-scout-task |
+| secondmate-task | working / status-log | secondmate | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/secondmate-home | tmux | unknown / not_checked | - | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/secondmate-home | bin/fm-send.sh fm-secondmate-task '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9 | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.H1BxmW/view/projects/alpha-worktree | bin/fm-peek.sh fm-ship-task |
+
+## Queued
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| queued-task | Queued Task | alpha | ship | ship-task | - |
+| - | handoff note without canonical syntax | - | - | - | - |
+
+## Done
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| done-task | Done Task | alpha | ship | - | https://github.com/kunchenguid/firstmate/pull/7 |
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+## Ready PRs awaiting a decision

@@ -1,0 +1,51 @@
+== S1 baseline fleet view (writable state)
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e1NQBg
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| lab-task | unknown / none | scout | fixture | tmux | unknown | - | - | bin/fm-peek.sh fm-lab-task |
+
+## Queued
+-rw-------@ 1 eduardopicazo  staff  4689 Nov 27 15:59 .fleet-observation-json
+== S2 read-only state dir, no lock: snapshot --json then fleet view
+jq: parse error: Invalid numeric literal at line 162, column 5
+{"schema":"fm-fleet-snapshot.v1","tasks":1}
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e1NQBg
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+(no lock/result files in state)
+== S3 dead holder's lock left behind, then state made read-only
+lrwxr-xr-x@  1 eduardopicazo  staff  120 Nov 27 16:00 .fleet-contribution-input.lock -> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.e1NQBg/state/.fleet-contribution-input.lock.owner.zsHy6u
+drwx------@  4 eduardopicazo  staff  128 Nov 27 16:00 .fleet-contribution-input.lock.owner.zsHy6u
+lrwxr-xr-x@  1 eduardopicazo  staff  113 Nov 27 16:00 .fleet-observation.lock -> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.e1NQBg/state/.fleet-observation.lock.owner.1OrHu8
+drwx------@  4 eduardopicazo  staff  128 Nov 27 16:00 .fleet-observation.lock.owner.1OrHu8
+jq: parse error: Invalid numeric literal at line 162, column 5
+{"schema":"fm-fleet-snapshot.v1","tasks":1}
+jq: parse error: Invalid numeric literal at line 19, column 5
+["backlog","tasks"]
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.e1NQBg
+== S4 writable state: two overlapping --json readers share one pass
+rcA=0 rcB=0 genA=2026-11-27T22:01:15Z genB=2026-11-27T22:01:15Z
+outputs identical (shared pass)
+drwx------@  4 eduardopicazo  staff   128 Nov 27 16:00 .fleet-contribution-input.lock.owner.zsHy6u
+-rw-------@  1 eduardopicazo  staff  4689 Nov 27 16:01 .fleet-observation-json
+drwx------@  4 eduardopicazo  staff   128 Nov 27 16:00 .fleet-observation.lock.owner.1OrHu8
+v1.txt: rc=0 secs=4
+s2.json: rc=0 secs=37
+v2.txt: rc=0 secs=19
+s3.json: rc=0 secs=12
+s3c.json: rc=0 secs=3
+v3.txt: rc=0 secs=7

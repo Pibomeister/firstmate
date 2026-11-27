@@ -1,0 +1,9 @@
+ok - independent overlapping heartbeat callers collect once
+ok - independent overlapping summary triggers collect once
+ok - snapshot overlap shares one observation, while later callers observe changes
+ok - output modes serialize without mixing documents, and failed observations stay failed until a fresh successful pass
+ok - a status change before an overlapping request forces its own fresh serialized observation
+ok - snapshot recovers a dead lock owner and preserves the caller's stage descriptor
+ok - contribution-only inventory stays bounded independently of a slow worker observation
+not ok - a detached probe held a completed snapshot's capture pipe open: 124
+exit=1

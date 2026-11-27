@@ -1,0 +1,82 @@
+1..19
+ok - the fleet snapshot and view read the lock sidecar endpoint
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+not ok - ordinary terminal in-flight ship must still produce terminal_in_flight without listing the secondmate: {
+  "schema": "fm-secondmate-home-summary.v1",
+  "hold_classifier_schema": "fm-captain-hold-buckets.v1",
+  "contributions": {
+    "known": 0,
+    "checked": 0,
+    "counts": {
+      "captain": 0,
+      "fleet": 0,
+      "maintainer": 0,
+      "nobody": 0
+    },
+    "unmeasured": 0,
+    "complete": true,
+    "proven_clear": true,
+    "stale_verdicts": 0,
+    "missing_verdicts": 0,
+    "unreadable_records": 0,
+    "valid_until": 900,
+    "captain": [],
+    "captain_omitted": 0
+  },
+  "generated": "2026-11-27T22:05:01Z",
+  "generated_epoch": 1795817101,
+  "home": "/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.y0efos/summary-secondmate-only",
+  "valid": false,
+  "reason": "child current state unavailable: terminal-ship",
+  "invalidity": {
+    "kind": "child_current_unavailable",
+    "ids": [
+      "terminal-ship"
+    ]
+  },
+  "state": "unknown",
+  "active_children": [],
+  "decisions_open": [],
+  "holds": [],
+  "queued": [],
+  "landed": [],
+  "endpoints": [
+    {
+      "id": "mate",
+      "state": "done",
+      "source": "status-log",
+      "endpoint": {
+        "target": "firstmate:fm-mate",
+        "exists": true,
+        "agent_alive": "alive",
+        "status": "alive",
+        "observed_at": "2026-11-27T22:05:01Z",
+        "freshness": "fresh"
+      }
+    },
+    {
+      "id": "terminal-ship",
+      "state": "unknown",
+      "source": "none",
+      "endpoint": {
+        "target": "firstmate:fm-terminal-ship",
+        "exists": true,
+        "agent_alive": "not_checked",
+        "status": "unknown",
+        "observed_at": "2026-11-27T22:05:01Z",
+        "freshness": "fresh"
+      }
+    }
+  ],
+  "counts": {
+    "active_children": 0,
+    "decisions_open": 0,
+    "holds": 0,
+    "queued": 0,
+    "landed": 0,
+    "endpoints": 2
+  },
+  "omitted": []
+}
+exit=1

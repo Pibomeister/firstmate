@@ -1,0 +1,42 @@
+1..19
+ok - the fleet snapshot and view read the lock sidecar endpoint
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, stable ordering, and emission-time event age
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - undated captain holds age after a configurable threshold, decided only from structured fields
+ok - captain-hold buckets are total, mutually exclusive, and never decided by prose
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+not ok - view should distinguish a present secondmate endpoint from a dead agent (missing: '| dead-secondmate | unknown / none | secondmate | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.Ink9xR/dead-secondmate/secondmate-home | tmux | present / dead |')
+--- output ---
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.Ink9xR/dead-secondmate
+Session endpoint: unknown
+
+## Under Way
+| ID | Current | Kind | Repo/Project | Backend | Endpoint | Artifact | Path | Watch / return channel |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| dead-secondmate | unknown / none | secondmate | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.Ink9xR/dead-secondmate/secondmate-home | tmux | unknown / not_checked | - | /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-fleet-snapshot.Ink9xR/dead-secondmate/secondmate-home (absent) | bin/fm-send.sh fm-dead-secondmate '<request>' - read status/doc return channel; do not routinely fm-peek a secondmate for answers |
+
+## Queued
+No queued backlog records found.
+
+## Done
+No done backlog records found.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+## Ready PRs awaiting a decision

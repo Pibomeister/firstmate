@@ -1,0 +1,12 @@
+ok - a detached probe cannot retain the completed snapshot's output capture
+test_snapshot_detached_probe_cannot_hold_output_capture_open exit=
+ok - relay failure remains a failed publication and a fresh pass can recover
+test_snapshot_relay_failure_is_not_success exit=
+ok - a shared publication that cannot be written keeps the complete observation and its exit status
+test_snapshot_publication_failure_keeps_the_observation exit=
+ok - a signal-stopped holder is not shared, so a queued waiter collects for itself
+test_snapshot_signal_stopped_holder_is_not_shared exit=
+ok - a state directory that cannot hold the lock still yields a complete unshared snapshot
+test_snapshot_unwritable_state_collects_without_the_lock exit=
+ok - a dead holder's lock in unwritable state still yields complete unshared snapshots
+test_snapshot_dead_lock_in_unwritable_state_collects_without_the_lock exit=
