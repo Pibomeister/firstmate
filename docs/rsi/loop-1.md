@@ -37,8 +37,9 @@ The caller first puts a forge review count on each merged row.
 One forge round is one submission whose state is `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`.
 `bin/fm-rsi-instrument.sh` then reads the Firstmate home and the no-mistakes state database, both read-only.
 Its header owns the sources and the counting rules.
-Where a no-mistakes run names the pull request, its review-step rounds replace the forge count.
-Where no run names it, the forge count stays, and the row says so.
+Where a no-mistakes run names the pull request and its review step ran, its review-step rounds replace the forge count.
+A skipped or pending review step is not a measured review.
+Where no such run exists, the forge count stays, and the row says so.
 Intervention fields come from the task status, the steering inbox, and the dispatch ledger.
 A pull request with no surviving task record keeps null intervention fields.
 The measure command keeps a null instrument field out of the rate.
@@ -122,7 +123,7 @@ The producer re-read the same window at the `2026-11-27T20:02:45Z` snapshot.
 | Instrument | Firstmate | AgentKit |
 | --- | --- | --- |
 | Review rounds, median and maximum | 3.00 and 23, n=28 | 0.00 and 13, n=13 |
-| Rows with a no-mistakes run record | 24 of 28 | 4 of 13 |
+| Rows with a run whose review step ran | 24 of 28 | 4 of 13 |
 | Rows on the forge fallback | 4 of 28 | 9 of 13 |
 | Intervention-free completion | 0 free of 1 completed, 27 missing | 0 free of 0 completed, 13 missing |
 

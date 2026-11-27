@@ -15,9 +15,10 @@
 # A merged row's pull request is https://github.com/<repo>/pull/<number>.
 #
 # review_rounds. With --nm-db, the no-mistakes state database is opened with
-# SQLite mode=ro. When it has a run whose pr_url is the pull request, the
-# count is every step_rounds row of the review step of every such run, and
-# review_rounds_source is "no-mistakes". Otherwise a numeric input
+# SQLite mode=ro. A run whose pr_url is the pull request counts only when its
+# review step ran, so a skipped or pending review step is not a measured
+# review. When such a run exists, the count is every step_rounds row of those
+# review steps, and review_rounds_source is "no-mistakes". Otherwise a numeric input
 # review_rounds stays as the forge fallback with source "forge". Otherwise
 # both are null.
 #
@@ -106,16 +107,15 @@ with open(sys.argv[2], encoding="utf-8") as handle:
 uri = Path(sys.argv[1]).resolve().as_uri() + "?mode=ro"
 with closing(sqlite3.connect(uri, uri=True, timeout=30)) as db:
     for url in urls:
-        runs = db.execute("SELECT COUNT(*) FROM runs WHERE pr_url = ?", (url,)).fetchone()[0]
-        if runs == 0:
-            continue
-        rounds = db.execute(
-            "SELECT COUNT(*) FROM step_rounds sr"
-            " JOIN step_results s ON s.id = sr.step_result_id"
-            " JOIN runs r ON r.id = s.run_id"
-            " WHERE r.pr_url = ? AND s.step_name = 'review'",
+        steps, rounds = db.execute(
+            "SELECT COUNT(*), COALESCE(SUM((SELECT COUNT(*) FROM step_rounds sr WHERE sr.step_result_id = s.id)), 0)"
+            " FROM step_results s JOIN runs r ON r.id = s.run_id"
+            " WHERE r.pr_url = ? AND s.step_name = 'review'"
+            " AND s.status NOT IN ('skipped', 'pending')",
             (url,),
-        ).fetchone()[0]
+        ).fetchone()
+        if steps == 0:
+            continue
         print(f"{url}\t{rounds}")
 PY
 fi

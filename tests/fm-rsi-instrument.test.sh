@@ -12,6 +12,7 @@ NOW=1795759200
 START=2026-11-20T06:00:00Z
 END=2026-11-27T06:00:00Z
 URL1=https://github.com/acme/widget/pull/1
+URL2=https://github.com/acme/widget/pull/2
 URL3=https://github.com/acme/widget/pull/3
 URL4=https://github.com/acme/widget/pull/4
 
@@ -49,21 +50,29 @@ EOF
 }
 
 build_db() {
-  python3 - "$1" "$URL1" <<'PY'
+  python3 - "$1" "$URL1" "$URL2" "$URL3" <<'PY'
 import sqlite3
 import sys
 
 db = sqlite3.connect(sys.argv[1])
 db.executescript(
     "CREATE TABLE runs (id TEXT PRIMARY KEY, pr_url TEXT);"
-    "CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT);"
+    "CREATE TABLE step_results (id TEXT PRIMARY KEY, run_id TEXT, step_name TEXT, status TEXT);"
     "CREATE TABLE step_rounds (id TEXT PRIMARY KEY, step_result_id TEXT, round INTEGER);"
 )
-url = sys.argv[2]
-db.executemany("INSERT INTO runs VALUES (?, ?)", [("r1", url), ("r2", url), ("r3", "https://github.com/acme/widget/pull/9")])
+url, url2, url3 = sys.argv[2:5]
+db.executemany("INSERT INTO runs VALUES (?, ?)", [("r1", url), ("r2", url), ("r3", "https://github.com/acme/widget/pull/9"), ("r4", url2), ("r5", url2), ("r6", url3)])
 db.executemany(
-    "INSERT INTO step_results VALUES (?, ?, ?)",
-    [("s1", "r1", "review"), ("s2", "r1", "test"), ("s3", "r2", "review"), ("s4", "r3", "review")],
+    "INSERT INTO step_results VALUES (?, ?, ?, ?)",
+    [
+        ("s1", "r1", "review", "completed"),
+        ("s2", "r1", "test", "completed"),
+        ("s3", "r2", "review", "completed"),
+        ("s4", "r3", "review", "completed"),
+        ("s5", "r4", "review", "skipped"),
+        ("s6", "r5", "review", "pending"),
+        ("s7", "r6", "review", "skipped"),
+    ],
 )
 db.executemany(
     "INSERT INTO step_rounds VALUES (?, ?, ?)",
@@ -107,10 +116,10 @@ test_fills_instrument_fields_from_home_and_run_records() {
   assert_equals '"no-mistakes"' "$(row "$out" 1 review_rounds_source)" "a run record outranks the forge count"
   assert_equals "true" "$(row "$out" 1 reached_green)" "a done line with checks green is reached"
   assert_equals "2" "$(row "$out" 1 interventions_before_green)" "one decision and one steer between dispatch and green"
-  assert_equals "2" "$(row "$out" 2 review_rounds)" "no run record keeps the forge count"
-  assert_equals '"forge"' "$(row "$out" 2 review_rounds_source)" "the forge fallback is named"
+  assert_equals "2" "$(row "$out" 2 review_rounds)" "a skipped and a pending review step are not measured reviews, so the forge count stays"
+  assert_equals '"forge"' "$(row "$out" 2 review_rounds_source)" "a skipped or pending review step keeps the forge source"
   assert_equals "null" "$(row "$out" 2 reached_green)" "no task record is unknown"
-  assert_equals "null" "$(row "$out" 3 review_rounds)" "no run and no forge count stays unknown"
+  assert_equals "null" "$(row "$out" 3 review_rounds)" "a skipped review step and no forge count stay unknown, never zero"
   assert_equals "0" "$(row "$out" 3 interventions_before_green)" "a clean task has zero interventions"
   assert_equals "null" "$(row "$out" 4 reached_green)" "a done line without checks green is unknown, not failed"
   assert_equals "null" "$(row "$out" 4 interventions_before_green)" "an unknown green leaves the count unknown"
