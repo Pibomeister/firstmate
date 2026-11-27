@@ -1,0 +1,12 @@
+
+  Background server has incompatible feature settings
+  This session requires hooks to be disabled
+  These settings persist and can disable functionality for other clients. Restart may interrupt active or
+  queued work.
+  Restart will use these shared feature settings:
+    hooks = false
+
+
+  1. Run without daemon this time
+  2. Restart with these settings (recommended)
+› 3. Cancel

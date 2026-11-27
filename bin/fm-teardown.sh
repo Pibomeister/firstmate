@@ -4319,6 +4319,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
   "$STATE/$ID.droid-submit-receipts" \
   "$STATE/$ID.polytoken-busy.sh" "$STATE/$ID.pr-register-refused" \
   "$STATE/$ID.budget" "$STATE/$ID.budget-diagnostic" \
+  "$STATE/$ID.permission-route.tsv" "$STATE/$ID.permission-held" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" \
   "$STATE/.crew-relaunch-$ID" "$STATE/.crew-stopped-$ID" "$STATE/$ID.agent-exit" \
@@ -4328,6 +4329,9 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
 # agent config, the trust setting, and this task's sessions), so it needs a
 # recursive removal rather than the file rm above.
 rm -rf "$STATE/$ID.kiro-home"
+# The permission route's lock (bin/fm-permission-route.sh) is an empty
+# directory; rmdir leaves anything unexpected in place.
+rmdir "$STATE/$ID.permission-lock" 2>/dev/null || true
 # The steering inbox (bin/fm-task-inbox-lib.sh) is runtime state for the
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.

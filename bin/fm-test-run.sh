@@ -447,7 +447,8 @@ family_for_basename_var() {
     fm-warm-compact-herdr-live-e2e.test.sh|\
     fm-watch-wedge-cap-live.test.sh|fm-read-repetition-live.test.sh|\
     fm-watchdog-live.test.sh|fm-usage-limit-pane-live.test.sh|\
-    fm-merge-review-live.test.sh|fm-failover-live-e2e.test.sh)
+    fm-merge-review-live.test.sh|fm-failover-live-e2e.test.sh|\
+    fm-permission-route-live-e2e.test.sh)
       REPLY_FAMILY=live-harness-optin
       ;;
     fm-backend-herdr.test.sh|fm-backend-tmux-smoke.test.sh|fm-backend.test.sh|\
@@ -956,6 +957,8 @@ tests/fm-park.test.sh 2189
 tests/fm-peek-remote.test.sh 1093
 tests/fm-pending-reply.test.sh 65326
 tests/fm-permission-prompt.test.sh 160717
+tests/fm-permission-route-live-e2e.test.sh 60
+tests/fm-permission-route.test.sh 23332
 tests/fm-pi-branch-extension.test.sh 117091
 tests/fm-pi-branch-live-e2e.test.sh 83
 tests/fm-pi-branch-responsiveness-live-e2e.test.sh 13146
@@ -1842,6 +1845,14 @@ families_for_changed_path() {
       ;;
     bin/fm-captain-nudge.sh|bin/fm-captain-nudge-lib.sh)
       printf '%s\n' '__script__:fm-captain-nudge.test.sh'
+      ;;
+    bin/fm-permission-route.sh)
+      # The route answers a prompt the vendor raises: the portable suite pins
+      # its verdicts, the wiring suite drives the hooks the spawn generates, and
+      # the live guard asks the installed Claude Code.
+      printf '%s\n' "__script__:fm-permission-route.test.sh"
+      printf '%s\n' "__script__:fm-busy-adapter-wiring.test.sh"
+      printf '%s\n' "__script__:fm-permission-route-live-e2e.test.sh"
       ;;
     bin/fm-watchdog.sh|bin/fm-watchdog-lib.sh|bin/fm-permission-prompt.sh)
       printf '%s\n' watcher-wake-lock

@@ -192,6 +192,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-watchdog.sh`         | Opt-in per-machine assistant outside every session that detects stalled firstmates and second mates and nudges, settles, or restarts them within hard boundaries ([behavior](watchdog.md)) |
 | `fm-watchdog-lib.sh`     | Pure watchdog detectors for dialogs, timer loops, stall proof, guarded text, and the action ledger |
 | `fm-permission-prompt.sh` | Classify a worker permission prompt as held, hard stop, trust relaunch, or a declinable tool approval for the watchdog ([behavior](watchdog.md#worker-permission-prompts)) |
+| `fm-permission-route.sh` | Claude worker permission hook that refuses one proven prompt class, holds every other request for a person, and never grants one ([behavior](watchdog.md#the-workers-own-permission-hook)) |
 | `fm-captain-nudge.sh`    | No-AI host-local typer that sends one fixed prompt when a configured captain is idle with open work ([behavior](captain-nudge.md), [formats](captain-nudge-spec.md)) |
 | `fm-captain-nudge-lib.sh` | Decision procedure, JSONL, `NUDGE v1` beacon line, and read-only open-work probes for the captain self-nudge |
 | `fm-relay-guard.sh`      | Single owner of a host's network-daemon-bound relays: restart relays that predate a daemon restart, are missing, or keep failing their required probe, with backoff and a cap; renders its launchd or systemd unit ([example config](examples/relay-guard)) |

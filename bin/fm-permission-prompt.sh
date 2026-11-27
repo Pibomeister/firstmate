@@ -12,7 +12,8 @@
 # --dialog passes the fm_wd_pane_dialog verdict the caller already has, or
 # `none` when the caller saw no dialog; it is computed from the screen when absent.
 #
-# Verdicts. A proven trust dialog is checked first, then the other dialogs.
+# Verdicts. A proven trust dialog is checked first, then a Codex startup
+# picker, then the other dialogs, and last a terminal yes/no confirmation.
 # Only a proven structure leads to an action:
 #   route tool-approval
 #       A Claude tool-approval prompt whose structure is proven on a worker with
@@ -42,11 +43,37 @@
 #       command, a merge, tag or release, or another owner-reserved category
 #       (fm_wd_reserved). Never answered. A tool-approval prompt and every
 #       picker the watchdog's dialog detector recognizes, including a
-#       usage-limit or model-switch picker, are checked for every category in
-#       their own rows. The external-imports and bypass dialogs are checked
-#       only in the rows they do not fix (the listed import paths), so their
-#       fixed security text never names a stop. A screen with no recognized dialog has no verdict:
-#       generic terminal and external-CLI prompts are out of scope here.
+#       model-switch picker, are checked for every category in their own
+#       rows. A numbered usage-limit picker is checked without its other
+#       answers: the usage-limit path owns the picker, and offering paid usage
+#       among its answers is not a spend prompt, while its title and the
+#       answer under the cursor, the one Enter would take, still are. One with
+#       no numbered cursor row is checked whole. The external-imports and
+#       bypass dialogs are checked only in the rows they do not fix (the
+#       listed import paths), so their fixed security text never names a
+#       stop. The Codex first-run picker
+#       (`1. Sign in with ChatGPT` over `Press enter to continue`, recorded on
+#       Codex CLI 0.172.0) is `hardstop sign-in` by its structure alone.
+#   hold daemon-settings
+#       Codex's background-server settings picker, recorded on Codex CLI
+#       0.172.0: a session launched with a feature flag the shared server does
+#       not run with, such as the `--disable hooks` every Codex worker gets.
+#       Its second option restarts a server other Codex clients share, so no
+#       key is pressed. Only its settings rows, the rows the dialog does not
+#       fix, are checked for a hard stop. A picker whose settings rows cannot
+#       be found is `hardstop reserved`.
+#   hold generic-confirm
+#       No harness dialog, and the last row is a terminal yes/no confirmation
+#       (fm_composer_yes_no_prompt in bin/fm-composer-lib.sh owns that row),
+#       such as `Proceed? [y/N]` from a command line the worker left waiting.
+#       The last 20 non-blank rows are checked for a hard stop, across blank
+#       rows, because such a prompt has no boundary to prove and its warning
+#       often sits a paragraph above it. OpenSSH's unknown-host-key question
+#       (`(yes/no/[fingerprint])`, or the older `continue connecting
+#       (yes/no)`) is `hardstop reserved` by that row alone. No key. Any
+#       other screen with no
+#       recognized dialog has no verdict: other terminal and external-CLI
+#       prompts, such as a password input, are out of scope here.
 #   hold <external-imports|bypass-confirm|hooks-review>
 #       A dialog whose every answer is a standing decision or whose default
 #       answer exits the worker: Claude's external-imports dialog (Escape
@@ -73,6 +100,10 @@
 if ! declare -F fm_wd_pane_dialog >/dev/null 2>&1; then
   # shellcheck source=bin/fm-watchdog-lib.sh
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-watchdog-lib.sh"
+fi
+if ! declare -F fm_composer_blocking_dialog >/dev/null 2>&1; then
+  # shellcheck source=bin/fm-composer-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-composer-lib.sh"
 fi
 if ! declare -F fm_secret_like >/dev/null 2>&1; then
   # shellcheck source=bin/fm-secret-lib.sh
@@ -315,8 +346,76 @@ _fm_pp_fixed_dialog() {  # <screen>
   printf '%s\n' "$out"
 }
 
+# The settings rows of Codex's background-server picker: the rows between
+# `Restart will use these shared feature settings:` and the first option.
+_fm_pp_codex_daemon_rows() {  # <screen>
+  printf '%s\n' "${1-}" | fm_wd_strip_ansi | awk '
+    /^[ \t]*Background server has incompatible feature settings[ \t]*$/ { head = 1; list = 0; n = 0; next }
+    head && /^[ \t]*((>|›)[ \t]+)?1\. Run without daemon this time[ \t]*$/ { head = 0; list = 0; next }
+    head && /^[ \t]*Restart will use these shared feature settings:[ \t]*$/ { list = 1; next }
+    list && /[^ \t]/ { row[++n] = $0 }
+    END { for (i = 1; i <= n; i++) print row[i] }'
+}
+
+# A screen no harness dialog explains: a terminal yes/no confirmation is held,
+# or named a hard stop from the last 20 non-blank rows. OpenSSH's question
+# about an unknown host key, known by its `/[fingerprint]` answer or by the
+# older `continue connecting (yes/no)` row, is always a
+# hard stop: its rows name no reserved word, and a yes trusts a host. Anything
+# else has no verdict.
+_fm_pp_plain_prompt() {  # <screen>
+  local cat
+  fm_composer_yes_no_prompt "${1-}" || return 1
+  if cat=$(fm_pp_hardstop_category "$(_fm_wd_tail_rows "${1-}" 20)"); then
+    printf 'hardstop\t%s\n' "$cat"; return 0
+  fi
+  if printf '%s\n' "${1-}" | fm_wd_strip_ansi | LC_ALL=C awk '
+      /[^ \t]/ { last = tolower($0) }
+      END { exit !(last ~ /(\/\[fingerprint\]|continue connecting \(yes\/no)\)[ \t]*[?:]?[ \t]*$/) }'; then
+    printf 'hardstop\treserved\n'; return 0
+  fi
+  printf 'hold\tgeneric-confirm\n'
+}
+
+# A numbered picker without the answer rows its cursor is not on: its title,
+# the answer under the cursor, and its footer. A row is an answer row only
+# when its number is the next one in the picker's own count from 1 and starts
+# in the column the first answer's number starts in, the selection mark
+# counted as one blank. So a wrapped row that happens to start with a number
+# stays, and so does every other wrapped row. Empty when no answer row carries
+# a selection mark.
+_fm_pp_picker_chosen_rows() {  # <picker rows>
+  printf '%s\n' "${1-}" | awk '
+    BEGIN { want = 1 }
+    {
+      r[NR] = $0
+      row = $0
+      cur = 0
+      col = 0
+      if (match(row, /^[ \t]*(❯|›|>)/)) {
+        cur = 1
+        lead = substr(row, 1, RLENGTH)
+        row = substr(row, RLENGTH + 1)
+        sub(/[^ \t]+$/, " ", lead)
+        col = length(lead)
+      }
+      match(row, /^[ \t]*/)
+      col += RLENGTH
+      row = substr(row, RLENGTH + 1)
+      if (row ~ /^[0-9]+[.)][ \t]/ && row + 0 == want && (want == 1 || col == numcol)) {
+        if (want == 1) numcol = col
+        want++
+        if (cur) chosen = NR; else other[NR] = 1
+      }
+    }
+    END {
+      if (!chosen) exit 0
+      for (i = 1; i <= NR; i++) if (!other[i]) print r[i]
+    }'
+}
+
 fm_pp_classify() {  # <screen> <harness> [<dialog>]
-  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat fixed codex
+  local screen=${1-} harness=${2-} dialog=${3-} rows ruled text cat fixed codex chosen
   [ -n "$screen" ] || return 1
   # A proven trust dialog is read first, because the Antigravity picker has no
   # footer the watchdog's dialog detector recognizes.
@@ -336,6 +435,21 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
     esac
     return 0
   fi
+  # A Codex startup picker is read by its own structure, whatever the dialog
+  # detector made of its numbered rows. Neither one is ever answered.
+  case "$(fm_composer_blocking_dialog "$screen")" in
+    'Codex sign-in picker') printf 'hardstop\tsign-in\n'; return 0 ;;
+    'Codex background-server settings picker')
+      # Settings rows that cannot be found cannot be read as free of a stop.
+      rows=$(_fm_pp_codex_daemon_rows "$screen")
+      if [ -z "$rows" ]; then
+        printf 'hardstop\treserved\n'; return 0
+      fi
+      if cat=$(fm_pp_hardstop_category "$rows"); then
+        printf 'hardstop\t%s\n' "$cat"; return 0
+      fi
+      printf 'hold\tdaemon-settings\n'; return 0 ;;
+  esac
   if [ "$dialog" = none ]; then
     dialog=
   elif [ -z "$dialog" ]; then
@@ -348,8 +462,9 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
   [ -z "$codex" ] || dialog=permission
   case "$dialog" in
     permission|question) ;;
-    # A screen with no recognized dialog has no verdict.
-    '') return 1 ;;
+    # A screen with no recognized dialog has a verdict only when it ends in
+    # a terminal yes/no confirmation.
+    '') _fm_pp_plain_prompt "$screen"; return ;;
     usage-limit|model-switch)
       # Another handler owns these pickers, but a spend, sign-in, or other
       # hard-stop answer on one is still reported and never answered here.
@@ -357,6 +472,13 @@ fm_pp_classify() {  # <screen> <harness> [<dialog>]
       # never names the category.
       text=$(_fm_wd_picker_rows "$screen")
       [ -n "$text" ] || text=$(_fm_wd_dialog_rows "$screen" all)
+      # The usage-limit path owns its picker, so an answer the cursor is not
+      # on never names a stop there. No numbered cursor row leaves the whole
+      # picker checked.
+      if [ "$dialog" = usage-limit ]; then
+        chosen=$(_fm_pp_picker_chosen_rows "$text")
+        [ -z "$chosen" ] || text=$chosen
+      fi
       cat=$(fm_pp_hardstop_category "$text") || return 1
       printf 'hardstop\t%s\n' "$cat"
       return 0
