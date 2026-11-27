@@ -105,6 +105,36 @@
 #   against. Inspection modes execute nothing and stay available, and a run with
 #   no FM_TASK_ID set is unchanged.
 #
+# Machine-wide admission:
+#   A broad selection (--all, --family, --lane, --proven-isolated) that would
+#   execute at least one script waits in the machine-wide test line
+#   (bin/fm-test-queue.sh, which owns the line, its slots, and its load ceiling)
+#   before it runs: the runner re-executes itself as that queue's served
+#   command, labelled with its selection. A targeted selection (--changed or
+#   script paths) runs at once, so prompt validation never waits behind a broad
+#   suite. Inspection modes, refusals, and an empty selection never queue.
+#   A run that already holds a served ticket (FM_TEST_QUEUE_HELD) is admitted by
+#   the queue's own nesting rule, so wrapping this runner in
+#   `fm-test-queue.sh run --` stays correct and never takes a second ticket.
+#   Inside a served ticket the run uses at most 2 concurrent inner scripts:
+#   a larger automatic or explicit --jobs is lowered to 2 after the --jobs
+#   admission checks above have passed, and the timing artifact records the
+#   lowered count. A runner started by one of this runner's own scripts
+#   (FM_TEST_RUN_INNER, exported to every script it runs) leaves admission and
+#   that cap to the outer run.
+#   The served command names its interpreter as plain `bash`, so a run the
+#   queue offloads to another host finds that host's own Bash; the Bash 5
+#   re-exec above then applies there. A run given --json is never offloaded:
+#   it may still wait in the local line, but it always runs on this machine, so
+#   the timing artifact lands at the path the caller named.
+#   FM_TEST_RUN_QUEUE selects admission: auto (default) queues broad
+#   selections except on a GitHub Actions runner (GITHUB_ACTIONS=true), whose
+#   dedicated machine needs no shared line; off runs them at once. Any other
+#   value is a usage error. When admission applies but
+#   bin/fm-test-queue.sh is missing beside this runner, the run refuses instead
+#   of bypassing the line. A queued run exits with the queue's status: the
+#   suite's own, 125 when the queue cannot run it, or 128+N for a signal.
+#
 # Exit status is non-zero if any selected script exits non-zero, a configured
 # --fail-on-gate-skip token appears, the measured duration exceeds
 # --max-wall-ms, timing-artifact finalization fails, or a concurrent worker
@@ -212,6 +242,8 @@ RUN_STARTED_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 RUN_STARTED_MS=$(now_ms)
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SELF="$ROOT/bin/$(basename "${BASH_SOURCE[0]}")"
+ORIG_ARGS=("$@")
 cd "$ROOT" || exit 1
 
 MODE=
@@ -232,6 +264,9 @@ FAIL_ON_GATE_SKIP=
 JOBS=1
 JOBS_EXPLICIT=0
 JOBS_MAX=8
+# Concurrent inner scripts allowed inside one served test-queue slot (header
+# "Machine-wide admission").
+SLOT_JOBS_MAX=2
 MAX_WALL_MS=
 PER_SCRIPT_TIMEOUT_SECS=0
 # Bound applied automatically on the automatic --changed path, derived from
@@ -2635,6 +2670,12 @@ case "$PER_SCRIPT_TIMEOUT_SECS" in
   ''|*[!0-9]*) die "--per-script-timeout-secs requires a whole number of seconds (0 disables)" ;;
 esac
 
+case "${FM_TEST_RUN_QUEUE:-auto}" in
+  auto) if [ "${GITHUB_ACTIONS:-}" = true ]; then QUEUE_ADMISSION=0; else QUEUE_ADMISSION=1; fi ;;
+  off) QUEUE_ADMISSION=0 ;;
+  *) die "FM_TEST_RUN_QUEUE must be auto or off (got '${FM_TEST_RUN_QUEUE}')" ;;
+esac
+
 # Refuse before any suite is selected or run. The inspection modes execute
 # nothing: --list-families, --list-concurrent-safe-families, --list-lanes,
 # --check-coverage, --concurrent-safe-family-jobs-max and --aggregate-json have
@@ -2800,6 +2841,34 @@ if [ "$JOBS" -gt 1 ] && [ "$AUTO_CONCURRENCY" -eq 0 ]; then
     fi
   done
 fi
+
+# Machine-wide admission and the per-slot inner-script cap (header "Machine-wide
+# admission"). Placed after every refusal and the empty-selection exit, so only
+# a run that will execute scripts ever takes a ticket.
+if [ "${FM_TEST_RUN_ADMITTED:-}" = 1 ]; then
+  unset FM_TEST_RUN_ADMITTED
+  [ -n "${FM_TEST_QUEUE_HELD:-}" ] \
+    || die "queue admission returned without a served ticket (FM_TEST_QUEUE_HELD is empty)"
+elif [ -z "${FM_TEST_RUN_INNER:-}" ] && [ "$QUEUE_ADMISSION" -eq 1 ]; then
+  case "$MODE" in
+    all|family|lane|proven-isolated)
+      queue_bin="$ROOT/bin/fm-test-queue.sh"
+      [ -f "$queue_bin" ] \
+        || die "broad selection $SELECTION_DESC needs the machine-wide test queue, but $queue_bin is missing; set FM_TEST_RUN_QUEUE=off only on a dedicated machine"
+      export FM_TEST_RUN_ADMITTED=1
+      [ -z "$JSON_PATH" ] || export FM_TEST_QUEUE_REMOTE_DISABLE=1
+      exec "$BASH" "$queue_bin" run --label "fm-test-run $SELECTION_DESC" -- \
+        bash "$SELF" ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+      ;;
+  esac
+fi
+if [ -z "${FM_TEST_RUN_INNER:-}" ] && [ -n "${FM_TEST_QUEUE_HELD:-}" ] \
+  && [ "$JOBS" -gt "$SLOT_JOBS_MAX" ]; then
+  log "inside a served test-queue ticket: lowering --jobs $JOBS to $SLOT_JOBS_MAX inner scripts per slot"
+  SELECTION_DESC=${SELECTION_DESC/;jobs=$JOBS/;jobs=$SLOT_JOBS_MAX}
+  JOBS=$SLOT_JOBS_MAX
+fi
+export FM_TEST_RUN_INNER=1
 
 # Split the run into proven concurrent phases and an unproven remainder.
 # Individually proven scripts share one phase. Scripts admitted only by a family

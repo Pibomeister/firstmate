@@ -33,6 +33,8 @@
 # A run nested inside a served run (FM_TEST_QUEUE_HELD names a served ticket
 # that is still live under the lifetime rules below) runs at once without a second
 # ticket, so a wrapped suite that wraps its own children cannot wait on itself.
+# bin/fm-test-run.sh enters this line on its own for broad selections; its
+# header owns which selections queue and their inner-script cap per slot.
 #
 # status prints the line. The first line is machine-readable, space-separated
 # key=value pairs in this fixed order:

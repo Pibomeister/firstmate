@@ -138,7 +138,8 @@ Firstmate's wrapper still matters: crewmates route every `ask-user` finding to f
 [`docs/configuration.md`](docs/configuration.md#gate-defaults-no-mistakesyaml) owns the tracked `.no-mistakes.yaml` gate defaults.
 The `firstmate-coding-guidelines` skill owns the rule that local no-mistakes Test stays intent-targeted rather than configuring `commands.test`.
 Verify the same way the gate does: reach for `bin/fm-test-run.sh` with the subjects you care about rather than chaining `bash tests/a.test.sh && bash tests/b.test.sh`, because a list of script paths gets the same bounded concurrency as `--changed`.
-For heavy local suites, use the [machine-wide test queue](bin/fm-test-queue.sh), whose header owns admission, configuration, status, and lifetime limits; targeted tests still run directly.
+Heavy local suites wait in the [machine-wide test queue](bin/fm-test-queue.sh), whose header owns admission, configuration, status, and lifetime limits.
+`bin/fm-test-run.sh` sends its own broad selections through that queue and runs targeted selections at once; its header owns that rule and the per-slot inner-script cap.
 The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; CI rejects them as tracked personal fleet paths.
 
 Check and test the toolbelt before pushing:
@@ -148,7 +149,7 @@ while IFS= read -r script; do /bin/bash -n "$script" || exit; done < <(bin/fm-li
 bin/fm-lint.sh   # lint that shell surface plus GitHub workflows via pinned actionlint; the single owner CI and the no-mistakes gate both run
 bin/fm-test-run.sh tests/<subject>.test.sh   # one script (primary local focus path, timed)
 bin/fm-test-run.sh tests/<a>.test.sh tests/<b>.test.sh   # several subjects at once: bounded automatic concurrency
-bin/fm-test-run.sh --family pure-contract-unit   # ordinary family-scoped local path (serial, timed)
+bin/fm-test-run.sh --family pure-contract-unit   # ordinary family-scoped local path (serial, timed, queued)
 bin/fm-test-run.sh --changed   # normal changed-file-informed path with automatic bounded concurrency
 bin/fm-test-run.sh --changed --jobs 1   # explicit serial override
 bin/fm-test-run.sh --changed --max-wall-ms 300000   # same automatic path with a post-run five-minute result check
@@ -156,7 +157,7 @@ bin/fm-test-run.sh --proven-isolated --jobs 4   # explicit local parallel of the
 bin/fm-test-run.sh --lane portable-serial   # portable serial remainder (watcher/AFK/tmux/stateful)
 bin/fm-test-run.sh --list-lanes   # discover exact lane names, including the current CI serial shards
 bin/fm-test-run.sh --check-coverage   # prove portable shards + serial + serial shards + Herdr equal the full inventory
-bin/fm-test-queue.sh run -- bin/fm-test-run.sh --all   # deliberate complete regression (optional local full walk; not no-mistakes Test)
+bin/fm-test-run.sh --all   # deliberate complete regression, admitted through the machine-wide test queue (optional local full walk; not no-mistakes Test)
 bin/fm-test-isolation-proof.sh --list   # proven portable parallel candidate set
 bin/fm-test-isolation-proof.sh --jobs 4 --json /tmp/fm-isolation-proof.json   # re-run the portable candidate proof
 bin/fm-test-isolation-proof.sh --pool watcher-wake-lock --jobs 4   # re-run an admitted family proof
@@ -173,6 +174,7 @@ Its header and `--help` own the flags, family labels, lanes, and changed-file ma
 `bin/fm-test-isolation-proof.sh` remains the single owner of the portable candidate proof and reusable family proof harness; see `docs/fm-test-isolation-proof.md`.
 Portable shard balance evidence lives in `docs/fm-test-portable-shards.md`.
 Family selection is the ordinary local path; `--all` is deliberate full regression only.
+Both wait in the machine-wide test queue, so name the scripts instead when a few subjects must run at once.
 CI owns broad regression across required portable parallel shards, the portable serial lane's separate-runner shards, the Herdr lane, lint, invariants, and the coverage guard in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 Path skip is in [Which CI jobs run](#which-ci-jobs-run).
 The stock macOS Bash job is commented out there as of 2026-11-04.
