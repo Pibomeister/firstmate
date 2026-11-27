@@ -1,0 +1,24 @@
+=== scenario: committed-transfer-closes-real-pane
+real pane=%0 pane_pid=26471 predecessor=27589 successor=28376
+close exit=0
+close output: HANDOFF v1 ts=1795754322 event=predecessor_closed nonce=00112233445566778899aabbccddeeff attempt=0 pid=27589 handle=tmux:%0 reason=closed
+events log: HANDOFF v1 ts=1795754322 event=predecessor_closed nonce=00112233445566778899aabbccddeeff attempt=0 pid=27589 handle=tmux:%0 reason=closed
+after: tmux panes=[no server running on /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.1moWgZ/tmux/tmux-501/default ]
+after: predecessor 27589 GONE
+after: successor 28376 ALIVE
+=== scenario: uncommitted-lock-refused
+real pane=%0 pane_pid=46164 predecessor=46340 successor=47648
+close exit=1
+close output: HANDOFF v1 ts=1795754325 event=predecessor_close_refused nonce=00112233445566778899aabbccddeeff attempt=0 pid=46340 handle=tmux:%0 reason=not_committed
+events log: HANDOFF v1 ts=1795754325 event=predecessor_close_refused nonce=00112233445566778899aabbccddeeff attempt=0 pid=46340 handle=tmux:%0 reason=not_committed
+after: tmux panes=[%0 ]
+after: predecessor 46340 ALIVE
+after: successor 47648 ALIVE
+=== scenario: successor-in-same-pane-refused
+real pane=%0 pane_pid=58394 predecessor=58606 successor=58632
+close exit=1
+close output: HANDOFF v1 ts=1795754333 event=predecessor_close_refused nonce=00112233445566778899aabbccddeeff attempt=0 pid=58606 handle=tmux:%0 reason=successor_in_endpoint
+events log: HANDOFF v1 ts=1795754333 event=predecessor_close_refused nonce=00112233445566778899aabbccddeeff attempt=0 pid=58606 handle=tmux:%0 reason=successor_in_endpoint
+after: tmux panes=[%0 ]
+after: predecessor 58606 ALIVE
+after: successor 58632 ALIVE

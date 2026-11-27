@@ -1,0 +1,14 @@
+ok - a committed transfer closes the recorded tmux pane and records one row
+ok - a committed transfer closes the recorded Orca terminal and records one row
+ok - an uncommitted or unvalidated transfer closes nothing
+ok - an unresolved handoff with no ack closes nothing
+ok - a handoff the launcher did not complete, or reported failed, closes nothing
+ok - an expired handoff closes nothing
+ok - an unsupported backend is reported and nothing is killed
+ok - a missing endpoint or the successor own terminal is refused
+ok - an endpoint that cannot be proven to host the predecessor is refused
+ok - an endpoint that also hosts the successor is refused
+fixture: line 1: 20033 Terminated: 15          claude -c "$2"
+ok - an exited or replaced predecessor instance is not closed
+ok - a close that leaves the endpoint running is recorded as failed, not closed
+exit=0
