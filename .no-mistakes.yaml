@@ -49,3 +49,10 @@ test:
     Ship or scout briefs that will drive Herdr lifecycle still require --herdr-lab at scaffold time; these Test-agent instructions are not a substitute for that brief flag.
   evidence:
     store_in_repo: true
+
+# Cap review fix rounds per run. After the cap, the run parks for a human
+# decision instead of fixing again. no-mistakes reads this only from the
+# default-branch copy and pins it when Review starts; versions before
+# v1.109.0 ignore the key.
+review:
+  max_fix_rounds: 3

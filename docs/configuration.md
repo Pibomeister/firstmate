@@ -1739,6 +1739,7 @@ The [`firstmate-coding-guidelines` skill](../.agents/skills/firstmate-coding-gui
 The tracked file also declares `no_ci: true` because GitHub Actions starts no runs for this repository's pull requests, so the CI step accepts an empty check list instead of waiting for checks that never register.
 no-mistakes honors that key only from the default-branch copy, still processes any check that does register, and the declaration should be removed once Actions runs again.
 Firstmate's CI readers classify the resulting no-CI result as no checks, never as green.
+The tracked file also sets `review.max_fix_rounds: 3`, so a run that would need a fourth review fix round parks for a human decision instead; no-mistakes reads that key only from the default-branch copy, pins it when Review starts, and ignores it before v1.109.0.
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the firstmate-specific local test policy and entry points.
 
 Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](fm-test-portable-shards.md); [herdr-backend.md](herdr-backend.md#destructive-lab-safety) owns the real-Herdr lane's isolation boundary, and [runtime-backends.md](verification/runtime-backends.md#herdr) owns active evidence.
