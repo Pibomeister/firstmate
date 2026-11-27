@@ -12,7 +12,9 @@
 # they waited. Independent later calls always collect again. Worker-observing
 # modes share one per-home collector lock, so heartbeat and summary readers
 # cannot multiply per-task probes. Contribution-only inventory uses a separate
-# flight and never waits for worker probes. Missing state stays observational.
+# flight and never waits for worker probes. Missing state stays observational,
+# and when the state directory cannot hold or reclaim the lock (unwritable or
+# full), a reader collects for itself without sharing.
 #
 # Top-level fields:
 #   schema: stable schema id.
