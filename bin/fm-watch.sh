@@ -5404,9 +5404,10 @@ load_relief_check_detached() {
 # of POLL rounded up to whole seconds and HEARTBEAT_LEDGER_IDLE is the cycle
 # period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
 # While the host load is above the bin/fm-load-lib.sh throttle threshold each
-# idle due is drawn from the throttled idle interval instead, re-read at every
-# launch so the ordinary cadence returns as soon as the load falls back, and a
-# relevant change waits for that idle due rather than launching at once. Each
+# idle due is drawn from the throttled idle interval instead, and a relevant
+# change waits for that idle due rather than launching at once. Once calm,
+# a relevant change can launch early; without one the existing due remains.
+# The next launch draws its idle due using the current load factor. Each
 # launch reads the throttle factor once and passes it to the heartbeat as
 # FM_HEARTBEAT_LOAD_FACTOR, so its stale bound and its own too-soon guard use
 # the same factor as that launch's next idle due.

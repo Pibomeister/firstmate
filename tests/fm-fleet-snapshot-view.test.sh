@@ -12,6 +12,12 @@ TMP_ROOT=$(fm_test_tmproot fm-fleet-snapshot)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
+# This suite verifies snapshot meaning and rendering, not read deadlines.
+# Leave room for nested fixture probes on a loaded host.
+export FM_SNAPSHOT_ENDPOINT_TIMEOUT=${FM_SNAPSHOT_ENDPOINT_TIMEOUT:-20}
+export FM_CREW_STATE_PANE_TIMEOUT=${FM_CREW_STATE_PANE_TIMEOUT:-15}
+export FM_SNAPSHOT_CREW_STATE_TIMEOUT=${FM_SNAPSHOT_CREW_STATE_TIMEOUT:-30}
+
 make_fakebin() {  # <dir>
   local fb
   fb=$(fm_fakebin "$1")
@@ -180,7 +186,7 @@ test_fixture_snapshot_json() {
     | .secondmate_projects == ["alpha","beta","gamma"]
       and .endpoint.agent_alive == "alive"
       and (.actions.watch | contains("do not routinely fm-peek"))
-  ' >/dev/null || fail "secondmate return-channel guidance missing"
+  ' >/dev/null || fail "secondmate return-channel guidance missing: $out"
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "secondmate-task")
     | .paths.status_log.last_event
@@ -1192,6 +1198,11 @@ test_session_endpoint_comes_from_the_lock_sidecar() {
   assert_not_contains "$view" "Session endpoint: unknown unknown" "unknown is one word, not a pane"
   pass "the fleet snapshot and view read the lock sidecar endpoint"
 }
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
 
 fm_test_run \
   test_session_endpoint_comes_from_the_lock_sidecar \

@@ -342,22 +342,10 @@ snapshot_stage() {  # <stage-name>
       >&"$FM_SNAPSHOT_STAGE_FD"; } 2>/dev/null || true
 }
 
-# Single flight: the fan-out below is the expensive monitoring read, and
-# overlapping runs in one home are pure duplicate churn under load, so a
-# full snapshot (the --json and --secondmate-home-summary modes) holds the
-# per-home lock state/.fleet-snapshot.lock for its whole run and a second
-# run never starts while one is still running. A second run first waits
-# up to 30 seconds for the holder
-# to finish, because callers such as the home-summary refresh have no
-# fresher copy to fall back on; only a holder still running past that
-# bound makes it start no fan-out at all - it prints nothing on stdout,
-# names the holder on stderr, and exits 75 (temporary failure), leaving
-# the caller to retry on its next cycle, whose interval
-# bin/fm-load-lib.sh owns. A dead holder's lock is reclaimed by the lock
-# helper as usual. The cheap --contribution-input mode performs no worker
-# observations and is not single-flighted. A home without state has no
-# local worker records to fan out over; leave it stateless instead of initializing
-# operational state just to lock a read.
+# The header owns the snapshot single-flight contract. Wait before refusing
+# because callers such as home-summary refresh have no fresher copy to use.
+# The lock helper reclaims dead holders; do not initialize an absent state
+# directory merely to lock an observational read.
 if [ "$OUTPUT_MODE" != contribution-input ] && [ -d "$STATE" ]; then
   # shellcheck source=bin/fm-wake-lib.sh
   # shellcheck disable=SC1091

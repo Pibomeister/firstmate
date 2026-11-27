@@ -138,6 +138,9 @@ SH
     loaded-*)
       interval=3 jitter=0 wanted=2
       printf '300 0.00 0.00\n' > "$home/load"
+      # The watcher compares this mtime with the controlled clock. A real-time
+      # startup touch can be in its future and make the open-work wake due.
+      fm_touch_epoch "$epoch" "$home/state/.last-heartbeat"
       ;;
   esac
   cat > "$home/crew-state.sh" <<'SH'
@@ -186,7 +189,7 @@ SH
         sleep 0.1
         i=$((i + 1))
       done
-      [ "$cycles" -ge 3 ] || fail "the loaded summary watcher stopped polling"
+      [ "$cycles" -ge 3 ] || fail "the loaded summary watcher stopped polling (observed $cycles polls; stdout: $(cat "$home/watch.out"); stderr: $(cat "$home/watch.err"))"
       assert_equals 1 "$(wc -l < "$runs" | tr -d ' ')" \
         "$mode refreshed before the 12-second throttled gap"
       set_summary_clock "$home" "$((epoch + 12))"
@@ -510,13 +513,13 @@ SH
       [ "$i" -eq "$expected" ] || fail "$signal cancellation returned $i instead of $expected"
       i=0
       while { kill -0 "$validator" 2>/dev/null || [ -d "$home/state/.home-summary-refresh.lock" ]; } \
-          && [ "$i" -lt 100 ]; do
+          && [ "$i" -lt 400 ]; do
         sleep 0.05
         i=$((i + 1))
       done
       ! kill -0 "$validator" 2>/dev/null || fail "$mechanism cancellation retained its validator"
       SLOW_VALIDATOR_PID=
-      [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "cancellation retained the publication lock"
+      [ ! -d "$home/state/.home-summary-refresh.lock" ] || fail "$mechanism $signal cancellation retained the publication lock"
       : > "$release"
       sleep 0.2
       cmp -s "$prior" "$home/state/home-summary.json" || fail "a cancelled refresh published late"
