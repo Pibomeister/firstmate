@@ -1,0 +1,14 @@
+1..12
+ok - a late refused successor is ended once, with its nonce proven on screen and the screen saved
+ok - the lock owner, the caller, the captain handle, task endpoints and handoff parties are never ended
+ok - no terminal is touched while a handoff claim or a lock change is in progress
+ok - a foreign, unproven or unclosable terminal is left open and reported once
+ok - only Orca's exact closed or unknown-handle answer is read as gone; every other failure is tried again
+ok - a run cut off between the close and its record is completed and reported by the next run
+ok - a handle refused under several attempts is judged by the newest one this home launched
+ok - refusing a late successor arms the check that ends it, and no other refusal does
+ok - only a refused successor of an attempt this home launched and never acknowledged is a candidate
+not ok - no recorded pid is judged while Orca's process sweep cannot be read (expected '', got 'term_other
+term_nopid
+term_unsweptretired nonce_provenretired nonce_proven')
+base rc=1

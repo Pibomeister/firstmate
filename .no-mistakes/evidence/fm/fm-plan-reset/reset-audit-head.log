@@ -1,0 +1,17 @@
+ok - deterministic snapshots preserve the four mission inventories across both reset kinds
+ok - durable dispatch, task Done, recorded answer, and queue progress account for open work
+ok - a durably blocked goal is an accounted dispatch-ledger terminal transition
+ok - a provider switch neither breaks the dispatch ledger nor hides a lost goal
+ok - ledger tail loss cannot reuse an older dispatched event to hide a queued retry
+ok - a vanished in-flight meta fails even when the worker status says done
+ok - a lost goal fails strict mode and remains a recorded failure in report-only mode
+ok - unholding or closing a captain call without its decision record fails
+ok - a recorded release passes and its stale answer cannot conceal loss of a later hold
+ok - Done retention preserves completion and captain-answer evidence
+ok - stale archive evidence cannot hide deleted reused task IDs or captain holds
+ok - silent deletion of a queued backlog item fails with its exact ID
+ok - offline comparison, home isolation, and manifest validation fail closed
+ok - external symlink targets and unsupported backlog backends cannot escape the local audit
+ok - partial TOON, unsupported Beads layouts, and inherited adapter redirects fail closed
+fm-reset-audit: spawnSync bash ETIMEDOUT
+not ok - snapshot before
