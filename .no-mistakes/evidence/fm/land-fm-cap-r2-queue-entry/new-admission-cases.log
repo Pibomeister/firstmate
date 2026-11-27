@@ -1,0 +1,2 @@
+ok - broad selections wait in the machine-wide queue with at most two inner scripts; targeted runs stay prompt
+ok - offloaded broad selections name bash portably; runs given --json stay local

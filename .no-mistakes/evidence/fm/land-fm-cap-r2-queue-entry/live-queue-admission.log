@@ -1,19 +1,26 @@
-$ bin/fm-test-run.sh --list --family tern   (inspection: never queues)
-tests/fm-backend-tern-smoke.test.sh
-tests/fm-backend-tern.test.sh
-rc=0
-$ (load=5 > ceiling=2) bin/fm-test-run.sh --family tern --json $T/tern.json &
+## S1 broad --family tern under load 999 (ceiling 16)
 $ bin/fm-test-queue.sh status
-test-queue: slots=1 load_ceiling=2 load1=5 serving=0 waiting=0 stale=0 spool=/tmp/fmq.eIFdIN/spool
-$ (same load) bin/fm-test-run.sh tests/fm-test-queue-remote.test.sh  -- targeted, must not wait
-$ lower load to 0.5
+test-queue: slots=2 load_ceiling=16 load1=999 serving=0 waiting=1 stale=0 spool=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.9jNWUTZbrf
+waiting position=1 ticket=1 pid=5275 age=6s task=- label=fm-test-run family=tern
+broad stdout so far:
+(end)
+
+## S2 targeted script run while broad waits
+targeted rc=0 secs=288
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=287497
+FM_TEST_SUMMARY_FAMILY family=tern count=1 duration_ms=287291 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-tern.test.sh duration_ms=287291
+$ bin/fm-test-queue.sh status (still waiting?)
+test-queue: slots=2 load_ceiling=16 load1=999 serving=0 waiting=1 stale=0 spool=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.9jNWUTZbrf
+waiting position=1 ticket=1 pid=5275 age=4m54s task=- label=fm-test-run family=tern
+
+## S3 lower load to 0.1 -> broad is served and runs
 broad rc=0
---- broad stderr (tail)
-fm-test-run: gate skip: tests/fm-backend-tern-smoke.test.sh: tern not found
-fm-test-run: wrote timing artifact: /tmp/fmq.eIFdIN/tern.json
---- artifact selection
-family=tern
-$ FM_TEST_RUN_QUEUE=bogus bin/fm-test-run.sh --family tern
-fm-test-run: FM_TEST_RUN_QUEUE must be auto or off (got 'bogus')
-rc=2
-$ (load=5) FM_TEST_RUN_QUEUE=off bin/fm-test-run.sh --family tern
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=1 duration_ms=325408
+FM_TEST_SUMMARY_FAMILY family=tern count=2 duration_ms=324198 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-tern.test.sh duration_ms=324082
+FM_TEST_SLOWEST rank=2 script=tests/fm-backend-tern-smoke.test.sh duration_ms=116
+fm-test-queue: ticket 1, position 1: load 999 is not below 16
+fm-test-queue: ticket 1 served
+$ bin/fm-test-queue.sh status (after)
+test-queue: slots=2 load_ceiling=16 load1=0.1 serving=0 waiting=0 stale=0 spool=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/tmp.9jNWUTZbrf
