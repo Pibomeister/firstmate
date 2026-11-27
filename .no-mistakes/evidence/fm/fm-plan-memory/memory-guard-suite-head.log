@@ -1,0 +1,24 @@
+1..23
+ok - help and usage errors take no sample
+ok - the macOS reader parses swap, etime, and comm with spaces
+ok - the Linux reader parses /proc/meminfo and ps -eo
+ok - a failed read is reported and recorded, never guessed
+ok - a process alarms only after holding the limit for the whole window
+ok - the swap limit is inclusive, deduplicated, and configurable
+ok - the sample log stays bounded
+ok - an alarm is never hidden by a sample that cannot be recorded
+ok - a pass that cannot save its sustained-process or alarm state exits 1
+ok - --json prints one valid object
+ok - observe is the default, does no classification work, and --observe always wins
+ok - reap-scratch names only scratch processes as would-stop and spares every live agent and operator process
+ok - reap-scratch needs an interpreter running a single-link temp-root script
+ok - reap-scratch only reports would-stop, never signals, and deduplicates the alarm
+ok - an executable name padded by ps still matches its interpreter
+ok - a slow process read neither restarts the window nor hides a reused pid
+ok - stop-scratch signals nothing when the process changed, the pass ran out of time, or --observe is set
+ok - stop-scratch leaves every live agent, supervisor, and operator process alarm-only
+ok - stop-scratch stops a real scratch process with TERM and nothing else
+ok - stop-scratch sends KILL when a scratch process ignores TERM, and --observe sends nothing
+not ok - the scratch job did not receive TERM: memory-guard: status=alarm swap_used_mb=0 top_pid=43523 top_rss_mb=12 top_comm=bash mode=stop-scratch action=stopped:43523
+MEMORY_GUARD_ALARM: pid 43523 (bash) has held 12 MB, at or over 2 MB, for 3 s (limit 1 s). Mode stop-scratch: disposable scratch, stopped with TERM.
+bash tests/fm-memory-guard.test.sh  7.99s user 21.31s system 8% cpu 6:01.88 total

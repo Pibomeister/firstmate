@@ -1,0 +1,2 @@
+1..1
+not ok - cleanup sent KILL to a process that reused a stopped holder's pid

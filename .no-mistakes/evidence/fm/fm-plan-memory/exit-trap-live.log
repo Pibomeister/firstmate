@@ -1,0 +1,7 @@
+victim(outside process) pid=62581 identity: Fri Nov 27 09:18:18 2026     sleep 100000
+1..1
+ok - left a TERM-ignoring holder and a planted foreign pid for the exit trap
+FM_TEST_COMPLETE
+suite rc=0
+PASS: outside process 62581 on planted recorded pid survived exit cleanup
+PASS: TERM-ignoring holder 83440 was KILLed by exit cleanup
