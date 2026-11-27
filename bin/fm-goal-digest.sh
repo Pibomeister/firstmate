@@ -62,8 +62,10 @@
 # is used as age_days with age_precision=day and no wait start.
 # The unused age field is null; missing or invalid hold values leave
 # both age fields null and age_precision=unknown.
-# Other formats, unavailable sources,
-# and incomplete or cached secondmate coverage leave owner-action coverage unknown.
+# Other formats, unavailable sources, malformed backlog, secondmate or
+# decision records (a null row included), and incomplete or cached
+# secondmate coverage leave owner-action coverage unknown; an unregistered
+# secondmate is skipped without an unknown entry.
 # Open pull requests are published separately in open_pull_requests.
 # Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
