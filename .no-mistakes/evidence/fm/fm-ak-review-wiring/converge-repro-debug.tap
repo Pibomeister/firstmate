@@ -1,0 +1,4 @@
+1..1
+ok - a new finding whose reproduction fails at the head and passes at the merge base blocks
+FM_TEST_COMPLETE
+exit=0

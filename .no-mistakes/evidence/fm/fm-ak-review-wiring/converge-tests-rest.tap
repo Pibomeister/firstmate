@@ -1,0 +1,17 @@
+1..10
+ok - a new finding whose reproduction fails at the head and passes at the merge base blocks
+ok - a green reproduction beside an introduced one in the same round never drops the introduced evidence
+ok - a correctness finding whose reproduction is red at the head and at the merge base does not block
+ok - a security finding whose reproduction is red at both still blocks
+ok - without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking
+ok - a head whose merge base moved after its round calls no seat and stays incomplete, never approved
+ok - a head with the same patch carries the earlier verdict and calls no seat
+ok - a ledger changed after its round never approves
+not ok - converge cap: round 2 ( ak review: git rev-list --merges ce252d0834d1418cf3f979215c241ef828e359db ^e30ee75afc0873544207b45007616510424d62a1 ^2d5374471f5cff8b1aac993db3b7a8561b3d0d28 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head): expected exit 1, got 2 STDOUT=[] STDERR=[ak review: git rev-list --merges ce252d0834d1418cf3f979215c241ef828e359db ^e30ee75afc0873544207b45007616510424d62a1 ^2d5374471f5cff8b1aac993db3b7a8561b3d0d28 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head]
+exit=1

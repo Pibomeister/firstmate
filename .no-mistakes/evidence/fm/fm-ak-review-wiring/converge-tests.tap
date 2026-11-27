@@ -1,0 +1,8 @@
+1..15
+ok - a converging full round records the ledger and approves through ak review decide
+ok - a converging round drops a finding whose category only resembles a declared one
+ok - a converging round records and blocks on a finding whose path contains a space
+ok - a fix-only round reviews the delta and closes the finding its seat raised
+ok - after round 1 a new finding without a reproduction is filed as a follow-up, and no single seat vetoes
+not ok - converge repro: a closure round with a reproduced finding: expected exit 1, got 2
+exit=1

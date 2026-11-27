@@ -1,0 +1,9 @@
+1..2
+not ok - converge cap: round 2 ( ak review: git diff -U0 --no-renames --no-ext-diff --no-textconv --no-color --full-index --ignore-submodules=none --submodule=short --diff-algorithm=myers --src-prefix=a/ --dst-prefix=b/ 0b80953cb12254820390fbdadfb2b23ea48bdd78^ 0b80953cb12254820390fbdadfb2b23ea48bdd78 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head): expected exit 1, got 2 STDOUT=[] STDERR=[ak review: git diff -U0 --no-renames --no-ext-diff --no-textconv --no-color --full-index --ignore-submodules=none --submodule=short --diff-algorithm=myers --src-prefix=a/ --dst-prefix=b/ 0b80953cb12254820390fbdadfb2b23ea48bdd78^ 0b80953cb12254820390fbdadfb2b23ea48bdd78 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head]
+exit=1

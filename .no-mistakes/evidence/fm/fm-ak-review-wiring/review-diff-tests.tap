@@ -1,0 +1,23 @@
+ok - fm-review-diff --since shows only the change after a reviewed head, and the default stays the whole change
+ok - fm-review-diff --since reports a rewritten branch and refuses an unknown or short commit
+ok - fm-review-diff falls back to recorded pr_head when pull head cannot be fetched
+ok - fm-review-diff fetches refs/pull/<n>/head when pr_head= is absent
+ok - fm-review-diff prefers freshly fetched PR head over a stale recorded pr_head=
+ok - fm-review-diff without pr= keeps the worktree-branch diff
+ok - fm-review-diff falls back to local branch with a warning when PR head is unreachable
+ok - fm-review-diff reviews the meta-recorded ship branch even when the worktree HEAD moved off it
+ok - fm-review-diff refuses a corrupt recorded ship branch instead of reviewing the wrong content
+ok - fm-review-diff compares a task against its recorded base branch
+ok - fm-review-diff fetches refs/pull/<n>/head for a Forgejo /pulls/<n> pr= URL
+ok - fm-review-diff resolves a Forgejo repo literally named pulls by the last /pulls/ segment
+ok - fm-review-diff falls back to a recorded Forgejo pr_head when the pull ref cannot be fetched
+ok - fm-review-diff keeps anchoring a remote-backed project on origin without the opt-in
+ok - fm-review-diff anchors an opted-in local landing on the local default, not a frozen origin
+ok - fm-review-diff keeps an opted-in publishing mode on origin, showing everything its pull request would carry
+ok - fm-review-diff follows an opted-in local-only branch through its rebase and later landings
+ok - fm-review-diff keeps an opted-in review on origin when the local default trails it
+ok - fm-review-diff anchors opted-in diverged default branches on the one the task was planted on
+ok - fm-review-diff says why an opted-in review of a landed branch is empty
+ok - fm-review-diff reports opted-in unrelated merge bases instead of choosing one silently
+ok - fm-review-diff keeps an opted-in named base branch on origin's copy
+exit=0
