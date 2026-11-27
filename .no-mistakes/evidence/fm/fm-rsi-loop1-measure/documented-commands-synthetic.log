@@ -1,0 +1,13 @@
+# Documented two-step invocation from docs/rsi/loop-1-readings-2026-11-27.md, against a synthetic disposable home and forge file (no --nm-db, so no-mistakes DB is not read)
+$ bin/fm-rsi-instrument.sh --input forge.json --home "$FM_HOME" > instrument-output.json
+exit=0
+[(1, 2, 'forge'), (2, 4, 'forge'), (3, 1, 'forge')]
+$ bin/fm-rsi-measure.sh --input instrument-output.json --now 1795822063 --window-start 2026-11-20T06:00:00Z --window-end 2026-11-27T06:00:00Z
+median repo=o/a hours=15.00 n=2
+aged repo=o/a numerator=1 denominator=2
+review_rounds repo=o/a median=3.00 max=4 n=2 missing=0
+intervention_free repo=o/a free=0 completed=0 missing=2
+class repo=o/a number=9 class=conflict age_hours=191.46
+exit=0
+# Snapshot instant check: date -u -r 1795822063
+2026-11-27T23:27:43Z

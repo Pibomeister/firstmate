@@ -1,0 +1,22 @@
+# Internal consistency of docs/rsi/loop-1-readings-2026-11-27.md raw output vs prose/tables
+firstmate class lines: 24 (doc says 24 aged)
+  conflict: 13
+  pending-checks: 10
+  draft: 1
+agent-kit class lines: 0 (doc says none)
+median repo=Pibomeister/agent-kit hours=2.34 n=13
+aged repo=Pibomeister/agent-kit numerator=0 denominator=2
+review_rounds repo=Pibomeister/agent-kit median=0.00 max=13 n=13 missing=0
+intervention_free repo=Pibomeister/agent-kit free=0 completed=0 missing=13
+median repo=Pibomeister/firstmate hours=15.99 n=28
+aged repo=Pibomeister/firstmate numerator=24 denominator=30
+review_rounds repo=Pibomeister/firstmate median=3.00 max=23 n=28 missing=0
+intervention_free repo=Pibomeister/firstmate free=0 completed=1 missing=27
+last before/after row:
+| Command at `2026-11-27T23:27:43Z` | 15.99 hours, n=28 | 2.34 hours, n=13 | 24 of 30 | 0 of 2 |
+# Host path scan (expect none):
+none
+# baseline window in docs/rsi/loop-1.md:
+27:The baseline window is `merged_at` in `[2026-11-20T06:00:00Z, 2026-11-27T06:00:00Z)`.
+47:The window-end open set is every pull request created before `2026-11-27T06:00:00Z` that was not closed before that instant.
+104:| Command at `2026-11-27T06:00:00Z` | 15.99 hours, n=28 | 2.34 hours, n=13 | 23 of 28 | 1 of 2 |
