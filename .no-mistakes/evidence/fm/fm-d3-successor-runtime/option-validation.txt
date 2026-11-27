@@ -1,0 +1,14 @@
+--- --model 'a;b'
+error: --model must be one model id
+rc=
+--- --model '-x'
+error: --model must be one model id
+rc=
+--- --model 'opus$(id)'
+error: --model must be one model id
+rc=
+--- --model 'opus[1m]'
+error: only the current session lock owner or its watcher can launch its successor
+rc=
+--- --setting-sources 'Project'
+error: --setting-sources must be default or a comma list of lowercase sources, such as project,local
