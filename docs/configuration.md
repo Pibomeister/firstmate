@@ -624,7 +624,7 @@ Every switch is recorded in the dispatch log as a `failover` event with its time
 
 The optional local `config/failover-order` lists one runtime per line, in preference order; blank lines and lines that start with `#` are ignored.
 An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`.
-The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one.
+The account is `next`, `ordinary`, or one absolute path declared in `config/claude-accounts`, and only a `claude` entry names one; `claude@next` expands to every declared account other than the current one, starting with the account after it in `config/claude-accounts` and wrapping around.
 Accounts compare by their config directory, so `ordinary` and a declared `$HOME/.claude` are one account.
 An unpinned Claude worker counts as running on the account the supervisor inherits, which holds only when the worker was spawned under that same `CLAUDE_CONFIG_DIR`.
 A `host=` entry is recorded as `host worktree handoff not implemented` in the dispatch log, and local candidates are considered.
@@ -2232,6 +2232,7 @@ An empty, malformed, unreadable, or unusable per-secondmate pin refuses with its
 For example, `config/secondmate-accounts/work/claude-account` containing `/home/me/.claude-work` selects that existing Claude login for the local secondmate named `work`.
 Removing that file restores the primary home's account selection on the next launch.
 Every spawn, control-plane relaunch, and automatic recovery reads the durable setting again, never a previous task record or ambient account choice.
+The one exception is a [provider](#provider-failover-configfailover-order) or [supervisor failover](#supervisor-failover) move to another declared Claude account, which applies to that launch only and never edits the pin.
 After changing a live mate's pin, use `bin/fm-control.sh <id> relaunch` to apply it.
 The relaunch checks the selected pin before stopping the current agent.
 
