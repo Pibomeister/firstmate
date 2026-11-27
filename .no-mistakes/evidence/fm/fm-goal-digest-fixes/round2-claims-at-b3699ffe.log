@@ -1,0 +1,10 @@
+1..1
+string-omitted-count: status=known unknown=[]
+null-omitted-count: status=known unknown=[]
+list-omitted-count: status=known unknown=[]
+string-counts: status=known unknown=[]
+list-counts: status=known unknown=[]
+bool-mate-id: status=known unknown=[]
+null-omitted-list: status=known unknown=[]
+duplicate-same-run: new_merges=[]
+not ok - malformed counts, boolean mate id, or duplicate pull

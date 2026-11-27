@@ -1,0 +1,17 @@
+$ FM_HOME=<lab> bin/fm-goal-digest.sh run
+goal-digest: changed=yes latest=/private/tmp/gd-live.W0d43j/data/goal-digest/latest.md generated=2026-11-27T20:40:54Z
+exit=0
+missed_etas: [
+ {
+  "source": "Prose",
+  "eta": "2026-01-05",
+  "line": "ship-a: eta 2026-01-05 then retry 2026-01-03"
+ },
+ {
+  "source": "Prose",
+  "eta": "2026-02-01",
+  "line": "ship-b: ETA: 2026-02-01"
+ }
+]
+waiting_on_captain_status: unknown
+waiting_on_captain_unknown_sources: [{'source': 'Prose', 'detail': 'native owner-action records unavailable'}, {'source': 'Fleet', 'detail': 'secondmate record malformed'}]
