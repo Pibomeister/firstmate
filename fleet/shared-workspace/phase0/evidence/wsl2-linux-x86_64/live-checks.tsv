@@ -1,0 +1,7 @@
+2026-11-27T22:37:49Z	live	L1-live	PASS	{"sessionId":"p0-live-1","state":"live","mounted":true,"pid":4528,"generation":0,"seeded":true}
+2026-11-27T22:37:51Z	live	L2-checkpoint-live	PASS	{"sessionId":"p0-live-1","seq":23,"historyEpoch":1,"historyValid":true,"generation":0,"manifestKey":"sessions/p0-live-1/manifest.json","metadataSha256":"5ca159df8c458032a38bd02dba612616482ab79334024a3299651d69506e86aa","uploadedChunks":5,"reusedChunks":0,"uploadedBytes":538,"chunkCount":5,"chunkBytes":538,"vfsVersion":"1.1.1"}
+2026-11-27T22:37:51Z	live	L3-still-live	PASS	checkpoint did not stop the session
+2026-11-27T22:37:51Z	live	L4-adopt-remote	PASS	{"manifestVersion":1,"sessionId":"p0-live-1","basePath":"/tmp/vfsp0/root/state/live/base-b","basePin":"3c847404d0f6ec7a2d318e0c1405170e8f10ca7e","generation":0,"schemaVersion":"0.8","seededPaths":[".git/HEAD",".git/index",".git/refs/heads/main"],"vfsVersion":"1.1.1","remote":true}
+2026-11-27T22:37:51Z	live	L5-materialize	PASS	Source: /tmp/vfsp0/root/state/live/home-b/.vfs/run/p0-live-1/delta.db Hydrated chunks: 5 Checkpoint: complete Integrity: complete 
+2026-11-27T22:37:51Z	live	L6-consistent-point	PASS	write before the checkpoint present; later write absent
+2026-11-27T22:37:51Z	live	L7-portable	PASS	materialized delta is portable

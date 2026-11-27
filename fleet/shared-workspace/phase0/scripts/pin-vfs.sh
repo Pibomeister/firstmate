@@ -8,6 +8,9 @@
 #   pin-vfs.sh source  [DEST]   clone the source at the pinned rev and build
 #                               it with cargo (needs the pinned nightly Rust
 #                               toolchain already present; never installs it).
+#   pin-vfs.sh fetch   TRIPLE [DEST]
+#                               download + verify another platform's asset
+#                               (e.g. aarch64-unknown-linux-gnu) without running it.
 #   pin-vfs.sh record  VFS_BIN [DEST]
 #                               only record an existing binary.
 #
@@ -103,9 +106,23 @@ case "$mode" in
         (cd "$dest/src" && cargo "+$RUST_TOOLCHAIN" build --release --locked -p vfs-cli --bin vfs)
         record "$dest/src/target/release/vfs" "$dest" source "" ""
         ;;
+    fetch)
+        # Download and verify another platform's asset without running it
+        # (for example the Linux build a container on this Mac will use).
+        triple="${1:?usage: pin-vfs.sh fetch TRIPLE [DEST]}"; dest="${2:-./vfs-pin}"
+        asset="vfs-cli-$triple.tar.xz"
+        want="$(asset_sha256 "$asset")" || die "no pinned sha for $asset"
+        mkdir -p "$dest/download" "$dest/bin"
+        curl --proto '=https' --tlsv1.2 -fsSL -o "$dest/download/$asset" \
+            "$VFS_REPO/releases/download/$VFS_TAG/$asset"
+        got="$(sha256_of "$dest/download/$asset")"
+        [ "$got" = "$want" ] || die "asset sha256 mismatch: got $got want $want"
+        tar -xJf "$dest/download/$asset" -C "$dest/bin"
+        echo "{\"asset\":\"$asset\",\"assetSha256\":\"$got\",\"binary\":\"$dest/bin/vfs-cli-$triple/vfs\",\"binarySha256\":\"$(sha256_of "$dest/bin/vfs-cli-$triple/vfs")\",\"note\":\"not executed here; run pin-vfs.sh record on the target\"}"
+        ;;
     record)
         bin="${1:?usage: pin-vfs.sh record VFS_BIN [DEST]}"
         record "$bin" "${2:-./vfs-pin}" record "" ""
         ;;
-    *) sed -n '2,16p' "$0"; exit 2 ;;
+    *) sed -n '2,19p' "$0"; exit 2 ;;
 esac

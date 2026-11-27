@@ -14,7 +14,7 @@ sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{pri
 mkdir -p "$DEST"
 tmp="$DEST/.incoming-$name"
 rm -rf "$tmp"; mkdir "$tmp"
-cp -p "$SRC"/* "$tmp"/
+cp "$SRC"/* "$tmp"/   # no -p: a root container cannot chown with all caps dropped
 while read -r want file; do
     [ "$(sha "$tmp/$file")" = "$want" ] || { echo "transfer: checksum mismatch on $file; leaving $tmp unpublished" >&2; exit 1; }
 done < "$tmp/SHA256SUMS"
