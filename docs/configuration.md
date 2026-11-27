@@ -1304,6 +1304,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
 | `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
+| `ak` | absolute path to an executable agent-kit `ak` | Turns on the converging review: each round is recorded in a per-pull-request ledger, and agent-kit's `ak review scope` and `ak review decide` choose the next round and the verdict. Every seat id must map to a distinct agent-kit seat id. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.
 Two reviews from one family count as one, so a run needs seats from at least two families.
@@ -1318,7 +1319,7 @@ require=github.com/<owner>/<repository>
 post=on
 ```
 
-`bin/fm-merge-review.sh` owns the verdict rule, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
+`bin/fm-merge-review.sh` owns the verdict rule, the converging review, the receipt and ledger format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
 The `ship-landing` skill owns when a supervisor dispatches the review worker.
 This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
 The file is a home-local setting and is not inherited by secondmate homes.

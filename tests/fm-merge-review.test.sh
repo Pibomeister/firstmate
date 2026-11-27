@@ -47,6 +47,8 @@ printf '%s|%s\n' "$PWD" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$stub/$tool.call
   [ -f snapshot/feature.txt ] && echo snapshot=yes || echo snapshot=no
   git rev-parse --git-dir >/dev/null 2>&1 && echo repo=yes || echo repo=no
 } > "$stub/$tool.saw"
+{ [ -s delta.patch ] && echo delta=yes || echo delta=no; } > "$stub/$tool.delta"
+printf '%s\n' "$prompt" > "$stub/$tool.prompt"
 [ ! -f snapshot/feature.txt ] || cp snapshot/feature.txt "$stub/$tool.feature"
 [ ! -f snapshot/README.md ] || cp snapshot/README.md "$stub/$tool.readme"
 head=$(printf '%s\n' "$prompt" | sed -n 's/^Head commit under review: //p' | head -1)
@@ -61,6 +63,18 @@ body='Summary: the change adds one feature file and nothing else.
 Files read: diff.patch, snapshot/feature.txt, snapshot/README.md.
 Findings: none that block. The file is plain text, nothing executes it, and no test or document contradicts it.
 This stand-in review is long enough to be more than a bare verdict line for the receipt floor.'
+# <stub>/<tool>.extra is added to the review before its verdict line, and
+# <stub>/<tool>.close holds the vote for every open finding the prompt lists.
+if [ -f "$stub/$tool.extra" ]; then
+  body="$body
+$(cat "$stub/$tool.extra")"
+fi
+if [ -f "$stub/$tool.close" ]; then
+  for id in $(printf '%s\n' "$prompt" | sed -n '/^<open-findings>$/,/^<\/open-findings>$/s/^\(F[0-9]*\) | .*/\1/p'); do
+    body="$body
+CLOSURE: $id | $(cat "$stub/$tool.close") | feature.txt:1"
+  done
+fi
 case "$mode" in
   approve) text="$body
 VERDICT: APPROVE $head" ;;
@@ -1742,7 +1756,226 @@ test_metrics_count_rounds_calls_and_tokens_per_pull_request() {
   pass "metrics count rounds, seat calls, blocks, and tokens per pull request and in one summary"
 }
 
+# ---- Converging review (config/merge-review ak=) ---------------------------
+# These cases run the real agent-kit ak, because ak review owns the rule:
+# FM_TEST_AK names it, or the vendored .cursor/bin/ak when it has the review
+# command. A host with neither skips them by name.
+converge_ak() {
+  local ak=${FM_TEST_AK:-$ROOT/.cursor/bin/ak}
+  [ -x "$ak" ] || return 1
+  ( cd / && "$ak" review 2>&1 ) | grep -q '^usage: ak review ledger add' || return 1
+  printf '%s\n' "$ak"
+}
+
+CONVERGE_AK=$(converge_ak) || CONVERGE_AK=
+
+converge_skip() {  # <case>
+  [ -z "$CONVERGE_AK" ] || return 1
+  pass "SKIP: $1 (no ak with the review command; set FM_TEST_AK)"
+}
+
+# The pull request adds twenty lines, so a one-line fix stays inside the
+# reviewed scope rather than growing it past ak's limit.
+converge_case() {  # <name>
+  make_case "$1" "${TWO_SEATS[@]}" "ak=$CONVERGE_AK"
+  seq 1 20 | sed 's/^/feature line /' > "$REPO/feature.txt"
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -q --amend -am feature
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+# Commit a one-line change to feature.txt and make it the head under review.
+converge_next_head() {  # <text>
+  { printf '%s\n' "$1"; sed 1d "$REPO/feature.txt"; } > "$REPO/feature.txt.new"
+  mv "$REPO/feature.txt.new" "$REPO/feature.txt"
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qam "$1"
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+}
+
+ledger_file() {
+  printf '%s/data/merge-review/github/github.com/example/repo/7/ledger.jsonl\n' "$HOME_DIR"
+}
+
+FINDING_P1='FINDING: P1 | correctness | introduced | feature.txt:1 | reader-breaks | feature.txt breaks the reader.'
+
+test_converge_full_round_records_the_ledger_and_approves() {
+  local rc=0 store
+  converge_skip 'converge: full round' && return 0
+  converge_case converge-full
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge full: run with two approving families ($(cat "$CASE/stderr"))"
+  assert_grep "merge-review: approved head=$HEAD_SHA seats=" "$CASE/stdout" "converge full: run did not end approved"
+  assert_grep ' round=1 action=none ' "$CASE/stdout" "converge full: the line did not name round 1 and no next action"
+  assert_grep '"mode":"full"' "$(ledger_file)" "converge full: the ledger has no full round"
+  store=$(store_dir)
+  assert_grep 'scope=full' "$store/anthropic.claude.claude-test-1.receipt" "converge full: the receipt is not a full-scope review"
+  assert_grep 'full round of a converging review' "$STUB/claude.prompt" "converge full: the prompt did not name the round"
+  assert_grep 'FINDING: <P0|P1|P2|P3>' "$STUB/claude.prompt" "converge full: the prompt did not give the finding grammar"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "converge full: a supervisor check"
+  assert_equals 1 "$(wc -l < "$CASE/stdout" | tr -d ' ')" "converge full: check must print exactly one line"
+  pass "a converging full round records the ledger and approves through ak review decide"
+}
+
+test_converge_fix_only_round_closes_a_blocking_finding() {
+  local rc=0 store
+  converge_skip 'converge: fix-only round' && return 0
+  converge_case converge-fix
+  echo block > "$STUB/claude.mode"
+  printf '%s\n' "$FINDING_P1" > "$STUB/claude.extra"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge fix: run with a blocking P1 finding ($(cat "$CASE/stderr"))"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge fix: the P1 finding did not block ($(cat "$CASE/stdout"))"
+  assert_grep ' blocks=F1 ' "$CASE/stdout" "converge fix: the line did not name the blocking row"
+  rc=0
+  run_review respond "$PR_URL" --finding F1 --response dispute || rc=$?
+  expect_code 2 "$rc" "converge fix: a dispute without a claim"
+  rc=0
+  run_review respond "$PR_URL" --finding F1 --response fixed --claim unsupported || rc=$?
+  expect_code 2 "$rc" "converge fix: a claim on a fixed response"
+  rc=0
+  run_review respond "$PR_URL" --finding F1 --response fixed || rc=$?
+  expect_code 0 "$rc" "converge fix: the author's response ($(cat "$CASE/stderr"))"
+
+  converge_next_head 'the fixed feature'
+  rm -f "$STUB/claude.mode" "$STUB/claude.extra"
+  echo addressed > "$STUB/claude.close"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge fix: the closure round ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_grep ' round=2 action=none ' "$CASE/stdout" "converge fix: the closure round is not round 2 ($(cat "$CASE/stdout"))"
+  store=$(store_dir)
+  assert_grep 'scope=closure' "$store/google.agy.gemini-test-high.receipt" "converge fix: the receipt is not a closure-scope review"
+  assert_grep 'delta=yes' "$STUB/claude.delta" "converge fix: the reviewer had no delta.patch"
+  assert_grep 'fix-only round of a converging review' "$STUB/claude.prompt" "converge fix: the prompt did not name the fix-only round"
+  assert_grep 'F1 | P1 | correctness | feature.txt:1 | ' "$STUB/claude.prompt" "converge fix: the prompt did not list the open finding"
+  pass "a fix-only round reviews the delta and closes the finding its seat raised"
+}
+
+test_converge_a_new_finding_without_a_repro_is_filed_not_blocking() {
+  local rc=0
+  converge_skip 'converge: unproven new finding' && return 0
+  converge_case converge-followup
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge followup: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge followup: a closure round with a new unproven finding"
+  assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge followup: one seat's unproven finding blocked the change"
+  assert_grep ' action=file-follow-ups ' "$CASE/stdout" "converge followup: the line did not ask for the follow-up ($(cat "$CASE/stdout"))"
+  rc=0
+  run_review followup "$PR_URL" --finding F1 --ref https://github.com/example/repo/issues/9 || rc=$?
+  expect_code 0 "$rc" "converge followup: recording the follow-up ($(cat "$CASE/stderr"))"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 0 "$rc" "converge followup: check after the follow-up ($(cat "$CASE/stdout"))"
+  pass "after round 1 a new finding without a reproduction is filed as a follow-up, and no single seat vetoes"
+}
+
+test_converge_a_reproduced_new_finding_blocks() {
+  local rc=0 store
+  converge_skip 'converge: reproduced new finding' && return 0
+  converge_case converge-repro
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge repro: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" 'REPRO-BEGIN' '[ ! -f feature.txt ]' 'REPRO-END' > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge repro: a closure round with a reproduced finding"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge repro: the reproduced finding did not block ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  store=$(store_dir)
+  assert_present "$store/evidence/F1/result" "converge repro: the reproduction evidence is missing"
+  pass "a new finding whose reproduction fails at the head and passes at the merge base blocks"
+}
+
+test_converge_an_unchanged_delta_carries_without_seats() {
+  local rc=0 before
+  converge_skip 'converge: carry' && return 0
+  converge_case converge-carry
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge carry: round 1 ($(cat "$CASE/stderr"))"
+  before=$(( $(calls claude) + $(calls agy) ))
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -q --amend -m 'feature, reworded'
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge carry: a reworded head ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_equals "$before" "$(( $(calls claude) + $(calls agy) ))" "converge carry: a seat was called for an unchanged delta"
+  pass "a head with the same patch carries the earlier verdict and calls no seat"
+}
+
+test_converge_a_changed_ledger_never_approves() {
+  local rc=0 ledger
+  converge_skip 'converge: changed ledger' && return 0
+  converge_case converge-tamper
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge tamper: round 1 ($(cat "$CASE/stderr"))"
+  ledger=$(ledger_file)
+  sed '$d' "$ledger" > "$ledger.new" && mv "$ledger.new" "$ledger"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 1 "$rc" "converge tamper: check after a ledger line was removed"
+  assert_no_grep 'merge-review: approved' "$CASE/stdout" "converge tamper: a changed ledger approved"
+  assert_grep 'review ledger' "$CASE/stdout" "converge tamper: the line did not name the ledger problem ($(cat "$CASE/stdout"))"
+  pass "a ledger changed after its round never approves"
+}
+
+test_converge_the_round_cap_parks_without_approving() {
+  local rc=0 n
+  converge_skip 'converge: round cap' && return 0
+  converge_case converge-cap
+  echo block > "$STUB/claude.mode"
+  printf '%s\n' "$FINDING_P1" > "$STUB/claude.extra"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge cap: round 1"
+  rm -f "$STUB/claude.extra"
+  echo not-addressed > "$STUB/claude.close"
+  for n in 2 3; do
+    converge_next_head "attempt $n"
+    rc=0
+    run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+    expect_code 1 "$rc" "converge cap: round $n ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  done
+  assert_grep ' round=3 ' "$CASE/stdout" "converge cap: the last line is not round 3"
+  converge_next_head 'attempt 4'
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  [ "$rc" -ne 0 ] || fail "converge cap: a fourth round approved ($(cat "$CASE/stdout"))"
+  assert_no_grep 'merge-review: approved' "$CASE/stdout" "converge cap: the change approved past the cap"
+  pass "at the three-round cap the review parks and never approves"
+}
+
+test_converge_configuration_refuses_an_unsafe_ak() {
+  local rc=0
+  make_case converge-config "${TWO_SEATS[@]}" 'ak=bin/ak'
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 2 "$rc" "converge config: a relative ak path"
+  assert_grep 'absolute path' "$CASE/stderr" "converge config: the refusal did not ask for an absolute path"
+  printf '#!/bin/sh\nexit 0\n' > "$CASE/ak"
+  chmod +x "$CASE/ak"
+  printf '%s\n' 'seat=anthropic:claude:m.1' 'seat=anthropic:claude:m-1' 'seat=google:agy:gemini-test-high' "ak=$CASE/ak" \
+    > "$HOME_DIR/config/merge-review"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" || rc=$?
+  expect_code 2 "$rc" "converge config: two seats with one agent-kit seat id"
+  assert_grep 'share the agent-kit seat id' "$CASE/stderr" "converge config: the refusal did not name the shared seat id"
+  pass "an ak setting refuses a relative path and seats that share one agent-kit seat id"
+}
+
 fm_test_run \
+  test_converge_full_round_records_the_ledger_and_approves \
+  test_converge_fix_only_round_closes_a_blocking_finding \
+  test_converge_a_new_finding_without_a_repro_is_filed_not_blocking \
+  test_converge_a_reproduced_new_finding_blocks \
+  test_converge_an_unchanged_delta_carries_without_seats \
+  test_converge_a_changed_ledger_never_approves \
+  test_converge_the_round_cap_parks_without_approving \
+  test_converge_configuration_refuses_an_unsafe_ak \
   test_receipts_record_round_scope_and_tokens \
   test_a_new_head_started_in_the_same_second_is_the_next_round \
   test_receipts_read_tokens_from_top_level_usage \

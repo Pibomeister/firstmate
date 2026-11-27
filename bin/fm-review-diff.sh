@@ -42,7 +42,8 @@
 #   --stat prints only the stat summary; default prints stat summary plus full diff.
 #   --since <full-sha> prints the change from an already reviewed head to the
 #     compare side instead of the whole change, for a later review round;
-#     `fm-merge-review.sh findings` prints that head as previous=. It is a
+#     a converging `fm-merge-review.sh run` reviews from the head its ledger
+#     covers and prints it in its round line. It is a
 #     direct two-commit diff, so after a rebase it also shows base branch
 #     changes, and a note says so. The default stays the whole change.
 set -eu
