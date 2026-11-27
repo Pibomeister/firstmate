@@ -877,8 +877,6 @@ stop-failed it started a child after TERM and was not signalled again" "$(stop_r
   pass "stop-scratch never sends KILL to a process that started a child after TERM"
 }
 
-# A doubled slash names the same file, as macOS TMPDIR's trailing slash gives
-# in "$TMPDIR/fm-x/job.pl", so it is judged as the single-slash path.
 test_cleanup_kills_only_its_own_holders() {
   local rec victim held
   rec="$TMP_ROOT/holds-check.tsv"
@@ -898,6 +896,8 @@ test_cleanup_kills_only_its_own_holders() {
   pass "exit cleanup KILLs only holders whose pid still names the process this suite started"
 }
 
+# A doubled slash names the same file, as macOS TMPDIR's trailing slash gives
+# in "$TMPDIR/fm-x/job.pl", so it is judged as the single-slash path.
 test_doubled_slash_script_path() {
   local dbl_tmp dbl_out name pid
   new_home 'mode=reap-scratch'
