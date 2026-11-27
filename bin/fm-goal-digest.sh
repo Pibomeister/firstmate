@@ -45,8 +45,8 @@
 # Failed collection is reported as incomplete and
 # retains the pending window, including the initial one-day baseline.
 # Already reported merges are excluded. It also lists open pull requests
-# (drafts included) with their age, missed ETAs (every past YYYY-MM-DD
-# date on a status line with the word "eta" followed by ":" or space;
+# (drafts included) with their age, missed ETAs (a past YYYY-MM-DD
+# date immediately after the word "eta" followed by ":" or space;
 # a status file is skipped only when it parses as a top-level
 # fm-fleet-snapshot.v1 JSON object), stalled status sources (local or remote files whose
 # modification age is at least stall_hours) and every nonblank entry of each review
@@ -335,7 +335,7 @@ def omitted_incomplete(entry):
     count = entry.get("count", 0)
     if isinstance(count, bool) or isinstance(count, (int, float)):
         return entry.get("surface") == "decisions_open" and count > 0
-    return False
+    return True
 rows_out = []
 def emit(source, row, title):
     if not isinstance(row, dict) or not isinstance(row.get("id"), (str, int)):
@@ -401,7 +401,8 @@ else:
             continue
         if mate.get("registered") is not True:
             continue
-        if not isinstance(mate.get("id"), (str, int)):
+        mate_id = mate.get("id")
+        if isinstance(mate_id, bool) or not isinstance(mate_id, (str, int)):
             unknown(label, "secondmate record malformed")
             continue
         source = label + "/" + str(mate["id"])
@@ -429,7 +430,12 @@ else:
             current = {}
         else:
             current = raw_current if isinstance(raw_current, dict) else {}
-        counts = mate.get("counts") if isinstance(mate.get("counts"), dict) else {}
+        raw_counts = mate.get("counts")
+        if raw_counts is not None and not isinstance(raw_counts, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            counts = {}
+        else:
+            counts = raw_counts if isinstance(raw_counts, dict) else {}
         omitted = mate.get("omitted") if isinstance(mate.get("omitted"), list) else []
         if mate.get("omitted") is not None and not isinstance(mate.get("omitted"), list):
             unknown(source, "secondmate decision coverage incomplete")
@@ -576,11 +582,11 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
         sha = (pr.get("merge_commit_sha") or "")[:12]
         if (repo, number) in seen:
             continue
-        seen.add((repo, number))
         try:
             merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         except (TypeError, ValueError):
             continue
+        seen.add((repo, number))
         if repo in since:
             if merged.timestamp() <= since[repo]:
                 continue

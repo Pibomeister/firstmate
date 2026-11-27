@@ -1135,4 +1135,100 @@ PY
   pass "prose schema marker keeps a missed ETA and malformed owner coverage stays unknown"
 }
 
-fm_test_run test_prose_schema_marker_and_malformed_owner_coverage test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
+# A string, null, or list omitted count, a list or string secondmate counts
+# value, and a boolean mate id leave owner-action coverage unknown.
+# A closed pull with a bad timestamp does not hide a later valid copy.
+test_malformed_counts_bool_mate_and_duplicate_pull() {
+  local home="$TMP_ROOT/round2-repros"
+  mkdir -p "$home/config" "$FIXTURE"
+  python3 - "$SCRIPT" "$home" "$FAKE:$BASE_PATH" "$FIXTURE" "$TMP_ROOT/summarize.sh" "$RUN1_EPOCH" <<'PY' || fail "malformed counts, boolean mate id, or duplicate pull"
+import json, os, pathlib, shutil, subprocess, sys
+script, home, path, fixture, claude, now = sys.argv[1:]
+home = pathlib.Path(home)
+fixture = pathlib.Path(fixture)
+env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1",
+           FM_GOAL_DIGEST_CLAUDE=claude, FM_GD_FIXTURE=str(fixture))
+
+def mate(**overrides):
+    row = {
+        "id": "mate-a", "registered": True,
+        "provenance": {"selected": "structured-home", "trust": "complete", "summary_valid": True, "summary_source": "remote-ledger"},
+        "current": {"state": "captain_decision"},
+        "freshness": {"status": "fresh", "observed_at": "2026-01-01T12:00:00Z", "age_seconds": 0},
+        "decisions_open": [{
+            "id": "route", "key": "route", "verb": "captain-hold",
+            "summary": "Choose route", "question": "Choose route?", "hold_age_days": 1,
+        }],
+        "counts": {"decisions_open": 1},
+        "omitted": [],
+    }
+    row.update(overrides)
+    return row
+
+def snapshot(records):
+    return {
+        "schema": "fm-fleet-snapshot.v1",
+        "backlog": {"present": True, "records": []},
+        "secondmate_current": {
+            "registry": {"available": True, "complete": True},
+            "records": records, "truncated": 0,
+        },
+    }
+
+def run(config, name, body, wipe=True):
+    digest_dir = home / "data" / "goal-digest"
+    if wipe and digest_dir.exists():
+        shutil.rmtree(digest_dir)
+    (home / "config" / "goal-digest").write_text(config)
+    (home / name).write_text(body)
+    result = subprocess.run([script, "run"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads((digest_dir / "latest.json").read_text())
+
+failures = []
+
+def expect(case, cond, detail):
+    if not cond:
+        failures.append(case + ": " + detail)
+
+def coverage(case, body):
+    digest = run("status = Fleet | %s/status.json\n" % home, "status.json", body)
+    got = digest["waiting_on_captain_status"]
+    expect(case, got == "unknown", "status=%s unknown=%s" % (got, digest["waiting_on_captain_unknown_sources"]))
+
+string_count = mate(omitted=[{"surface": "decisions_open", "count": "1"}])
+coverage("string-omitted-count", json.dumps(snapshot([string_count])))
+null_count = mate(omitted=[{"surface": "decisions_open", "count": None}])
+coverage("null-omitted-count", json.dumps(snapshot([null_count])))
+list_count = mate(omitted=[{"surface": "decisions_open", "count": [1]}])
+coverage("list-omitted-count", json.dumps(snapshot([list_count])))
+coverage("string-counts", json.dumps(snapshot([mate(counts="2")])))
+coverage("list-counts", json.dumps(snapshot([mate(counts=[1])])))
+coverage("bool-mate-id", json.dumps(snapshot([mate(id=True)])))
+
+def pulls(rows):
+    (fixture / "merged-example-org_example-repo.json").write_text(json.dumps(rows))
+    (fixture / "open-example-org_example-repo.json").write_text("[]")
+
+def pull_row(number, merged_at, title):
+    return {
+        "number": number, "title": title, "html_url": "https://example.invalid/pr/%s" % number,
+        "merge_commit_sha": "aaaaaaaaaaaa%04d" % number, "merged_at": merged_at,
+        "created_at": "2025-12-31T00:00:00Z",
+    }
+
+pulls([
+    pull_row(4, "not-a-date", "Bad copy"),
+    pull_row(4, "2026-01-01T00:00:00Z", "Valid copy"),
+])
+same = run("repo = example-org/example-repo\n", "notes.txt", "progress\n")
+kept = [(item["number"], item["title"]) for item in same["new_merges"]]
+expect("duplicate-same-run", kept == [(4, "Valid copy")], "new_merges=%s" % kept)
+
+if failures:
+    raise SystemExit("\n".join(failures))
+PY
+  pass "malformed counts and boolean mate id stay unknown and a later valid pull is kept"
+}
+
+fm_test_run test_malformed_counts_bool_mate_and_duplicate_pull test_prose_schema_marker_and_malformed_owner_coverage test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
