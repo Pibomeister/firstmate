@@ -1,0 +1,35 @@
+== lab state/t-one.status
+blocked [at=1795813409]: old wait before dispatch
+blocked [at=1795813412]: need a credential
+needs-decision [at=1795813412]: pick option
+done [at=1795813414]: PR https://github.com/acme/widget/pull/11 checks green
+blocked [at=1795813415]: after green, ignore
+== dispatch-log
+2026-11-27T21:03:31Z	1795813411	received	g1-202611271400	summary=one
+2026-11-27T21:03:31Z	1795813411	dispatched	g1-202611271400	task=t-one
+2026-11-27T21:03:31Z	1795813411	received	g4-202611271400	summary=four
+2026-11-27T21:03:31Z	1795813411	dispatched	g4-202611271400	task=t-four
+== inbox
+001.msg
+002.msg
+003.msg
+== fm-rsi-instrument
+{"number":11,"review_rounds":1,"review_rounds_source":"no-mistakes","reached_green":true,"interventions_before_green":3}
+{"number":12,"review_rounds":2,"review_rounds_source":"no-mistakes","reached_green":null,"interventions_before_green":null}
+{"number":13,"review_rounds":4,"review_rounds_source":"forge","reached_green":null,"interventions_before_green":null}
+{"number":14,"review_rounds":null,"review_rounds_source":null,"reached_green":true,"interventions_before_green":0}
+== fm-rsi-measure
+median repo=acme/widget hours=7.00 n=4
+aged repo=acme/widget numerator=1 denominator=2
+review_rounds repo=acme/widget median=2.00 max=4 n=3 missing=1
+intervention_free repo=acme/widget free=1 completed=2 missing=2
+class repo=acme/widget number=30 class=failing-checks age_hours=180.00
+rc=0
+== adversarial: refusals
+fm-rsi-instrument: no state directory under home: /nonexistent
+rc=2
+fm-rsi-instrument: merged repo must be owner/name
+rc=2
+fm-rsi-instrument: no such no-mistakes database: /nonexistent.sqlite
+rc=2
+db unchanged (read-only)

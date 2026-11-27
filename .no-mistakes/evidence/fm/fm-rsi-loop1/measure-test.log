@@ -1,0 +1,6 @@
+1..4
+ok - median, aged count, classes, review rounds, and intervention-free completion
+ok - missing review-round and intervention fields stay out of the rates
+ok - duplicate rows and malformed timestamps refuse
+ok - help succeeds and a bare invocation refuses
+FM_TEST_COMPLETE

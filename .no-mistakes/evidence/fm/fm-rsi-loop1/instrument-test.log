@@ -1,0 +1,5 @@
+1..3
+ok - instrument fields come from status, inbox, dispatch, and run records
+ok - without run records the forge count stays and is named
+ok - missing home, malformed input, and help
+FM_TEST_COMPLETE
