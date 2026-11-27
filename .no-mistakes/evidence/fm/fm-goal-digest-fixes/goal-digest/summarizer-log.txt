@@ -1,0 +1,10 @@
+ARGV: <-p> <--model> <claude-haiku-4-5> <--tools> <> <--setting-sources> <> <--strict-mcp-config> <--no-session-persistence>
+ANTHROPIC_MODEL=unset
+ANTHROPIC_DEFAULT_HAIKU_MODEL=unset
+ANTHROPIC_DEFAULT_SONNET_MODEL=unset
+ANTHROPIC_DEFAULT_OPUS_MODEL=unset
+ARGV: <-p> <--model> <claude-haiku-4-5> <--tools> <> <--setting-sources> <> <--strict-mcp-config> <--no-session-persistence>
+ANTHROPIC_MODEL=unset
+ANTHROPIC_DEFAULT_HAIKU_MODEL=unset
+ANTHROPIC_DEFAULT_SONNET_MODEL=unset
+ANTHROPIC_DEFAULT_OPUS_MODEL=unset

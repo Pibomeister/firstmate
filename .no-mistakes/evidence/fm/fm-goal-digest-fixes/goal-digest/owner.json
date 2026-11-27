@@ -1,0 +1,97 @@
+{
+  "generated_at": "2026-01-01T12:00:00Z",
+  "generated_at_local": "2026-01-01T06:00:00-0600 CST",
+  "changed": true,
+  "new_merges": [
+    {
+      "repo": "example-org/example-repo",
+      "number": 1,
+      "title": "First",
+      "url": "https://example.invalid/pr/1",
+      "sha": "aaaaaaaaaaaa",
+      "merged_at": "2026-01-01T00:00:00Z"
+    }
+  ],
+  "open_pull_requests": [
+    {
+      "repo": "example-org/example-repo",
+      "number": 7,
+      "title": "Waiting work",
+      "url": "https://example.invalid/pr/7",
+      "created_at": "2026-01-01T00:00:00Z",
+      "age_hours": 12,
+      "author": "contributor",
+      "draft": false
+    }
+  ],
+  "waiting_on_captain": [
+    {
+      "source": "Fleet",
+      "id": "decision-a",
+      "title": "Choose route",
+      "url": "",
+      "wait_started_at": "2026-01-01T10:00:00Z",
+      "age_hours": 2,
+      "age_days": null,
+      "age_precision": "hour"
+    },
+    {
+      "source": "Fleet/mate-a",
+      "id": "route",
+      "title": "Choose route: north or south?",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": 30,
+      "age_precision": "day"
+    },
+    {
+      "source": "Fleet/mate-a",
+      "id": "bool-hold",
+      "title": "Bool age",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    },
+    {
+      "source": "Fleet/mate-a",
+      "id": "string-age",
+      "title": "String age",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    },
+    {
+      "source": "Fleet/mate-a",
+      "id": "negative-age",
+      "title": "Negative age",
+      "url": "",
+      "wait_started_at": null,
+      "age_hours": null,
+      "age_days": null,
+      "age_precision": "unknown"
+    }
+  ],
+  "waiting_on_captain_status": "unknown",
+  "waiting_on_captain_unknown_sources": [
+    {
+      "source": "Fleet",
+      "detail": "owner-action record malformed"
+    }
+  ],
+  "missed_etas": [],
+  "stalls": [],
+  "review_convergence": [
+    {
+      "source": "Example review",
+      "entries": [
+        "working [at=1]: T1 in progress"
+      ]
+    }
+  ],
+  "unreachable_sources": []
+}

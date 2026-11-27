@@ -1,0 +1,108 @@
+revision 376bf3bb243bd00011d85cb77e2b3f383fc5cb85
+product {run-worktree}/bin/fm-goal-digest.sh
+--- run merges-etas epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/merges-etas/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+PASS  A digest run reports a duplicated closed pull once and leaves an older merge out of the new-merge list
+       generated_at=2026-01-01T12:00:00Z new_merges=[(1, 'First')] open=[7]
+PASS  A digest run counts every past ETA on a prose status line and does not treat dates inside a fleet snapshot as missed ETAs
+       missed_etas=['2019-05-05', '2020-01-01']
+--- run open-parse epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/open-parse/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+PASS  An open pull list that mixes a real pull with a non-object is recorded as a parse failure and publishes no open rows
+       unreachable=[{'kind': 'repo-open', 'source': 'example-org/example-repo', 'detail': 'pull parse failed'}] open=[] merges=[1]
+--- run closed-nondict epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/closed-nondict/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+STDERR Traceback (most recent call last):
+  File "<stdin>", line 37, in <module>
+AttributeError: 'str' object has no attribute 'get'
+PASS  A closed pull list that mixes a real merge with a non-object is recorded as a parse failure and publishes no merges
+       unreachable=[{'kind': 'repo', 'source': 'example-org/example-repo', 'detail': 'pull parse failed'}] merges=[] open=[7]
+--- run closed-nonlist epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/closed-nonlist/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+PASS  A closed pull payload that is not a list is recorded as unreachable and publishes no merges
+       unreachable=[{'kind': 'repo', 'source': 'example-org/example-repo', 'detail': 'gh api failed or incomplete; results not used'}] merges=[]
+--- run owner epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/owner/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+PASS  A secondmate captain-hold with hold_age_days and no wait start is published as that many days, while a boolean, a string, and a negative count stay unknown
+       route={"age_days": 30, "age_hours": null, "age_precision": "day", "wait_started_at": null} invalid={"bool-hold": {"age_days": null, "age_hours": null, "age_precision": "unknown"}, "string-age": {"age_days": null, "age_hours": null, "age_precision": "unknown"}, "negative-age": {"age_days": null, "age_hours": null, "age_precision": "unknown"}}
+PASS  A backlog row ages from its UTC hold_set, a string-valued captain_actionable flag is ignored, and a row with no id is recorded malformed instead of listed
+       decision-a age_hours=2 expected 2; unknown=[{'source': 'Fleet', 'detail': 'owner-action record malformed'}]
+--- run window epoch 1767268800 rc 1
+STDOUT 
+STDERR Traceback (most recent call last):
+  File "<stdin>", line 91, in <module>
+  File "<stdin>", line 82, in stage
+PermissionError: [Errno 13] Permission denied: '/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/window/data/goal-digest/history/.history-a2138e85b33756aa2df4478997b2c885.tmp'
+goal-digest: digest generation failed; state not advanced
+pending after blocked publication: 'example-org/example-repo\t1767182400\n'
+since after blocked publication: ''
+--- run window epoch 1767441600 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/window/data/goal-digest/latest.md generated=2026-01-03T12:00:00Z
+pending after retry: ''
+since after retry: 'example-org/example-repo\t1767441300\n'
+PASS  After a blocked first publication, a retry two days later still reports the original day's merge and not a merge from the previous year, and no since-pending file is created
+       blocked_rc=1 retry_merges=[1] stray=[] pending1='example-org/example-repo\t1767182400\n'
+--- run history epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/history/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+--- run history epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/history/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+PASS  A second digest run in the same second keeps the first history pair and writes the new markdown and JSON under the same suffix
+       stems present: ['20260101T120000Z-1.json', '20260101T120000Z-1.md', '20260101T120000Z.json', '20260101T120000Z.md']
+--- run history epoch 1767286800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/history/data/goal-digest/latest.md generated=2026-01-01T17:00:00Z
+PASS  A leftover history temp directory does not stop the run from archiving that second's markdown and JSON under the free unsuffixed names
+       free stamp 20260101T170000Z tmp_still_there=True
+--- run history epoch 1767272400 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/history/data/goal-digest/latest.md generated=2026-01-01T13:00:00Z
+PASS  When a stamp already has markdown and only a temp JSON, the retry archives both of its files under the next shared suffix and leaves the orphan markdown in place
+       orphan='orphan attempt\n' suffix-1 has token D; unsuffixed json exists=False
+--- run history epoch 1767272400 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/history/data/goal-digest/latest.md generated=2026-01-01T13:00:00Z
+HISTORY
+20260101T120000Z-1.json
+20260101T120000Z-1.md
+20260101T120000Z.json
+20260101T120000Z.md
+20260101T130000Z-1.json
+20260101T130000Z-1.md
+20260101T130000Z-2.json
+20260101T130000Z-2.md
+20260101T130000Z.json.tmp
+20260101T130000Z.md
+20260101T170000Z.json
+20260101T170000Z.json.tmp
+20260101T170000Z.md
+PASS  A later same-second run does not rewrite the previous paired suffix or attach its JSON to that earlier markdown
+       listing:
+       20260101T120000Z-1.json
+       20260101T120000Z-1.md
+       20260101T120000Z.json
+       20260101T120000Z.md
+       20260101T130000Z-1.json
+       20260101T130000Z-1.md
+       20260101T130000Z-2.json
+       20260101T130000Z-2.md
+       20260101T130000Z.json.tmp
+       20260101T130000Z.md
+       20260101T170000Z.json
+       20260101T170000Z.json.tmp
+       20260101T170000Z.md
+--- run summary epoch 1767268800 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/summary/data/goal-digest/latest.md generated=2026-01-01T12:00:00Z
+--- run summary epoch 1767276000 rc 0
+STDOUT goal-digest: changed=yes latest=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-gd-live.dewezmv0/homes/summary/data/goal-digest/latest.md generated=2026-01-01T14:00:00Z
+STDERR goal-digest: summary unavailable: model runner failed; digest still written
+RUNNER
+ARGV: <-p> <--model> <claude-haiku-4-5> <--tools> <> <--setting-sources> <> <--strict-mcp-config> <--no-session-persistence>
+ANTHROPIC_MODEL=unset
+ANTHROPIC_DEFAULT_HAIKU_MODEL=unset
+ANTHROPIC_DEFAULT_SONNET_MODEL=unset
+ANTHROPIC_DEFAULT_OPUS_MODEL=unset
+ARGV: <-p> <--model> <claude-haiku-4-5> <--tools> <> <--setting-sources> <> <--strict-mcp-config> <--no-session-persistence>
+ANTHROPIC_MODEL=unset
+ANTHROPIC_DEFAULT_HAIKU_MODEL=unset
+ANTHROPIC_DEFAULT_SONNET_MODEL=unset
+ANTHROPIC_DEFAULT_OPUS_MODEL=unset
+
+PASS  The digest invokes the summarizer as claude-haiku-4-5 with model-remap variables unset, and a whitespace-only reply leaves the previous summary in place
+       invocations=2 pinned=True unset=True summary='owner summary line\n' stderr='goal-digest: summary unavailable: model runner failed; digest still written'

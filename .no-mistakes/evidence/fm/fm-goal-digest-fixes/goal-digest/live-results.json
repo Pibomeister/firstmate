@@ -1,0 +1,80 @@
+[
+  {
+    "name": "A digest run reports a duplicated closed pull once and leaves an older merge out of the new-merge list",
+    "result": "pass",
+    "evidence": "goal-digest/merges-etas.md",
+    "detail": "generated_at=2026-01-01T12:00:00Z new_merges=[(1, 'First')] open=[7]"
+  },
+  {
+    "name": "A digest run counts every past ETA on a prose status line and does not treat dates inside a fleet snapshot as missed ETAs",
+    "result": "pass",
+    "evidence": "goal-digest/merges-etas.md",
+    "detail": "missed_etas=['2019-05-05', '2020-01-01']"
+  },
+  {
+    "name": "An open pull list that mixes a real pull with a non-object is recorded as a parse failure and publishes no open rows",
+    "result": "pass",
+    "evidence": "goal-digest/open-parse.json",
+    "detail": "unreachable=[{'kind': 'repo-open', 'source': 'example-org/example-repo', 'detail': 'pull parse failed'}] open=[] merges=[1]"
+  },
+  {
+    "name": "A closed pull list that mixes a real merge with a non-object is recorded as a parse failure and publishes no merges",
+    "result": "pass",
+    "evidence": "goal-digest/closed-nondict.json",
+    "detail": "unreachable=[{'kind': 'repo', 'source': 'example-org/example-repo', 'detail': 'pull parse failed'}] merges=[] open=[7]"
+  },
+  {
+    "name": "A closed pull payload that is not a list is recorded as unreachable and publishes no merges",
+    "result": "pass",
+    "evidence": "goal-digest/closed-nonlist.json",
+    "detail": "unreachable=[{'kind': 'repo', 'source': 'example-org/example-repo', 'detail': 'gh api failed or incomplete; results not used'}] merges=[]"
+  },
+  {
+    "name": "A secondmate captain-hold with hold_age_days and no wait start is published as that many days, while a boolean, a string, and a negative count stay unknown",
+    "result": "pass",
+    "evidence": "goal-digest/owner.md",
+    "detail": "route={\"age_days\": 30, \"age_hours\": null, \"age_precision\": \"day\", \"wait_started_at\": null} invalid={\"bool-hold\": {\"age_days\": null, \"age_hours\": null, \"age_precision\": \"unknown\"}, \"string-age\": {\"age_days\": null, \"age_hours\": null, \"age_precision\": \"unknown\"}, \"negative-age\": {\"age_days\": null, \"age_hours\": null, \"age_precision\": \"unknown\"}}"
+  },
+  {
+    "name": "A backlog row ages from its UTC hold_set, a string-valued captain_actionable flag is ignored, and a row with no id is recorded malformed instead of listed",
+    "result": "pass",
+    "evidence": "goal-digest/owner.md",
+    "detail": "decision-a age_hours=2 expected 2; unknown=[{'source': 'Fleet', 'detail': 'owner-action record malformed'}]"
+  },
+  {
+    "name": "After a blocked first publication, a retry two days later still reports the original day's merge and not a merge from the previous year, and no since-pending file is created",
+    "result": "pass",
+    "evidence": "goal-digest/window-retry.md",
+    "detail": "blocked_rc=1 retry_merges=[1] stray=[] pending1='example-org/example-repo\\t1767182400\\n'"
+  },
+  {
+    "name": "A second digest run in the same second keeps the first history pair and writes the new markdown and JSON under the same suffix",
+    "result": "pass",
+    "evidence": "goal-digest/history-listing.txt",
+    "detail": "stems present: ['20260101T120000Z-1.json', '20260101T120000Z-1.md', '20260101T120000Z.json', '20260101T120000Z.md']"
+  },
+  {
+    "name": "A leftover history temp directory does not stop the run from archiving that second's markdown and JSON under the free unsuffixed names",
+    "result": "pass",
+    "evidence": "goal-digest/history-listing.txt",
+    "detail": "free stamp 20260101T170000Z tmp_still_there=True"
+  },
+  {
+    "name": "When a stamp already has markdown and only a temp JSON, the retry archives both of its files under the next shared suffix and leaves the orphan markdown in place",
+    "result": "pass",
+    "evidence": "goal-digest/history-listing.txt",
+    "detail": "orphan='orphan attempt\\n' suffix-1 has token D; unsuffixed json exists=False"
+  },
+  {
+    "name": "A later same-second run does not rewrite the previous paired suffix or attach its JSON to that earlier markdown",
+    "result": "pass",
+    "evidence": "goal-digest/history-listing.txt",
+    "detail": "listing:\n20260101T120000Z-1.json\n20260101T120000Z-1.md\n20260101T120000Z.json\n20260101T120000Z.md\n20260101T130000Z-1.json\n20260101T130000Z-1.md\n20260101T130000Z-2.json\n20260101T130000Z-2.md\n20260101T130000Z.json.tmp\n20260101T130000Z.md\n20260101T170000Z.json\n20260101T170000Z.json.tmp\n20260101T170000Z.md"
+  },
+  {
+    "name": "The digest invokes the summarizer as claude-haiku-4-5 with model-remap variables unset, and a whitespace-only reply leaves the previous summary in place",
+    "result": "pass",
+    "evidence": "goal-digest/summarizer-log.txt",
+    "detail": "invocations=2 pinned=True unset=True summary='owner summary line\\n' stderr='goal-digest: summary unavailable: model runner failed; digest still written'"
+  }
+]
