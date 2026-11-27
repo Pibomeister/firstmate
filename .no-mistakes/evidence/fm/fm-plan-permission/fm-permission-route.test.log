@@ -1,0 +1,24 @@
+1..20
+ok - the identified prompt class is refused with a fix instruction and recorded
+ok - an interpreter that runs the heredoc text is held for a person, never refused into a retry
+ok - credential, sign-in, spend, security, destructive, production, and release prompts are held under the owner-reserved key
+ok - the command text is refused only for the closed, plain, unquoted heredoc class
+ok - a session without the unattended policy is neither answered nor recorded
+ok - wrong posture, another tool, and unexpected input are held, and a request that cannot be read whole is owner-reserved
+ok - a repeated command and a reached ceiling are held instead of refused again
+ok - a refusal that cannot be recorded becomes a hold that still wakes the supervisor
+ok - a hold wakes once per waiting request and closes when the last one finishes
+ok - session end closes a hold, and a hold the supervisor closed can open again
+ok - each waiting request closes only the key it was held under
+ok - a proven-clear pane closes only an ordinary hold that has had time to draw its prompt
+ok - a reserved request always gets its own line: at the ordinary limit, as a sandbox escape, by a key name alone, and by a tool name alone
+ok - requests held at the same time without the lock each stay held, also while a waiting request is asked again
+ok - a pane-clear close never ends a request held after its check
+ok - a hold answers a close written while it ran with a new line
+ok - a request asked again never leaves the held set absent or empty
+ok - the held set follows the latest requests, tells requests apart by their input, and is never read as empty when it cannot be read
+ok - an unreadable payload is held for the owner and no finished tool call closes it
+ok - a bad task id or a missing state directory writes nothing and answers nothing
+FM_TEST_COMPLETE
+bash tests/fm-permission-route.test.sh  37.22s user 72.76s system 18% cpu 10:02.03 total
+exit=0

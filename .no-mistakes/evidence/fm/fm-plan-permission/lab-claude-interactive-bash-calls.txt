@@ -1,0 +1,38 @@
+TOOL_USE Bash:
+cat task.txt; echo "---"; ls -la
+
+TOOL_USE Bash:
+python3 -c 'import sys; print(sys.stdin.read())' <<EOF
+'`true`'
+EOF
+
+TOOL_USE Bash:
+cat task2.txt
+
+TOOL_USE Bash:
+N=/nonexistent/n; python3 -c 'import sys; print(sys.stdin.read())' <<EOF
+`true`
+EOF
+echo $N
+
+TOOL_USE Bash:
+cat task3.txt
+
+TOOL_USE Bash:
+N=/nonexistent/n; cat <<EOF
+`true`
+EOF
+echo $N
+
+RESULT is_error=false: Run the following shell command with the Bash tool exactly as written, byte for byte, as one single Bash tool call. Do not run anything else and do not retry. Then reply with the single word DONE.
+
+<c
+RESULT is_error=false: ''
+RESULT is_error=false: Run the following shell command with the Bash tool exactly as written, byte for byte, as one single Bash tool call. Do not run anything else and do not retry. Then reply with the single word DONE2.
+
+<
+RESULT is_error=false: /nonexistent/n
+RESULT is_error=false: Run the following shell command with the Bash tool exactly as written, byte for byte, as one single Bash tool call. Do not run anything else and do not retry. Then reply with the single word DONE3.
+
+<
+RESULT is_error=false: /nonexistent/n

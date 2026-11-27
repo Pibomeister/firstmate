@@ -1,0 +1,11 @@
+=== BASE 1405d81a (before fix): python3 fed an unquoted backtick heredoc
+--- command:
+    python3 -c "import sys; print(sys.stdin.read())" <<EOF
+    `date`
+    EOF
+--- classify: refuse
+--- hook exit=0 stdout:
+{"behavior":"deny","message":"Firstmate permission route: refused, and the command did not run. No person will answer th..."}
+--- ledger verdict/category: refuse class
+--- status: 
+--- held-keys: 

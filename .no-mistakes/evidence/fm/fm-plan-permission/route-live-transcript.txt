@@ -1,0 +1,135 @@
+=== S1 python3 fed an unquoted backtick heredoc (the fix)
+--- command:
+    python3 -c "import sys; print(sys.stdin.read())" <<EOF
+    `date`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808123] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 python heredoc
+--- command:
+    python -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808127] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 node heredoc
+--- command:
+    node -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808138] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 perl heredoc
+--- command:
+    perl -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808144] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 ruby heredoc
+--- command:
+    ruby -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808149] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 php heredoc
+--- command:
+    php -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808154] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 python3.12 heredoc
+--- command:
+    python3.12 -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808159] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S2 /usr/bin/perl heredoc
+--- command:
+    /usr/bin/perl -e 1 <<EOF
+    `true`
+    EOF
+--- classify: hold wrapper
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold wrapper
+--- status: blocked [at=1795808180] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as wrapper; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S3 established class still refused (cat heredoc + echo)
+--- command:
+    N=/nonexistent/n; cat <<EOF
+    `true`
+    EOF
+    echo $N
+--- classify: refuse
+--- hook exit=0 stdout:
+{"behavior":"deny","message":"Firstmate permission route: refused, and the command did not run. No person will answer th..."}
+--- ledger verdict/category: refuse class
+--- status: 
+--- held-keys: 
+=== S4 lookalike word is not a wrapper (python-lint tool, cat heredoc)
+--- command:
+    cat <<EOF
+    `true`
+    EOF
+    pythonic-check --x
+--- classify: refuse
+--- hook exit=0 stdout:
+{"behavior":"deny","message":"Firstmate permission route: refused, and the command did not run. No person will answer th..."}
+--- ledger verdict/category: refuse class
+--- status: 
+--- held-keys: 
+=== S5 interpreter with quoted heredoc is not the class -> held unidentified
+--- command:
+    python3 - <<'EOF'
+    `true`
+    EOF
+--- classify: hold unidentified
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold unidentified
+--- status: blocked [at=1795808229] [key=permission-prompt-held]: permission prompt waiting on a Bash request, held as unidentified; nothing was answered, and a person or the supervisor must answer it in the worker terminal
+--- held-keys: permission-prompt-held 
+=== S6 interpreter heredoc naming a reserved category stays owner-reserved
+--- command:
+    python3 - <<EOF
+    `true`
+    EOF
+    rm -rf target
+--- classify: hold destructive
+--- hook exit=0 stdout:
+    (empty: prompt stays for a person)
+--- ledger verdict/category: hold destructive
+--- status: blocked [at=1795808231] [key=permission-prompt-hardstop]: permission prompt waiting on a Bash request, held as destructive; nothing was answered, and it names or may name an owner-reserved category, so only the owner answers it in the worker terminal
+--- held-keys: permission-prompt-hardstop 
