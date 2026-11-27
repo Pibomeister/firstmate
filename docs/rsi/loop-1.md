@@ -4,7 +4,7 @@ This page is the loop-1 record for recursive self-improvement of the Firstmate a
 The change target is the harness: process, tools, memory, and review loops.
 Model weights stay outside this loop.
 `docs/documentation-audiences.json` classifies this page as maintainer verification.
-The page stores the measurement window, the summary baselines, the drafted goals, the council record, and the before/after summary.
+The page stores the measurement window, the summary baselines, the drafted goals, the council result, and the before/after summary.
 Per-pull-request rows stay outside the repository.
 `bin/fm-rsi-measure.sh` owns the calculation.
 
@@ -60,16 +60,31 @@ Option A is `bin/fm-rsi-measure.sh`.
 It prints the median, the aged-open fraction, one class per aged-open row, the review-round median and maximum, and the intervention-free counts.
 Option B would only mark the review cap of 3 that is already on the default branch.
 Option C would only read steering and decision records.
-Option A is the recommendation.
+Option A is the drafted recommendation.
+It is not a council pick.
 Options B and C leave the aged-open pile unclassified.
+At the 2026-11-27T20:02:45Z snapshot, 13 of the 23 aged Firstmate pull requests are conflicts.
+That count is input for loop 2.
+It is not a reason to change the command this loop ships.
 
 ## Council decision
 
-`bin/fm-watchdog.sh council` was run on the goals and the three options above.
-The command printed `council=dry-run answer=none record=none prior=0 seats=none`.
-No seat ruling was written.
-Loop 1 implements option A because that command returned no ruling.
-This is the recorded recommendation, not a seat decision.
+`bin/fm-watchdog.sh council --help` exits 2.
+Its message is `fm-watchdog: unknown council option: --help`.
+`bin/fm-watchdog.sh --help` exits 0 and prints `council --task <id> --key <key> [--home <path>] [--record-file <file>] [--revisit]`.
+That form has no switch that selects a live convening.
+The same help text says dry-run never returns an answer.
+A live convening requires the home `decisions` value to be `act`.
+An unset `decisions` follows `mode`.
+The shared home config is `mode=dry-run` and has no `decisions` key.
+The council command therefore returns dry-run and calls no seats.
+On the goals and the three options it printed `council=dry-run answer=none record=none prior=0 seats=none`.
+A live convening would call seats `claude:sonnet` and `agy:gemini-4-argon-high`.
+That call would spend, and this loop's limits forbid spend.
+This task does not change the shared watchdog config.
+No council pick exists.
+There is no ruling path.
+Option A remains the drafted recommendation this branch implemented.
 
 ## Before and after
 
