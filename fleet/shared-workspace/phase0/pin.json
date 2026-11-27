@@ -1,0 +1,35 @@
+{
+  "pinVersion": 1,
+  "repository": "https://github.com/Factory-AI/vfs",
+  "tag": "v1.1.1",
+  "sourceRevision": "4852148cecde9c5413b51e4184eac55015bfe766",
+  "tagObject": {"type": "commit", "sha": "4852148cecde9c5413b51e4184eac55015bfe766", "source": "gh api repos/Factory-AI/vfs/git/ref/tags/v1.1.1"},
+  "commitSubject": "release: cut 1.1.1 with the turso 0.7.2 engine upgrade",
+  "commitDate": "2026-08-10T16:24:00-07:00",
+  "release": {"url": "https://github.com/Factory-AI/vfs/releases/tag/v1.1.1", "publishedAt": "2026-08-10T23:44:42Z", "targetCommitish": "4852148cecde9c5413b51e4184eac55015bfe766"},
+  "rustToolchain": "nightly-2026-08-07",
+  "artifactVersion": "0.8",
+  "minSupportedArtifactVersion": "0.0",
+  "releaseAssetSha256": {
+    "source.tar.gz": "74ec6d607e03784cffe606b24e039a0d4e0d1a9bd5901db91e865266f0775aaf",
+    "vfs-cli-aarch64-apple-darwin.tar.xz": "2be3e2cf076671cedf9899cf92276755a95dfdd444faa26b5c0ded7874b3aadb",
+    "vfs-cli-x86_64-apple-darwin.tar.xz": "ee829645eabe86bfbd2d1f3690bef9ab1f28602dbb217f2d878d4ea42e59cc30",
+    "vfs-cli-aarch64-unknown-linux-gnu.tar.xz": "f89b44600f7533f852c68fba22e85468d6c6b98bb4c42514e396df7b5add829e",
+    "vfs-cli-x86_64-unknown-linux-gnu.tar.xz": "e1f945f644d9468bc469b423089581983ea12343322b28d994cbe36d470d59b9"
+  },
+  "builds": [
+    {
+      "platform": "x86_64-unknown-linux-gnu",
+      "host": "WSL2 Ubuntu 26.04.1 on the Windows authoring machine",
+      "method": "release asset (pin-vfs.sh release), sha256 verified",
+      "binarySha256": "59ad43e636758125f5c98132ba1a29a0f2087d349780acafc692781503184a57",
+      "os": "Linux", "osVersion": "6.18.58.1-microsoft-standard-WSL2", "arch": "x86_64",
+      "vfsVersionJson": {"version":"1.1.1","commit":"4852148cecde9c5413b51e4184eac55015bfe766","artifactVersion":"0.8","minSupportedArtifactVersion":"0.0","features":{"uidSquashRun":true,"pack":true,"checkpoint":true,"seed":true,"adopt":true,"adoptRemote":true,"branch":true,"history":true}},
+      "evidence": "evidence/wsl2-linux-x86_64/pin-linux-x86_64.release.json",
+      "status": "recorded"
+    },
+    {"platform": "aarch64-apple-darwin", "host": "Mac Mini (macOS 26.3, arm64)", "method": "release asset", "status": "pending host run R1"},
+    {"platform": "aarch64-unknown-linux-gnu", "host": "Linux container on the Mac Mini", "method": "release asset fetched on host, recorded inside the container", "status": "pending host run R3"},
+    {"platform": "any", "method": "source build at 4852148c (pin-vfs.sh source)", "status": "not run: needs the Rust nightly-2026-08-07 toolchain installed, which needs a named OK"}
+  ]
+}
