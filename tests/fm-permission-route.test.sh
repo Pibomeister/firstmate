@@ -119,6 +119,16 @@ test_identified_class_is_refused_with_a_fix_instruction() {
   pass "the identified prompt class is refused with a fix instruction and recorded"
 }
 
+test_interpreter_heredoc_is_held_not_refused_into_a_retry() {
+  local tool home
+  for tool in python python3 node perl ruby php; do
+    home=$(new_home "interpreter-$tool")
+    request "$home" "$(bash_payload "$(printf '%s -c "x" <<EOF\n%strue%s\nEOF' "$tool" "$BT" "$BT")")"
+    assert_held "$home" wrapper "a $tool heredoc prompt"
+  done
+  pass "an interpreter that runs the heredoc text is held for a person, never refused into a retry"
+}
+
 test_each_reserved_category_is_held_for_a_person() {
   local category tail home
   while IFS='|' read -r category tail; do
@@ -168,6 +178,12 @@ command word from a backtick substitution|hold computed|cat <<EOF\n@t@\nEOF\n@t@
 eval wrapper|hold wrapper|cat <<EOF\n@t@\nEOF\neval "$X"
 shell wrapper in a subshell|hold wrapper|cat <<EOF\n@t@\nEOF\n( true && bash tests/a.test.sh )
 dot wrapper|hold wrapper|cat <<EOF\n@t@\nEOF\n. ./lib.sh
+python interpreter fed the heredoc|hold wrapper|python3 -c 'open("ran","w").write("x")' <<EOF\n@t@\nEOF
+versioned python interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\npython3.12 tool.py
+node interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nnode -e "$X"
+perl interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nperl -e 1
+ruby interpreter by path|hold wrapper|cat <<EOF\n@t@\nEOF\n/usr/bin/ruby -e 1
+php interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nphp -r 1
 removal split by quotes|hold destructive|cat <<EOF\n@t@\nEOF\nr''m -rf target
 removal split by a line continuation|hold destructive|cat <<EOF\n@t@\nEOF\nr\\\nm -rf target
 network transfer|hold security|cat <<EOF\n@t@\nEOF\ncurl https://example.invalid
@@ -681,6 +697,7 @@ test_bad_task_id_and_missing_state_touch_nothing() {
 
 fm_test_run \
   test_identified_class_is_refused_with_a_fix_instruction \
+  test_interpreter_heredoc_is_held_not_refused_into_a_retry \
   test_each_reserved_category_is_held_for_a_person \
   test_command_text_verdicts \
   test_attended_session_is_left_alone \
