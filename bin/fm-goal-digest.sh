@@ -47,8 +47,8 @@
 # Already reported merges are excluded. It also lists open pull requests
 # (drafts included) with their age, missed ETAs (every past YYYY-MM-DD
 # date on a status line with the word "eta" followed by ":" or space;
-# fm-fleet-snapshot.v1 JSON status files are structured data and are
-# not raw-grepped for ETAs), stalled status sources (local or remote files whose
+# a status file is skipped only when it parses as a top-level
+# fm-fleet-snapshot.v1 JSON object), stalled status sources (local or remote files whose
 # modification age is at least stall_hours) and every nonblank entry of each review
 # record. Generation and ETA dates use America/Mexico_City.
 # waiting_on_captain contains captain_actionable local backlog rows and
@@ -327,6 +327,13 @@ def clean(value):
 def unknown(source, detail):
     with open(sys.argv[4], "a") as fh:
         fh.write(clean(source) + "\t" + clean(detail) + "\n")
+def omitted_incomplete(entry):
+    if not isinstance(entry, dict):
+        return True
+    count = entry.get("count", 0)
+    if isinstance(count, bool) or isinstance(count, (int, float)):
+        return entry.get("surface") == "decisions_open" and count > 0
+    return False
 rows_out = []
 def emit(source, row, title):
     if not isinstance(row, dict) or not isinstance(row.get("id"), (str, int)):
@@ -366,7 +373,10 @@ if not isinstance(backlog, dict):
     backlog = {}
 if backlog.get("present") is True and isinstance(backlog.get("records"), list):
     for row in backlog["records"]:
-        if isinstance(row, dict) and row.get("captain_actionable") is True:
+        if not isinstance(row, dict):
+            unknown(label, "owner-action record malformed")
+            continue
+        if row.get("captain_actionable") is True:
             emit(label, row, row.get("title", ""))
 else:
     unknown(label, "local backlog unavailable")
@@ -384,7 +394,10 @@ if not isinstance(secondmates.get("records"), list):
     unknown(label, "secondmate records unavailable")
 else:
     for mate in secondmates["records"]:
-        if not isinstance(mate, dict) or mate.get("registered") is not True:
+        if not isinstance(mate, dict):
+            unknown(label, "secondmate record malformed")
+            continue
+        if mate.get("registered") is not True:
             continue
         if not isinstance(mate.get("id"), (str, int)):
             unknown(label, "secondmate record malformed")
@@ -396,14 +409,24 @@ else:
         if provenance.get("selected") != "structured-home" or provenance.get("trust") not in ("complete", "partial-structured"):
             unknown(source, "secondmate owner-action records unavailable")
             continue
-        freshness = mate.get("freshness") if isinstance(mate.get("freshness"), dict) else {}
+        raw_freshness = mate.get("freshness")
+        if raw_freshness is not None and not isinstance(raw_freshness, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            freshness = {}
+        else:
+            freshness = raw_freshness if isinstance(raw_freshness, dict) else {}
         if freshness.get("status") == "cached" or provenance.get("summary_source") == "remote-ledger-cache":
             unknown(source, "secondmate decisions from cached ledger")
         decisions = mate.get("decisions_open")
         if not isinstance(decisions, list):
             unknown(source, "secondmate decisions unavailable")
             continue
-        current = mate.get("current") if isinstance(mate.get("current"), dict) else {}
+        raw_current = mate.get("current")
+        if raw_current is not None and not isinstance(raw_current, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            current = {}
+        else:
+            current = raw_current if isinstance(raw_current, dict) else {}
         counts = mate.get("counts") if isinstance(mate.get("counts"), dict) else {}
         omitted = mate.get("omitted") if isinstance(mate.get("omitted"), list) else []
         if mate.get("omitted") is not None and not isinstance(mate.get("omitted"), list):
@@ -411,16 +434,33 @@ else:
         if (provenance.get("trust") != "complete"
                 or current.get("state") == "unknown"
                 or (counts.get("decisions_open", len(decisions)) if isinstance(counts.get("decisions_open", len(decisions)), int) else len(decisions) + 1) > len(decisions)
-                or any(isinstance(r, dict) and r.get("surface") == "decisions_open" and isinstance(r.get("count", 0), int) and r.get("count", 0) > 0 for r in omitted)):
+                or any(omitted_incomplete(r) for r in omitted)):
             unknown(source, "secondmate decision coverage incomplete")
         for row in decisions:
-            if isinstance(row, dict) and row.get("verb") == "captain-hold":
+            if not isinstance(row, dict):
+                unknown(source, "owner-action record malformed")
+                continue
+            if row.get("verb") == "captain-hold":
                 emit(source, row, row.get("question") or row.get("summary", ""))
 for line in rows_out:
     print(line)
 PY
   [ "$rc" = 0 ] && return 0
   printf '%s\t%s\n' "$label" 'native owner-action records unavailable' >> "$work/waiting-unknown.tsv"
+}
+
+# A status file counts as structured snapshot data only when it parses as a
+# top-level object with the fleet-snapshot schema. Prose that mentions the
+# schema string, and JSON that does not parse, is still ETA prose.
+gd_status_is_snapshot() { # <file>
+  python3 - "$1" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except (ValueError, OSError):
+    sys.exit(1)
+sys.exit(0 if isinstance(data, dict) and data.get("schema") == "fm-fleet-snapshot.v1" else 1)
+PY
 }
 
 do_run() {
@@ -615,9 +655,9 @@ PY
       continue
     fi
     collect_waiting "$label" "$content"
-    # fm-fleet-snapshot.v1 JSON is structured data, not ETA prose: raw
-    # line-grepping it matches Done rows and volatile fields. Skip it.
-    if ! grep -q '"schema"[[:space:]]*:[[:space:]]*"fm-fleet-snapshot\.v1"' "$content" 2>/dev/null; then
+    # Skip ETA prose only for a parsed top-level fleet snapshot. A schema
+    # string in ordinary prose, or JSON that does not parse, still counts.
+    if ! gd_status_is_snapshot "$content"; then
       while IFS= read -r eta_line; do
         while IFS= read -r eta_date; do
           [ -n "$eta_date" ] || continue

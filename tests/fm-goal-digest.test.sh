@@ -1040,4 +1040,99 @@ test_summarize_off_and_invalid_value_do_not_spend() {
   pass "summarize=off and invalid summarize values do not spend"
 }
 
-fm_test_run test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
+# A finding blocks only when this behavior fails at head and holds at base.
+# Prose that merely mentions the snapshot schema still reports a missed ETA.
+# A null backlog row, null mate, or null decision leaves owner-action coverage
+# unknown, while an unregistered mate stays quiet. A non-dict freshness,
+# current, or omitted entry, and a float omitted count, leave coverage unknown.
+test_prose_schema_marker_and_malformed_owner_coverage() {
+  local home="$TMP_ROOT/review-repros"
+  mkdir -p "$home/config"
+  python3 - "$SCRIPT" "$home" "$FAKE:$BASE_PATH" "$TMP_ROOT/summarize.sh" "$RUN1_EPOCH" <<'PY' || fail "prose schema marker or malformed owner coverage"
+import json, os, pathlib, shutil, subprocess, sys
+script, home, path, claude, now = sys.argv[1:]
+home = pathlib.Path(home)
+env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1", FM_GOAL_DIGEST_CLAUDE=claude)
+
+def mate(decisions=None):
+    rows = decisions if decisions is not None else [{
+        "id": "route", "key": "route", "verb": "captain-hold",
+        "summary": "Choose route", "question": "Choose route?", "hold_age_days": 1,
+    }]
+    return {
+        "id": "mate-a", "registered": True,
+        "provenance": {"selected": "structured-home", "trust": "complete", "summary_valid": True, "summary_source": "remote-ledger"},
+        "current": {"state": "captain_decision"},
+        "freshness": {"status": "fresh", "observed_at": "2026-01-01T12:00:00Z", "age_seconds": 0},
+        "decisions_open": rows,
+        "counts": {"decisions_open": len(rows)},
+        "omitted": [],
+    }
+
+def snapshot(records, backlog=None):
+    return {
+        "schema": "fm-fleet-snapshot.v1",
+        "backlog": {"present": True, "records": [] if backlog is None else backlog},
+        "secondmate_current": {
+            "registry": {"available": True, "complete": True},
+            "records": records, "truncated": 0,
+        },
+    }
+
+def run(config, name, body):
+    digest_dir = home / "data" / "goal-digest"
+    if digest_dir.exists():
+        shutil.rmtree(digest_dir)
+    (home / "config" / "goal-digest").write_text(config)
+    target = home / name
+    target.write_text(body)
+    result = subprocess.run([script, "run"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads((digest_dir / "latest.json").read_text())
+
+failures = []
+
+def expect(case, cond, detail):
+    if not cond:
+        failures.append(case + ": " + detail)
+
+notes = run(
+    "status = Notes | %s/notes.txt\n" % home,
+    "notes.txt",
+    'The documented schema string is "schema": "fm-fleet-snapshot.v1".\neta: 2020-01-01 deliver\n',
+)
+etas = sorted(item["eta"] for item in notes["missed_etas"])
+expect("prose-schema-eta", etas == ["2020-01-01"], "missed_etas=%s" % etas)
+
+def coverage(case, body, want):
+    digest = run("status = Fleet | %s/status.json\n" % home, "status.json", body)
+    got = digest["waiting_on_captain_status"]
+    expect(case, got == want, "status=%s unknown=%s" % (got, digest["waiting_on_captain_unknown_sources"]))
+    return digest
+
+coverage("null-backlog-row", json.dumps(snapshot([], [None])), "unknown")
+coverage("null-mate", json.dumps(snapshot([None])), "unknown")
+coverage("null-decision", json.dumps(snapshot([mate([None])])), "unknown")
+quiet = coverage("unregistered-mate", json.dumps(snapshot([mate(), dict(mate(), id="unregistered", registered=False)])), "known")
+ids = sorted(item["id"] for item in quiet["waiting_on_captain"])
+sources = sorted(item["source"] for item in quiet["waiting_on_captain"])
+expect("unregistered-mate-skipped", ids == ["route"] and sources == ["Fleet/mate-a"], "ids=%s sources=%s" % (ids, sources))
+stale = mate()
+stale["freshness"] = "stale"
+coverage("non-dict-freshness", json.dumps(snapshot([stale])), "unknown")
+bad_current = mate()
+bad_current["current"] = "captain_decision"
+coverage("non-dict-current", json.dumps(snapshot([bad_current])), "unknown")
+bad_entry = mate()
+bad_entry["omitted"] = [None]
+coverage("non-dict-omitted-entry", json.dumps(snapshot([bad_entry])), "unknown")
+float_count = mate()
+float_count["omitted"] = [{"surface": "decisions_open", "count": 1.0}]
+coverage("float-omitted-count", json.dumps(snapshot([float_count])), "unknown")
+if failures:
+    raise SystemExit("\n".join(failures))
+PY
+  pass "prose schema marker keeps a missed ETA and malformed owner coverage stays unknown"
+}
+
+fm_test_run test_prose_schema_marker_and_malformed_owner_coverage test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
