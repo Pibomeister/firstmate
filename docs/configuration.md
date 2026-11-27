@@ -1454,7 +1454,7 @@ review = Example review | /path/to/review.status
 ```
 
 `fm-goal-digest.sh install` installs a macOS LaunchAgent that runs every 20 minutes.
-The digest records new merges since the previous run, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
+The digest records new merges, open pull requests, explicit owner actions, missed ETAs, stalled status sources, complete review-convergence records and unreachable sources, plus a `changed` flag.
 The script header defines output paths, merge-window recovery, supported native owner-action records, wait-age semantics, explicit unknown coverage and summary-runner behavior.
 The job never merges, deploys, tags, pushes or messages anyone.
 Repository, host and person names belong only in the gitignored config and the private digest output, never in tracked code.

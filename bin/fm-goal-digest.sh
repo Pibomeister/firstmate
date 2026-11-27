@@ -41,7 +41,7 @@
 # complete fetches advance its merge-window watermark with a five-minute
 # overlap. Closed-pull collection follows every page through the
 # watermark or the final page, with no page-count cap, and duplicate
-# pages are reported once.
+# closed pulls are reported once.
 # Failed collection is reported as incomplete and
 # retains the pending window, including the initial one-day baseline.
 # Already reported merges are excluded. It also lists open pull requests
@@ -96,7 +96,8 @@
 #
 # State under the output directory: .state/seen.tsv holds merged pull
 # requests already collected, .state/since.tsv holds each repository's
-# merge-window watermark, .state/content.hash holds the previous
+# merge-window watermark, .state/pending-since.tsv holds an unpublished
+# initial window, .state/content.hash holds the previous
 # content hash, and .state/run.flock is the run lock: a run that finds
 # another run holding it prints a skip line and exits 1. The kernel lock
 # is released when its holder exits, so a crashed run never leaves it
