@@ -4,88 +4,101 @@ This page is the loop-1 record for recursive self-improvement of the Firstmate a
 The change target is the harness: process, tools, memory, and review loops.
 Model weights stay outside this loop.
 `docs/documentation-audiences.json` classifies this page as maintainer verification.
-The page stores the measurement method, the summary baselines, the missing instruments, the drafted goals, the council record, and the before/after summary.
+The page stores the measurement window, the summary baselines, the drafted goals, the council record, and the before/after summary.
 Per-pull-request rows stay outside the repository.
+`bin/fm-rsi-measure.sh` owns the calculation.
 
 ## Baselines
 
 Hermes reported these figures for the week of 20 Nov 2026 through 27 Nov 2026.
 This page stores that summary only.
+The command re-read of the same window is in Before and after.
+That re-read does not replace this table.
 
 | Repository | Median open-to-merge | Target | Open pull requests older than 24 hours | Target |
 | --- | --- | --- | --- | --- |
 | Firstmate (`Pibomeister/firstmate`) | 15.99 hours | 12 hours or less | 22 of 27 | 16 or fewer |
 | AgentKit (`Pibomeister/agent-kit`) | 2.34 hours | 2 hours or less | 1 of 2 | zero unexplained |
 
-Review rounds per pull request are not instrumented.
-Intervention-free completion is not instrumented.
-
 ## Measurement method
 
-Every reading uses this method.
-A later reading names its own window and its own snapshot time.
-It does not copy the baseline summary forward as if it were a new sample.
-
-The Firstmate repository is `Pibomeister/firstmate`.
-The AgentKit repository is `Pibomeister/agent-kit`.
-
+Every reading uses the same command and names its own snapshot time.
 The baseline window is `merged_at` in `[2026-11-20T06:00:00Z, 2026-11-27T06:00:00Z)`.
 That interval is midnight to midnight in America/Chicago, from 20 Nov 2026 through 27 Nov 2026, end exclusive.
-The baseline open-pull-request counts are the Hermes snapshot at the end of that window.
-A fresh reading counts the pull requests that are open at the measurement instant.
+The command calls the open-to-merge duration open-to-land.
+The script header owns that calculation, the aged-open rule, the class order, and the two instrument counts.
+A caller reads forge records with `gh-axi` and passes one JSON file.
+The command does not contact a forge.
+Held work stays in the sample.
+This loop does not land a pull request to move a figure.
 
-Open-to-merge duration is `merged_at` minus `created_at`, in hours.
-The population is every pull request in that repository whose `merged_at` falls inside the window.
-Sort the durations ascending.
-When the count is odd, the median is the middle duration.
-When the count is even, the median is the mean of the two middle durations.
-A pull request that was held stays in the sample.
-Held work is not merged to move this number.
+Review rounds in this loop's reading are the forge fallback.
+One round is one submission whose state is `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`.
+The no-mistakes review-step source was not joined, so this count is not that source.
+Intervention fields were left null.
+The forge record does not carry steering messages or captain decisions.
+The command keeps a null instrument field out of the rate.
 
-The aged-open count uses one snapshot instant.
-The denominator is every open pull request, including drafts.
-The numerator is every open pull request whose `created_at` is more than 24 hours before that instant.
-The report is the numerator, the denominator, and the phrase `numerator of denominator`.
-
-Read `createdAt`, `mergedAt`, and `state` with `gh-axi` from the forge pull-request record.
-Do not assemble a median from memory.
-Keep the raw rows in the task proof directory.
-This page receives the summary only.
-
-## Missing instruments
-
-### Review rounds per pull request
-
-A review round is one completed review pass on a pull request.
-The preferred source is the no-mistakes run bound to that pull request.
-One round is one completed review step that returned a verdict.
-When no run record exists, the fallback is one GitHub review submission whose state is `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`.
-Pending reviews do not count.
-Empty submissions do not count.
-For a window, record the round count on each merged pull request, then the median and the maximum of those counts.
-This instrument does not exist yet.
-Loop 1 adds it.
-
-### Intervention-free completion
-
-A completed ship is intervention-free when no steering message and no captain decision occurred between dispatch and a green pull request.
-A captain merge approval after the pull request is already green stays outside this count.
-The report for a window is intervention-free completions divided by completed ships.
-This instrument does not exist yet.
-Loop 1 adds it.
+The window-end open set is every pull request created before `2026-11-27T06:00:00Z` that was not closed before that instant.
+A pull request that was closed and later reopened is outside that reconstruction.
+Class fields for that set were left null, because the forge does not keep the check state from that instant.
+The live class lines use the later snapshot, where unknown mergeability was read again from the pull-request record before the class was assigned.
+A null status rollup was passed as zero reported checks.
 
 ## Goals
 
-Not drafted yet.
+G1. Firstmate median open-to-land time is 12 hours or less.
+G2. The Firstmate aged-open count is 16 or fewer.
+G3. AgentKit median open-to-land time is 2 hours or less.
+G4. AgentKit aged-open rows whose class is unexplained are zero.
+G5. Each window reports the review-round median and the maximum.
+G6. Each window reports intervention-free completion, and a null field stays missing.
 
 ## Candidates
 
-Not drafted yet.
+Option A is `bin/fm-rsi-measure.sh`.
+It prints the median, the aged-open fraction, one class per aged-open row, the review-round median and maximum, and the intervention-free counts.
+Option B would only mark the review cap of 3 that is already on the default branch.
+Option C would only read steering and decision records.
+Option A is the recommendation.
+Options B and C leave the aged-open pile unclassified.
 
 ## Council decision
 
-Not convened yet.
+`bin/fm-watchdog.sh council` was run on the goals and the three options above.
+The command printed `council=dry-run answer=none record=none prior=0 seats=none`.
+No seat ruling was written.
+Loop 1 implements option A because that command returned no ruling.
+This is the recorded recommendation, not a seat decision.
 
 ## Before and after
 
-Not measured yet.
+Both command readings use the baseline window.
+The live open snapshot is `2026-11-27T20:02:45Z`.
+The median matches the Hermes summary on both readings.
+This loop does not land pull requests, so that match is a re-read, not an effect of the new command.
+
+| Reading | Firstmate median | AgentKit median | Firstmate aged open | AgentKit aged open |
+| --- | --- | --- | --- | --- |
+| Hermes summary | 15.99 hours | 2.34 hours | 22 of 27 | 1 of 2 |
+| Command at `2026-11-27T06:00:00Z` | 15.99 hours, n=28 | 2.34 hours, n=13 | 23 of 28 | 1 of 2 |
+| Command at `2026-11-27T20:02:45Z` | 15.99 hours, n=28 | 2.34 hours, n=13 | 23 of 29 | 0 of 1 |
+
+One Firstmate row separates the reconstructed window-end count from the Hermes 22 of 27.
+The command does not adjust either figure to force a match.
+AgentKit's window-end aged-open count matches the Hermes 1 of 2.
+
+At `2026-11-27T20:02:45Z` the 23 aged Firstmate rows class as 13 conflict, 9 pending-checks, and 1 draft.
+None of those rows is unexplained.
+The one open AgentKit row is younger than 24 hours, so it has no class line.
+Window-end class lines are not listed here, because those class fields were null.
+
+Forge review submissions for the window:
+Firstmate median 0.00, maximum 1, n=28, missing 0.
+AgentKit median 0.00, maximum 0, n=13, missing 0.
+Intervention-free completion is missing for all 28 Firstmate rows and all 13 AgentKit rows.
+That missing count is not a rate of zero.
+
+No AgentKit code change is in this loop.
+The command reads caller-supplied rows for any repository.
+Joining no-mistakes review steps, and calling the command from the goal digest, are later work.
