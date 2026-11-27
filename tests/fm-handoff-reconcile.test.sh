@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/fm-handoff-reconcile.test.sh - bin/fm-handoff-reconcile.sh ends the
 # terminal of a late, refused handoff successor exactly once and only with
-# proof, never ends the lock owner, its own terminal, the captain handle, a
+# proof that its live process is the refused successor, never ends the lock owner, its own terminal, the captain handle, a
 # task endpoint or a handoff party, does nothing while a handoff is in
 # progress, and reports what it left open.
 set -u
@@ -31,10 +31,21 @@ fi
 #   <handle>.odd     the description is refused for another reason
 #   <handle>.sticky  a close is accepted and does nothing
 #   <handle>.blip    the first description after a close gets no answer
+# Its process sweep (diagnostics memory) lists pty session pty-<handle> rooted
+# at the pid in <handle>.session; marker nosweep makes the sweep fail.
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 set -u
 printf '%s\n' "$*" >> "$FAKE_ORCA/calls"
+if [ "${1:-} ${2:-}" = "diagnostics memory" ]; then
+  [ ! -e "$FAKE_ORCA/down" ] && [ ! -e "$FAKE_ORCA/nosweep" ] || exit 1
+  for f in "$FAKE_ORCA"/*.session; do
+    [ -f "$f" ] || continue
+    h=${f##*/}; h=${h%.session}
+    jq -n --arg s "pty-$h" --argjson pid "$(cat "$f")" '{sessionId: $s, pid: $pid}'
+  done | jq -s '{ok: true, result: {worktrees: [{sessions: .}]}}'
+  exit 0
+fi
 [ "${1:-}" = terminal ] || exit 91
 action=${2:-}
 handle=
@@ -60,7 +71,7 @@ case "$action" in
       exit 1
     fi
     if [ -f "$marks.screen" ]; then
-      jq -n --arg h "$handle" '{ok: true, result: {terminal: {handle: $h, connected: true, writable: true}}}'
+      jq -n --arg h "$handle" '{ok: true, result: {terminal: {handle: $h, ptyId: ("pty-" + $h), connected: true, writable: true}}}'
       exit 0
     fi
     if [ -e "$marks.closed" ]; then
@@ -113,9 +124,25 @@ apply() { ARGS=(--apply --report); reconcile "$@"; }
 dry() { ARGS=(); reconcile; }
 waiting() { ARGS=(--waiting); reconcile; }
 
-event() {  # <seconds ago> <event> <nonce> <handle> <reason>
-  printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=0 handle=%s reason=%s\n' \
-    "$((NOW - $1))" "$2" "$3" "$4" "$5" >> "$HOME_DIR/state/handoff-events.log"
+event() {  # <seconds ago> <event> <nonce> <handle> <reason> [pid]
+  printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=%s handle=%s reason=%s\n' \
+    "$((NOW - $1))" "$2" "$3" "${6:-0}" "$4" "$5" >> "$HOME_DIR/state/handoff-events.log"
+}
+
+# A real process stands in for a harness: Orca's sweep roots the terminal's
+# session at it, and the process tree is read from the live process table.
+LIVE_PIDS="$TMP_ROOT/live.pids"
+trap 'kill $(cat "$LIVE_PIDS" 2>/dev/null) 2>/dev/null; fm_test_cleanup' EXIT
+spawn_live() {  # prints the pid of a fresh live process
+  sleep 600 >/dev/null 2>&1 &
+  printf '%s\n' "$!" >> "$LIVE_PIDS"
+  printf '%s' "$!"
+}
+live() {  # <handle>: root <handle>'s session at a live process; prints its pid
+  local pid
+  pid=$(spawn_live)
+  printf '%s\n' "$pid" > "$FAKE_ORCA/$1.session"
+  printf '%s' "$pid"
 }
 
 # The nonce as a wrapped terminal shows it: split over two bordered lines.
@@ -134,7 +161,7 @@ test_retires_a_proven_late_successor_once() {
   new_home retire
   event 300 handoff_started "$N1" term_owner awaiting_ack
   event 100 handoff_failed "$N1" none deadline
-  event 50 handoff_reject "$N1" term_late missing_claim
+  event 50 handoff_reject "$N1" term_late missing_claim "$(live term_late)"
   screen term_late "$N1"
   assert_equals "$N1${TAB}term_late" "$(waiting)" "the undecided terminal is listed as waiting"
   assert_absent "$FAKE_ORCA/calls" "listing what waits asks Orca nothing"
@@ -199,7 +226,7 @@ test_does_nothing_while_a_handoff_is_in_progress() {
   local out
   new_home busy
   event 300 handoff_started "$N1" term_owner awaiting_ack
-  event 50 handoff_reject "$N1" term_late stale_nonce
+  event 50 handoff_reject "$N1" term_late stale_nonce "$(live term_late)"
   screen term_late "$N1"
   printf '{"nonce":"%s"}\n' "$N2" > "$HOME_DIR/state/.handoff-pending"
   out=$(apply) || fail "apply during a claim failed"
@@ -221,7 +248,7 @@ test_unproven_and_foreign_terminals_are_left_and_reported_once() {
   event 300 handoff_started "$N1" term_owner awaiting_ack
   event 90 handoff_reject "$N1" %7 missing_claim
   event 80 handoff_reject "$N1" term_reused missing_claim
-  event 70 handoff_reject "$N1" term_sticky missing_claim
+  event 70 handoff_reject "$N1" term_sticky missing_claim "$(live term_sticky)"
   printf 'someone else works here now\n' > "$FAKE_ORCA/term_reused.screen"
   screen term_sticky "$N1"
   : > "$FAKE_ORCA/term_sticky.sticky"
@@ -252,8 +279,8 @@ test_gone_and_unreachable_are_told_apart() {
   event 300 handoff_started "$N1" term_owner awaiting_ack
   event 60 handoff_reject "$N1" term_gone missing_claim
   event 55 handoff_reject "$N1" term_shut missing_claim
-  event 50 handoff_reject "$N1" term_odd missing_claim
-  event 45 handoff_reject "$N1" term_dark missing_claim
+  event 50 handoff_reject "$N1" term_odd missing_claim "$(live term_odd)"
+  event 45 handoff_reject "$N1" term_dark missing_claim "$(live term_dark)"
   : > "$FAKE_ORCA/term_shut.closed"
   : > "$FAKE_ORCA/term_odd.odd"
   screen term_odd "$N1"
@@ -281,7 +308,7 @@ test_a_close_cut_off_before_its_record_is_still_reported() {
   local out
   new_home cutoff
   event 300 handoff_started "$N1" term_owner awaiting_ack
-  event 50 handoff_reject "$N1" term_late missing_claim
+  event 50 handoff_reject "$N1" term_late missing_claim "$(live term_late)"
   screen term_late "$N1"
   : > "$FAKE_ORCA/term_late.blip"
   out=$(apply) || fail "apply failed"
@@ -302,7 +329,7 @@ test_the_newest_launched_attempt_decides_a_reused_handle() {
   event 480 handoff_ack "$N2" term_other lock_transferred
   event 400 handoff_reject "$N3" term_late stale_nonce
   event 300 handoff_started "$N1" term_owner awaiting_ack
-  event 290 handoff_reject "$N1" term_late missing_claim
+  event 290 handoff_reject "$N1" term_late missing_claim "$(live term_late)"
   event 280 handoff_reject "$N3" term_late stale_nonce
   screen term_late "$N1"
   assert_equals "$N1${TAB}term_late" "$(waiting)" "the handle waits under its newest launched attempt"
@@ -310,6 +337,43 @@ test_the_newest_launched_attempt_decides_a_reused_handle() {
   assert_equals "retired nonce_proven" "$(outcome_of term_late)" "the terminal is ended"
   assert_equals "$N1" "$(nonce_of term_late)" "an earlier acknowledged attempt and an unknown nonce do not hide it"
   pass "a handle refused under several attempts is judged by the newest one this home launched"
+}
+
+test_a_reused_terminal_that_still_shows_the_nonce_is_left_open() {
+  local out
+  new_home reusedproc
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  live term_other >/dev/null
+  event 60 handoff_reject "$N1" term_other missing_claim "$(spawn_live)"
+  event 55 handoff_reject "$N1" term_nopid missing_claim
+  live term_nopid >/dev/null
+  event 50 handoff_reject "$N1" term_unswept missing_claim "$(live term_unswept)"
+  for h in term_other term_nopid term_unswept; do screen "$h" "$N1"; done
+  : > "$FAKE_ORCA/nosweep"
+  out=$(apply) || fail "apply with the process sweep failing failed"
+  assert_equals "" "$(closed)$(outcome_of term_other)$(outcome_of term_unswept)" "no recorded pid is judged while Orca's process sweep cannot be read"
+  rm -f "$FAKE_ORCA/nosweep"
+  out=$(dry) || fail "dry run failed"
+  assert_contains "$out" "leave term_other (successor_not_proven)" "the dry run names the unproven terminal"
+  out=$(apply) || fail "apply failed"
+  assert_equals "left successor_not_proven" "$(outcome_of term_other)" "a terminal running another process is left although its screen shows the nonce"
+  assert_equals "left successor_not_proven" "$(outcome_of term_nopid)" "a reject that recorded no successor pid proves nothing"
+  assert_equals "retired nonce_proven" "$(outcome_of term_unswept)" "the terminal still running the successor is ended"
+  assert_equals term_unswept "$(closed)" "only the proven successor's terminal is sent a close"
+  assert_present "$FAKE_ORCA/term_other.screen" "the reused terminal stays open"
+  assert_contains "$out" "terminal term_other of a failed handoff attempt was left open (successor_not_proven)" "the refusal is reported"
+  pass "a terminal whose screen still shows the nonce is closed only while it runs the refused successor"
+}
+
+test_a_refused_successor_records_its_harness_pid() {
+  local rc pid
+  new_home refusedpid
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  refuse "$N1"; rc=$?
+  expect_code 1 "$rc" "a late acknowledgement"
+  pid=$(awk '$4 == "event=handoff_reject" { for (i = 5; i <= NF; i++) if ($i ~ /^pid=/) print substr($i, 5) }' "$HOME_DIR/state/handoff-events.log")
+  case "$pid" in '' | *[!0-9]* | 0) fail "the reject recorded no harness pid: '$pid'" ;; esac
+  pass "a refused successor records its own harness pid with the reject"
 }
 
 # refuse <nonce>: a successor in term_late acknowledges with no claim on disk.
@@ -383,4 +447,6 @@ fm_test_run \
   test_the_newest_launched_attempt_decides_a_reused_handle \
   test_a_refused_successor_arms_the_check_that_ends_it \
   test_ignores_rejects_that_are_not_late_successors \
+  test_a_reused_terminal_that_still_shows_the_nonce_is_left_open \
+  test_a_refused_successor_records_its_harness_pid \
   test_bad_arguments_are_refused

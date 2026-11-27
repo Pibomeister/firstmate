@@ -41,6 +41,11 @@
 #   - Orca describes the terminal as connected (orca terminal show),
 #   - a bounded read of the terminal's last lines contains the attempt's nonce
 #     (the launch prompt and the refused acknowledgement both print it),
+#   - the terminal's live process is proven to be the refused successor: the
+#     harness pid its reject line recorded (pid=) is inside the process tree
+#     that Orca's process sweep (orca diagnostics memory) roots at the
+#     terminal's pty session; a nonce on screen alone never proves it, since a
+#     reused terminal can still show it,
 #   - the claim and lock guards above still hold just before the close.
 # The read is saved first under data/handoff-late/<nonce>.txt (owner-only, the
 # newest LATE_KEEP files are kept). After the close Orca is asked again: the
@@ -176,8 +181,9 @@ protected_reason() {
   return 1
 }
 
-# candidates <now>: "nonce<TAB>handle" for every late successor still to
-# reconcile, oldest first, one line per handle.
+# candidates <now>: "nonce<TAB>handle<TAB>pid" for every late successor still
+# to reconcile, oldest first, one line per handle; pid is the harness pid its
+# deciding reject line recorded (0 when none was).
 candidates() {
   local handled
   handled=$(mktemp "$STATE/.handoff-reconcile.XXXXXX") || return 1
@@ -186,7 +192,7 @@ candidates() {
     BEGIN { while ((getline line < handled) > 0) done[line] = 1 }
     $1 != "HANDOFF" || $2 != "v1" { next }
     {
-      ts = ""; event = ""; nonce = ""; handle = ""; reason = ""
+      ts = ""; event = ""; nonce = ""; handle = ""; reason = ""; pid = ""
       for (i = 3; i <= NF; i++) {
         split($i, kv, "=")
         if (kv[1] == "ts") ts = kv[2]
@@ -194,6 +200,7 @@ candidates() {
         else if (kv[1] == "nonce") nonce = kv[2]
         else if (kv[1] == "handle") handle = kv[2]
         else if (kv[1] == "reason") reason = kv[2]
+        else if (kv[1] == "pid") pid = kv[2]
       }
       if (nonce == "" || nonce == "none" || nonce !~ /^[a-f0-9]+$/) next
       if (event == "handoff_started" || event == "handoff_retry") launched[nonce] = 1
@@ -204,12 +211,13 @@ candidates() {
         if (!launched[nonce]) next
         if (!(handle in first)) order[++n] = handle
         first[handle] = nonce
+        rpid[handle] = (pid ~ /^[0-9]+$/) ? pid : 0
       }
     }
     END {
       for (i = 1; i <= n; i++) {
         handle = order[i]; nonce = first[handle]
-        if (!acked[nonce] && !(handle in done)) printf "%s\t%s\n", nonce, handle
+        if (!acked[nonce] && !(handle in done)) printf "%s\t%s\t%s\n", nonce, handle, rpid[handle]
       }
     }' "$EVENTS"
   rm -f "$handled"
@@ -259,6 +267,32 @@ read_names_nonce() {  # <file> <nonce>
   tr -cd 'a-f0-9' < "$1" | grep -Fq -- "$2"
 }
 
+# successor_proven <handle> <pid>: 0 when <pid>, the harness pid the refused
+# successor recorded with its reject, is live inside the process tree Orca's
+# process sweep roots at <handle>'s pty session. 1 when that is read and
+# disproven: no pid was recorded, the sweep lists no such session, or the pid
+# lies outside its tree. 2 when Orca or the process table cannot be read, or
+# the sweep names the session ambiguously, so a later run tries again.
+successor_proven() {
+  local handle=$1 pid=$2 out pty root
+  case "$pid" in '' | *[!0-9]* | 0 | 1) return 1 ;; esac
+  out=$(fm_run_timed "$CALL_SECS" orca terminal show --terminal "$handle" --json 2>/dev/null) || true
+  pty=$(printf '%s' "$out" | jq -er --arg h "$handle" \
+    'select(.result.terminal.handle == $h) | .result.terminal.ptyId | strings | select(. != "")' 2>/dev/null) || return 2
+  out=$(fm_run_timed "$CALL_SECS" orca diagnostics memory --json 2>/dev/null) || return 2
+  root=$(printf '%s' "$out" | jq -er --arg p "$pty" '
+    if .ok == false or (.result.worktrees | type) != "array" then error("unreadable") else . end
+    | [.result.worktrees[] | (.sessions // [])[] | select(.sessionId == $p) | .pid]
+    | if length == 0 then "none"
+      elif length == 1 and (.[0] | type) == "number" and .[0] > 1 then .[0] | tostring
+      else error("ambiguous") end' 2>/dev/null) || return 2
+  [ "$root" != none ] || return 1
+  fm_backend_source orca || return 2
+  out=$(fm_backend_orca_process_tree "$root") || return 2
+  printf '%s\n' "$out" | cut -f 1 | grep -Fxq -- "$pid" || return 1
+  return 0
+}
+
 prune_saved() {
   local f n=0
   # shellcheck disable=SC2012  # names are <hex>.txt; ls -t gives newest first
@@ -268,10 +302,10 @@ prune_saved() {
   done
 }
 
-# reconcile_one <nonce> <handle>: one candidate. Prints a dry-run line when
-# not applying. Returns 75 when the candidate must be tried again later.
+# reconcile_one <nonce> <handle> <pid>: one candidate. Prints a dry-run line
+# when not applying. Returns 75 when the candidate must be tried again later.
 reconcile_one() {
-  local nonce=$1 handle=$2 reason read saved state
+  local nonce=$1 handle=$2 pid=$3 reason read saved state rc
   if reason=$(protected_reason "$handle"); then
     if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" kept "$reason"; else printf 'keep %s (%s)\n' "$handle" "$reason"; fi
     return 0
@@ -311,9 +345,20 @@ reconcile_one() {
     if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" left nonce_not_visible; else printf 'leave %s (nonce_not_visible)\n' "$handle"; fi
     return 0
   fi
+  successor_proven "$handle" "$pid"
+  rc=$?
+  if [ "$rc" = 2 ]; then
+    rm -f "$read"
+    return 75
+  fi
+  if [ "$rc" != 0 ]; then
+    rm -f "$read"
+    if [ "$APPLY" = 1 ]; then record "$nonce" "$handle" left successor_not_proven; else printf 'leave %s (successor_not_proven)\n' "$handle"; fi
+    return 0
+  fi
   if [ "$APPLY" != 1 ]; then
     rm -f "$read"
-    printf 'retire %s (nonce %s proven on its screen)\n' "$handle" "$nonce"
+    printf 'retire %s (nonce %s on its screen, successor pid %s in its session)\n' "$handle" "$nonce" "$pid"
     return 0
   fi
   # Last look before the close: the guards may have changed during the read.
@@ -361,22 +406,22 @@ report() {
 }
 
 main() {
-  local now start nonce handle list
+  local now start nonce handle pid list
   [ -d "$STATE" ] || return 0
   if [ "$WAITING" = 1 ]; then
-    [ ! -f "$EVENTS" ] || [ -L "$EVENTS" ] || candidates "$(fm_now)"
+    [ ! -f "$EVENTS" ] || [ -L "$EVENTS" ] || candidates "$(fm_now)" | cut -f 1,2
     return 0
   fi
   if [ -f "$EVENTS" ] && [ ! -L "$EVENTS" ] && ! handoff_busy; then
     now=$(fm_now)
     start=$(date +%s)
     list=$(candidates "$now") || list=''
-    while IFS="$TAB" read -r nonce handle; do
+    while IFS="$TAB" read -r nonce handle pid; do
       [ -n "$nonce" ] || continue
       handle_valid "$handle" || continue
       [ $(($(date +%s) - start)) -lt "$RUN_BUDGET" ] || break
       handoff_busy && break
-      reconcile_one "$nonce" "$handle" || true
+      reconcile_one "$nonce" "$handle" "$pid" || true
     done <<EOF
 $list
 EOF
