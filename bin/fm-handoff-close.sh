@@ -22,6 +22,12 @@
 #   - the predecessor is the same live harness instance the claim recorded;
 #   - the backend proves the endpoint hosts it: the predecessor pid is the
 #     endpoint's root process or descends from it, and the successor does not.
+#     On tmux the recorded target is first resolved once to its exact pane id
+#     (#{pane_id}), and that pane id alone is proven, closed, and verified, so
+#     a window-style target can never move the close onto another pane; a
+#     target that does not resolve to one live pane id, or a recorded pane id
+#     that resolves to a different one, is endpoint_unproven, and a resolved
+#     pane that is the successor's own terminal is own_endpoint.
 #     On tmux the root is the pane's #{pane_pid}. On Orca the terminal must be
 #     a connected local terminal of this home, and the root is its pty session
 #     process from Orca's own process sweep.
@@ -137,12 +143,24 @@ descends_from() { # <pid> <root>
 predecessor_live || refuse predecessor_exited
 command -v "$backend" >/dev/null 2>&1 || refuse backend_unavailable
 
+# The exact endpoint every later probe and the close act on. tmux resolves a
+# window or session target to whichever pane is active at each call, so the
+# recorded target is pinned to one pane id here and never used again.
+target=$terminal
+if [ "$backend" = tmux ]; then
+  target=$(fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_id}' 2>/dev/null) || target=
+  case "$target" in %*) ;; *) target= ;; esac
+  case "${target#%}" in ''|*[!0-9]*) refuse endpoint_unproven ;; esac
+  case "$terminal" in %*) [ "$target" = "$terminal" ] || refuse endpoint_unproven ;; esac
+  [ "$target" != "$current" ] && [ "$target" != "$succ_handle" ] || refuse own_endpoint
+fi
+
 # The endpoint's root process, proven to belong to this endpoint.
 endpoint_root() {
   local facts read connected host pty wtpath rc=0
   case "$backend" in
     tmux)
-      fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_pid}' 2>/dev/null
+      fm_run_timed 5 tmux display-message -p -t "$target" '#{pane_pid}' 2>/dev/null
       ;;
     orca)
       facts=$(fm_backend_orca_terminal_facts "$terminal") || return 1
@@ -163,9 +181,9 @@ endpoint_gone() {
     tmux)
       # tmux answers a gone pane with exit 0 and an empty line, or reports it
       # missing; only an answer naming the pane, or no answer, keeps it present.
-      out=$(fm_run_timed 5 tmux display-message -p -t "$terminal" '#{pane_id}' 2>&1) || rc=$?
+      out=$(fm_run_timed 5 tmux display-message -p -t "$target" '#{pane_id}' 2>&1) || rc=$?
       if [ "$rc" = 0 ]; then
-        if printf '%s\n' "$out" | grep -Fqx -- "$terminal"; then return 1; fi
+        if printf '%s\n' "$out" | grep -Fqx -- "$target"; then return 1; fi
         return 0
       fi
       case "$out" in *"can't find"*|*"no server running"*|*"error connecting"*) return 0 ;; esac
@@ -194,7 +212,7 @@ predecessor_live || refuse predecessor_exited
 [ "$(endpoint_root 2>/dev/null)" = "$root" ] || refuse endpoint_unproven
 
 case "$backend" in
-  tmux) fm_run_timed 5 tmux kill-pane -t "$terminal" >/dev/null 2>&1 || true ;;
+  tmux) fm_run_timed 5 tmux kill-pane -t "$target" >/dev/null 2>&1 || true ;;
   orca) fm_backend_orca_kill "$terminal" || true ;;
 esac
 end=$((SECONDS + VERIFY_WAIT))

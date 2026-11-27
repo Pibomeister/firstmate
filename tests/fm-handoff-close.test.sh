@@ -34,13 +34,31 @@ kill_tree() {
 }
 [ -e "$FAKE/close-ignored" ] || kill_tree "$1"
 EOF
+# A window target (a file window<target> naming its active pane id) resolves
+# to that active pane on every call, as real tmux does. With switch-after=<n>,
+# the nth window-target lookup is followed by another client selecting the
+# pane named in switch-to, so later calls on the window reach that pane.
 cat > "$FAKEBIN/tmux" <<'EOF'
 #!/usr/bin/env bash
 set -eu
 echo "$*" >> "$FAKE/tmux.calls"
+resolve() { # <target>: the pane a target reaches now
+  local n
+  if [ -f "$FAKE/window$1" ]; then
+    cat "$FAKE/window$1"
+    if [ "$2" = lookup ] && [ -f "$FAKE/switch-after" ]; then
+      n=$(( $(cat "$FAKE/window-lookups" 2>/dev/null || echo 0) + 1 ))
+      echo "$n" > "$FAKE/window-lookups"
+      [ "$n" != "$(cat "$FAKE/switch-after")" ] || cp "$FAKE/switch-to" "$FAKE/window$1"
+    fi
+  else
+    printf '%s\n' "$1"
+  fi
+}
 case "$1" in
   display-message)
     [ "$2 $3" = '-p -t' ] || exit 96
+    set -- "$1" "$2" "$3" "$(resolve "$4" lookup)" "$5"
     # Real tmux (3.6a) answers a gone pane id with exit 0 and an empty line.
     [ -f "$FAKE/pane$4" ] || { echo; exit 0; }
     case "$5" in
@@ -50,7 +68,9 @@ case "$1" in
     esac
     ;;
   kill-pane)
-    [ "$2" = -t ] && [ -f "$FAKE/pane$3" ] || exit 1
+    [ "$2" = -t ] || exit 1
+    set -- "$1" "$2" "$(resolve "$3" kill)"
+    [ -f "$FAKE/pane$3" ] || exit 1
     echo "tmux $3" >> "$FAKE/closed"
     root=$(cat "$FAKE/pane$3")
     [ -e "$FAKE/close-ignored" ] || rm -f "$FAKE/pane$3"
@@ -185,6 +205,44 @@ refused() {
   alive "$PRED" || fail "$1 must leave the predecessor running"
   alive "$SUCC" || fail "$1 must leave the successor running"
 }
+
+# A window-style target is pinned to the predecessor's exact pane: a client
+# that selects an unrelated pane in that window after the ownership checks
+# cannot move the close onto it.
+setup tmux firstmate:0
+echo %5 > "$FAKE/windowfirstmate:0"
+mv "$FAKE/panefirstmate:0" "$FAKE/pane%5"
+rm -f "$TMP_ROOT"/stranger.*
+start_fixture stranger 0
+STRANGER=$(cat "$TMP_ROOT/stranger.root")
+cp "$TMP_ROOT/stranger.root" "$FAKE/pane%7"
+echo %7 > "$FAKE/switch-to"
+# The last ownership lookup the close makes on the target before it acts.
+echo 2 > "$FAKE/switch-after"
+close
+[ "$CLOSE_RC" = 0 ] || fail "a window target that resolves to the predecessor pane must close: $CLOSE_OUT"
+[ "$(cat "$FAKE/closed")" = 'tmux %5' ] || fail "only the predecessor pane closes: $(cat "$FAKE/closed")"
+alive "$STRANGER" || fail 'the unrelated pane selected after the checks must survive'
+wait_gone "$PRED" || fail 'the predecessor must be gone'
+alive "$SUCC" || fail 'the successor must survive'
+grep -q "^HANDOFF v1 ts=[0-9]* event=predecessor_closed nonce=$NONCE attempt=0 pid=$PRED handle=tmux:firstmate:0 reason=closed\$" "$STATE/handoff-events.log" \
+  || fail "the close row must name the recorded endpoint: $(cat "$STATE/handoff-events.log")"
+kill "$STRANGER" 2>/dev/null || true
+rm -f "$TMP_ROOT"/stranger.*
+# A window whose active pane does not host the predecessor proves nothing.
+setup tmux firstmate:0
+mv "$FAKE/panefirstmate:0" "$FAKE/pane%5"
+rm -f "$TMP_ROOT"/stranger.*
+start_fixture stranger 0
+STRANGER=$(cat "$TMP_ROOT/stranger.root")
+cp "$TMP_ROOT/stranger.root" "$FAKE/pane%7"
+echo %7 > "$FAKE/windowfirstmate:0"
+close
+refused endpoint_unproven tmux:firstmate:0
+alive "$STRANGER" || fail 'the unrelated active pane must survive'
+kill "$STRANGER" 2>/dev/null || true
+rm -f "$TMP_ROOT"/stranger.*
+pass 'a window-style tmux target closes only the proven predecessor pane'
 
 # A committed transfer closes the recorded tmux pane and the predecessor.
 setup tmux %5
