@@ -25,7 +25,9 @@ OUT=
 RC=0
 H=
 CASE_N=0
-SLEEPS='' HOLDS=''
+SLEEPS=''
+# One row per holder this suite starts: pid, then its hold_identity.
+HOLDS_FILE="$TMP_ROOT/holds.tsv"
 # reap_fixture sets one P_<name> per fixture row; these are the ones read by name.
 D_runner='' D_testscript='' D_bareopt='' D_barename='' D_bunrun='' D_runner4='' P_runner='' P_claude='' P_wrapped='' P_exe='' P_nodeagent='' P_execd='' P_reused='' P_moved='' P_padded=''
 
@@ -76,11 +78,29 @@ printf 'total = 32768.00M  used = %s  free = 1.00M  (encrypted)\n' "$FM_FAKE_SWA
 SH
 chmod +x "$FAKE/ps" "$FAKE/sysctl"
 
+# hold_identity <pid>: that pid's start time and command line, read with the
+# system ps so the fake ps on PATH cannot answer; empty once the pid is gone.
+hold_identity() { command -p ps -o lstart= -o args= -p "$1" 2>/dev/null | sed 's/[[:space:]]*$//'; }
+
+# kill_owned_holds <record>: KILL each recorded holder only while its pid still
+# names the process this suite started (same start time and command line). A
+# stopped holder's pid can be reused on a busy host, and KILL must never reach
+# the unrelated process that now holds it.
+kill_owned_holds() {
+  local pid ident
+  [ -f "$1" ] || return 0
+  while IFS=$'\t' read -r pid ident; do
+    [ -n "$pid" ] && [ -n "$ident" ] || continue
+    [ "$(hold_identity "$pid")" = "$ident" ] || continue
+    kill -KILL "$pid" 2>/dev/null || true
+  done < "$1"
+}
+
 cleanup_sleeps() {
   local p
   for p in $SLEEPS; do kill "$p" 2>/dev/null || true; done
   # A holder can ignore TERM, so a failed stop case must not leave one behind.
-  for p in $HOLDS; do kill -KILL "$p" 2>/dev/null || true; done
+  kill_owned_holds "$HOLDS_FILE"
   # A holder's own child is not in SLEEPS when a case fails early.
   for p in "$TMP_ROOT"/stopme/*.kid; do
     [ -f "$p" ] || continue
@@ -196,12 +216,14 @@ start_hold() {
   printf '%s\n' "${2:-:}" 'printf -v pad "%*s" 4000000 ""' ': > "$0.ready"' "${3:-$PLAIN_WAIT}" > "$script"
   ( cd "$TMP_ROOT" || exit 1; bash "$script" >/dev/null 2>&1 & printf '%s\n' "$!" > "$script.pid" )
   HOLD_PID=$(cat "$script.pid")
-  HOLDS="$HOLDS $HOLD_PID"
+  # Record the identity once the holder runs its script, not while it may
+  # still be the forked subshell that has not yet exec'd bash.
   for i in $(seq 1 50); do
-    [ ! -e "$script.ready" ] || return 0
+    [ ! -e "$script.ready" ] || break
     sleep 0.1
   done
-  fail "the holder $script did not start"
+  printf '%s\t%s\n' "$HOLD_PID" "$(hold_identity "$HOLD_PID")" >> "$HOLDS_FILE"
+  [ -e "$script.ready" ] || fail "the holder $script did not start"
 }
 
 alive() { kill -0 "$1" 2>/dev/null && ! ps -o stat= -p "$1" 2>/dev/null | grep -q '^Z'; }
@@ -857,6 +879,25 @@ stop-failed it started a child after TERM and was not signalled again" "$(stop_r
 
 # A doubled slash names the same file, as macOS TMPDIR's trailing slash gives
 # in "$TMPDIR/fm-x/job.pl", so it is judged as the single-slash path.
+test_cleanup_kills_only_its_own_holders() {
+  local rec victim held
+  rec="$TMP_ROOT/holds-check.tsv"
+  # A recorded holder pid that an unrelated process now holds: same pid, a
+  # different start time and command line.
+  start_sleep; victim=$SLEEP_PID
+  printf '%s\t%s\n' "$victim" "Thu Jan  1 00:00:00 1970     bash $TMP_ROOT/stopme/gone.sh" > "$rec"
+  kill_owned_holds "$rec"
+  sleep 0.2
+  alive "$victim" || fail "cleanup sent KILL to a process that reused a stopped holder's pid"
+  # A TERM-ignoring holder this suite started is still stopped by KILL.
+  start_hold "$TMP_ROOT/stopme/owned.sh" 'trap "" TERM'; held=$HOLD_PID
+  awk -F'\t' -v p="$held" '$1 == p' "$HOLDS_FILE" > "$rec"
+  [ -s "$rec" ] || fail "start_hold did not record the holder $held"
+  kill_owned_holds "$rec"
+  wait_gone "$held" || fail "cleanup did not KILL a TERM-ignoring holder this suite started"
+  pass "exit cleanup KILLs only holders whose pid still names the process this suite started"
+}
+
 test_doubled_slash_script_path() {
   local dbl_tmp dbl_out name pid
   new_home 'mode=reap-scratch'
@@ -925,4 +966,5 @@ fm_test_run \
   test_stop_scratch_stops_only_real_scratch \
   test_stop_scratch_escalates_to_kill \
   test_stop_scratch_does_not_kill_after_a_new_child \
+  test_cleanup_kills_only_its_own_holders \
   test_doubled_slash_script_path
