@@ -34,16 +34,21 @@
 # Blank lines and lines starting with # are ignored.
 #
 # The digest lists new merges (URL and 12-character SHA). The first fetch
-# for each repository reports only merges from the preceding day. Later
+# for each repository reports only merges from the preceding day. That
+# initial window is persisted in .state/pending-since.tsv before
+# collection, so a failed first publication retries against the same
+# baseline instead of a later clock. Later
 # complete fetches advance its merge-window watermark with a five-minute
 # overlap. Closed-pull collection follows every page through the
-# watermark or the final page, with no page-count cap.
+# watermark or the final page, with no page-count cap, and duplicate
+# closed pulls are reported once.
 # Failed collection is reported as incomplete and
 # retains the pending window, including the initial one-day baseline.
 # Already reported merges are excluded. It also lists open pull requests
-# (drafts included) with their age, missed ETAs (a status
-# line with the word "eta" followed by ":" or space and a YYYY-MM-DD date
-# in the past), stalled status sources (local or remote files whose
+# (drafts included) with their age, missed ETAs (a past YYYY-MM-DD
+# date immediately after the word "eta" followed by ":" or space;
+# a status file is skipped only when it parses as a top-level
+# fm-fleet-snapshot.v1 JSON object), stalled status sources (local or remote files whose
 # modification age is at least stall_hours) and every nonblank entry of each review
 # record. Generation and ETA dates use America/Mexico_City.
 # waiting_on_captain contains captain_actionable local backlog rows and
@@ -52,10 +57,15 @@
 # produces age_hours with age_precision=hour. A YYYY-MM-DD hold_set
 # produces age_days with age_precision=day, recalculated against the
 # current America/Mexico_City date even when the snapshot is unchanged.
-# The unused age field is null; missing or invalid hold_set values leave
+# Secondmate captain-hold rows carry no hold_set; their snapshot
+# hold_age_days (an integer day count computed by the snapshot producer)
+# is used as age_days with age_precision=day and no wait start.
+# The unused age field is null; missing or invalid hold values leave
 # both age fields null and age_precision=unknown.
-# Other formats, unavailable sources,
-# and incomplete or cached secondmate coverage leave owner-action coverage unknown.
+# Other formats, unavailable sources, malformed backlog, secondmate or
+# decision records (a null row included), and incomplete or cached
+# secondmate coverage leave owner-action coverage unknown; an unregistered
+# secondmate is skipped without an unknown entry.
 # Open pull requests are published separately in open_pull_requests.
 # Unreachable or unreadable sources are recorded in the digest
 # and skipped; the run still succeeds.
@@ -64,10 +74,13 @@
 # persistent digest content changes. Generated time, age values and the
 # disappearance of previously reported merges do not count as changes.
 # On a changed run the summary is attempted by one fixed text-only model
-# runner: claude -p with no tools, the current native account and the
-# configured model: haiku, sonnet, claude-haiku-* or claude-sonnet-*.
-# It replaces summary.txt only on successful, nonempty output and has a
-# 120-second timeout.
+# runner: claude -p with no tools, the current native account and a
+# pinned cheap model: haiku maps to claude-haiku-4-5, sonnet to
+# claude-sonnet-4-5, and claude-haiku-*/claude-sonnet-* pass as named.
+# ANTHROPIC_MODEL and ANTHROPIC_DEFAULT_*_MODEL overrides are unset for
+# the call so an alias cannot be remapped to an expensive model.
+# It replaces summary.txt only on successful output containing
+# non-whitespace and has a 120-second timeout.
 # An unsupported model or a missing, failed or empty-output runner
 # reports summary unavailable on stderr;
 # the digest remains published, the run still succeeds, and any previous
@@ -78,18 +91,21 @@
 # commands.
 #
 # Each latest document is published through atomic replacement after
-# both history copies succeed. Notification state advances only after
+# both history copies succeed. History archive names are never reused:
+# a same-second run archives both copies under one free suffix instead
+# of overwriting. Notification state advances only after
 # publication succeeds. History is retained without automatic pruning.
 #
 # State under the output directory: .state/seen.tsv holds merged pull
 # requests already collected, .state/since.tsv holds each repository's
-# merge-window watermark, .state/content.hash holds the previous
+# merge-window watermark, .state/pending-since.tsv holds an unpublished
+# initial window, .state/content.hash holds the previous
 # content hash, and .state/run.flock is the run lock: a run that finds
 # another run holding it prints a skip line and exits 1. The kernel lock
 # is released when its holder exits, so a crashed run never leaves it
 # held; children that may outlive the run close fd 9 so they cannot keep
-# it held. FM_GOAL_DIGEST_GH replaces the gh binary only when
-# FM_TEST_SEAM is nonempty.
+# it held. FM_GOAL_DIGEST_GH and FM_GOAL_DIGEST_CLAUDE replace the gh
+# and claude binaries only when FM_TEST_SEAM is nonempty.
 set -u
 
 INTERVAL_SECONDS=1200
@@ -219,8 +235,13 @@ fetch_pulls() {
     if ! timed "$timeout_seconds" "$gh_bin" api "repos/$repo/pulls?$query&per_page=100&page=$page" > "$page_file" 2>/dev/null; then
       return 1
     fi
+    if ! count=$(python3 -c 'import json,sys
+data=json.load(open(sys.argv[1]))
+if not isinstance(data,list): sys.exit(1)
+print(len(data))' "$page_file" 2>/dev/null); then
+      return 1
+    fi
     printf '%s\n' "$page_file" >> "$work/pages.txt"
-    count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$page_file" 2>/dev/null || printf '0')
     if [ "$count" -lt 100 ]; then
       break
     fi
@@ -253,15 +274,18 @@ with open(os.path.join(os.path.dirname(sys.argv[1]), "pages.txt")) as fh:
 pulls = []
 for page in pages:
     with open(page) as fh:
-        pulls.extend(json.load(fh))
+        data = json.load(fh)
+    if not isinstance(data, list):
+        sys.exit(1)
+    pulls.extend(data)
 with open(sys.argv[1], "w") as fh:
     json.dump(pulls, fh)
 PY
 }
 
-# read_source <location> <content-out> <mtime-out>: 0 ok, 1 unreachable.
+# read_source <location> <content-out> <mtime-out> [want-mtime:1]: 0 ok, 1 unreachable.
 read_source() {
-  local loc=$1 content_out=$2 mtime_out=$3 host path
+  local loc=$1 content_out=$2 mtime_out=$3 want_mtime=${4:-1} host path
   : > "$content_out"
   printf '' > "$mtime_out"
   case "$loc" in
@@ -272,14 +296,18 @@ read_source() {
       [ -n "$host" ] && [ "$path" != "$host" ] || return 1
       local quoted
       quoted=$(shell_quote "$path")
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
-      timed "$timeout_seconds" ssh -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      timed "$timeout_seconds" ssh -n -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "cat -- $quoted" > "$content_out" 2>/dev/null || return 1
+      if [ "$want_mtime" = 1 ]; then
+        timed "$timeout_seconds" ssh -n -o BatchMode=yes -o ConnectTimeout=10 -- "$host" "stat -c %Y -- $quoted 2>/dev/null || stat -f %m -- $quoted" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      fi
       return 0
       ;;
     *)
       [ -f "$loc" ] && [ -r "$loc" ] || return 1
       cat "$loc" > "$content_out" 2>/dev/null || return 1
-      stat -c %Y "$loc" > "$mtime_out" 2>/dev/null || stat -f %m "$loc" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      if [ "$want_mtime" = 1 ]; then
+        stat -c %Y "$loc" > "$mtime_out" 2>/dev/null || stat -f %m "$loc" > "$mtime_out" 2>/dev/null || printf '' > "$mtime_out"
+      fi
       return 0
       ;;
   esac
@@ -301,8 +329,21 @@ def clean(value):
 def unknown(source, detail):
     with open(sys.argv[4], "a") as fh:
         fh.write(clean(source) + "\t" + clean(detail) + "\n")
+def omitted_incomplete(entry):
+    if not isinstance(entry, dict):
+        return True
+    count = entry.get("count", 0)
+    if isinstance(count, bool) or isinstance(count, (int, float)):
+        return entry.get("surface") == "decisions_open" and count > 0
+    return True
+rows_out = []
 def emit(source, row, title):
+    if not isinstance(row, dict) or not isinstance(row.get("id"), (str, int)):
+        unknown(source, "owner-action record malformed")
+        return
     stamp = row.get("hold_set") or ""
+    if not isinstance(stamp, str):
+        stamp = ""
     age = "unknown"
     age_days = ""
     precision = "unknown"
@@ -310,7 +351,7 @@ def emit(source, row, title):
         held = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         age = str(max(0, int((int(sys.argv[3]) - held.timestamp()) // 3600)))
         precision = "hour"
-    except ValueError:
+    except (ValueError, TypeError):
         try:
             held_date = datetime.datetime.strptime(stamp, "%Y-%m-%d").date()
             try:
@@ -321,20 +362,32 @@ def emit(source, row, title):
             today = datetime.datetime.fromtimestamp(int(sys.argv[3]), tz).date()
             age_days = str(max(0, (today - held_date).days))
             precision = "day"
-        except ValueError:
-            pass
-    values = [source, row["id"], title, row.get("pr_url") or "", stamp, age, age_days, precision]
-    print("\t".join(clean(v) for v in values))
+        except (ValueError, TypeError):
+            hold_days = row.get("hold_age_days")
+            if isinstance(hold_days, int) and not isinstance(hold_days, bool) and hold_days >= 0:
+                age_days = str(hold_days)
+                precision = "day"
+    values = [source, row["id"], title if isinstance(title, str) else "", row.get("pr_url") if isinstance(row.get("pr_url"), str) else "", stamp, age, age_days, precision]
+    rows_out.append("\t".join(clean(v) for v in values))
 label = sys.argv[2]
 backlog = data.get("backlog") or {}
+if not isinstance(backlog, dict):
+    backlog = {}
 if backlog.get("present") is True and isinstance(backlog.get("records"), list):
     for row in backlog["records"]:
+        if not isinstance(row, dict):
+            unknown(label, "owner-action record malformed")
+            continue
         if row.get("captain_actionable") is True:
             emit(label, row, row.get("title", ""))
 else:
     unknown(label, "local backlog unavailable")
 secondmates = data.get("secondmate_current") or {}
+if not isinstance(secondmates, dict):
+    secondmates = {}
 registry = secondmates.get("registry") or {}
+if not isinstance(registry, dict):
+    registry = {}
 if registry.get("available") is not True or registry.get("complete") is not True:
     unknown(label, "secondmate registry unavailable or incomplete")
 if secondmates.get("truncated", 0):
@@ -343,30 +396,79 @@ if not isinstance(secondmates.get("records"), list):
     unknown(label, "secondmate records unavailable")
 else:
     for mate in secondmates["records"]:
+        if not isinstance(mate, dict):
+            unknown(label, "secondmate record malformed")
+            continue
         if mate.get("registered") is not True:
             continue
-        source = label + "/" + mate["id"]
+        mate_id = mate.get("id")
+        if isinstance(mate_id, bool) or not isinstance(mate_id, (str, int)):
+            unknown(label, "secondmate record malformed")
+            continue
+        source = label + "/" + str(mate["id"])
         provenance = mate.get("provenance") or {}
+        if not isinstance(provenance, dict):
+            provenance = {}
         if provenance.get("selected") != "structured-home" or provenance.get("trust") not in ("complete", "partial-structured"):
             unknown(source, "secondmate owner-action records unavailable")
             continue
-        if (mate.get("freshness") or {}).get("status") == "cached" or provenance.get("summary_source") == "remote-ledger-cache":
+        raw_freshness = mate.get("freshness")
+        if raw_freshness is not None and not isinstance(raw_freshness, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            freshness = {}
+        else:
+            freshness = raw_freshness if isinstance(raw_freshness, dict) else {}
+        if freshness.get("status") == "cached" or provenance.get("summary_source") == "remote-ledger-cache":
             unknown(source, "secondmate decisions from cached ledger")
         decisions = mate.get("decisions_open")
         if not isinstance(decisions, list):
             unknown(source, "secondmate decisions unavailable")
             continue
+        raw_current = mate.get("current")
+        if raw_current is not None and not isinstance(raw_current, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            current = {}
+        else:
+            current = raw_current if isinstance(raw_current, dict) else {}
+        raw_counts = mate.get("counts")
+        if raw_counts is not None and not isinstance(raw_counts, dict):
+            unknown(source, "secondmate decision coverage incomplete")
+            counts = {}
+        else:
+            counts = raw_counts if isinstance(raw_counts, dict) else {}
+        omitted = mate.get("omitted") if isinstance(mate.get("omitted"), list) else []
+        if "omitted" in mate and not isinstance(mate.get("omitted"), list):
+            unknown(source, "secondmate decision coverage incomplete")
         if (provenance.get("trust") != "complete"
-                or (mate.get("current") or {}).get("state") == "unknown"
-                or (mate.get("counts") or {}).get("decisions_open", len(decisions)) > len(decisions)
-                or any(r.get("surface") == "decisions_open" and r.get("count", 0) > 0 for r in mate.get("omitted", []))):
+                or current.get("state") == "unknown"
+                or (counts.get("decisions_open", len(decisions)) if isinstance(counts.get("decisions_open", len(decisions)), int) else len(decisions) + 1) > len(decisions)
+                or any(omitted_incomplete(r) for r in omitted)):
             unknown(source, "secondmate decision coverage incomplete")
         for row in decisions:
+            if not isinstance(row, dict):
+                unknown(source, "owner-action record malformed")
+                continue
             if row.get("verb") == "captain-hold":
                 emit(source, row, row.get("question") or row.get("summary", ""))
+for line in rows_out:
+    print(line)
 PY
   [ "$rc" = 0 ] && return 0
   printf '%s\t%s\n' "$label" 'native owner-action records unavailable' >> "$work/waiting-unknown.tsv"
+}
+
+# A status file counts as structured snapshot data only when it parses as a
+# top-level object with the fleet-snapshot schema. Prose that mentions the
+# schema string, and JSON that does not parse, is still ETA prose.
+gd_status_is_snapshot() { # <file>
+  python3 - "$1" <<'PY'
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+except (ValueError, OSError):
+    sys.exit(1)
+sys.exit(0 if isinstance(data, dict) and data.get("schema") == "fm-fleet-snapshot.v1" else 1)
+PY
 }
 
 do_run() {
@@ -390,8 +492,10 @@ except BlockingIOError:
   local seen_file=$output_dir/.state/seen.tsv
   local hash_file=$output_dir/.state/content.hash
   local since_file=$output_dir/.state/since.tsv
+  local pending_since_file=$output_dir/.state/pending-since.tsv
   [ -f "$seen_file" ] || : > "$seen_file"
   [ -f "$since_file" ] || : > "$since_file"
+  [ -f "$pending_since_file" ] || : > "$pending_since_file"
   local work
   work=$(mktemp -d "$output_dir/.state/run.XXXXXX") || return 1
   GD_CLEANUP_WORK=$work
@@ -420,14 +524,21 @@ except BlockingIOError:
     local stop_before
     stop_before=$(awk -F '\t' -v r="$repo" '$1 == r { print $2 }' "$since_file" 2>/dev/null || true)
     if [ -z "$stop_before" ]; then
+      stop_before=$(awk -F '\t' -v r="$repo" '$1 == r { print $2 }' "$pending_since_file" 2>/dev/null || true)
+    fi
+    if [ -z "$stop_before" ]; then
       stop_before=$((now_epoch - 86400))
+      # Persist the initial window before collecting so a failed first
+      # publication retries against the same baseline, not a later clock.
+      printf '%s\t%s\n' "$repo" "$stop_before" >> "$pending_since_file"
       printf '%s\t%s\n' "$repo" "$stop_before" >> "$work/since-new.tsv"
     fi
     if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
-      FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges.tsv" \
-      FM_GD_SINCE="$since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
+      : > "$work/new_merges-part.tsv"
+      FM_GD_REPO="$repo" FM_GD_SEEN="$seen_file" FM_GD_OUT="$work/new_merges-part.tsv" \
+      FM_GD_SINCE="$since_file" FM_GD_PENDING="$pending_since_file" FM_GD_SINCE_NEW="$work/since-new.tsv" FM_GD_NOW="$now_epoch" \
       python3 - "$json_file" <<'PY'
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
@@ -438,6 +549,17 @@ with open(since_path) as fh:
         parts = line.rstrip("\n").split("\t")
         if len(parts) >= 2 and parts[1].isdigit():
             since[parts[0]] = int(parts[1])
+if repo not in since:
+    try:
+        with open(os.environ["FM_GD_PENDING"]) as fh:
+            for line in fh:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 2 and parts[0] == repo and parts[1].isdigit():
+                    # Pending holds stop_before (seed time minus one day);
+                    # only merges after it are new on a retried first run.
+                    since[repo] = int(parts[1])
+    except OSError:
+        pass
 seen = set()
 try:
     with open(os.environ["FM_GD_SEEN"]) as fh:
@@ -464,6 +586,7 @@ with open(os.environ["FM_GD_OUT"], "a") as out:
             merged = datetime.datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         except (TypeError, ValueError):
             continue
+        seen.add((repo, number))
         if repo in since:
             if merged.timestamp() <= since[repo]:
                 continue
@@ -479,10 +602,11 @@ PY
       if [ "$parse_rc" -ne 0 ]; then
         printf '%s\t%s\t%s\n' "repo" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
       else
-      # Record every merged pull as seen, new or not. This is staged and
-      # only committed to seen.tsv after archival and publication, so an
-      # interrupted run cannot lose a merge notification.
-      FM_GD_REPO="$repo" python3 - "$json_file" >> "$work/seen-new.tsv" <<'PY'
+        cat "$work/new_merges-part.tsv" >> "$work/new_merges.tsv"
+        # Record every merged pull as seen, new or not. This is staged and
+        # only committed to seen.tsv after archival and publication, so an
+        # interrupted run cannot lose a merge notification.
+        FM_GD_REPO="$repo" python3 - "$json_file" >> "$work/seen-new.tsv" <<'PY'
 import json, os, sys
 repo = os.environ["FM_GD_REPO"]
 with open(sys.argv[1]) as fh:
@@ -493,27 +617,39 @@ for pr in pulls:
 PY
       fi
     fi
-    if ! fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
+    if ! FM_GD_STOP_BEFORE='' fetch_pulls "$repo" "state=open&sort=created&direction=asc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo-open" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
-      FM_GD_REPO="$repo" FM_GD_NOW="$now_epoch" python3 - "$json_file" >> "$work/open.tsv" <<'PY'
+      FM_GD_REPO="$repo" FM_GD_NOW="$now_epoch" python3 - "$json_file" > "$work/open-part.tsv" <<'PY'
 import datetime, json, os, sys
 repo = os.environ["FM_GD_REPO"]
 now = int(os.environ["FM_GD_NOW"])
 with open(sys.argv[1]) as fh:
     pulls = json.load(fh)
+if not isinstance(pulls, list):
+    sys.exit(1)
 for pr in pulls:
+    if not isinstance(pr, dict):
+        sys.exit(1)
     created = pr.get("created_at") or ""
+    if not isinstance(created, str):
+        created = ""
     age = ""
     try:
         ts = datetime.datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
         age = str(max(0, int((now - ts.timestamp()) // 3600)))
-    except ValueError:
+    except (ValueError, TypeError):
         pass
-    user = (pr.get("user") or {}).get("login", "")
+    user = (pr.get("user") or {}).get("login", "") if isinstance(pr.get("user"), dict) else ""
     clean = lambda v: str(v).replace("\t", " ").replace("\r", " ").replace("\n", " ")
     print("\t".join([repo, str(pr.get("number", "")), clean(pr.get("title", "")), clean(pr.get("html_url", "")), created, age, clean(user), "yes" if pr.get("draft") else "no"]))
 PY
+      local open_rc=$?
+      if [ "$open_rc" -ne 0 ]; then
+        printf '%s\t%s\t%s\n' "repo-open" "$repo" "pull parse failed" >> "$work/unreachable.tsv"
+      else
+        cat "$work/open-part.tsv" >> "$work/open.tsv"
+      fi
     fi
   done
 
@@ -527,14 +663,22 @@ PY
       continue
     fi
     collect_waiting "$label" "$content"
-    while IFS= read -r eta_line; do
-      eta_date=$(printf '%s' "$eta_line" | grep -oiE "$eta_pattern" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
-      if [ -n "$eta_date" ] && [ "$eta_date" \< "$today" ]; then
-        printf '%s\t%s\t%s\n' "$label" "$eta_date" "$(trim "$eta_line" | tr '\t' ' ')" >> "$work/missed.tsv"
-      fi
-    done <<EOF
+    # Skip ETA prose only for a parsed top-level fleet snapshot. A schema
+    # string in ordinary prose, or JSON that does not parse, still counts.
+    if ! gd_status_is_snapshot "$content"; then
+      while IFS= read -r eta_line; do
+        while IFS= read -r eta_date; do
+          [ -n "$eta_date" ] || continue
+          if [ "$eta_date" \< "$today" ]; then
+            printf '%s\t%s\t%s\n' "$label" "$eta_date" "$(trim "$eta_line" | tr '\t' ' ')" >> "$work/missed.tsv"
+          fi
+        done <<ETA_EOF
+$(printf '%s' "$eta_line" | grep -oiE "$eta_pattern" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}$' || true)
+ETA_EOF
+      done <<EOF
 $(grep -iE "$eta_pattern" "$content" 2>/dev/null || true)
 EOF
+    fi
     local mtime
     mtime=$(cat "$mtime_file")
     case "$mtime" in ''|*[!0-9]*) mtime= ;; esac
@@ -549,7 +693,7 @@ EOF
   for i in "${review_labels[@]+"${!review_labels[@]}"}"; do
     label=${review_labels[$i]}; loc=${review_locs[$i]}
     content=$work/review-content; mtime_file=$work/review-mtime
-    if ! read_source "$loc" "$content" "$mtime_file"; then
+    if ! read_source "$loc" "$content" "$mtime_file" 0; then
       printf '%s\t%s\t%s\n' "review" "$label" "$loc" >> "$work/unreachable.tsv"
       continue
     fi
@@ -579,7 +723,7 @@ EOF
   FM_GD_WORK="$work" FM_GD_NOW_ISO="$now_iso" FM_GD_NOW_CST="$now_cst" FM_GD_CHANGED="$changed" \
   FM_GD_OUTPUT="$output_dir" \
   python3 - <<'PY'
-import datetime, json, os
+import datetime, json, os, secrets
 work = os.environ["FM_GD_WORK"]
 def rows(name):
     path = os.path.join(work, name)
@@ -648,11 +792,35 @@ lines.append("")
 with open(md_tmp, "w") as fh:
     fh.write("\n".join(lines))
 stamp = datetime.datetime.strptime(os.environ["FM_GD_NOW_ISO"], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%dT%H%M%SZ")
-for suffix, source in (("md", md_tmp), ("json", json_tmp)):
-    archive = os.path.join(output, "history", stamp + "." + suffix)
-    with open(source, "rb") as inp, open(archive + ".tmp", "wb") as out:
-        out.write(inp.read())
-    os.replace(archive + ".tmp", archive)
+history_dir = os.path.join(output, "history")
+n = 0
+while True:
+    stem = stamp if n == 0 else f"{stamp}-{n}"
+    md_archive = os.path.join(history_dir, stem + ".md")
+    json_archive = os.path.join(history_dir, stem + ".json")
+    if not os.path.lexists(md_archive) and not os.path.lexists(json_archive):
+        break
+    n += 1
+
+def stage(source):
+    tmp = os.path.join(history_dir, ".history-" + secrets.token_hex(16) + ".tmp")
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    try:
+        with os.fdopen(fd, "wb") as out, open(source, "rb") as inp:
+            out.write(inp.read())
+    except Exception:
+        os.unlink(tmp)
+        raise
+    return tmp
+
+md_staged = stage(md_tmp)
+try:
+    json_staged = stage(json_tmp)
+except Exception:
+    os.unlink(md_staged)
+    raise
+os.replace(md_staged, md_archive)
+os.replace(json_staged, json_archive)
 os.replace(json_tmp, os.path.join(output, "latest.json"))
 os.replace(md_tmp, os.path.join(output, "latest.md"))
 PY
@@ -689,6 +857,33 @@ with open(tmp, "w") as fh:
         fh.write(f"{key}\t{since[key]}\n")
 os.replace(tmp, os.environ["FM_GD_SINCE"])
 PY
+  # Pending initial windows are consumed once the real watermark exists.
+  FM_GD_SINCE="$since_file" FM_GD_PENDING="$pending_since_file" python3 - <<'PY' || return 1
+import os
+since = set()
+try:
+    with open(os.environ["FM_GD_SINCE"]) as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 2:
+                since.add(parts[0])
+except OSError:
+    pass
+pending_path = os.environ["FM_GD_PENDING"]
+kept = []
+try:
+    with open(pending_path) as fh:
+        for line in fh:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 2 and parts[0] not in since:
+                kept.append(line if line.endswith("\n") else line + "\n")
+except OSError:
+    pass
+tmp = pending_path + ".tmp"
+with open(tmp, "w") as fh:
+    fh.writelines(kept)
+os.replace(tmp, pending_path)
+PY
 
   printf '%s\n' "$content_hash" > "$hash_file.tmp" && mv "$hash_file.tmp" "$hash_file" || return 1
 
@@ -698,13 +893,19 @@ PY
     # from config is ever executed.
     # Poll Claude's optional file watchers: native FSEvents registration
     # can stall startup long enough to exhaust the model-call deadline.
+    local pinned_model=
     case "$summarize_model" in
-      haiku|sonnet|claude-haiku-*|claude-sonnet-*)
+      haiku) pinned_model=claude-haiku-4-5 ;;
+      sonnet) pinned_model=claude-sonnet-4-5 ;;
+      claude-haiku-*|claude-sonnet-*) pinned_model=$summarize_model ;;
+    esac
+    case "$pinned_model" in
+      claude-haiku-*|claude-sonnet-*)
         if ! command -v "$claude_bin" >/dev/null 2>&1; then
           printf '%s\n' "goal-digest: summary unavailable: claude runner not found" >&2
         elif { printf '%s\n' "Summarize this goal digest for its owner in at most 12 short lines: new merges, items waiting, missed ETAs, stalls and anything blocked. Use only the input below."; cat "$output_dir/latest.md"; } > "$work/summary-prompt.txt" &&
-           CHOKIDAR_USEPOLLING=1 timed 120 "$claude_bin" -p --model "$summarize_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null &&
-           [ -s "$work/summary.txt" ] &&
+           ( unset ANTHROPIC_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL; CHOKIDAR_USEPOLLING=1 timed 120 "$claude_bin" -p --model "$pinned_model" --tools "" --setting-sources "" --strict-mcp-config --no-session-persistence < "$work/summary-prompt.txt" > "$work/summary.txt" 2>/dev/null ) 9>&- &&
+           grep -q '[^[:space:]]' "$work/summary.txt" &&
            mv "$work/summary.txt" "$output_dir/summary.txt"; then
           :
         else
@@ -798,8 +999,8 @@ do_uninstall() {
 
 case "${1:-run}" in
   run) [ $# -le 1 ] || { echo "usage: fm-goal-digest.sh [run|install|uninstall|--help]" >&2; exit 2; }; do_run ;;
-  install) do_install ;;
-  uninstall) do_uninstall ;;
+  install) [ $# -le 1 ] || { echo "usage: fm-goal-digest.sh [run|install|uninstall|--help]" >&2; exit 2; }; do_install ;;
+  uninstall) [ $# -le 1 ] || { echo "usage: fm-goal-digest.sh [run|install|uninstall|--help]" >&2; exit 2; }; do_uninstall ;;
   --help|-h|help) usage ;;
   *) echo "usage: fm-goal-digest.sh [run|install|uninstall|--help]" >&2; exit 2 ;;
 esac

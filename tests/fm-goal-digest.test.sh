@@ -317,7 +317,7 @@ SH
   local home
   home=$(make_home home7 "$TMP_ROOT/linger-summarize.sh")
   run_digest "$home" >/dev/null || fail "first run with lingering summarizer failed"
-  run_digest "$home" >/dev/null 2>&1 || fail "background helper left by summarize_cmd kept the run lock held"
+  run_digest "$home" >/dev/null 2>&1 || fail "background helper left by the summarizer kept the run lock held"
   pkill -f "$TMP_ROOT/linger-helper" 2>/dev/null || true
   pass "summarizer background helper does not hold the run lock"
 }
@@ -554,7 +554,8 @@ def check(digest, known, sources):
 first = run(snapshot)
 check(first, True, {"Fleet/mate-a","Fleet/mate-b"})
 assert all(w["title"] == "Choose route: north or south?" for w in first["waiting_on_captain"])
-assert "Choose route: north or south? age_hours=unknown" in (home / "data/goal-digest/latest.md").read_text()
+assert all(w["age_days"] == 30 and w["age_precision"] == "day" for w in first["waiting_on_captain"]), first["waiting_on_captain"]
+assert "Choose route: north or south? age_days=30 (day precision)" in (home / "data/goal-digest/latest.md").read_text()
 env["FM_GD_NOW_EPOCH"] = str(int(now) + 3600)
 snapshot["secondmate_current"]["records"][0]["decisions_open"][0]["hold_age_days"] = 31
 snapshot["secondmate_current"]["records"][0]["freshness"]["age_seconds"] = 3600
@@ -663,7 +664,7 @@ PYCHECK
 
 test_archive_failure_preserves_notification_state() {
   write_fixtures 0
-  local home rc=0
+  local home rc=0 hist
   home=$(make_home archive-failure)
   run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "initial archive run failed"
   cp "$home/data/goal-digest/.state/seen.tsv" "$home/seen-before"
@@ -671,16 +672,42 @@ test_archive_failure_preserves_notification_state() {
   cp "$home/data/goal-digest/.state/content.hash" "$home/hash-before"
   cp "$home/data/goal-digest/latest.json" "$home/latest-before"
   write_fixtures 1
-  mkdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  hist=$home/data/goal-digest/history
+  chmod u-w "$hist"
   run_digest "$home" "$RUN3_EPOCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" != 0 ] || fail "archive failure reported success"
   cmp "$home/seen-before" "$home/data/goal-digest/.state/seen.tsv" || fail "archive failure consumed merges"
   cmp "$home/since-before" "$home/data/goal-digest/.state/since.tsv" || fail "archive failure advanced watermark"
   cmp "$home/hash-before" "$home/data/goal-digest/.state/content.hash" || fail "archive failure consumed change"
   cmp "$home/latest-before" "$home/data/goal-digest/latest.json" || fail "archive failure replaced latest JSON"
-  rmdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  chmod u+w "$hist"
   run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "archive recovery failed"
   assert_equals "[2]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home/data/goal-digest/latest.json")" "unarchived merge remains reportable"
+  # 2026-01-01T17:00:00Z. A leftover predictable temp occupies no final name.
+  mkdir "$hist/20260101T170000Z.json.tmp"
+  printf 'T9: temp only\n' > "$home/review.status"
+  run_digest "$home" $((RUN1_EPOCH + 18000)) >/dev/null || fail "leftover history temp blocked a free stamp"
+  [ -f "$hist/20260101T170000Z.md" ] || fail "free stamp skipped markdown because a temp name was occupied"
+  [ -f "$hist/20260101T170000Z.json" ] || fail "free stamp skipped JSON because a temp name was occupied"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T170000Z.md" || fail "temp-occupied stamp did not archive this markdown"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T170000Z.json" || fail "temp-occupied stamp did not archive this JSON"
+  # 2026-01-01T13:00:00Z. Partial markdown must not pair with a later JSON.
+  printf 'orphan attempt\n' > "$hist/20260101T130000Z.md"
+  mkdir "$hist/20260101T130000Z.json.tmp"
+  printf 'T9: shifted\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "partial-archive retry failed"
+  assert_equals "orphan attempt" "$(cat "$hist/20260101T130000Z.md")" "partial markdown stays the failed attempt"
+  [ ! -e "$hist/20260101T130000Z.json" ] || fail "retry JSON reused the partial attempt name"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T130000Z-1.md" || fail "shared-suffix markdown is not this attempt"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T130000Z-1.json" || fail "shared-suffix JSON is not this attempt"
+  cp "$hist/20260101T130000Z-1.md" "$home/pair-md"
+  cp "$hist/20260101T130000Z-1.json" "$home/pair-json"
+  printf 'T9: shifted again\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "second partial-archive retry failed"
+  cmp "$home/pair-md" "$hist/20260101T130000Z-1.md" || fail "later attempt rewrote the previous markdown"
+  cmp "$home/pair-json" "$hist/20260101T130000Z-1.json" || fail "later attempt paired its JSON with the previous markdown"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T130000Z-2.md" || fail "second retry markdown missed its shared suffix"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T130000Z-2.json" || fail "second retry JSON missed its shared suffix"
   pass "archive failure does not consume notifications or report success"
 }
 
@@ -864,7 +891,10 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   home=$(make_home runner-argv)
   FM_GD_CLAUDE_ARGS="$TMP_ROOT/claude-args" run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "runner argv run failed"
   assert_contains "$(cat "$TMP_ROOT/claude-args")" "--no-session-persistence" "runner uses isolated fixed argv"
-  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--model haiku" "runner uses the cheap default model"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--model claude-haiku-4-5" "runner pins the cheap default model"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" '--tools ' "runner disables tools"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--setting-sources " "runner disables setting sources"
+  assert_contains "$(cat "$TMP_ROOT/claude-args")" "--strict-mcp-config" "runner uses strict MCP config"
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "summary written by fixed runner"
   printf 'summarize_model = best\n' >> "$home/config/goal-digest"
   write_fixtures 1
@@ -879,6 +909,59 @@ test_fixed_runner_argv_rejection_and_empty_output() {
   assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "empty runner output keeps prior summary"
   pass "fixed runner argv, model rejection and empty output"
 }
+
+test_review_fixes_parse_eta_history_summary_and_window() {
+  write_fixtures 0
+  # Duplicate closed page entries are reported once; every ETA on a line counts.
+  cat > "$FIXTURE/merged-example-org_example-repo.json" <<'JSON'
+[{"number": 1, "title": "First", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"},
+ {"number": 1, "title": "First", "html_url": "https://example.invalid/pr/1", "merge_commit_sha": "aaaaaaaaaaaa1111", "merged_at": "2026-01-01T00:00:00Z", "created_at": "2025-12-31T00:00:00Z"}]
+JSON
+  local home
+  home=$(make_home review-fixes)
+  printf 'eta: 2099-01-01 later eta: 2020-01-01 missed second\neta: 2019-05-05 first\n' > "$home/status.txt"
+  printf '{"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[{"id":"done","title":"eta: 2018-01-01 done row","captain_actionable":false}]},"secondmate_current":{"registry":{"available":true,"complete":true},"records":[],"truncated":0}}\n' > "$home/snapshot.json"
+  printf 'status = Snapshot | %s\n' "$home/snapshot.json" >> "$home/config/goal-digest"
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "review-fixes first run failed"
+  assert_equals "[1]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home/data/goal-digest/latest.json")" "duplicate closed entries reported once"
+  assert_equals "['2019-05-05', '2020-01-01']" "$(python3 -c 'import json,sys; print(sorted(m["eta"] for m in json.load(open(sys.argv[1]))["missed_etas"]))' "$home/data/goal-digest/latest.json")" "all ETAs per line counted and JSON snapshot not raw-grepped"
+  # Same-second second run keeps both history archives.
+  write_fixtures 1
+  run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "review-fixes same-second run failed"
+  [ "$(find "$home/data/goal-digest/history" -name '20260101T120000Z*.md' | wc -l | tr -d ' ')" -ge 2 ] || fail "same-second history archive was overwritten"
+  # Non-list open payload is recorded unreachable, not silently dropped.
+  printf '{"error":"nope"}\n' > "$FIXTURE/open-example-org_example-repo.json"
+  printf 'T1: changed\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "review-fixes open-parse run failed"
+  assert_contains "$(cat "$home/data/goal-digest/latest.json")" '"repo-open"' "open parse failure recorded unreachable"
+  assert_equals "[]" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["open_pull_requests"])' "$home/data/goal-digest/latest.json")" "failed open parse publishes no partial rows"
+  write_fixtures 0
+  # Whitespace-only summary keeps the prior summary and cannot be remapped to Opus.
+  cat > "$TMP_ROOT/whitespace-claude" <<'SH'
+#!/usr/bin/env bash
+printf '%s' "${ANTHROPIC_DEFAULT_HAIKU_MODEL:-unset}" > "$FM_HOME/runner-env"
+printf '  \n'
+SH
+  chmod +x "$TMP_ROOT/whitespace-claude"
+  printf '%s' "$TMP_ROOT/whitespace-claude" > "$home/.claude-stub"
+  printf 'T1: complete\n' > "$home/review.status"
+  ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-opus-4-6 run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "whitespace summary run failed"
+  assert_equals "summary" "$(cat "$home/data/goal-digest/summary.txt")" "whitespace-only summary keeps prior summary"
+  assert_equals "unset" "$(cat "$home/runner-env")" "model-remap environment is unset for the runner"
+  # A failed first publication retries against the persisted initial window.
+  local home2
+  home2=$(make_home first-publication)
+  mkdir -p "$home2/data/goal-digest/history"
+  chmod u-w "$home2/data/goal-digest/history"
+  local rc=0
+  run_digest "$home2" "$RUN1_EPOCH" >/dev/null 2>&1 || rc=$?
+  [ "$rc" != 0 ] || fail "blocked first publication reported success"
+  chmod u+w "$home2/data/goal-digest/history"
+  run_digest "$home2" $((RUN1_EPOCH + 172800)) >/dev/null || fail "first-publication retry failed"
+  assert_equals "[1]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home2/data/goal-digest/latest.json")" "failed first publication retains its initial merge window"
+  pass "review fixes: parse, ETA, history, summary and first-publication window"
+}
+
 
 test_empty_status_and_review_loops_under_bash32() {
   local bash32 home out err rc
@@ -957,4 +1040,203 @@ test_summarize_off_and_invalid_value_do_not_spend() {
   pass "summarize=off and invalid summarize values do not spend"
 }
 
-fm_test_run test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
+# A finding blocks only when this behavior fails at head and holds at base.
+# Prose that merely mentions the snapshot schema still reports a missed ETA.
+# A null backlog row, null mate, or null decision leaves owner-action coverage
+# unknown, while an unregistered mate stays quiet. A non-dict freshness,
+# current, or omitted entry, and a float omitted count, leave coverage unknown.
+test_prose_schema_marker_and_malformed_owner_coverage() {
+  local home="$TMP_ROOT/review-repros"
+  mkdir -p "$home/config"
+  python3 - "$SCRIPT" "$home" "$FAKE:$BASE_PATH" "$TMP_ROOT/summarize.sh" "$RUN1_EPOCH" <<'PY' || fail "prose schema marker or malformed owner coverage"
+import json, os, pathlib, shutil, subprocess, sys
+script, home, path, claude, now = sys.argv[1:]
+home = pathlib.Path(home)
+env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1", FM_GOAL_DIGEST_CLAUDE=claude)
+
+def mate(decisions=None):
+    rows = decisions if decisions is not None else [{
+        "id": "route", "key": "route", "verb": "captain-hold",
+        "summary": "Choose route", "question": "Choose route?", "hold_age_days": 1,
+    }]
+    return {
+        "id": "mate-a", "registered": True,
+        "provenance": {"selected": "structured-home", "trust": "complete", "summary_valid": True, "summary_source": "remote-ledger"},
+        "current": {"state": "captain_decision"},
+        "freshness": {"status": "fresh", "observed_at": "2026-01-01T12:00:00Z", "age_seconds": 0},
+        "decisions_open": rows,
+        "counts": {"decisions_open": len(rows)},
+        "omitted": [],
+    }
+
+def snapshot(records, backlog=None):
+    return {
+        "schema": "fm-fleet-snapshot.v1",
+        "backlog": {"present": True, "records": [] if backlog is None else backlog},
+        "secondmate_current": {
+            "registry": {"available": True, "complete": True},
+            "records": records, "truncated": 0,
+        },
+    }
+
+def run(config, name, body):
+    digest_dir = home / "data" / "goal-digest"
+    if digest_dir.exists():
+        shutil.rmtree(digest_dir)
+    (home / "config" / "goal-digest").write_text(config)
+    target = home / name
+    target.write_text(body)
+    result = subprocess.run([script, "run"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads((digest_dir / "latest.json").read_text())
+
+failures = []
+
+def expect(case, cond, detail):
+    if not cond:
+        failures.append(case + ": " + detail)
+
+notes = run(
+    "status = Notes | %s/notes.txt\n" % home,
+    "notes.txt",
+    'The documented schema string is "schema": "fm-fleet-snapshot.v1".\neta: 2020-01-01 deliver\n',
+)
+etas = sorted(item["eta"] for item in notes["missed_etas"])
+expect("prose-schema-eta", etas == ["2020-01-01"], "missed_etas=%s" % etas)
+
+def coverage(case, body, want):
+    digest = run("status = Fleet | %s/status.json\n" % home, "status.json", body)
+    got = digest["waiting_on_captain_status"]
+    expect(case, got == want, "status=%s unknown=%s" % (got, digest["waiting_on_captain_unknown_sources"]))
+    return digest
+
+coverage("null-backlog-row", json.dumps(snapshot([], [None])), "unknown")
+coverage("null-mate", json.dumps(snapshot([None])), "unknown")
+coverage("null-decision", json.dumps(snapshot([mate([None])])), "unknown")
+quiet = coverage("unregistered-mate", json.dumps(snapshot([mate(), dict(mate(), id="unregistered", registered=False)])), "known")
+ids = sorted(item["id"] for item in quiet["waiting_on_captain"])
+sources = sorted(item["source"] for item in quiet["waiting_on_captain"])
+expect("unregistered-mate-skipped", ids == ["route"] and sources == ["Fleet/mate-a"], "ids=%s sources=%s" % (ids, sources))
+stale = mate()
+stale["freshness"] = "stale"
+coverage("non-dict-freshness", json.dumps(snapshot([stale])), "unknown")
+bad_current = mate()
+bad_current["current"] = "captain_decision"
+coverage("non-dict-current", json.dumps(snapshot([bad_current])), "unknown")
+bad_entry = mate()
+bad_entry["omitted"] = [None]
+coverage("non-dict-omitted-entry", json.dumps(snapshot([bad_entry])), "unknown")
+float_count = mate()
+float_count["omitted"] = [{"surface": "decisions_open", "count": 1.0}]
+coverage("float-omitted-count", json.dumps(snapshot([float_count])), "unknown")
+if failures:
+    raise SystemExit("\n".join(failures))
+PY
+  pass "prose schema marker keeps a missed ETA and malformed owner coverage stays unknown"
+}
+
+# A string, null, or list omitted count, a list or string secondmate counts
+# value, a null omitted list, and a boolean mate id leave owner-action
+# coverage unknown, while an empty or absent omitted list stays known.
+# A closed pull with a bad timestamp does not hide a later valid copy.
+test_malformed_counts_bool_mate_and_duplicate_pull() {
+  local home="$TMP_ROOT/round2-repros"
+  mkdir -p "$home/config" "$FIXTURE"
+  python3 - "$SCRIPT" "$home" "$FAKE:$BASE_PATH" "$FIXTURE" "$TMP_ROOT/summarize.sh" "$RUN1_EPOCH" <<'PY' || fail "malformed counts, boolean mate id, or duplicate pull"
+import json, os, pathlib, shutil, subprocess, sys
+script, home, path, fixture, claude, now = sys.argv[1:]
+home = pathlib.Path(home)
+fixture = pathlib.Path(fixture)
+env = dict(os.environ, FM_HOME=str(home), PATH=path, FM_GD_NOW_EPOCH=now, FM_TEST_SEAM="1",
+           FM_GOAL_DIGEST_CLAUDE=claude, FM_GD_FIXTURE=str(fixture))
+
+def mate(**overrides):
+    row = {
+        "id": "mate-a", "registered": True,
+        "provenance": {"selected": "structured-home", "trust": "complete", "summary_valid": True, "summary_source": "remote-ledger"},
+        "current": {"state": "captain_decision"},
+        "freshness": {"status": "fresh", "observed_at": "2026-01-01T12:00:00Z", "age_seconds": 0},
+        "decisions_open": [{
+            "id": "route", "key": "route", "verb": "captain-hold",
+            "summary": "Choose route", "question": "Choose route?", "hold_age_days": 1,
+        }],
+        "counts": {"decisions_open": 1},
+        "omitted": [],
+    }
+    row.update(overrides)
+    return row
+
+def snapshot(records):
+    return {
+        "schema": "fm-fleet-snapshot.v1",
+        "backlog": {"present": True, "records": []},
+        "secondmate_current": {
+            "registry": {"available": True, "complete": True},
+            "records": records, "truncated": 0,
+        },
+    }
+
+def run(config, name, body, wipe=True):
+    digest_dir = home / "data" / "goal-digest"
+    if wipe and digest_dir.exists():
+        shutil.rmtree(digest_dir)
+    (home / "config" / "goal-digest").write_text(config)
+    (home / name).write_text(body)
+    result = subprocess.run([script, "run"], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    return json.loads((digest_dir / "latest.json").read_text())
+
+failures = []
+
+def expect(case, cond, detail):
+    if not cond:
+        failures.append(case + ": " + detail)
+
+def coverage(case, body):
+    digest = run("status = Fleet | %s/status.json\n" % home, "status.json", body)
+    got = digest["waiting_on_captain_status"]
+    expect(case, got == "unknown", "status=%s unknown=%s" % (got, digest["waiting_on_captain_unknown_sources"]))
+
+string_count = mate(omitted=[{"surface": "decisions_open", "count": "1"}])
+coverage("string-omitted-count", json.dumps(snapshot([string_count])))
+null_count = mate(omitted=[{"surface": "decisions_open", "count": None}])
+coverage("null-omitted-count", json.dumps(snapshot([null_count])))
+list_count = mate(omitted=[{"surface": "decisions_open", "count": [1]}])
+coverage("list-omitted-count", json.dumps(snapshot([list_count])))
+coverage("string-counts", json.dumps(snapshot([mate(counts="2")])))
+coverage("list-counts", json.dumps(snapshot([mate(counts=[1])])))
+coverage("bool-mate-id", json.dumps(snapshot([mate(id=True)])))
+coverage("null-omitted-list", json.dumps(snapshot([mate(omitted=None)])))
+empty = run("status = Fleet | %s/status.json\n" % home, "status.json", json.dumps(snapshot([mate(omitted=[])])))
+expect("empty-omitted-list", empty["waiting_on_captain_status"] == "known", "status=%s" % empty["waiting_on_captain_status"])
+missing = mate()
+del missing["omitted"]
+absent = run("status = Fleet | %s/status.json\n" % home, "status.json", json.dumps(snapshot([missing])))
+expect("missing-omitted-key", absent["waiting_on_captain_status"] == "known", "status=%s" % absent["waiting_on_captain_status"])
+
+def pulls(rows):
+    (fixture / "merged-example-org_example-repo.json").write_text(json.dumps(rows))
+    (fixture / "open-example-org_example-repo.json").write_text("[]")
+
+def pull_row(number, merged_at, title):
+    return {
+        "number": number, "title": title, "html_url": "https://example.invalid/pr/%s" % number,
+        "merge_commit_sha": "aaaaaaaaaaaa%04d" % number, "merged_at": merged_at,
+        "created_at": "2025-12-31T00:00:00Z",
+    }
+
+pulls([
+    pull_row(4, "not-a-date", "Bad copy"),
+    pull_row(4, "2026-01-01T00:00:00Z", "Valid copy"),
+])
+same = run("repo = example-org/example-repo\n", "notes.txt", "progress\n")
+kept = [(item["number"], item["title"]) for item in same["new_merges"]]
+expect("duplicate-same-run", kept == [(4, "Valid copy")], "new_merges=%s" % kept)
+
+if failures:
+    raise SystemExit("\n".join(failures))
+PY
+  pass "malformed counts and boolean mate id stay unknown and a later valid pull is kept"
+}
+
+fm_test_run test_malformed_counts_bool_mate_and_duplicate_pull test_prose_schema_marker_and_malformed_owner_coverage test_review_fixes_parse_eta_history_summary_and_window test_fixed_runner_argv_rejection_and_empty_output test_summarizer_avoids_native_file_watching test_killed_digest_releases_lock_while_summarizer_lives test_complete_collection_recovers_unreported_merge_window test_new_merge_changed_and_summarize_only_on_change test_missed_eta_stall_and_unreachable test_missing_config_uses_default_output_dir test_install_launchagent test_ssh_quoting_lock_and_install_failure test_lingering_summarizer_helper_does_not_hold_lock test_first_run_seeds_old_merges_and_page_failure_is_incomplete test_owner_actions_are_explicit_and_age_from_wait_start test_secondmate_owner_actions_and_coverage test_cst_calendar_and_complete_review_history test_archive_failure_preserves_notification_state test_pagination_uses_utc_watermark test_failed_serialization_keeps_published_documents test_timeouts_terminate_descendants test_first_run_large_repo_stops_and_saves_watermark test_empty_status_and_review_loops_under_bash32 test_content_hash_sha256sum_fallback_and_empty_hash_fails_closed test_summarize_off_and_invalid_value_do_not_spend
