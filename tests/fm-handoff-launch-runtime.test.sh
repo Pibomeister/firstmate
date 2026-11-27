@@ -2,8 +2,8 @@
 # Successor runtime choice and quota preflight for the verified handoff:
 # codex, agy, and a declared Claude account take over through the real lock
 # and ack; by default the successor keeps the predecessor's model, effort, and
-# setting sources from its own launch argv, and an explicit choice wins and is
-# recorded; an exhausted pool is refused before anything launches; no account
+# setting sources from its recorded launch (the verified successor record, else
+# its exact cmdline, never ps), and an explicit choice wins and is recorded; an exhausted pool is refused before anything launches; no account
 # pin changes. The Orca and tmux transports, quota-axi, and claude auth are
 # fakes; lock, ack, and launcher are real.
 set -eu
@@ -91,12 +91,21 @@ cat > "$LAB/predecessor.sh" <<'EOF2'
 #!/usr/bin/env bash
 set -eu
 echo "$$" > "$FM_HOME/pred.pid"
-# An exact /proc-style cmdline for this process, under the launcher's test seam.
+# An exact /proc-style cmdline for this process, under the launcher's test
+# seam: a given file, else this process's own argv unless FM_TEST_EXACT_ARGV=0.
 if [ -n "${FM_TEST_FAKE_CMDLINE:-}" ]; then
   mkdir -p "$FM_HANDOFF_TEST_PROC_ROOT/$$"
   cp "$FM_TEST_FAKE_CMDLINE" "$FM_HANDOFF_TEST_PROC_ROOT/$$/cmdline"
+elif [ "${FM_TEST_EXACT_ARGV:-1}" = 1 ]; then
+  mkdir -p "$FM_HANDOFF_TEST_PROC_ROOT/$$"
+  printf '%s\0' bash "$0" "$@" > "$FM_HANDOFF_TEST_PROC_ROOT/$$/cmdline"
 fi
 ORCA_TERMINAL_HANDLE=term_predecessor bash "$ROOT/bin/fm-lock.sh" > "$FM_HOME/lock.out" 2>&1
+# The verified launch record of the handoff that started this session.
+if [ -n "${FM_TEST_PRED_RECORD:-}" ]; then
+  printf 'pid=%s\nnonce=n\nhandoff=h\nsha256=s\nsuccessor=%s\n' "${FM_TEST_PRED_RECORD_PID:-$(cat "$FM_HOME/state/.lock")}" \
+    "$FM_TEST_PRED_RECORD" > "$FM_HOME/state/.handoff-successor"
+fi
 set +e
 args=()
 if [ -f "$FM_HOME/launch.args" ]; then while IFS= read -r a; do args+=("$a"); done < "$FM_HOME/launch.args"; fi
@@ -107,6 +116,8 @@ EOF2
 printf '# handoff\nRead this document.\n' > "$LAB/data/handoff.md"
 export ROOT FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config"
 export FM_ROOT_OVERRIDE="$ROOT" FM_HANDOFF_TEST_HARNESS=claude FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS=120
+export FM_HANDOFF_TEST_PROC_ROOT="$TMP_ROOT/proc"
+unset FM_TEST_EXACT_ARGV FM_TEST_PRED_RECORD FM_TEST_PRED_RECORD_PID
 export PATH="$FAKEBIN:$PATH" FM_TEST_PIDS="$TMP_ROOT/pids" FM_TEST_QUOTA="$QUOTA" HOME="$TMP_ROOT/user"
 unset FM_BACKEND FM_SESSION_ENDPOINT_META CLAUDE_PID CLAUDE_CODE_SESSION_ID CLAUDE_CONFIG_DIR CODEX_HOME TMUX TMUX_PANE ZELLIJ
 unset HERDR_ENV HERDR_PANE_ID HERDR_SESSION FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND QUOTA_AXI_SNAPSHOT
@@ -317,7 +328,7 @@ run_case tmux
 [ "$(cat "$LAB/rc")" = 3 ] && [ ! -e "$LAB/state/attempts" ] || fail 'an exhausted ambient claude pool must be vetoed'
 pass 'exhausted_now veto: no successor launches onto an exhausted pool and the predecessor keeps the lock'
 
-# The successor keeps the predecessor's runtime, read from its own launch argv.
+# The successor keeps the predecessor's runtime, read from its exact launch argv.
 record() { sed -n 's/^successor=//p' "$LAB/state/.handoff-successor"; }
 quota_fixture claude 40 through_reset > "$QUOTA/claude.json"
 PRED_ARGS=(--setting-sources 'project,local' --model haiku --effort low)
@@ -365,15 +376,21 @@ assert_contains "$(cat "$LAB/launch.err")" "model default: the predecessor's lau
   'the launcher states that the runtime default applies'
 pass 'a predecessor with no recorded runtime keeps the runtime default and says so'
 
-# ps joins argv words with blanks, so an empty value cannot be delimited: it
-# is unreadable, never guessed. An exact cmdline carries it as given.
-PRED_ARGS=(--setting-sources '' --model haiku)
-FM_HANDOFF_TEST_PROC_ROOT="$TMP_ROOT/no-proc" run_case tmux
-assert_transferred_to claude 'ps empty value'
-argv_is 'ps empty value' claude --dangerously-skip-permissions --model haiku PROMPT
-assert_contains "$(record)" 'setting_sources=default model_from=predecessor effort_from=unrecorded setting_sources_from=unreadable' \
-  'an undelimited value is recorded as unreadable'
-assert_contains "$(cat "$LAB/launch.err")" "setting-sources default: the predecessor's launch value could not be read" 'the launcher states the unreadable value'
+# ps joins argv words with blanks, so it is never read: a prompt word such as
+# `--model opus` is not a flag. With no exact source nothing is carried.
+PROBE_PROMPT='Resume the handoff; the captain said use --model opus --effort max now'
+PRED_ARGS=("$PROBE_PROMPT")
+FM_TEST_EXACT_ARGV=0 run_case tmux
+assert_transferred_to claude 'quoted prompt, no exact source'
+argv_is 'quoted prompt, no exact source' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model=default account=ambient' 'a quoted prompt adds no model override'
+assert_contains "$(record)" 'effort=default setting_sources=default model_from=unreadable effort_from=unreadable setting_sources_from=unreadable predecessor_model=unknown' \
+  'with no exact source every value is recorded as unreadable'
+assert_contains "$(cat "$LAB/launch.err")" "model default: the predecessor's launch value could not be read" 'the launcher states the unreadable value'
+run_case tmux
+assert_transferred_to claude 'quoted prompt, exact argv'
+argv_is 'quoted prompt, exact argv' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model_from=unrecorded effort_from=unrecorded' 'an exact argv reads the quoted prompt as one word'
 mkdir -p "$TMP_ROOT/proc"
 printf 'claude\0%s\0--setting-sources\0\0--model\0haiku\0--effort\0max\0' "$LAB/predecessor.sh" > "$TMP_ROOT/cmdline"
 PRED_ARGS=()
@@ -382,7 +399,29 @@ assert_transferred_to claude 'exact cmdline'
 argv_is 'exact cmdline' claude --dangerously-skip-permissions --model haiku --effort max --setting-sources '' PROMPT
 assert_contains "$(record)" 'effort=max setting_sources=empty model_from=predecessor effort_from=predecessor setting_sources_from=predecessor' \
   'an exact empty value is carried'
-pass 'predecessor argv: ps blanks are unreadable, an exact cmdline carries an empty value'
+pass 'predecessor argv: a quoted prompt never adds an override, an exact cmdline carries an empty value'
+
+# The verified launch record that started this session is its recorded launch.
+PRED_ARGS=()
+FM_TEST_EXACT_ARGV=0 FM_TEST_PRED_RECORD='harness=claude model=claude-opus-4-6[1m] account=ambient reason=handoff effort=high setting_sources=empty model_from=predecessor' \
+  run_case tmux
+assert_transferred_to claude 'recorded launch'
+argv_is 'recorded launch' claude --dangerously-skip-permissions --model 'claude-opus-4-6[1m]' --effort high --setting-sources '' PROMPT
+assert_contains "$(record)" 'effort=high setting_sources=empty model_from=predecessor effort_from=predecessor setting_sources_from=predecessor' \
+  'the recorded launch carries each value'
+FM_TEST_EXACT_ARGV=0 FM_TEST_PRED_RECORD='harness=claude model=default account=ambient effort=default setting_sources=default' run_case tmux
+assert_transferred_to claude 'recorded defaults'
+argv_is 'recorded defaults' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model_from=unrecorded effort_from=unrecorded setting_sources_from=unrecorded' 'a recorded default is no value'
+FM_TEST_EXACT_ARGV=0 FM_TEST_PRED_RECORD='harness=claude model=haiku effort=low' FM_TEST_PRED_RECORD_PID=1 run_case tmux
+assert_transferred_to claude 'record for another session'
+argv_is 'record for another session' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model_from=unreadable' 'a record naming another session is not this launch'
+FM_TEST_EXACT_ARGV=0 FM_TEST_PRED_RECORD='harness=codex model=gpt-5.5 effort=xhigh' run_case tmux
+assert_transferred_to claude 'record for another harness'
+argv_is 'record for another harness' claude --dangerously-skip-permissions PROMPT
+assert_contains "$(record)" 'model_from=unreadable' 'a record naming another harness is not this launch'
+pass 'the verified launch record of the current lock holder carries its runtime; any other record carries nothing'
 
 # A context-suffixed Claude model id, such as opus[1m], carries and can be named.
 PRED_ARGS=(--model 'claude-opus-4-6[1m]')

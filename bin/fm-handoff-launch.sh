@@ -22,9 +22,12 @@
 #   --reason <token>            why this runtime was chosen (default: handoff)
 # By default the successor keeps the predecessor's runtime: on the same
 # harness, the model, effort, and claude setting sources come from the lock
-# holder's own launch argv (/proc/<pid>/cmdline, else ps). A value the
-# predecessor did not record, or that cannot be read as one value, is not
-# guessed: that flag is omitted, as before, and the record says why. A named
+# holder's recorded launch: the verified state/.handoff-successor record when
+# its pid= is the lock holder and its harness= is this harness, else the
+# holder's exact /proc/<pid>/cmdline. ps output is never read, because it
+# joins argv words with blanks, so a prompt holding `--model x` would read as
+# a flag. A value the predecessor did not record, or with no exact source, is
+# not guessed: that flag is omitted, as before, and the record says why. A named
 # option, `default` included, wins over the predecessor's value, so a quota
 # reroute that picks another model or effort names it with --reason. A harness
 # change carries nothing. stderr states each value and where it came from, and
@@ -199,21 +202,38 @@ case "$BACKEND" in orca|tmux) command -v "$BACKEND" >/dev/null || die "missing b
 if [ "$BACKEND" = tmux ]; then
   command -v "$SUCC_HARNESS" >/dev/null || die "missing successor runtime $SUCC_HARNESS"
 fi
-# Predecessor runtime. The lock holder's own launch argv is its recorded
-# launch: /proc's NUL-separated cmdline is exact; ps joins words with blanks,
-# so a value it cannot delimit (an empty one) reads as unreadable, never as a
-# guess. Scanning stops at a `--` word.
-PRED_ARGV=()
-read_predecessor_argv() {
-  local proc_root=/proc w args
+# Predecessor runtime, from its recorded launch only (see the header):
+# PRED_SOURCE is record, argv (exact NUL-separated cmdline), or none.
+# Scanning argv stops at a `--` word.
+PRED_ARGV=() PRED_SOURCE=none PRED_RECORD=()
+read_predecessor_runtime() {
+  local proc_root=/proc rec="$STATE/.handoff-successor" succ w
   [ "${FM_TEST_SEAM:-}" != 1 ] || proc_root=${FM_HANDOFF_TEST_PROC_ROOT:-/proc}
-  PRED_ARGV_EXACT=0
+  if [ -f "$rec" ] && [ "$(sed -n 's/^pid=//p' "$rec" | tail -n 1)" = "$PRED_PID" ]; then
+    succ=$(sed -n 's/^successor=//p' "$rec" | tail -n 1)
+    read -r -a PRED_RECORD <<< "$succ"
+    for w in ${PRED_RECORD[@]+"${PRED_RECORD[@]}"}; do
+      [ "$w" != "harness=$HARNESS" ] || { PRED_SOURCE=record; return 0; }
+    done
+    PRED_RECORD=()
+  fi
   if [ -r "$proc_root/$PRED_PID/cmdline" ]; then
     while IFS= read -r -d '' w || [ -n "$w" ]; do PRED_ARGV+=("$w"); done < "$proc_root/$PRED_PID/cmdline"
-    PRED_ARGV_EXACT=1
-  elif args=$(COLUMNS=10000 LC_ALL=C ps -ww -o args= -p "$PRED_PID" 2>/dev/null) && [ -n "$args" ]; then
-    read -r -a PRED_ARGV <<< "$args"
+    [ "${#PRED_ARGV[@]}" -eq 0 ] || PRED_SOURCE=argv
   fi
+}
+# pred_recorded <field>: the recorded launch's value. `default` is no value;
+# setting sources record an empty value as `empty`.
+pred_recorded() {
+  local w v
+  for w in ${PRED_RECORD[@]+"${PRED_RECORD[@]}"}; do
+    case "$w" in "$1="*) v=${w#"$1"=} ;; *) continue ;; esac
+    case "$1:$v" in
+      *:default) PV='' PV_STATE=absent ;;
+      setting_sources:empty) PV='' PV_STATE=found ;;
+      *) PV=$v PV_STATE=found ;;
+    esac
+  done
 }
 # pred_scan <value-prefix> <flag>...: the last value given to a named flag,
 # `--flag value` or `--flag=value`, whose value starts with the prefix (which
@@ -232,7 +252,6 @@ pred_scan() {
           if [ $((i + 1)) -lt "$n" ]; then
             v=${PRED_ARGV[$((i + 1))]}
             i=$((i + 1))
-            case "$v" in -*) [ "$PRED_ARGV_EXACT" = 1 ] || ok=0 ;; esac
           else
             v='' ok=0
           fi
@@ -241,7 +260,7 @@ pred_scan() {
         *) continue ;;
       esac
       if [ "$ok" = 0 ]; then
-        # An undelimited value is this field's only when every value is.
+        # A trailing flag with no value is this field's only when every value is.
         [ -z "$prefix" ] || continue
         PV='' PV_STATE=unreadable
       else
@@ -254,13 +273,15 @@ pred_scan() {
 # pred_lookup <field>: the predecessor's value for one field, by its harness.
 pred_lookup() {
   PV='' PV_STATE=absent
-  [ "${#PRED_ARGV[@]}" -gt 0 ] || { PV_STATE=unreadable; return 0; }
-  case "$HARNESS:$1" in
-    claude:model|agy:model) pred_scan '' --model ;;
-    codex:model) pred_scan '' --model -m ;;
-    claude:effort) pred_scan '' --effort ;;
-    codex:effort) pred_scan model_reasoning_effort= -c --config ;;
-    claude:setting_sources) pred_scan '' --setting-sources ;;
+  case "$PRED_SOURCE:$HARNESS:$1" in
+    record:*) pred_recorded "$1" ;;
+    argv:claude:model|argv:agy:model) pred_scan '' --model ;;
+    argv:codex:model) pred_scan '' --model -m ;;
+    argv:claude:effort) pred_scan '' --effort ;;
+    argv:codex:effort) pred_scan model_reasoning_effort= -c --config ;;
+    argv:claude:setting_sources) pred_scan '' --setting-sources ;;
+    argv:*) ;;
+    *) PV_STATE=unreadable; return 0 ;;
   esac
   [ "$PV_STATE" = found ] || return 0
   case "$1" in
@@ -313,7 +334,7 @@ resolve_field() {
   printf -v "${upper}_FROM" '%s' "$from"
   printf -v "PRED_${upper}" '%s' "$shown"
 }
-case "$HARNESS" in claude|codex|agy) read_predecessor_argv ;; esac
+case "$HARNESS" in claude|codex|agy) read_predecessor_runtime ;; esac
 resolve_field model SUCC_MODEL "$GIVEN_MODEL"
 resolve_field effort SUCC_EFFORT "$GIVEN_EFFORT"
 resolve_field setting_sources SUCC_SETTING_SOURCES "$GIVEN_SETTING_SOURCES"
