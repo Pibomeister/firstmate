@@ -1604,6 +1604,10 @@ if [ "$READ_ONLY" -eq 0 ]; then
   if [ "$REEMIT" -eq 0 ]; then
     rm -f "$COMPLETION_FILE" 2>/dev/null || true
   fi
+  if [ -d "$STATE/delegated" ]; then
+    subsection "DELEGATED PROGRESS"
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" view || true
+  fi
   fm_trace_context_session_start "$CONFIG" "$STATE/.trace-context-effective"
   # A full locked start publishes this home's current structured summary.
   # Publication is side-band and best-effort, so it can never change the

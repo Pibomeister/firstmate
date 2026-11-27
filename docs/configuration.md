@@ -122,6 +122,7 @@ Each effective `FM_HOME` contains private operational directories.
 - One-shot Bearings reconcile requests under `state/reconcile-notify/`.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).
+- Delegated progress and handoff receipts ([delegated-agent progress contract](watchdog.md#delegated-agent-progress-contract)).
 - Parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 - Per-task claim ledgers, `state/<id>.claims.jsonl` ([`claim-ledger.md`](claim-ledger.md)).
 - Opt-in dispatch claim receipts under `state/ledger-claims/` (`bin/fm-ledger.sh`).
@@ -1499,9 +1500,9 @@ The flag is a home-local preference and is not inherited by secondmate homes; [`
 
 The optional local, gitignored `config/status-archive` presence flag opts this home into retaining task status history during teardown.
 Create it with `touch "$FM_HOME/config/status-archive"`; remove it to disable future archival and pruning.
-It is off by default: without the flag, teardown deletes status logs as before and leaves existing archives untouched.
+It is off by default: without the flag, teardown retires live status logs subject to the [delegated receipt-retention boundary](watchdog.md#delegated-agent-progress-contract) and leaves existing archives untouched.
 The flag applies to teardown run by this home, including forced retirement of its secondmate children; it is not inherited by other homes.
-Each opted-in archival prunes owned logs older than 30 completed days by mtime; housekeeping failures warn and never abort teardown.
+Each opted-in archival attempts to prune owned logs older than 30 completed days by mtime, subject to the same receipt-retention boundary; housekeeping failures warn and never abort teardown.
 Age-based retention works independently of the selected backlog backend and keeps histories available for a predictable audit period.
 [`architecture.md`](architecture.md#task-status-archives) describes archive locations and isolation from live state; [`bin/fm-teardown.sh`](../bin/fm-teardown.sh) owns the mechanics.
 

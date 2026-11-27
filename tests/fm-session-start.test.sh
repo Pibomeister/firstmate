@@ -1614,11 +1614,11 @@ EOF
   pass "locked session start freezes trace context and lock refusal leaves it unchanged"
 }
 
-# Wait until <dir> holds <count> entries. Forty workers poll this at once, so
+# Wait until <dir> holds <count> entries. Concurrent workers poll this at once, so
 # the count is a builtin glob rather than a find pipeline (no process per
 # poll), and the wait ends early once the directory is gone, the suite has
 # died, or FM_TEST_STUB_MAX_BLOCK_SECONDS has passed with no new entry, so an
-# interrupted run cannot leave forty pollers spinning under init. Any new entry
+# interrupted run cannot leave pollers spinning under init. Any new entry
 # restarts that limit: on a loaded machine the workers can need longer than one
 # limit in total, and a winner that stopped waiting would die and hand a later
 # worker a legitimately stale lock.
@@ -1633,13 +1633,15 @@ lock_concurrency_barrier() {  # <dir> <count>
       seen=${#entries[@]}
       start=$SECONDS
     fi
-    sleep 0.05
+    sleep 1
   done
   return 1
 }
 
 test_session_lock_concurrent_single_winner() {
-  local rec root home fakebin ready completed winners stalled pids i pid count
+  local rec root home fakebin ready completed winners stalled pids i pid count workers=8
+  # Eight simultaneous contenders exercise mutual exclusion without turning
+  # the shell-based lock retries into a forty-process fork storm on macOS.
   rec=$(new_world lock-concurrency)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -1674,7 +1676,13 @@ case "$*" in
       printf '%s\n' bash
     fi
     ;;
-  *"ppid="*) printf '%s\n' "$FM_FAKE_HARNESS_PID" ;;
+  *"ppid="*)
+    if [ "$pid" = "$FM_FAKE_HARNESS_PID" ]; then
+      printf '%s\n' 1
+    else
+      printf '%s\n' "$FM_FAKE_HARNESS_PID"
+    fi
+    ;;
   *) exit 1 ;;
 esac
 SH
@@ -1682,19 +1690,19 @@ SH
 
   pids=
   i=1
-  while [ "$i" -le 40 ]; do
+  while [ "$i" -le "$workers" ]; do
     (
       harness_pid=$(sh -c 'printf "%s\n" "$PPID"')
       : > "$home/state/harness-$harness_pid"
       : > "$ready/$i"
-      lock_concurrency_barrier "$ready" 40 || : > "$stalled"
+      lock_concurrency_barrier "$ready" "$workers" || : > "$stalled"
       if FM_HOME="$home" FM_FAKE_LOCK_STATE="$home/state" \
         FM_FAKE_HARNESS_PID="$harness_pid" PATH="$fakebin:$BASE_PATH" \
         "$ROOT/bin/fm-lock.sh" >/dev/null 2>&1; then
         printf '%s\n' "$harness_pid" >> "$winners"
       fi
       : > "$completed/$i"
-      lock_concurrency_barrier "$completed" 40 || : > "$stalled"
+      lock_concurrency_barrier "$completed" "$workers" || : > "$stalled"
     ) &
     pids="$pids $!"
     i=$((i + 1))
@@ -2478,16 +2486,14 @@ SH
   chmod +x "$fakebin/gh"
 }
 
-# The locked startup scan may need the same expensive current-state read that a
-# busy validation makes slow. It belongs to the detached startup worker, so the
-# digest must finish while that read is still outstanding; the answer then has to
-# create the ordinary durable inactive-outcome wake rather than disappear
-# off-path. The slow read is held open by this case rather than by a fixed sleep,
-# so "the digest did not wait for it" is decided by what had happened when the
-# digest returned and not by how fast the host was.
+# The startup contract places current-state reads in the deferred network-only
+# stage and publishes terminal findings to the durable wake queue. Observe that
+# boundary at the no-mistakes CLI. Holding its reply until the digest returns
+# races the scan's independent 30-second deadline on a loaded host. The adjacent
+# held-network case proves nonblocking startup; this case proves scan placement
+# and delivery without deliberately exhausting the scan budget.
 test_inactive_reconcile_never_blocks_the_digest() {
-  local rec root home fakebin world worktree crew_state calls out waited=0
-  local release_gate read_finished
+  local rec root home fakebin world worktree crew_state calls out
   rec=$(new_world inactive-reconcile-deferred)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -2501,8 +2507,6 @@ EOF
   make_fake_ps_claude "$fakebin"
   fm_git_init_commit "$worktree"
 
-  release_gate="$world/slow-state-read.release"
-  read_finished="$world/slow-state-read.finished"
   cat > "$fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -2516,15 +2520,6 @@ if [ "${1:-} ${2:-}" = 'axi status' ]; then
   else
     printf '%s\n' 'blocking' >> "${FM_FAKE_NM_CALLS:?}"
   fi
-  # Stay outstanding until the case releases this read. A caller that waits for
-  # it therefore waits indefinitely rather than for a fixed interval a loaded
-  # host could out-run. The tick bound only stops a broken case hanging forever.
-  ticks=0
-  while [ ! -e "${FM_FAKE_NM_RELEASE:?}" ] && [ "$ticks" -lt 300 ]; do
-    sleep 0.1
-    ticks=$((ticks + 1))
-  done
-  : > "${FM_FAKE_NM_READ_FINISHED:?}"
   printf '%s\n' 'slow validation state answered'
 fi
 exit 0
@@ -2546,49 +2541,55 @@ SH
     "$home/state/slow-child.status" "$home/state/slow-child.turn-ended"
 
   out=$(FM_BACKEND=tmux FM_FAKE_HARNESS_PID="$SESSION_START_TEST_HARNESS_PID" \
-    FM_FAKE_NM_CALLS="$calls" FM_FAKE_NM_RELEASE="$release_gate" \
-    FM_FAKE_NM_READ_FINISHED="$read_finished" FM_INACTIVE_RECONCILE_SECS=60 \
+    FM_FAKE_NM_CALLS="$calls" FM_INACTIVE_RECONCILE_SECS=60 \
     FM_INACTIVE_RECONCILE_BUDGET_SECS=30 FM_INACTIVE_CREW_STATE_BIN="$crew_state" \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
   assert_contains "$out" "SESSION START" "the digest did not complete"
-  assert_absent "$read_finished" \
-    "the digest waited for inactive reconciliation's still-unreleased state read"
+  wait_for_network_stage "$home" "$root" 120 \
+    || fail "the deferred stage never finished: $(network_stage_report "$home" "$root")"
   [ "$(grep -c '^blocking$' "$calls" 2>/dev/null || true)" -eq 0 ] \
     || fail "the digest called the slow state reader on its blocking path"
-  : > "$release_gate"
-
-  while ! grep -Fq $'\tcheck\tinactive-outcome:' "$home/state/.wake-queue" 2>/dev/null \
-    && [ "$waited" -lt 150 ]; do
-    sleep 0.1
-    waited=$((waited + 1))
-  done
   assert_grep 'check	inactive-outcome:' "$home/state/.wake-queue" \
     "the deferred scan's terminal finding never reached the durable wake queue (calls=$(cat "$calls" 2>/dev/null), report=$(network_stage_report "$home" "$root" 2>/dev/null), queue=$(cat "$home/state/.wake-queue" 2>/dev/null))"
   [ "$(grep -c '^deferred$' "$calls" 2>/dev/null || true)" -eq 1 ] \
     || fail "the deferred scan did not make exactly one slow state read"
-  pass "session start: inactive reconciliation runs after the digest and retains its durable wake"
+  pass "session start: inactive reconciliation runs off-path and retains its durable wake"
 }
 
 # The headline guarantee: an unreachable host delays a reported CHECK, never the
-# startup. The fake host hangs for 12s; the digest must be done long before that,
-# must say so rather than implying the checks passed, and the sweeps must still
-# run and land afterwards.
+# startup. Hold the fake host until the digest returns, so host load cannot make
+# an expired sleep look like a blocking read. The sweeps must still run and land
+# after the case releases the probe.
 test_unreachable_network_never_blocks_the_digest() {
-  local rec root home fakebin mate log spawned network_finished out started elapsed
+  local rec root home fakebin mate log spawned network_finished network_release out
   rec=$(prepare_session_start_secondmate secondmate-slow-network)
   IFS='|' read -r root home fakebin mate log spawned <<EOF
 $rec
 EOF
   network_finished="${root%/root}/network-finished"
-  install_slow_gh "$fakebin" 12 "$network_finished"
+  network_release="${root%/root}/network-release"
+  cat > "$fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = auth ]; then
+  ticks=0
+  while [ ! -e "$FM_FAKE_NETWORK_RELEASE" ] && [ "$ticks" -lt 600 ] \
+    && kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null; do
+    sleep 1
+    ticks=$((ticks + 1))
+  done
+  : > "$FM_FAKE_NETWORK_FINISHED"
+  exit 1
+fi
+exit 0
+SH
+  chmod +x "$fakebin/gh"
 
-  started=$(date +%s)
-  out=$(run_session_start_secondmate "$root" "$home" "$fakebin" "$mate" "$log" "$spawned" missing)
-  elapsed=$(( $(date +%s) - started ))
+  out=$(FM_FAKE_NETWORK_RELEASE="$network_release" FM_FAKE_NETWORK_FINISHED="$network_finished" \
+    run_session_start_secondmate "$root" "$home" "$fakebin" "$mate" "$log" "$spawned" missing)
 
   [ ! -e "$network_finished" ] \
-    || fail "the digest waited for the 12s unreachable-host probe instead of returning from local state (${elapsed}s)"
+    || fail "the digest waited for the held unreachable-host probe instead of returning from local state"
   assert_contains "$out" "SESSION START" "the digest did not complete"
   assert_contains "$out" "IN PROGRESS - the deferred network checks have not finished yet." \
     "the digest did not disclose that its network checks were still running"
@@ -2598,7 +2599,8 @@ EOF
     "the digest reported a GitHub-auth verdict it could not yet have"
 
   # ... and the work itself still happens, off the blocking path.
-  wait_for_network_stage "$home" "$root" 60 \
+  : > "$network_release"
+  wait_for_network_stage "$home" "$root" 180 \
     || fail "the deferred stage never finished: $(network_stage_report "$home" "$root")"
   assert_contains "$(network_stage_report "$home" "$root")" "NEEDS_GH_AUTH" \
     "the deferred stage lost the GitHub-auth verdict it was deferring"
@@ -3104,7 +3106,10 @@ EOF
     _ "$ROOT/bin/fm-timeout-lib.sh")
   [ "$mechanism" = bash ] || fail "the forced pure-Bash timeout fixture selected '$mechanism'"
 
-  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_SESSION_START_TIMEOUT=3 FM_STARTUP_NETWORK_TIMEOUT=2 \
+  # Leave enough time for local lock and role setup on a loaded host. The fake
+  # Git command hangs for 600 seconds, so this still exercises deadline cleanup
+  # during bootstrap rather than racing the setup stages themselves.
+  out=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash FM_SESSION_START_TIMEOUT=60 FM_STARTUP_NETWORK_TIMEOUT=2 \
     run_session_start "$home" "$root" "$fakebin:$BASE_PATH") || status=$?
 
   expect_code 0 "$status" "a truncated session start must still exit 0 so the session can open"

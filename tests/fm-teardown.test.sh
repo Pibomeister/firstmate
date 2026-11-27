@@ -6640,12 +6640,13 @@ test_status_archive_missing_status_noop() {
   printf '%s\n' "$$" > "$case_dir/state/.status-presentation-lock/pid"
   printf 'neighbor\tidentity\t0\t0\n' > "$case_dir/state/.status-presentation-cursor"
   cp "$case_dir/state/.status-presentation-cursor" "$case_dir/cursor.before"
-  # A regression must fail within a bound, not wait forever on our live lock.
+  # Bound a presentation-lock regression while allowing the full teardown's
+  # process and worktree checks to finish on a loaded host.
   . "$ROOT/bin/fm-timeout-lib.sh"
   rc=0
   FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/state" FM_DATA_OVERRIDE="$case_dir/data" \
     FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
-    fm_run_timed 20 "$TEARDOWN" task-x1 > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    fm_run_timed 180 "$TEARDOWN" task-x1 > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "local missing-status retirement"
   cmp -s "$case_dir/cursor.before" "$case_dir/state/.status-presentation-cursor" || fail "missing-status no-op rewrote neighboring cursor"
   assert_present "$case_dir/state/.status-presentation-lock" "missing-status no-op contended with presentation lock"

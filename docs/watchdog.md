@@ -525,8 +525,46 @@ An explicit positive `heartbeat-frozen-secs` remains an independent operator ove
 The watchdog never rewrites those settings.
 The independent [supervisor-gap record](#supervisor-gap-record) keeps its fixed publication-age metric.
 
+## Delegated-agent progress contract
+
+The delegated progress contract covers registered external work (such as a Hermes-class overnight agent) and Firstmate's ship and scout reports, independently of the pane fold above.
+[`bin/fm-delegated.sh`](../bin/fm-delegated.sh) owns the commands and record files.
+`bin/fm-delegated-lib.sh` owns the hash, identifier, and state-derivation rules.
+Every delegated task records a named deliverable, a heartbeat interval, a silence window that escalates to the delegating supervisor, and a deliverable receipt bound to artifact path plus content hash.
+A dispatch-only receipt is reported as `dispatched-not-progressing` in the supervisor view (`fm-delegated.sh view`), never as progress.
+A task silent past its window produces exactly one escalation naming the task, its silence age, and its last receipt.
+A missing artifact or a hash mismatch records the failed attempt and cannot close the deliverable.
+Cross-agent handoffs (b2b notes, Hermes answers) are filed in, or mirrored into, the single read location the receiving agent actually reads, each carrying that same path-plus-hash receipt.
+A handoff filed only in the other location is a delivery failure naming the hidden item on every `fm-delegated.sh check` pass until it is mirrored, never silence.
+Each handoff names its registered delegated task.
+Firstmate receives handoffs through the existing wake queue, and its wake acknowledgement ledger proves consumption.
+Task receivers use their `state/<receiver>.inbox`; moving a numbered `.msg` to `handled/` proves consumption.
+Both paths verify unreceipted artifacts before recording a read receipt.
+Handoffs may carry supporting artifacts distinct from the task's final deliverable, and non-read placements use the supplied directory.
+Only current delivery failures take precedence over task silence; delivered handoffs do not exempt a task from its silence window.
+Silence notifications reuse their stable key and durable inbox, queued-wake, and acknowledgement evidence across partial failures.
+Views, checks, mirrors, and the pre-cleanup receipt command persist the verified path-and-hash read receipt, which survives inbox teardown and artifact removal.
+Cleanup collects applicable acknowledgements across the affected homes and refuses artifact removal while a handoff under a removal path still awaits its durable read receipt.
+This retains the artifact for a receiver that acknowledges it after an earlier collection pass.
+Runtime retirement checks the bound status and task-artifact paths, including paths archived before deletion.
+Removal checks preserve symlink entries along the complete lookup path as well as the resolved artifact target.
+Task-inbox placements hold the receiver metadata lock and refuse retired receivers.
+Notification checks defer contended or remote task-supervisor inbox delivery without stopping other supervision or recording an escalation as delivered.
+`fm-delegated.sh` refuses remote task-inbox placement and does not count a local copy as remote consumption; remote messaging remains with the existing transport in [`bin/fm-send.sh`](../bin/fm-send.sh).
+The handoff command derives the read channel from its receiver.
+Handoff artifact paths must be absolute so later consumers resolve the same file.
+Completed report receipts remain final: later dispatches and heartbeats report the completed receipt, and verified repeated deliveries preserve it.
+Report completion does not prevent the worker from advancing or relaunching.
+The spawn path registers ship and scout report deliverables with a 300-second heartbeat interval and a two-hour silence window.
+Worker briefs provide heartbeat and delivery commands; watcher passes check the records and route reports through the wake queue and the stored supervisor's inbox when it has task metadata.
+Locked session-start output includes the delegated supervisor view when delegated records exist.
+All delegated commands serialize their full transactions under one home-local lock.
+Record loaders parse each file in one shell pass; watcher checks select unfinished records in a batch before loading them.
+The contract only reports; it never instructs, pushes, restarts, or stops a named external agent.
+
 ## Verification
 
+`tests/fm-delegated.test.sh` pins the delegated-agent progress contract: dispatch-only rendering, the exactly-one silence escalation, hash-bound closing, and the hidden-handoff delivery failure through mirror to a receipted read.
 `tests/fm-watchdog.test.sh` drives every symptom, ladder step, and boundary against real tmux panes on a private socket, real lock holders, and real records, with fake model CLIs.
 `tests/fm-permission-prompt.test.sh` classifies real Claude Code 2.1.325 prompt captures in `tests/fixtures/permission-prompt/` and drives the worker route against real tmux panes that react to Escape as Claude did.
 `tests/fm-layer-chain.test.sh` proves the monitor read on each pass and at session start, with a fake service manager.

@@ -9053,6 +9053,14 @@ if [ "$KIND" = secondmate ] && [ -n "$BUDGET_LAUNCH_MARKER" ]; then
   }
   BRIEF=$budget_brief
 fi
+if [ "$KIND" != secondmate ]; then
+  if [ ! -f "$STATE/delegated/$ID.record" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" register \
+      --task "$ID" --deliverable report --artifact "$DATA/$ID/report.md" \
+      --heartbeat-secs 300 --silence-secs 7200 --supervisor firstmate || exit 1
+  fi
+  FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" bash "$SCRIPT_DIR/fm-delegated.sh" dispatch --task "$ID" || exit 1
+fi
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
 sq_piext=$(shell_quote "$STATE/$ID.pi-ext.ts")
