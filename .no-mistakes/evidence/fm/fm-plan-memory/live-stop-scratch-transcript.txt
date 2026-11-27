@@ -1,0 +1,164 @@
+===== S1 stop-scratch stops a TERM-respecting scratch hog at /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-hog.85328/hog.pl
+87256 784816 perl /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-hog.85328/hog.pl
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3793 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=alarm swap_used_mb=0 top_pid=34705 top_rss_mb=4026 top_comm=python3.13 mode=stop-scratch action=stopped:87256
+MEMORY_GUARD_ALARM: pid 87256 (perl) has held 766 MB, at or over 300 MB, for 4 s (limit 2 s). Mode stop-scratch: disposable scratch, stopped with TERM.
+/tmp/fmdrv/drive.sh: line 21: 87256 Terminated: 15          perl "$@"
+rc=3
+RESULT: pid 87256 GONE
+stops.tsv:
+1795817265	87256	1795817255	perl	signal	TERM
+1795817266	87256	1795817255	perl	stopped	TERM
+===== S2 stop-scratch escalates to KILL for a TERM-ignoring hog
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=4180 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=alarm swap_used_mb=0 top_pid=34705 top_rss_mb=4180 top_comm=python3.13 mode=stop-scratch action=stopped:34757
+MEMORY_GUARD_ALARM: pid 34757 (perl) has held 766 MB, at or over 300 MB, for 4 s (limit 2 s). Mode stop-scratch: disposable scratch, stopped with KILL after it ignored TERM.
+/tmp/fmdrv/drive.sh: line 21: 34757 Killed: 9               perl "$@"
+rc=3
+RESULT: pid 34757 GONE
+stops.tsv:
+1795817282	34757	1795817272	perl	signal	TERM
+1795817287	34757	1795817272	perl	signal	KILL
+1795817288	34757	1795817272	perl	stopped	KILL
+===== S3 --observe under stop-scratch signals nothing
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3994 top_comm=python3.13 mode=observe action=none
+rc=0
+--- pass 2
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=4094 top_comm=python3.13 mode=observe action=none
+rc=0
+RESULT: pid 4520 ALIVE
+stops.tsv:
+(none)
+===== S4 reap-scratch names would-stop and signals nothing
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3815 top_comm=python3.13 mode=reap-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=alarm swap_used_mb=0 top_pid=34705 top_rss_mb=3598 top_comm=python3.13 mode=reap-scratch action=spared:520,spared:708,spared:781,spared:877,spared:965,spared:1020,spared:1086,spared:1237,spared:1502,spared:2621,spared:2828,spared:3439,spared:4054,spared:11986,spared:13227,spared:16060,spared:16362,spared:17466,spared:20512,spared:24447,would-stop:31568,spared:33030,spared:33681,spared:34705,spared:38276,spared:38288,spared:42303,spared:43475,spared:44639,spared:45755,spared:56007,spared:58713,spared:60083,spared:64769,spared:66187,spared:76254,spared:91460,spared:94848,spared:27157,spared:55196,spared:26514,spared:96944,spared:61384,spared:77071,spared:70919,spared:6859,spared:99204,spared:92117,spared:63679,spared:40068,spared:51493,spared:44889,spared:80298,spared:4572,spared:71185,spared:94759,spared:87489,spared:10487,spared:98616,spared:2083,spared:19389,spared:60135,spared:62561,spared:4579,spared:80334,spared:75993,spared:97420,spared:91378,spared:98794,spared:79372,spared:81491,spared:81489,spared:81484,spared:81537,spared:96089,spared:25477,spared:24108,spared:49617,spared:46869,spared:63547,spared:23939,spared:99881,spared:89667,spared:52824,spared:47790,spared:33198,spared:2421,spared:67539
+MEMORY_GUARD_ALARM: pid 520 (mds_stores) has held 2089 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (another user); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 708 (Google Chrome) has held 891 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 781 (corespotlightd) has held 380 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (not scratch); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 877 (Slack Helper (Re) has held 574 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 965 (OrbStack Helper) has held 2620 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1020 (Google Chrome He) has held 308 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1086 (Google Chrome He) has held 388 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1237 (Google Chrome He) has held 567 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 1502 (Creative Cloud) has held 307 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2621 (Orca Agents) has held 660 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2828 (Orca Helper) has held 337 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected orca); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 3439 (Orca Helper (Ren) has held 776 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected orca); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 4054 (Creative Cloud U) has held 493 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 11986 (Grok Bot Helper) has held 500 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected grok); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 13227 (Google Chrome He) has held 564 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 16060 (2.1.332) has held 604 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 16362 (2.1.332) has held 305 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 17466 (2.1.332) has held 570 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 20512 (2.1.332) has held 413 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (the guard itself); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24447 (opencode) has held 764 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected opencode); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 31568 (perl) has held 766 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: disposable scratch that would be stopped; this mode never signals, so nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33030 (2.1.332) has held 733 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33681 (bun) has held 1282 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 34705 (python3.13) has held 3598 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 38276 (Google Chrome He) has held 485 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 38288 (Google Chrome He) has held 392 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 42303 (2.1.332) has held 487 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 43475 (Google Chrome He) has held 397 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 44639 (Google Chrome He) has held 395 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 45755 (Google Chrome He) has held 441 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 56007 (2.1.332) has held 334 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 58713 (Google Chrome He) has held 324 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 60083 (mediaanalysisd) has held 1678 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (not scratch); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 64769 (Google Chrome He) has held 314 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 66187 (WhatsApp) has held 432 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 76254 (Google Chrome He) has held 390 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 91460 (Google Chrome He) has held 410 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (desktop app); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 94848 (Orca) has held 825 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected orca); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 27157 (2.1.332) has held 719 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 55196 (2.1.332) has held 495 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 26514 (2.1.332) has held 1189 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 96944 (2.1.332) has held 735 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 61384 (2.1.332) has held 725 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 77071 (2.1.332) has held 744 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 70919 (2.1.332) has held 698 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 6859 (2.1.332) has held 831 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 99204 (2.1.332) has held 520 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 92117 (2.1.332) has held 394 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 63679 (2.1.332) has held 785 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 40068 (2.1.332) has held 580 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 51493 (2.1.332) has held 553 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 44889 (2.1.332) has held 567 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80298 (2.1.332) has held 836 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 4572 (2.1.332) has held 562 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 71185 (2.1.332) has held 561 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 94759 (2.1.332) has held 632 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 87489 (2.1.332) has held 458 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 10487 (2.1.332) has held 446 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98616 (2.1.332) has held 648 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2083 (2.1.332) has held 645 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 19389 (2.1.332) has held 725 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 60135 (2.1.332) has held 470 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 62561 (2.1.332) has held 582 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 4579 (2.1.332) has held 518 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 80334 (2.1.332) has held 1202 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 75993 (2.1.332) has held 508 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 97420 (2.1.332) has held 565 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 91378 (2.1.332) has held 546 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 98794 (2.1.332) has held 798 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 79372 (2.1.332) has held 672 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 81491 (codex) has held 324 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected codex); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 81489 (2.1.332) has held 507 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 81484 (2.1.332) has held 537 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 81537 (2.1.332) has held 566 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 96089 (2.1.332) has held 701 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 25477 (2.1.332) has held 624 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 24108 (2.1.332) has held 649 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 49617 (2.1.332) has held 601 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 46869 (2.1.332) has held 982 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 63547 (2.1.332) has held 744 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 23939 (2.1.332) has held 725 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 99881 (2.1.332) has held 642 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 89667 (2.1.332) has held 506 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 52824 (2.1.332) has held 626 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 47790 (agy) has held 528 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected agy); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 33198 (droid) has held 506 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected droid); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 2421 (2.1.332) has held 465 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+MEMORY_GUARD_ALARM: pid 67539 (2.1.332) has held 713 MB, at or over 300 MB, for 8 s (limit 2 s). Mode reap-scratch: spared (protected claude); nothing was stopped.
+rc=3
+RESULT: pid 31568 ALIVE
+===== S5 stop-scratch spares a scratch hog that has a child
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3688 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3696 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+RESULT: pid 14918 ALIVE
+RESULT: pid 15421 ALIVE
+stops.tsv:
+(none)
+===== S6 stop-scratch spares a hog outside a disposable fm-* temp root (/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//nothog.85328)
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3863 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3867 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+RESULT: pid 53276 ALIVE
+stops.tsv:
+(none)
+===== S7 a symlinked script under fm-* temp is not scratch
+--- pass 1
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3559 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+--- pass 2
+memory-guard: status=watch swap_used_mb=0 top_pid=34705 top_rss_mb=3559 top_comm=python3.13 mode=stop-scratch action=none
+rc=0
+RESULT: pid 81223 ALIVE
+lab removed: yes
