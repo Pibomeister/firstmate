@@ -644,7 +644,7 @@ CREW_RELAUNCH_WINDOW_SECS=${FM_CREW_RELAUNCH_WINDOW_SECS:-}
 case "$CREW_RELAUNCH_WINDOW_SECS" in ''|*[!0-9]*|0) CREW_RELAUNCH_WINDOW_SECS=3600 ;; esac
 CREW_RELAUNCH_TIMEOUT=${FM_CREW_RELAUNCH_TIMEOUT:-}
 case "$CREW_RELAUNCH_TIMEOUT" in ''|*[!0-9]*|0) CREW_RELAUNCH_TIMEOUT=300 ;; esac
-# Provider failover of an idle ship or scout (provider_failover_check): the
+# Provider failover of an idle ship, scout, or mate (provider_failover_check): the
 # wall-clock bound on one whole bin/fm-failover.sh worker call, every runtime
 # it tries included (FM_FAILOVER_WATCH_TIMEOUT), on each relaunch inside it
 # (FM_FAILOVER_WATCH_RELAUNCH_TIMEOUT), and the earlier deadline fm-failover.sh
@@ -2380,8 +2380,9 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   fm_lock_release "$lock" 2>/dev/null || true
   return 0
 }
-# Provider failover of an idle ship or scout whose last turn ended on a provider
-# refusal (HTTP 429, rate, usage, or billing limit). The verdict comes from the
+# Provider failover of an idle ship, scout, or second mate whose last turn ended
+# on a provider refusal (HTTP 429, rate, usage, or billing limit). A second
+# mate's idle pane is read only once its hook has recorded a refusal. The verdict comes from the
 # task's provider-error record, which its Claude StopFailure hook writes and
 # which counts only for the agent's current turn end, or else from the refusal
 # row the idle screen shows (fm_wd_provider_error_screen). A screen is judged
@@ -2395,7 +2396,7 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # queued a check wake, 1 when the window is out of scope or nothing ran.
 provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason
-  case "$kind" in ship|scout) ;; *) return 1 ;; esac
+  case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
   seen="$STATE/$task.failover-seen"
   [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
@@ -6199,6 +6200,13 @@ EOF
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
+      # A Claude mate's StopFailure hook records a provider refusal, and only
+      # then is its pane read, so a healthy idle mate costs no capture here.
+      if [ -n "$task" ] && fm_failover_record_class "$STATE" "$task" >/dev/null 2>&1 \
+        && watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" \
+        && ! window_is_busy "$w" "$WATCHER_CAPTURE"; then
+        provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" || true
+      fi
       continue
     fi
     watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" || continue

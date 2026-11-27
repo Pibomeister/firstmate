@@ -41,17 +41,23 @@
 #              the hook's own process, only in a genuine primary checkout whose
 #              session holds the lock; anywhere else, and for any other error,
 #              it does nothing. Always exits 0.
-#   worker     Relaunches a ship or scout in its same local copy, branch, and
-#              gates on the first eligible runtime after its current one,
-#              through bin/fm-control.sh relaunch --harness [--model]
-#              [--account] --provider-failover --note, which closes a
-#              usage-limit picker without typing into it. A runtime is skipped
-#              when it is the current one (an unpinned Claude worker counts as
-#              this home's inherited account), excluded by the
-#              plan, missing its executable, an undeclared or signed-out Claude
+#   worker     Relaunches a ship, scout, or second mate in its same local copy,
+#              branch, and gates on the first eligible runtime after its
+#              current one, through bin/fm-control.sh relaunch --harness
+#              [--model] [--account] --provider-failover --note, which closes a
+#              usage-limit picker without typing into it. A second mate moved
+#              to another declared Claude account runs on it for that launch
+#              only; its own account pin file is never edited. A runtime is
+#              skipped when it is the current one (an unpinned Claude worker
+#              counts as this home's inherited account), excluded by the plan,
+#              not verified for the task's kind (bin/fm-control-lib.sh), not a
+#              supervisor runtime for a second mate
+#              (bin/fm-supervisor-failover-lib.sh), a move
+#              off Claude that bin/fm-quota-reroute.sh claude-tooling refuses,
+#              missing its executable, an undeclared or signed-out Claude
 #              account, or exhausted by quota-axi (unmeasured quota is
-#              disclosed and does not skip). A failed relaunch moves on to the
-#              next runtime.
+#              disclosed and does not skip). Those skips spend no attempt. A
+#              failed relaunch moves on to the next runtime.
 #              Records each switch with bin/fm-dispatch-log.sh failover and in
 #              state/.failover-<task-id>, and removes the task's record.
 #   captain    Writes a handoff with bin/fm-ledger.sh handoff and starts a
@@ -80,6 +86,7 @@
 # FM_CONTROL_BIN overrides the fm-control.sh it calls, as for the watcher.
 # Test-only: FM_TEST_SEAM=1 enables FM_FAILOVER_TEST_BIN (a directory holding
 # the fm-control.sh, fm-handoff-launch.sh, and fm-ledger.sh to call),
+# FM_TEST_QUOTA_REROUTE (the claude-tooling check to run, as fm-control.sh),
 # FM_FAILOVER_TEST_HARNESS (the captain's current harness), and
 # FM_FAILOVER_TEST_LOCK_OWNER=1 (treat this process as the lock owner), and
 set -eu
@@ -135,6 +142,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-failover-lib.sh
 . "$SCRIPT_DIR/fm-failover-lib.sh"
+# shellcheck source=bin/fm-control-lib.sh
+. "$SCRIPT_DIR/fm-control-lib.sh"
 
 tok() { fm_failover_token "$1"; }
 now() { date +%s; }
@@ -240,8 +249,33 @@ account_declared() {  # <account-entry>
   printf '%s\n' "$listed" | grep -Fxq -- "$1"
 }
 
+# leaving_claude_refused <worktree> <kind> <id>: true when fm-control.sh would
+# refuse moving this task off Claude, by the same claude-tooling check it runs
+# before it stops anything (any exit other than 1 is a refusal).
+LEAVING_CLAUDE_VERDICT=''
+leaving_claude_refused() {
+  local helper=$SCRIPT_DIR/fm-quota-reroute.sh rc=0
+  local -a args=(claude-tooling --worktree "$1")
+  if [ -n "$LEAVING_CLAUDE_VERDICT" ]; then
+    [ "$LEAVING_CLAUDE_VERDICT" = refused ]
+    return
+  fi
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_TEST_QUOTA_REROUTE:-}" ]; then
+    helper=$FM_TEST_QUOTA_REROUTE
+  fi
+  [ "$2" != secondmate ] || args+=(--mate "$3")
+  LEAVING_CLAUDE_VERDICT=refused
+  [ -n "$1" ] || return 0
+  "$helper" "${args[@]}" >/dev/null 2>&1 </dev/null || rc=$?
+  [ "$rc" -ne 1 ] || LEAVING_CLAUDE_VERDICT=allowed
+  [ "$LEAVING_CLAUDE_VERDICT" = refused ]
+}
+
 # --- candidate evaluation ------------------------------------------------------
 CAND=()
+# Worker scope only: the task's kind, local copy, and id, which decide whether
+# fm-control.sh would refuse a runtime before it stops anything.
+EVAL_KIND='' EVAL_WT=''
 # evaluate <scope worker|primary> <from-harness> <from-model> <from-account> <backend> <ledger>
 # Fills CAND with eligible `<harness> <model> <account> <label> <quota>` rows,
 # joined by FM_FO_SEP, in order, and prints one candidate line per runtime.
@@ -285,6 +319,20 @@ evaluate() {
     if pv=$(preflight_verdict "$label"); then
       if [ "${pv%%$'\t'*}" = excluded ]; then
         printf 'candidate runtime=%s skip=preflight_excluded why=%s\n' "$label" "$(tok "${pv#*$'\t'}")"
+        continue
+      fi
+    fi
+    if [ "$scope" = worker ]; then
+      if ! fm_control_harness_supports_kind "$h" "$EVAL_KIND"; then
+        printf 'candidate runtime=%s skip=not_verified_for_%s\n' "$label" "$(tok "$EVAL_KIND")"
+        continue
+      fi
+      if [ "$EVAL_KIND" = secondmate ] && ! why=$(fm_failover_runtime_supported "$h" secondmate); then
+        printf 'candidate runtime=%s skip=refused why=%s\n' "$label" "$(tok "$why")"
+        continue
+      fi
+      if [ "$from_h" = claude ] && [ "$h" != claude ] && leaving_claude_refused "$EVAL_WT" "$EVAL_KIND" "$TARGET"; then
+        printf 'candidate runtime=%s skip=claude_tooling_blocks_leaving_claude\n' "$label"
         continue
       fi
     fi
@@ -500,7 +548,8 @@ cmd_preflight() {
       fh=${fh:-unknown} wk=${wk:-unknown}
       verdict=eligible why=ok
       case "$call" in
-        fail:*|unsupported) verdict=excluded why="call_${call#fail:}" ;;
+        unsupported) verdict=unmeasured why=no_probe_for_harness ;;
+        fail:*) verdict=excluded why="call_${call#fail:}" ;;
         *)
           case "$wk" in ''|unknown|*[!0-9.]*) ;; *) if awk -v v="$wk" 'BEGIN { exit !(v < 1) }'; then verdict=excluded why=weekly_exhausted; fi ;; esac
           if [ "$verdict" = eligible ]; then
@@ -553,23 +602,24 @@ cmd_hook() {
 
 # --- worker --------------------------------------------------------------------
 cmd_worker() {
-  local meta kind wt from_h from_m from_a run_a backend from gen published_gen published_h reason ledger max attempts statusf last branch note row h m a label quota out rc detail rto left why
+  local meta kind wt from_h from_m from_a run_a pin backend from gen published_gen published_h reason ledger max attempts statusf last branch note row h m a label quota out rc detail rto left why
   valid_target "$TARGET" && [ "$TARGET" != captain ] || die "invalid task id: $TARGET"
   load_order
   meta="$STATE/$TARGET.meta"
   [ -f "$meta" ] && [ ! -L "$meta" ] || die "no regular record for $TARGET in $STATE"
   kind=$(fm_meta_get "$meta" kind)
   case "$kind" in
-    ship|scout) ;;
-    secondmate) printf 'skip task=%s reason=secondmate_uses_fm-supervisor-failover\n' "$TARGET"; exit 6 ;;
-    *) printf 'skip task=%s reason=not_a_ship_or_scout\n' "$TARGET"; exit 6 ;;
+    ship|scout|secondmate) ;;
+    *) printf 'skip task=%s reason=not_a_ship_scout_or_secondmate\n' "$TARGET"; exit 6 ;;
   esac
   [ -z "$(fm_meta_get "$meta" remote_host)" ] || { printf 'skip task=%s reason=remote_task\n' "$TARGET"; exit 6; }
   # shellcheck source=bin/fm-classify-lib.sh
   . "$SCRIPT_DIR/fm-classify-lib.sh"
   statusf="$STATE/$TARGET.status"
   last=$(last_status_line "$statusf")
-  if status_is_terminal_verb "$last"; then
+  # A second mate outlives every request it finishes, so its last done line
+  # does not mean it is gone.
+  if [ "$kind" != secondmate ] && status_is_terminal_verb "$last"; then
     printf 'skip task=%s reason=task_reported_terminal_status\n' "$TARGET"
     exit 6
   fi
@@ -598,8 +648,15 @@ cmd_worker() {
   # worker is taken to run on the account this process inherits, which holds
   # only while the worker was spawned under the same CLAUDE_CONFIG_DIR, so that
   # one is excluded too. Only a Claude worker has a Claude account to exclude.
+  # A second mate with no recorded account runs on its own pin, so that pin is
+  # the account to exclude, read without editing it.
   run_a=''
+  if [ "$from_h" = claude ] && [ "$kind" = secondmate ] && [ -z "$from_a" ] \
+    && pin=$(fm_worker_account_read claude "$CONFIG/secondmate-accounts/$TARGET/claude-account" 2>/dev/null); then
+    from_a=${pin%%$'\t'*}
+  fi
   [ "$from_h" != claude ] || run_a=${from_a:-${CLAUDE_CONFIG_DIR:-ordinary}}
+  EVAL_KIND=$kind EVAL_WT=$wt
   evaluate worker "$from_h" "$from_m" "$run_a" "$backend" "$ledger"
   if [ "${#CAND[@]}" -eq 0 ]; then
     ledger_add "$ledger" none "$from" - "$reason"
@@ -616,6 +673,13 @@ The local copy, its branch ${branch:-unknown}, its commits, and any uncommitted 
 Its newest status events, oldest first:
 $(tail -n 5 "$statusf" 2>/dev/null | sed 's/^/    /')
 Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mistakes axi status\` for any run on this branch, whose gates carry over, then continue from that checkpoint."
+    if [ "$kind" = secondmate ]; then
+      note="Provider failover: your previous runtime ($from) $(why_text "$reason") at $(iso "$(now)"), so your parent relaunched you on $label in your same home.
+Your home, backlog, and work records are exactly as you left them.
+Its newest status events, oldest first:
+$(tail -n 5 "$statusf" 2>/dev/null | sed 's/^/    /')
+Re-read your charter, reconcile the work already under way in your home, and continue it."
+    fi
     local -a args=("$TARGET" relaunch --harness "$h")
     [ -z "$m" ] || args+=(--model "$m")
     [ -z "$a" ] || args+=(--account "$a")

@@ -84,10 +84,18 @@ done
 mkdir -p "$(dirname "$doc")"
 printf '# handoff\n%s\n' "$note" > "$doc"
 SH
+# The claude-tooling check fm-control.sh runs before moving a task off Claude:
+# exit 1 (nothing blocks the move) unless a test writes another code.
+cat > "$DELEGATES/quota-reroute.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_TOOLING_LOG"
+exit "$(cat "$FM_TEST_TOOLING_RC_FILE" 2>/dev/null || echo 1)"
+SH
 chmod +x "$FAKEBIN"/* "$DELEGATES"/*
 
 export FM_HOME="$LAB" FM_STATE_OVERRIDE="$LAB/state" FM_CONFIG_OVERRIDE="$LAB/config" FM_DATA_OVERRIDE="$LAB/data"
 export FM_FAILOVER_TEST_BIN="$DELEGATES" FM_TEST_QUOTA="$QUOTA" FM_TEST_SCRIPT_ROOT="$ROOT" HOME="$TMP_ROOT/user"
+export FM_TEST_QUOTA_REROUTE="$DELEGATES/quota-reroute.sh" FM_TEST_TOOLING_RC_FILE="$TMP_ROOT/tooling.rc" FM_TEST_TOOLING_LOG="$TMP_ROOT/tooling.log"
 export PATH="$FAKEBIN:$PATH"
 unset FM_BACKEND QUOTA_AXI_SNAPSHOT CLAUDE_CONFIG_DIR FM_CONTROL_BIN FM_TEST_CONTROL_RCS FM_TEST_CONTROL_MSG
 unset FM_TEST_HANDOFF_RC FM_FAILOVER_TEST_HARNESS FM_FAILOVER_TEST_LOCK_OWNER
@@ -108,7 +116,10 @@ reset_lab() {
   rm -rf "$LAB"
   mkdir -p "$LAB/state" "$LAB/config" "$LAB/data"
   printf 'tmux\n' > "$LAB/config/backend"
-  rm -f "$QUOTA"/*
+  # The evaluation tests below run against this explicit order; the shipped
+  # default is tested on its own (test_default_order_prefers_another_claude_account).
+  printf 'codex host=hetzner\ncodex\ndroid\nclaude@next\n' > "$LAB/config/failover-order"
+  rm -f "$QUOTA"/* "$TMP_ROOT/tooling.rc"
   quota_fixture codex 80 60 > "$QUOTA/codex.json"
 }
 
@@ -457,9 +468,6 @@ test_worker_candidates_and_skips() {
   printf 'remote_host=hz1\n' >> "$LAB/state/w6.meta"
   fo worker w6
   expect_code 6 "$RC" "a remote task"
-  fm_write_secondmate_meta "$LAB/state/mate.meta" "$LAB"
-  fo worker mate
-  expect_code 6 "$RC" "a secondmate"
   expect_code 0 "$(control_calls)" "relaunches for skipped targets"
   make_worker w7 claude
   now=$(date +%s)
@@ -476,7 +484,7 @@ test_worker_candidates_and_skips() {
   kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
   expect_code 5 "$RC" "a failover already holding the lock"
   expect_code 0 "$(control_calls)" "relaunches under a bound or a held lock"
-  pass 'candidates and skips: quota, night plan, sign-in, accounts, finished, stopped, remote, secondmate, bound, lock'
+  pass 'candidates and skips: quota, night plan, sign-in, accounts, finished, stopped, remote, bound, lock'
 }
 
 captain_world() {
@@ -644,8 +652,10 @@ test_preflight_night_plan() {
   reset_lab
   printf 'agy\n' > "$LAB/config/failover-order"
   fo preflight
-  expect_code 0 "$RC" 'an unsupported provider probe is excluded'
-  assert_contains "$OUT" 'preflight runtime=agy verdict=excluded call=unsupported' 'unsupported never becomes night-plan eligible'
+  expect_code 0 "$RC" 'a runtime with no provider probe'
+  assert_contains "$OUT" 'preflight runtime=agy verdict=unmeasured call=unsupported' 'a runtime with no probe is disclosed as unmeasured, not excluded'
+  fo plan
+  assert_not_contains "$OUT" 'plan runtime=agy verdict=excluded' 'the night plan does not exclude a runtime it cannot probe'
   reset_lab
   printf '%s\n' '- hz - test (host: hetzner; root: /tmp/root; home: /tmp/home; scope: test; projects: none; added 2026-11-20)' > "$LAB/data/secondmates.md"
   fo preflight
@@ -663,6 +673,7 @@ watch_case() {  # <name> <screen> -> case dir with a claude ship and a fake fm-c
   dir=$(make_case "$1")
   printf '%s\n' "$2" > "$dir/pane.txt"
   mkdir -p "$dir/config" "$dir/home"
+  printf 'codex host=hetzner\ncodex\ndroid\nclaude@next\n' > "$dir/config/failover-order"
   fm_git_worktree "$dir/repo" "$dir/wt" fm/fo >/dev/null 2>&1 || fail 'fixture: no worktree'
   fm_write_meta "$dir/state/fo.meta" window=test:fm-fo kind=ship harness=claude "worktree=$dir/wt" spawn_gen=s1.fo
   printf 'working: wiring the parser\n' > "$dir/state/fo.status"
@@ -758,6 +769,33 @@ test_watcher_moves_an_idle_refused_ship_in_one_poll() {
   [ -e "$dir/state/fo.failover-judged" ] || fail 'fixture: the watcher never judged the hook-stop screen'
   [ ! -e "$dir/control.calls" ] || fail "a Claude turn end its hook recorded as an ordinary stop must not relaunch from old screen rows: $(cat "$dir/control.calls")"
   pass 'watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose and a hook-recorded ordinary stop do not'
+}
+
+test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record() {
+  local dir gen
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+  # A healthy idle mate is never read: a refusal-looking screen with no hook
+  # record does not move it.
+  dir=$(watch_case watch-mate-screen $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
+  sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+  mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  [ ! -e "$dir/control.calls" ] || fail "a mate without a hook record was relaunched: $(cat "$dir/control.calls")"
+
+  dir=$(watch_case watch-mate-record $'All done for now.\n\n❯ \n  ⏵⏵ auto mode on')
+  sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+  mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+  printf 'done: answered the last request\n' >> "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  gen=$(bash "$ROOT/bin/fm-busy-event.sh" arm "$dir/state" fo)
+  bash "$ROOT/bin/fm-busy-event.sh" apply "$dir/state" fo idle --gen "$gen" --source claude-hook --event stop-failure >/dev/null
+  printf '%s' "$(payload rate_limit "You've hit your usage limit")" | bash "$FO" hook fo --gen "$gen" --state "$dir/state"
+  watch_once "$dir"
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
+    'a usage-limited idle mate moves on its first idle poll from its hook record'
+  assert_equals 'fo relaunch --harness codex --provider-failover --note' "$(cat "$dir/control.calls")" 'one guarded relaunch'
+  pass 'watcher: an idle second mate refused by its provider moves from its hook record; a mate with no record is not read'
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
@@ -899,7 +937,7 @@ test_worker_account_identity_is_its_config_root() {
   rm -f "$LAB/control.n"
   fo worker w8c
   assert_contains "$OUT" 'switched task=w8c from=codex to=claude@.claude' 'a codex worker has no Claude account to exclude'
-  rm -f "$LAB/config/failover-order"
+  printf 'codex host=hetzner\ncodex\ndroid\nclaude@next\n' > "$LAB/config/failover-order"
   make_worker w8last claude "$ACCTS/D"
   fo worker w8last --reason rate_limit
   expect_code 0 "$RC" "the last Claude account wraps to a local worker runtime: $OUT"
@@ -910,6 +948,123 @@ test_worker_account_identity_is_its_config_root() {
   expect_code 0 "$RC" 'the wrapped worker order excludes an attempted target'
   assert_contains "$OUT" 'switched task=w8last2 from=claude@D to=droid' 'worker wrap skips attempted Codex'
   pass 'account identity: ordinary, the home config root, and a trailing slash are one account'
+}
+
+# default_order_lab: the shipped order (no config/failover-order), an
+# ordinary account and a second signed-in Claude account named charlie, and
+# stand-ins for the comparable runtimes after it, each made unusable by its
+# quota-axi reading.
+default_order_lab() {
+  reset_lab
+  rm -f "$LAB/config/failover-order"
+  rm -rf "$ACCTS/charlie"
+  mkdir -p "$ACCTS/charlie"
+  touch "$ACCTS/charlie/signed-in"
+  quota_fixture claude 70 70 > "$ACCTS/charlie/quota.json"
+  printf 'ordinary\n%s\n' "$ACCTS/charlie" > "$LAB/config/claude-accounts"
+  local h
+  for h in agy muse kimi; do cp "$FAKEBIN/codex" "$FAKEBIN/$h"; done
+}
+drop_runtimes() { rm -f "$FAKEBIN/agy" "$FAKEBIN/muse" "$FAKEBIN/kimi"; }
+
+relaunch_line() {  # <call>: the relaunch arguments before --note, on one line
+  awk '$0 == "--note" { exit } { printf "%s%s", (NR > 1 ? " " : ""), $0 }' "$LAB/control.argv.$1"
+}
+
+test_default_order_prefers_another_claude_account() {
+  default_order_lab
+  make_worker d1 claude
+  stop_failure_turn d1 "$(payload rate_limit "You've hit your usage limit")"
+  fo worker d1
+  expect_code 0 "$RC" "a usage-limited ordinary worker: $OUT"
+  assert_contains "$OUT" 'switched task=d1 from=claude to=claude@charlie reason=usage_limit' 'the ordinary account moves to charlie first'
+  assert_equals "d1 relaunch --harness claude --account $ACCTS/charlie --provider-failover" "$(relaunch_line 1)" 'charlie is reached through the guarded relaunch'
+  no_lost_work d1 'the move to charlie'
+
+  # Charlie at its limit: the next entry is Gemini Neon on agy.
+  quota_fixture claude 0 0 > "$ACCTS/charlie/quota.json"
+  make_worker d2 claude
+  rm -f "$LAB/control.n"
+  fo worker d2 --reason usage_limit
+  expect_code 0 "$RC" "charlie exhausted: $OUT"
+  assert_contains "$OUT" 'candidate runtime=claude@charlie skip=quota_exhausted' 'an exhausted charlie is measured and skipped'
+  assert_contains "$OUT" 'switched task=d2 from=claude to=agy:gemini-4-neon-high' 'gemini neon follows charlie'
+  assert_equals 'd2 relaunch --harness agy --model gemini-4-neon-high --provider-failover' "$(relaunch_line 1)" 'gemini neon is named by its catalog model'
+
+  # Each later entry takes over in order when the one before cannot run.
+  quota_fixture agy 0 0 | jq '.providers[0].quotaSemantics.effectiveAvailability[0].scope = "model:gemini-4-neon-high"' > "$QUOTA/agy.json"
+  make_worker d3 claude
+  rm -f "$LAB/control.n"
+  fo worker d3 --reason usage_limit
+  assert_contains "$OUT" 'candidate runtime=agy:gemini-4-neon-high skip=quota_exhausted' 'an exhausted gemini neon is skipped'
+  assert_contains "$OUT" 'switched task=d3 from=claude to=muse:muse-wonder-1.0' 'muse wonder follows gemini neon'
+  quota_fixture meta 0 0 > "$QUOTA/meta.json"
+  make_worker d4 claude
+  rm -f "$LAB/control.n"
+  fo worker d4 --reason usage_limit
+  assert_contains "$OUT" 'switched task=d4 from=claude to=codex:gpt-6.2-sol' 'gpt sol follows muse wonder'
+  quota_fixture codex 0 0 > "$QUOTA/codex.json"
+  make_worker d5 claude
+  rm -f "$LAB/control.n"
+  fo worker d5 --reason usage_limit
+  assert_contains "$OUT" 'switched task=d5 from=claude to=kimi:kimi-code/k3.1-pro' 'kimi k3.1 pro is last'
+  assert_equals 'd5 relaunch --harness kimi --model kimi-code/k3.1-pro --provider-failover' "$(relaunch_line 1)" 'kimi is named by its provider model'
+  drop_runtimes
+  pass 'default order: ordinary Claude moves to charlie, then gemini neon, muse wonder, gpt sol, and kimi k3.1 pro'
+}
+
+test_worker_skips_a_move_off_claude_that_fm_control_would_refuse() {
+  default_order_lab
+  quota_fixture claude 0 0 > "$ACCTS/charlie/quota.json"
+  printf '0\n' > "$TMP_ROOT/tooling.rc"
+  : > "$TMP_ROOT/tooling.log"
+  make_worker t1 claude
+  fo worker t1 --reason usage_limit
+  expect_code 1 "$RC" "every move off Claude refused: $OUT"
+  assert_contains "$OUT" 'candidate runtime=agy:gemini-4-neon-high skip=claude_tooling_blocks_leaving_claude' 'the claude-tooling refusal is disclosed per runtime'
+  assert_contains "$OUT" 'candidate runtime=kimi:kimi-code/k3.1-pro skip=claude_tooling_blocks_leaving_claude' 'every non-Claude runtime is skipped'
+  assert_contains "$OUT" 'none task=t1' 'nothing is relaunched'
+  expect_code 0 "$(control_calls)" 'relaunches fm-control would refuse'
+  assert_equals 1 "$(wc -l < "$TMP_ROOT/tooling.log" | tr -d ' ')" 'the check runs once per failover'
+  assert_contains "$(cat "$TMP_ROOT/tooling.log")" "claude-tooling --worktree $TMP_ROOT/wt-t1" 'the check reads the task local copy'
+  assert_not_contains "$(cat "$LAB/state/.failover-t1")" $'\tattempt\t' 'a refused move spends no attempt'
+  printf '1\n' > "$TMP_ROOT/tooling.rc"
+  make_worker t2 claude
+  fo worker t2 --reason usage_limit
+  assert_contains "$OUT" 'switched task=t2 from=claude to=agy:gemini-4-neon-high' 'an allowed move proceeds'
+  rm -f "$TMP_ROOT/tooling.rc"
+  drop_runtimes
+  pass 'claude-tooling: a move off Claude that fm-control would refuse is skipped before any stop and spends no attempt'
+}
+
+test_secondmate_follows_the_same_order_on_its_pin() {
+  local home="$TMP_ROOT/mate-home" pin before
+  default_order_lab
+  rm -rf "$home"
+  mkdir -p "$home" "$LAB/config/secondmate-accounts/m1"
+  pin="$LAB/config/secondmate-accounts/m1/claude-account"
+  printf 'ordinary\n' > "$pin"
+  before=$(cksum < "$pin")
+  fm_write_secondmate_meta "$LAB/state/m1.meta" "$home" '' alpha claude
+  printf 'done: answered the last request [at=1]\n' > "$LAB/state/m1.status"
+  fo worker m1 --reason usage_limit
+  expect_code 0 "$RC" "a usage-limited second mate: $OUT"
+  assert_contains "$OUT" 'switched task=m1 from=claude to=claude@charlie' 'a mate on its ordinary pin moves to charlie first'
+  assert_equals "m1 relaunch --harness claude --account $ACCTS/charlie --provider-failover" "$(relaunch_line 1)" 'the mate is relaunched with a one-launch account'
+  assert_contains "$(sed -n '6,$p' "$LAB/control.argv.1")" 'Re-read your charter' 'the note speaks to a second mate'
+  assert_equals "$before" "$(cksum < "$pin")" 'the mate pin file is never edited'
+
+  # Charlie at its limit: muse and kimi are not second-mate runtimes.
+  quota_fixture claude 0 0 > "$ACCTS/charlie/quota.json"
+  quota_fixture agy 0 0 | jq '.providers[0].quotaSemantics.effectiveAvailability[0].scope = "model:gemini-4-neon-high"' > "$QUOTA/agy.json"
+  rm -f "$LAB/control.n" "$LAB/state/.failover-m1"
+  fo worker m1 --reason usage_limit
+  expect_code 0 "$RC" "a mate past charlie: $OUT"
+  assert_contains "$OUT" 'candidate runtime=muse:muse-wonder-1.0 skip=not_verified_for_secondmate' 'muse is skipped for a mate'
+  assert_contains "$OUT" 'switched task=m1 from=claude to=codex:gpt-6.2-sol' 'the mate continues to gpt sol'
+  assert_equals "$before" "$(cksum < "$pin")" 'the mate pin file is still unchanged'
+  drop_runtimes
+  pass 'secondmate: the same order, charlie first on a one-launch account, its pin file untouched, mate-unverified runtimes skipped'
 }
 
 fm_test_run \
@@ -924,6 +1079,10 @@ fm_test_run \
   test_captain_hook_429_and_billing_start_a_successor \
   test_preflight_night_plan \
   test_watcher_moves_an_idle_refused_ship_in_one_poll \
+  test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record \
   test_watcher_moves_an_idle_refused_captain_in_one_poll \
   test_watch_bounds_stay_inside_the_stale_grace \
-  test_worker_account_identity_is_its_config_root
+  test_worker_account_identity_is_its_config_root \
+  test_default_order_prefers_another_claude_account \
+  test_worker_skips_a_move_off_claude_that_fm_control_would_refuse \
+  test_secondmate_follows_the_same_order_on_its_pin

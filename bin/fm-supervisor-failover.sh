@@ -9,7 +9,10 @@
 #   --candidate <harness:model>  a comparable runtime, in preference order;
 #                                repeatable. Without one, the candidates come
 #                                from config/supervisor-failover-candidates
-#                                (docs/configuration.md "Supervisor failover").
+#                                (docs/configuration.md "Supervisor failover"),
+#                                and without that file from the local entries
+#                                of the provider failover order other than
+#                                claude (bin/fm-failover-lib.sh).
 #   --reason <token>             why the supervisor needs replacing
 #                                (default: <current harness>_pool_exhausted)
 #
@@ -18,12 +21,15 @@
 # list leaves only the Claude account step.
 # Candidates are judged in this order, and the first with measured headroom
 # wins (bin/fm-supervisor-failover-lib.sh owns the quota verdict):
-#   1. primary only: each other config/claude-accounts entry that is already
-#      signed in (claude auth status), on a claude successor. Orca agent launch
-#      cannot select an account, so on Orca this step is skipped. The current
-#      account is CLAUDE_CONFIG_DIR, or ordinary when it is unset.
-#      A secondmate runs on its own account pin, which only the captain
-#      changes, so it has no account step.
+#   1. each other config/claude-accounts entry that is already signed in
+#      (claude auth status), on a claude successor; a secondmate takes this
+#      step only while it runs on Claude. For a primary, Orca agent
+#      launch cannot select an account, so on Orca this step is skipped, and
+#      the current account is CLAUDE_CONFIG_DIR, or ordinary when it is unset.
+#      A secondmate's current account is the one its record names, else its
+#      pin; it moves to the new entry for that relaunch only, through
+#      fm-control.sh relaunch --account --provider-failover, and its pin file
+#      is never edited.
 #   2. each candidate whose harness is claude, codex, or agy and differs from
 #      the current one. Muse and every other adapter are refused. For a
 #      primary, agy needs the tmux backend and a home agy already trusts, as
@@ -40,8 +46,9 @@
 # transfer, so the home, state/<id>.meta records, backlog, and checks carry
 # over unchanged. Run it in the background like the launcher.
 # A secondmate is relaunched in its own home through bin/fm-control.sh <id>
-# relaunch --harness --model --note, which owns the stop, the checkpoint, and
-# every pre-stop refusal. Its harness pin is left unchanged, so a later
+# relaunch --harness --model --note (plus --account --provider-failover for
+# the account step), which owns the stop, the checkpoint, and every pre-stop
+# refusal. Its harness pin is left unchanged, so a later
 # relaunch without --harness, such as the watcher's automatic one, returns the
 # secondmate to its configured runtime.
 #
@@ -97,6 +104,8 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 . "$SCRIPT_DIR/fm-worker-account-lib.sh"
 # shellcheck source=bin/fm-supervisor-failover-lib.sh
 . "$SCRIPT_DIR/fm-supervisor-failover-lib.sh"
+# shellcheck source=bin/fm-failover-lib.sh
+. "$SCRIPT_DIR/fm-failover-lib.sh"
 
 DELEGATE_BIN=$SCRIPT_DIR
 if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_SUPERVISOR_FAILOVER_TEST_BIN:-}" ]; then
@@ -111,6 +120,17 @@ if [ "${#CANDIDATES[@]}" -eq 0 ] && [ -e "$CONFIG/supervisor-failover-candidates
     case "$line" in ''|'#'*) continue ;; esac
     CANDIDATES+=("$line")
   done < "$CONFIG/supervisor-failover-candidates"
+fi
+if [ "${#CANDIDATES[@]}" -eq 0 ]; then
+  # The provider failover order is the captain's comparable-model list too:
+  # its local non-Claude entries, in order (Claude accounts are step 1).
+  err=$(fm_failover_order_load "$CONFIG") || die "${err#error: }"
+  fm_failover_order_load "$CONFIG" >/dev/null
+  for entry in ${FM_FO_ENTRIES[@]+"${FM_FO_ENTRIES[@]}"}; do
+    IFS=$FM_FO_SEP read -r fo_harness fo_model _fo_account fo_host <<< "$entry"
+    [ "$fo_harness" != claude ] && [ -z "$fo_host" ] || continue
+    CANDIDATES+=("$fo_harness:${fo_model:-default}")
+  done
 fi
 for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   case "$c" in
@@ -140,7 +160,8 @@ else
   FROM_HARNESS=$(fm_meta_get "$META" harness)
   FROM_MODEL=$(fm_meta_get "$META" model)
   FROM_MODEL=${FROM_MODEL:-default}
-  FROM_ACCOUNT=pin
+  FROM_ACCOUNT=$(fm_meta_get "$META" account)
+  FROM_ACCOUNT=${FROM_ACCOUNT:-pin}
   BACKEND=$(fm_meta_get "$META" backend)
   BACKEND=${BACKEND:-tmux}
 fi
@@ -157,35 +178,43 @@ take() { # <harness> <model> <launch-account> <report-account> <via> <quota>
   CHOICE_HARNESS=$1 CHOICE_MODEL=$2 CHOICE_ACCOUNT=$3 CHOICE_REPORT_ACCOUNT=$4 CHOICE_VIA=$5 CHOICE_QUOTA=$6
 }
 
-# Step 1: another signed-in Claude account (primary only).
-if [ "$SCOPE" = primary ]; then
-  listed=$(fm_worker_account_list claude "$CONFIG") || exit 2
-  claude_bin=$(command -v claude 2>/dev/null) || claude_bin=''
-  while IFS= read -r entry; do
-    [ -n "$entry" ] && [ -z "$CHOICE_HARNESS" ] || continue
-    if [ "$FROM_HARNESS" = claude ] && [ "$entry" = "$FROM_ACCOUNT" ]; then
-      report claude default "$entry" 'skip=current_account'
-      continue
-    fi
-    if [ "$BACKEND" != tmux ]; then
-      report claude default "$entry" "skip=${BACKEND}_cannot_select_account"
-      continue
-    fi
-    root=$entry
-    [ "$root" != ordinary ] || root=''
-    if [ -z "$claude_bin" ] || ! fm_worker_account_check claude "$entry" "$root" "$claude_bin" '' config/claude-accounts 2>/dev/null; then
-      report claude default "$entry" 'skip=not_signed_in'
-      continue
-    fi
-    [ -n "$root" ] || root="${HOME:?HOME is required to measure the ordinary account}/.claude"
-    if quota=$(fm_failover_quota_check claude default "$root"); then
-      report claude default "$entry" "$quota"
-      take claude default "$entry" "$entry" account_switch "$quota"
-    else
-      report claude default "$entry" "$quota"
-    fi
-  done <<< "$listed"
+# Step 1: another signed-in Claude account. A secondmate takes it only while
+# it runs on Claude; a mate on another runtime returns to Claude on its pin.
+ACCOUNT_STEP=1
+[ "$SCOPE" = primary ] || [ "$FROM_HARNESS" = claude ] || ACCOUNT_STEP=0
+if [ "$SCOPE" = secondmate ] && [ "$ACCOUNT_STEP" = 1 ] && [ "$FROM_ACCOUNT" = pin ]; then
+  # An unrecorded account is the mate's pin; name it so it is not re-chosen.
+  if selection=$(fm_worker_account_select claude "$CONFIG" default claude '' "$TARGET" 2>/dev/null) && [ -n "$selection" ]; then
+    FROM_ACCOUNT=${selection%%$'\t'*}
+  fi
 fi
+listed=''
+[ "$ACCOUNT_STEP" = 0 ] || listed=$(fm_worker_account_list claude "$CONFIG") || exit 2
+claude_bin=$(command -v claude 2>/dev/null) || claude_bin=''
+while IFS= read -r entry; do
+  [ -n "$entry" ] && [ -z "$CHOICE_HARNESS" ] || continue
+  if { [ "$FROM_HARNESS" = claude ] || [ "$SCOPE" = secondmate ]; } && [ "$entry" = "$FROM_ACCOUNT" ]; then
+    report claude default "$entry" 'skip=current_account'
+    continue
+  fi
+  if [ "$SCOPE" = primary ] && [ "$BACKEND" != tmux ]; then
+    report claude default "$entry" "skip=${BACKEND}_cannot_select_account"
+    continue
+  fi
+  root=$entry
+  [ "$root" != ordinary ] || root=''
+  if [ -z "$claude_bin" ] || ! fm_worker_account_check claude "$entry" "$root" "$claude_bin" '' config/claude-accounts 2>/dev/null; then
+    report claude default "$entry" 'skip=not_signed_in'
+    continue
+  fi
+  [ -n "$root" ] || root="${HOME:?HOME is required to measure the ordinary account}/.claude"
+  if quota=$(fm_failover_quota_check claude default "$root"); then
+    report claude default "$entry" "$quota"
+    take claude default "$entry" "$entry" account_switch "$quota"
+  else
+    report claude default "$entry" "$quota"
+  fi
+done <<< "$listed"
 
 # Step 2: a comparable model on another verified runtime.
 for c in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
@@ -260,6 +289,7 @@ if [ "$SCOPE" = primary ]; then
 else
   args=(--harness "$CHOICE_HARNESS")
   [ "$CHOICE_MODEL" = default ] || args+=(--model "$CHOICE_MODEL")
+  [ -z "$CHOICE_ACCOUNT" ] || args+=(--account "$CHOICE_ACCOUNT" --provider-failover)
   note="Supervisor failover: $FROM_HARNESS pool ran out ($REASON); relaunched on $CHOICE_HARNESS $CHOICE_MODEL ($CHOICE_QUOTA)."
   bash "$DELEGATE_BIN/fm-control.sh" "$TARGET" relaunch "${args[@]}" --note "$note" || rc=$?
 fi

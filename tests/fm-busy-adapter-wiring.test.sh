@@ -679,7 +679,15 @@ test_secondmate_claude_spawn_arms_busy_for_the_stall_gate() {
   secondmate_stall_watch "$primary" "$id" "$case_dir/watch-idle.out" 8
   grep -F "check: secondmate wake-loop stalled: mate=$id row=7" "$case_dir/watch-idle.out" >/dev/null \
     || fail "the same frozen queue stayed hidden after the secondmate turn ended: $(cat "$case_dir/watch-idle.out")"
-  pass "a claude secondmate spawn arms the busy contract the stall gate can see, and Stop does not wake the parent"
+
+  # A usage-limit refusal ending a mate's turn is recorded for provider failover.
+  run_claude_hook "$settings" UserPromptSubmit
+  run_claude_stopfailure "$settings" '{"hook_event_name":"StopFailure","error":"rate_limit","last_assistant_message":"API Error: Request rejected (429)"}' \
+    || fail "secondmate StopFailure hooks must exit 0 on a 429"
+  out=$(bash -c '. "$1/bin/fm-busy-lib.sh"; . "$1/bin/fm-failover-lib.sh"; fm_failover_record_class "$2" "$3"' _ "$ROOT" "$state" "$id") \
+    || fail "a claude secondmate's StopFailure did not record the refusal for provider failover"
+  [ "$out" = rate_limit ] || fail "a claude secondmate's StopFailure must record the 429, got '$out'"
+  pass "a claude secondmate spawn arms the busy contract the stall gate can see, Stop does not wake the parent, and a 429 is recorded for failover"
 }
 
 run_secondmate_stop_guard() { # <sm-home>

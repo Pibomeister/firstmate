@@ -2003,6 +2003,59 @@ SH
   pass "fm-control relaunch: mate pins are re-read for Claude and Pi, and unusable pins refuse before stopping the agent"
 }
 
+# A Claude secondmate refused by its provider moves to another declared account
+# for one launch through --provider-failover; its pin file is never edited, and
+# a plain relaunch afterwards returns to the pin.
+test_secondmate_provider_failover_moves_to_a_declared_account_for_one_launch() {
+  local dir out rc id=rl-sm-fo pin pin_before
+  dir=$(new_case sm-provider-failover-account "$id")
+  add_ship_task "$dir" "$id" claude
+  make_claude_auth_stub "$dir"
+  printf 'claude' > "$dir/fake/command"
+  printf 'claude' > "$dir/fake/becomes"
+  mkdir -p "$dir/wt/state" "$dir/wt/data" "$dir/wt/bin" "$dir/home/config/secondmate-accounts/$id" \
+    "$dir/mate" "$dir/charlie" "$dir/signed-out"
+  printf '%s\n' "$id" > "$dir/wt/.fm-secondmate-home"
+  printf '# agents\n' > "$dir/wt/AGENTS.md"
+  printf '# charter\n' > "$dir/wt/data/charter.md"
+  {
+    printf 'window=fmses:fm-%s\nendpoint_task_id=%s\n' "$id" "$id"
+    printf 'worktree=%s\nproject=%s\nhome=%s\n' "$dir/wt" "$dir/wt" "$dir/wt"
+    printf 'harness=claude\nkind=secondmate\nmode=secondmate\nyolo=off\nmodel=default\neffort=default\n'
+  } > "$dir/home/state/$id.meta"
+  : > "$dir/mate/.credentials.json"
+  : > "$dir/charlie/.credentials.json"
+  printf '%s\n' "$dir/mate" "$dir/charlie" "$dir/signed-out" > "$dir/home/config/claude-accounts"
+  pin="$dir/home/config/secondmate-accounts/$id/claude-account"
+  printf '%s\n' "$dir/mate" > "$pin"
+  pin_before=$(cksum < "$pin")
+
+  cp "$dir/home/state/$id.meta" "$dir/meta-before"
+  out=$(run_control "$dir" "$id" relaunch --account "$dir/charlie" --note "no failover"); rc=$?
+  expect_code 1 "$rc" "a secondmate --account without --provider-failover must refuse"$'\n'"$out"
+  assert_contains "$out" "only with --provider-failover" "the refusal names the provider-failover requirement"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "the refusal must happen before the running mate stops"
+  cmp -s "$dir/meta-before" "$dir/home/state/$id.meta" || fail "the refusal must leave the mate record untouched"
+
+  for bad in "$dir/elsewhere" "$dir/signed-out"; do
+    out=$(run_control "$dir" "$id" relaunch --account "$bad" --provider-failover --note "bad account"); rc=$?
+    expect_code 1 "$rc" "a failover onto $bad must refuse"$'\n'"$out"
+    [ "$(cat "$dir/fake/command")" = claude ] || fail "the $bad refusal must happen before the running mate stops"
+  done
+
+  out=$(run_control "$dir" "$id" relaunch --account "$dir/charlie" --provider-failover --note "usage limit"); rc=$?
+  expect_code 0 "$rc" "a secondmate provider failover onto charlie should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/charlie'" "the replacement mate runs on charlie"
+  [ "$(meta_field "$dir" "$id" account)" = "$dir/charlie" ] || fail "the mate record names the account it now runs on"
+  [ "$(cksum < "$pin")" = "$pin_before" ] || fail "the mate pin file must not change"
+
+  : > "$dir/fake/literal"
+  out=$(run_control "$dir" "$id" relaunch --note "back home"); rc=$?
+  expect_code 0 "$rc" "a plain relaunch after the failover should succeed"$'\n'"$out"
+  assert_contains "$(cat "$dir/fake/literal")" "CLAUDE_CONFIG_DIR='$dir/mate'" "a plain relaunch returns the mate to its pin"
+  pass "fm-control relaunch: a secondmate provider failover moves to a declared account for one launch, pin untouched"
+}
+
 test_pi_exclude_tools_follow_the_relaunch() {
   local dir out rc id=rl-pi-excl
   dir=$(new_case pi-exclude "$id")
@@ -5018,6 +5071,7 @@ test_account_list_relaunch_reuses_the_recorded_account
 test_account_list_relaunch_moves_only_on_explicit_account
 test_account_list_relaunch_refusals_happen_before_stop
 test_secondmate_account_pin_follows_relaunch_and_refuses_before_stop
+test_secondmate_provider_failover_moves_to_a_declared_account_for_one_launch
 test_pi_exclude_tools_follow_the_relaunch
 test_exclude_tools_refusals_happen_before_the_agent_stops
 test_explicit_model_wins_over_the_recorded_one

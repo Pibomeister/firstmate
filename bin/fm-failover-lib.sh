@@ -11,7 +11,8 @@
 #              file order), `ordinary`, or one absolute declared path; Claude
 #              only, and an account path holds no whitespace.
 #   host=      the entry names a configured remote route.
-# Without the file the order is FM_FAILOVER_DEFAULT_ORDER.
+# Without the file the order is FM_FAILOVER_DEFAULT_ORDER: another declared
+# Claude account first, then comparable models on other runtimes.
 #
 # Record: state/<task-id>.provider-error, or state/captain.provider-error for
 # the primary session, one line replaced atomically:
@@ -20,10 +21,11 @@
 # stalled from the stall check (bin/fm-stall-watch.sh); source and gen are tokens
 # (gen is the task's busy generation, `-` when none); detail is one safe token.
 
-FM_FAILOVER_DEFAULT_ORDER='codex host=hetzner
-codex
-droid
-claude@next'
+FM_FAILOVER_DEFAULT_ORDER='claude@next
+agy:gemini-4-neon-high
+muse:muse-wonder-1.0
+codex:gpt-6.2-sol
+kimi:kimi-code/k3.1-pro'
 FM_FAILOVER_RECORD_MAX_AGE=${FM_FAILOVER_RECORD_MAX_AGE:-1800}
 # Field separator of an order row: not whitespace, so `read` keeps an empty
 # field instead of folding it into the next one.

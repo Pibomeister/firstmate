@@ -113,7 +113,9 @@
 #              agent stops. Under a declared config/claude-accounts list, a
 #              Claude ship or scout keeps the account its record names, and
 #              only an explicit --account <entry> moves it to another
-#              declared one, checked here the same way.
+#              declared one, checked here the same way. A secondmate accepts
+#              --account only with --provider-failover, for that launch only;
+#              its pin file is never edited, so a later relaunch re-reads it.
 #              A replacement omp secondmate likewise passes its per-secondmate
 #              omp profile pin (bin/fm-omp-profile-lib.sh) before the old agent
 #              stops.
@@ -1574,8 +1576,12 @@ resolve_relaunch_profile() {
     fm_hermes_gateway_check "$hermes_home" "$hermes_profile" || return 1
   fi
   # Under a declared Claude account list, the replacement stays on the
-  # account the task records unless --account explicitly moves it.
+  # account the task records unless --account explicitly moves it. A
+  # secondmate runs on its own pin, so only a provider failover moves it to a
+  # declared entry, for this launch only and without editing that pin.
   [ "$KIND" != secondmate ] || account_mate=$ID
+  [ "$KIND" != secondmate ] || [ "$ACCOUNT_SET" = 0 ] || [ "$PROVIDER_FAILOVER" = 1 ] \
+    || die "--account moves secondmate $ID off its own config/secondmate-accounts/$ID/claude-account pin only with --provider-failover"
   TARGET_ACCOUNT=$(fm_worker_account_relaunch_request "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \
     "$PRIOR_HARNESS" "$(fm_meta_get "$META" account)" "$NEW_ACCOUNT" "$account_mate") || return 1
   fm_worker_account_select "$TARGET_HARNESS" "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" \

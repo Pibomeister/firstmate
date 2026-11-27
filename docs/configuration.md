@@ -584,14 +584,15 @@ A new context (startup, resume, clear, or compact) clears the recorded handoff, 
 
 When a supervisor's pool runs short or out, `bin/fm-supervisor-failover.sh primary <handoff file>` or `FM_HOME=<home> bin/fm-supervisor-failover.sh secondmate <id>` replaces it while keeping its home, task records, and checks.
 The watchdog's quota guard nudge names these commands to the primary when a check finds a supervisor pool short or exhausted ([quota guard](watchdog.md)); the primary runs them, and nothing else does.
-It first tries another signed-in Claude account with headroom, for a primary on tmux only, and then a comparable model on another verified runtime with measured headroom.
+It first tries another signed-in Claude account with headroom, for a primary on tmux or a secondmate that runs on Claude, and then a comparable model on another verified runtime with measured headroom.
+A secondmate moved to another account runs on it for that relaunch only, and a later relaunch returns it to its own pin.
 Stale quota data or an applicable scope that is not measured is never headroom, as the quota guard judges it.
 For a one-snapshot supervisor pool check with bounded history, use [`bin/fm-quota-guard.sh check`](../bin/fm-quota-guard.sh); its header owns the TOON interface and the separate watchdog interface.
 A primary is replaced through the verified handoff above, and a secondmate through `bin/fm-control.sh <id> relaunch`.
 It never signs in, spends, or edits an account pin, and it reports the replacement and the reason, or that no candidate has headroom.
 Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.
 
-The comparable models come from `--candidate` or from `config/supervisor-failover-candidates`, which is local to each home and not inherited.
+The comparable models come from `--candidate`, from `config/supervisor-failover-candidates`, which is local to each home and not inherited, or else from the local non-Claude entries of the [provider failover order](#provider-failover-configfailover-order).
 Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
 List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
 A provider refusal (429, rate, usage, or billing limit) instead moves the agent automatically under [provider failover](#provider-failover-configfailover-order).
@@ -601,12 +602,16 @@ A provider refusal (429, rate, usage, or billing limit) instead moves the agent 
 When a provider refuses a worker or the captain with an HTTP 429, a rate or usage limit, or a billing, credit, past-due, subscription, or account-hold error, Firstmate moves that agent to the next runtime in this home's failover order instead of letting it sit at an idle prompt.
 `bin/fm-failover.sh` is the one entry point; its `--help` owns the subcommands, output, exit codes, and bounds, and [`tests/fm-failover.test.sh`](../tests/fm-failover.test.sh) covers them.
 
-A ship or scout is detected two ways.
-A Claude worker's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
-For any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
-On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates on the first eligible runtime in cyclic order after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
+A ship, scout, or second mate is detected two ways.
+A Claude worker's or second mate's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
+For a ship or scout on any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
+A healthy idle second mate is not read; the watcher reads its screen only after its hook records a refusal.
+On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates, or a second mate in its same home, on the first eligible runtime in cyclic order after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
+A runtime that `bin/fm-control.sh` would refuse before it stops anything is skipped without spending an attempt: one not verified for that kind of agent, or any move off Claude that the `claude-tooling` check of `bin/fm-quota-reroute.sh` refuses.
+A second mate follows the same order and also skips any runtime that is not a verified supervisor runtime, so Muse and Kimi are skipped for it.
+A second mate moved to another declared Claude account runs on it for that launch only, its own account pin file is never edited, and a later relaunch without an account returns it to that pin.
 It wakes firstmate with a check naming the switch, or why no runtime took over.
-A captain-held, remote, finished, or deliberately stopped task is left alone, and each task allows 3 attempts an hour.
+A captain-held, remote, finished, or deliberately stopped task is left alone, a second mate's finished request does not count as finished, and each task allows 3 attempts an hour.
 The whole failover call, every relaunch included, ends strictly inside the watcher's stale grace, so a slow failover never makes the watcher itself look stopped.
 
 A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
@@ -625,20 +630,21 @@ An unpinned Claude worker counts as running on the account the supervisor inheri
 A `host=` entry is recorded as `host worktree handoff not implemented` in the dispatch log, and local candidates are considered.
 The remote transport currently cannot relocate a local task worktree.
 Preflight excludes accounts below 30% five-hour remaining.
-Without the file the order is `codex host=hetzner`, then local `codex`, `droid`, and `claude@next`.
+Without the file the order is `claude@next`, so a usage-limited Claude agent moves to another declared Claude account first, then the comparable models Gemini Neon (`agy:gemini-4-neon-high`), Muse Wonder (`muse:muse-wonder-1.0`), GPT Sol (`codex:gpt-6.2-sol`), and Kimi K3.1 Pro (`kimi:kimi-code/k3.1-pro`).
+Quota evidence still decides: a runtime whose `quota-axi` reading is exhausted is skipped, and unmeasured quota is disclosed and does not skip.
 After the final entry, selection resumes at the beginning of the order while skipping the refused runtime and runtimes already attempted during the current failover window.
 Example:
 
 ```text
 # Preferred order when a provider refuses an agent
-codex host=hetzner
-codex
-droid
 claude@next
+agy:gemini-4-neon-high
+codex host=hetzner
+codex:gpt-6.2-sol
 ```
 
 `bin/fm-failover.sh preflight` makes one real one-line call through each supported local runtime's CLI, and for each declared Claude account, then reads the five-hour and weekly percent left from `quota-axi`.
-Host entries stay unmeasured until worktree handoff is implemented, and a runtime with no supported probe is excluded.
+Host entries stay unmeasured until worktree handoff is implemented, and a runtime with no supported probe stays unmeasured rather than excluded.
 A runtime whose call fails, whose weekly window reads 0, or whose five-hour window reads under the floor is excluded from the night plan, which `bin/fm-failover.sh plan` prints and every failover honors for 12 hours.
 Only provider failover reads the night plan; ordinary dispatch does not consult it.
 An unreadable window is disclosed and does not exclude.
