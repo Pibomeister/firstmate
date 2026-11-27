@@ -1,0 +1,6 @@
+test_stop_file_refuses_every_landing rc=0 secs=150
+test_refuses_a_repository_the_grant_does_not_name rc=0 secs=150
+test_second_merge_in_flight_is_refused rc=0 secs=159
+test_lands_an_allowlisted_repository_at_the_approved_head rc=0 secs=160
+test_refuses_without_an_approved_review_at_the_head rc=0 secs=161
+test_file_list_is_read_for_the_commits_that_merge rc=0 secs=180

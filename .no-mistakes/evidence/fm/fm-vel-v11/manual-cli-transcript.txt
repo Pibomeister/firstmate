@@ -1,13 +1,49 @@
-$ fm-self-land.sh covers https://github.com/example/repo/pull/7   # no config/self-land
-exit=1
-$ (config/self-land: allow=github.com/example/repo) covers .../example/repo/pull/7
-exit=0
-$ covers https://github.com/other/repo/pull/7
-exit=1
-$ land with a waiver flag --allow-red
+## no config/self-land
+$ bin/fm-self-land.sh covers https://github.com/example/repo/pull/1
+[exit 1]
+## allowlisted
+$ bin/fm-self-land.sh covers https://github.com/example/repo/pull/1
+error: config/self-land line 1: expected key=value
+[exit 2]
+## not allowlisted
+$ bin/fm-self-land.sh covers https://github.com/other/repo/pull/1
+error: config/self-land line 1: expected key=value
+[exit 2]
+## waiver flag
+$ bin/fm-self-land.sh task-x https://github.com/example/repo/pull/1 --head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --allow-red
 error: a landing needs exactly <task-id> <pr-url> --head <full-sha>; there is no other option and no waiver flag
 usage: fm-self-land.sh <task-id> <pr-url> --head <full-sha>
-exit=2
-$ touch state/.self-land-off; land
+[exit 2]
+## short head
+$ bin/fm-self-land.sh task-x https://github.com/example/repo/pull/1 --head abc123
+error: --head needs the full lowercase commit id
+usage: fm-self-land.sh <task-id> <pr-url> --head <full-sha>
+[exit 2]
+## stop file
+$ bin/fm-self-land.sh task-x https://github.com/example/repo/pull/1 --head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 self-land: refused (stop-file): state/.self-land-off exists; remove it to resume self-landing
-exit=1
+[exit 1]
+## no task record
+$ bin/fm-self-land.sh task-x https://github.com/example/repo/pull/1 --head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+self-land: refused (config): config/self-land line 1: expected key=value
+[exit 1]
+## forge calls made:
+none
+
+######## second pass with correct allow=github.com/example/repo
+## allowlisted
+$ bin/fm-self-land.sh covers https://github.com/example/repo/pull/1
+[exit 0]
+## not allowlisted
+$ bin/fm-self-land.sh covers https://github.com/other/repo/pull/1
+[exit 1]
+## landing an unlisted repo
+$ bin/fm-self-land.sh task-x https://github.com/other/repo/pull/1 --head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+self-land: refused (not-allowlisted): config/self-land has no allow line for github.com/other/repo
+[exit 1]
+## no task record
+$ bin/fm-self-land.sh task-x https://github.com/example/repo/pull/1 --head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+self-land: refused (task): task task-x has no record in this home
+[exit 1]
+## forge calls made:
+none
