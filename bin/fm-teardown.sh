@@ -4322,7 +4322,7 @@ rm -f "$STATE/$ID.turn-ended" "$STATE/$ID.turn-start" "$STATE/$ID.progress" \
   "$STATE/.$ID.branch-outcome-index" \
   "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID" \
   "$STATE/.crew-relaunch-$ID" "$STATE/.crew-stopped-$ID" "$STATE/$ID.agent-exit" \
-  "$STATE/$ID.provider-error" "$STATE/.failover-$ID" \
+  "$STATE/$ID.provider-error" "$STATE/.failover-$ID" "$STATE/.pr-behind-$ID" \
   "$STATE/$ID.failover-seen" "$STATE/$ID.failover-judged"
 # kiro's per-task home is a directory (its relocated KIRO_HOME holds the hook
 # agent config, the trust setting, and this task's sessions), so it needs a

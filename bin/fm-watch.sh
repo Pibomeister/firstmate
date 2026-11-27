@@ -268,6 +268,16 @@
 #                          FM_CREW_RELAUNCH_MAX_ATTEMPTS inside
 #                          FM_CREW_RELAUNCH_WINDOW_SECS the ordinary once-only
 #                          dead-record stale wake is sent instead, naming the pause
+#   check: <id> relaunched because its local branch <branch> (<sha>) was behind its PR head <sha> ...
+#   check: <id>'s local branch <branch> (<sha>) is not at its PR head <sha> ..., so it was not relaunched ...
+#                          the merge-poll sweep's bin/fm-pr-behind.sh scan
+#                          (FM_PR_BEHIND=0 turns it off) found a live local
+#                          ship behind its own still-open PR head: a clean,
+#                          strictly behind branch got one relaunch per new head,
+#                          whose resync moved it; a dirty copy, an active
+#                          no-mistakes run, a divergence, a refused check, or a
+#                          failed relaunch is reported once per head instead;
+#                          that script's header owns the contract
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock. A live holder whose beacon is stale
@@ -6030,11 +6040,32 @@ EOF
       touch "$STATE/.last-check"
       wake "$reason"
     fi
+    # A ship whose local branch fell behind its own still-open PR head gets one
+    # relaunch request per new head (bin/fm-pr-behind.sh owns the contract).
+    pr_behind_reason=
+    if [ "${FM_PR_BEHIND:-1}" != 0 ]; then
+      # Bounded like provider failover, inside the watcher stale grace.
+      pr_behind_now=0
+      fm_watch_now pr_behind_now
+      pr_behind_out=$(fm_run_timed "$FAILOVER_WATCH_TIMEOUT" env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+        FM_PR_BEHIND_DEADLINE=$((pr_behind_now + FAILOVER_WATCH_TIMEOUT - FAILOVER_WATCH_DEADLINE_MARGIN)) \
+        FM_PR_BEHIND_RELAUNCH_TIMEOUT="$FAILOVER_WATCH_RELAUNCH_TIMEOUT" \
+        "$SCRIPT_DIR/fm-pr-behind.sh" scan 2>/dev/null) || triage_log "PR-behind scan ended early"
+      while IFS=$'\t' read -r pr_behind_key pr_behind_line; do
+        [ -n "$pr_behind_key" ] && [ -n "$pr_behind_line" ] || continue
+        fm_wake_append check "$pr_behind_key" "$pr_behind_line" || exit 1
+        pr_behind_reason=${pr_behind_reason:-$pr_behind_line}
+      done <<EOF
+$pr_behind_out
+EOF
+    fi
     touch "$STATE/.last-check"
     [ -z "$pr_register_reason" ] || wake "$pr_register_reason"
     if [ -n "$contribution_check_output" ]; then
       wake "$contribution_check_output"
     fi
+    # Its rows are already durable, so an earlier wake above loses none of them.
+    [ -z "$pr_behind_reason" ] || wake "$pr_behind_reason"
   fi
 
   # On the first changed signal, linger one grace period and re-scan before

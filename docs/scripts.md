@@ -212,6 +212,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-captain-locate.sh` | Read-only: print the verified session-lock holder's pid and terminal handle as one `CAPTAIN v1` line for supervisor discovery |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-resync.sh`        | Resync a task copy with a published pull-request head, keeping a clean strict-ahead commit and archiving stale local history without force-pushing |
+| `fm-pr-behind.sh`        | Watcher sweep trigger: request one relaunch, which resyncs through `fm-pr-resync.sh`, for a live ship whose clean local branch fell behind its own still-open PR head, and report a dirty copy or an active run instead |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated pull-request, merge-request, and Gerrit-change poll sidecars |
 | `fm-contributions.sh`    | Observe owned publications, retain exact-head judgments, measure required actors, and wake on maintainer or configured review-bot signals |
 | `fm-pr-health.sh`        | Opt-in: enroll the PRs this home owns from creation and notify once per condition per latest commit for a conflict or failing required check (see [configuration.md](configuration.md#pr-health-monitor-configpr-health-monitor)) |

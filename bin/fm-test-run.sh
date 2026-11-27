@@ -369,7 +369,7 @@ family_for_basename_var() {
     fm-wake-queue.test.sh|fm-wake-ledger.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
     fm-watch-inbox-meta.test.sh|fm-watch-open-decisions.test.sh|fm-watch-stale-backoff.test.sh|\
     fm-watch-triage.test.sh|fm-watch-triage-pause.test.sh|fm-watch-triage-wedge-defer.test.sh|fm-watch-triage-fork.test.sh|fm-task-inbox.test.sh|fm-watch-inbox-recovery.test.sh|\
-    fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-watch-wedge-cap.test.sh|\
+    fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh|fm-pr-behind.test.sh|fm-watch-wedge-cap.test.sh|\
     fm-watch-wedge-cap-unconfigured-parity.test.sh|fm-supervision-bounds.test.sh|fm-watcher-replacement.test.sh)
       REPLY_FAMILY=watcher-wake-lock
       ;;
