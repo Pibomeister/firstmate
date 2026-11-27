@@ -184,6 +184,13 @@ node interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nnode -e "$X"
 perl interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nperl -e 1
 ruby interpreter by path|hold wrapper|cat <<EOF\n@t@\nEOF\n/usr/bin/ruby -e 1
 php interpreter|hold wrapper|cat <<EOF\n@t@\nEOF\nphp -r 1
+free-threaded python build|hold wrapper|python3.13t <<EOF\n@t@\nEOF
+windowed python build|hold wrapper|pythonw <<EOF\n@t@\nEOF
+distro node name|hold wrapper|nodejs <<EOF\n@t@\nEOF
+versioned perl|hold wrapper|perl5.34 <<EOF\n@t@\nEOF
+versioned ruby|hold wrapper|ruby3.2 <<EOF\n@t@\nEOF
+versioned php|hold wrapper|php8.2 <<EOF\n@t@\nEOF
+lookalike of a versioned interpreter|refuse|cat <<EOF\n@t@\nEOF\nperlx -e 1
 removal split by quotes|hold destructive|cat <<EOF\n@t@\nEOF\nr''m -rf target
 removal split by a line continuation|hold destructive|cat <<EOF\n@t@\nEOF\nr\\\nm -rf target
 network transfer|hold security|cat <<EOF\n@t@\nEOF\ncurl https://example.invalid

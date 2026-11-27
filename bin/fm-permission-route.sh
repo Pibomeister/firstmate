@@ -81,7 +81,8 @@
 #                 words lead a command.
 #   wrapper       Outside the heredoc bodies, a word in command position runs
 #                 other text as a command (eval, source, sh, env, xargs, an
-#                 interpreter such as python, node, perl, ruby, or php, ...).
+#                 interpreter such as python, node, perl, ruby, or php, including a
+#                 versioned or distro name such as python3.13t or nodejs, ...).
 #   repeat        The same command was already refused once.
 #   ceiling       FM_PERMISSION_ROUTE_MAX_REFUSALS (default 5) refusals are
 #                 already recorded for this worker.
@@ -273,7 +274,7 @@ command_shape() {  # <text>
         base = tolower(tok)
         gsub("[\"" quote "\\\\]", "", base)
         sub(/^.*\//, "", base)
-        if (base ~ /^(eval|exec|source|\.|command|builtin|env|xargs|sh|bash|zsh|dash|ksh|fish|python[0-9.]*|node|perl|ruby|php|nohup|nice|timeout|watch|find|parallel|open|nc|op)$/) wrapper = 1
+        if (base ~ /^(eval|exec|source|\.|command|builtin|env|xargs|sh|bash|zsh|dash|ksh|fish|python[0-9.]*[tw]?|nodejs|node|perl[0-9.]*|ruby[0-9.]*|php[0-9.]*|nohup|nice|timeout|watch|find|parallel|open|nc|op)$/) wrapper = 1
         return
       }
       # More leading words than this scan reads: the command word is unknown.
