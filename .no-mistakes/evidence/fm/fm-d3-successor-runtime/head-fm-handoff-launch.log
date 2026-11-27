@@ -1,0 +1,44 @@
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1795789934 event=handoff_started nonce=325086ea3390113f8ddccf89d02479fb attempt=1 pid=52060 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795789935 event=handoff_failed nonce=325086ea3390113f8ddccf89d02479fb attempt=1 pid=52060 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795789964 event=handoff_started nonce=f46479f80b5daaa2bc5a1238f8f02a12 attempt=1 pid=41292 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795789965 event=handoff_failed nonce=f46479f80b5daaa2bc5a1238f8f02a12 attempt=1 pid=41292 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+ok - a handoff that omits an open captain order is refused before any claim, record, or launch
+ok - a failed planned fresh start releases its Stop gate and falls back to auto-compaction
+ok - a launch interrupted before any attempt still records its failure for the surviving session
+ok - a launch interrupted while removing the earlier failure record still records its failure
+ok - supervisor endpoint metadata retains precedence and generation
+ok - a transfer that rolls back after its verdict preserves predecessor leases
+ok - a lease retirement error after commit keeps the committed transfer
+ok - an interruption during lease retirement after commit keeps the committed transfer
+ok - a transfer interrupted after its line-1 write restores predecessor ownership and leases
+ok - a second signal during transaction rollback preserves ownership and releases its locks
+ok - a sidecar-less transfer interrupted after its line-1 write restores the predecessor
+ok - discovery reports only committed endpoints across an uncommitted transfer
+ok - lock endpoints follow supervisor-target precedence for nested and inherited terminals
+ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
+ok - discovery reports a pid and handle only from one unchanged snapshot
+ok - a completed handoff retires its claim, so later refused sessions emit no reject
+ok - foreign launch is refused and dead lock holders are not captain endpoints
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
+ok - tmux inside a session opens the successor in that session
+HANDOFF v1 ts=1795790683 event=handoff_retry nonce=05aacad192696cd2eb1a5fbf5e374a0c attempt=2 pid=55147 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795790703 event=handoff_ack nonce=05aacad192696cd2eb1a5fbf5e374a0c attempt=0 pid=46483 handle=%9 reason=lock_transferred
+ok - DRILL tmux-display-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795790767 event=handoff_retry nonce=a7838c9991c9ae910a787912b00832b7 attempt=2 pid=84182 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795790789 event=handoff_ack nonce=a7838c9991c9ae910a787912b00832b7 attempt=0 pid=20059 handle=%9 reason=lock_transferred
+ok - DRILL tmux-has-timeout: expired setup starts a fresh verified retry within the shared budget
+HANDOFF v1 ts=1795790813 event=handoff_started nonce=e5019ed37dfc38947bb596549330353a attempt=1 pid=48222 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795790823 event=handoff_ack nonce=e5019ed37dfc38947bb596549330353a attempt=0 pid=8612 handle=term_lab_1 reason=lock_transferred
+ok - DRILL interrupt-after-ack: one completion outcome, no contradictory failure
+ok - DRILL precommit: completion waits for the committed transfer, not an uncommitted read
+HANDOFF v1 ts=1795790903 event=handoff_started nonce=de55757266d3be13bca6725a8c342e95 attempt=1 pid=72826 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795790916 event=handoff_failed nonce=de55757266d3be13bca6725a8c342e95 attempt=1 pid=72826 handle=none reason=interrupted
+ok - DRILL cleanup-contention: failure is reported only after the claim is fenced
+ok - DRILL cleanup-second-signal: a second signal during cleanup still emits exactly one failure
+Terminated: 15

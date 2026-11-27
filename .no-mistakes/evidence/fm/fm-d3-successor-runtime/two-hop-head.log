@@ -1,0 +1,34 @@
+== hop 1 successor argv:
+claude
+--dangerously-skip-permissions
+--model
+haiku
+--effort
+low
+Firstmate handoff successor. Read the entire document at /pr...
+== hop 1 record:
+pid=49644
+nonce=4e7ba62f9dab36206e151bb5026c3a94
+handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.C8pStu/home/data/handoff.md
+sha256=eb52a2ff5d91433515e67827215f244db8b15f2bc5b75e83975e9f3d486027cb
+successor=harness=claude model=haiku account=ambient reason=quota_reroute verdict=ok scope=all_models remaining=40 runway=through_reset effort=low setting_sources=default model_from=explicit effort_from=explicit setting_sources_from=unreadable predecessor_model=unknown predecessor_effort=unknown predecessor_setting_sources=unknown
+== hop 2 rc=0
+== hop 2 launcher stderr:
+successor runtime: model haiku, from the predecessor; effort low, from the predecessor; setting-sources default: the predecessor's launch recorded none, so the runtime's own applies
+successor: harness=claude model=haiku account=ambient reason=handoff verdict=ok scope=all_models remaining=40 runway=through_reset effort=low setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unrecorded predecessor_model=haiku predecessor_effort=low predecessor_setting_sources=none
+== hop 2 successor argv:
+claude
+--dangerously-skip-permissions
+--model
+haiku
+--effort
+low
+Firstmate handoff successor. Read the entire document at /pr...
+== hop 2 record:
+pid=81240
+nonce=e2fbbef2eaedbc338ec6148bb7e49788
+handoff=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.C8pStu/home/data/handoff.md
+sha256=eb52a2ff5d91433515e67827215f244db8b15f2bc5b75e83975e9f3d486027cb
+successor=harness=claude model=haiku account=ambient reason=handoff verdict=ok scope=all_models remaining=40 runway=through_reset effort=low setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unrecorded predecessor_model=haiku predecessor_effort=low predecessor_setting_sources=none
+ok - two-hop: a named model and effort survive a second handoff with no options, read from the verified record
+rc=0

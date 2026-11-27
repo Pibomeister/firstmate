@@ -1,0 +1,5 @@
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - codex successor follows config/codex-permission-mode on tmux
+not ok - orca codex successor: handoff must complete: successor runtime: model gpt-5.5, named explicitly (reason=handoff); the predecessor had none; effort default: the successor runtime differs from claude, so nothing is carried; setting-sources default: the successor runtime differs from claude, so nothing is carried
+successor: harness=codex model=gpt-5.5 account=ambient reason=handoff verdict=unknown why=no_valid_codex_snapshot effort=default setting_sources=default model_from=explicit effort_from=harness_change setting_sources_from=harness_change predecessor_model=none predecessor_effort=none predecessor_setting_sources=none error: another live firstmate session holds the lock (pid 2019); operate read-only until resolved
+HANDOFF v1 ts=1795790182 event=handoff_reject nonce=baa83ed9fe20569e70719ca067cd0b05 attempt=0 pid=0 handle=term_lab_1 reason=lock_refused

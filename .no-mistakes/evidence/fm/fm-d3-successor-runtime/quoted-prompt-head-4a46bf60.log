@@ -1,0 +1,9 @@
+== launcher stderr:
+successor runtime: model default: the predecessor's launch value could not be read, so the runtime's own applies; effort default: the predecessor's launch value could not be read, so the runtime's own applies; setting-sources default: the predecessor's launch value could not be read, so the runtime's own applies
+successor: harness=claude model=default account=ambient reason=handoff verdict=ok scope=all_models remaining=40 runway=through_reset effort=default setting_sources=default model_from=unreadable effort_from=unreadable setting_sources_from=unreadable predecessor_model=unknown predecessor_effort=unknown predecessor_setting_sources=unknown
+== successor argv:
+claude
+--dangerously-skip-permissions
+Firstmate handoff successor. Read the entire document at /pr...
+ok - a predecessor whose prompt holds --model opus --effort max gets no override
+rc=0

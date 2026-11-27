@@ -1,0 +1,13 @@
+== launcher stderr:
+successor runtime: model opus, from the predecessor; effort max, from the predecessor; setting-sources default: the predecessor's launch recorded none, so the runtime's own applies
+successor: harness=claude model=opus account=ambient reason=handoff verdict=ok scope=all_models remaining=40 runway=through_reset effort=max setting_sources=default model_from=predecessor effort_from=predecessor setting_sources_from=unrecorded predecessor_model=opus predecessor_effort=max predecessor_setting_sources=none
+== successor argv:
+claude
+--dangerously-skip-permissions
+--model
+opus
+--effort
+max
+Firstmate handoff successor. Read the entire document at /pr...
+not ok - quoted prompt, no exact source: expected 3 argv words, got 7: claude --dangerously-skip-permissions --model opus --effort max Firstmate handoff successor. Read the entire document at /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.YhhpCC/home/data/handoff.md. Its sha256 must be eb52a2ff5d91433515e67827215f244db8b15f2bc5b75e83975e9f3d486027cb. Before doing any project work or starting a read-only session, run this exact acknowledgement command: FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.YhhpCC/home bash /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-base.UMKaQ6/bin/fm-handoff-ack.sh 68c63bd35db5f13fb12ba68a8ca07273 eb52a2ff5d91433515e67827215f244db8b15f2bc5b75e83975e9f3d486027cb . It writes your harness pid, lock pid, terminal handle and document hash, and transfers the predecessor lock only after validation. If it refuses, emit no claim of readiness and exit; it records handoff_reject. After success run FM_HOME=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.YhhpCC/home bash /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-base.UMKaQ6/bin/fm-session-start.sh and continue the document. nonce=68c63bd35db5f13fb12ba68a8ca07273
+rc=1

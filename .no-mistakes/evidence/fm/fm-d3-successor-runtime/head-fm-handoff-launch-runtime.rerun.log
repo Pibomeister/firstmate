@@ -1,0 +1,19 @@
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - codex successor follows config/codex-permission-mode on tmux
+ok - codex on orca: argv agent launch, unmeasured quota disclosed and not blocking
+ok - claude to agy: trusted home transfers on tmux; untrusted home and orca refuse before launch
+ok - agy trust: physical-only does not count; the logical cwd and a differing -c path must both be trusted
+ok - claude account switch: the successor runs on the chosen declared account
+ok - tmux successor store: the session CLAUDE_CONFIG_DIR and CODEX_HOME are forwarded, and --account wins
+ok - account refusals: signed out, undeclared, and orca refuse before launch
+ok - exhausted_now veto: no successor launches onto an exhausted pool and the predecessor keeps the lock
+ok - default successor keeps the predecessor model, effort, and setting sources from its launch argv
+ok - explicit override wins over the predecessor runtime and is recorded
+ok - a predecessor with no recorded runtime keeps the runtime default and says so
+ok - predecessor argv: a quoted prompt never adds an override, an exact cmdline carries an empty value
+ok - the verified launch record of the current lock holder carries its runtime; any other record carries nothing
+ok - a bracketed model id carries from the predecessor and can be named explicitly
+ok - codex predecessor carries model and effort; a harness change carries nothing and says so
+ok - uncarriable or invalid runtime options refuse before launch
+ok - pin preservation: no account pin or account list changed
+rc=0
