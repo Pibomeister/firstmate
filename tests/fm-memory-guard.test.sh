@@ -96,16 +96,47 @@ kill_owned_holds() {
   done < "$1"
 }
 
+# record_owned <pid>: add a process this suite started to the holder record.
+record_owned() { printf '%s\t%s\n' "$1" "$(hold_identity "$1")" >> "$HOLDS_FILE"; }
+
+# owned_in <record> <pid>: the record names <pid> and it still has the start
+# time and command line recorded for it.
+owned_in() {
+  local pid ident
+  [ -f "$1" ] || return 1
+  while IFS=$'\t' read -r pid ident; do
+    [ "$pid" = "$2" ] && [ -n "$ident" ] || continue
+    [ "$(hold_identity "$pid")" = "$ident" ] && return 0
+  done < "$1"
+  return 1
+}
+
+# term_owned_kids <dir> <record>: TERM the pid in each <dir>/*.kid only while
+# it belongs to this suite: the record still names it, or its parent is a
+# holder the record still names. A kid that exited can leave its pid to an
+# unrelated process, which TERM must never reach.
+term_owned_kids() {
+  local f pid ppid
+  for f in "$1"/*.kid; do
+    [ -f "$f" ] || continue
+    pid=$(head -n 1 "$f")
+    case $pid in ''|*[!0-9]*) continue ;; esac
+    if ! owned_in "$2" "$pid"; then
+      ppid=$(command -p ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+      if [ -z "$ppid" ] || ! owned_in "$2" "$ppid"; then continue; fi
+    fi
+    kill "$pid" 2>/dev/null || true
+  done
+}
+
 cleanup_sleeps() {
   local p
   for p in $SLEEPS; do kill "$p" 2>/dev/null || true; done
+  # A holder's own child is not recorded when a case fails early; its live
+  # parent still names it, so stop children before their holders.
+  term_owned_kids "$TMP_ROOT/stopme" "$HOLDS_FILE"
   # A holder can ignore TERM, so a failed stop case must not leave one behind.
   kill_owned_holds "$HOLDS_FILE"
-  # A holder's own child is not in SLEEPS when a case fails early.
-  for p in "$TMP_ROOT"/stopme/*.kid; do
-    [ -f "$p" ] || continue
-    kill "$(cat "$p")" 2>/dev/null || true
-  done
   rm -rf "$OUT_ROOT"
   fm_test_cleanup
 }
@@ -769,12 +800,11 @@ scratch_stop_secs=1"
   start_hold "$OUT_ROOT/repo/worker.sh"; worker=$HOLD_PID
   # shellcheck disable=SC2016 # the holder expands these, not this suite
   start_hold "$TMP_ROOT/stopme/parent.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; parent=$HOLD_PID
-  kid=$(cat "$TMP_ROOT/stopme/parent.sh.kid")
+  kid=$(cat "$TMP_ROOT/stopme/parent.sh.kid"); record_owned "$kid"
   # shellcheck disable=SC2016 # the holder expands these, not this suite
   start_hold "$TMP_ROOT/stopme/sneaky.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; sneaky=$HOLD_PID
-  sneakykid=$(cat "$TMP_ROOT/stopme/sneaky.sh.kid")
+  sneakykid=$(cat "$TMP_ROOT/stopme/sneaky.sh.kid"); record_owned "$sneakykid"
   start_hold "$TMP_ROOT/claude-code/session.sh"; named=$HOLD_PID
-  SLEEPS="$SLEEPS $kid $sneakykid"
   # The sneaky child is left out of the table, as a child is that starts
   # after the sample was read.
   printf '%s\n' "$scratch" "$worker" "$parent" "$kid" "$sneaky" "$named" > "$H/ps/allow"
@@ -861,8 +891,7 @@ scratch_stop_secs=1"
   sleep 2
   guard_live_stop
   [ -s "$TMP_ROOT/stopme/spawner.sh.kid" ] || fail "the scratch job did not receive TERM: $OUT"
-  kid=$(cat "$TMP_ROOT/stopme/spawner.sh.kid")
-  SLEEPS="$SLEEPS $kid"
+  kid=$(cat "$TMP_ROOT/stopme/spawner.sh.kid"); record_owned "$kid"
   alive "$spawner" || fail "a process that started a child after TERM was killed: $OUT"
   alive "$kid" || fail "the child of a signaled process was signaled: $OUT"
   assert_equals 3 "$RC" "a failed stop is an alarm: $OUT"
@@ -894,6 +923,40 @@ test_cleanup_kills_only_its_own_holders() {
   kill_owned_holds "$rec"
   wait_gone "$held" || fail "cleanup did not KILL a TERM-ignoring holder this suite started"
   pass "exit cleanup KILLs only holders whose pid still names the process this suite started"
+}
+
+test_cleanup_terms_only_its_own_kids() {
+  local dir rec victim parent kid
+  dir="$TMP_ROOT/kidcheck"; rec="$TMP_ROOT/kids-check.tsv"
+  mkdir -p "$dir"; : > "$rec"
+  # A .kid file whose pid an unrelated process now holds: not recorded, and
+  # its parent is no holder of this suite.
+  start_sleep; victim=$SLEEP_PID
+  printf '%s\n' "$victim" > "$dir/gone.sh.kid"
+  # A recorded kid pid whose identity no longer matches.
+  printf '%s\t%s\n' "$victim" "Thu Jan  1 00:00:00 1970     sleep 100000" > "$rec"
+  term_owned_kids "$dir" "$rec"
+  sleep 0.2
+  alive "$victim" || fail "cleanup sent TERM to a process that reused a kid's pid"
+  # The child of a holder this suite still owns is stopped.
+  rm -f "$dir"/*.kid
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  start_hold "$dir/parent.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'; parent=$HOLD_PID
+  kid=$(cat "$dir/parent.sh.kid")
+  awk -F'\t' -v p="$parent" '$1 == p' "$HOLDS_FILE" > "$rec"
+  term_owned_kids "$dir" "$rec"
+  wait_gone "$kid" || fail "cleanup did not TERM the child of a holder this suite started"
+  # A recorded kid whose parent is gone is still stopped.
+  # shellcheck disable=SC2016 # the holder expands these, not this suite
+  start_hold "$dir/orphan.sh" 'sleep 100000 & printf "%s\n" "$!" > "$0.kid"'
+  kid=$(cat "$dir/orphan.sh.kid"); record_owned "$kid"
+  kill -KILL "$HOLD_PID" 2>/dev/null; wait_gone "$HOLD_PID" || true
+  rm -f "$dir/parent.sh.kid"
+  awk -F'\t' -v p="$kid" '$1 == p' "$HOLDS_FILE" > "$rec"
+  term_owned_kids "$dir" "$rec"
+  wait_gone "$kid" || fail "cleanup did not TERM a recorded kid this suite started"
+  kill -KILL "$parent" 2>/dev/null || true
+  pass "exit cleanup sends TERM only to kid pids that still belong to this suite"
 }
 
 # A doubled slash names the same file, as macOS TMPDIR's trailing slash gives
@@ -967,4 +1030,5 @@ fm_test_run \
   test_stop_scratch_escalates_to_kill \
   test_stop_scratch_does_not_kill_after_a_new_child \
   test_cleanup_kills_only_its_own_holders \
+  test_cleanup_terms_only_its_own_kids \
   test_doubled_slash_script_path
