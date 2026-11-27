@@ -1,0 +1,4 @@
+ok - broad selections wait in the machine-wide queue with at most two inner scripts; targeted runs stay prompt
+ok - offloaded broad selections name bash portably; runs given --json stay local
+ADMISSION_CASES_DONE
+bash tests/.nm-admission-only.test.sh  3.36s user 9.65s system 11% cpu 1:51.75 total

@@ -1,0 +1,20 @@
+$ bin/fm-test-run.sh --family pure-contract-unit   (load 999 > ceiling 2, private spool, background)
+$ bin/fm-test-queue.sh status
+test-queue: slots=1 load_ceiling=2 load1=999 serving=0 waiting=1 stale=0 spool=/tmp/nm-adm.O5O9iC/spool
+waiting position=1 ticket=1 pid=31186 age=3s task=- label=fm-test-run family=pure-contract-unit
+--- waiting broad run stderr:
+fm-test-queue: ticket 1, position 1: load 999 is not below 2
+--- broad stdout bytes:        0
+$ bin/fm-test-run.sh --list-families | head -3   (inspection while broad run waits)
+pure-contract-unit
+watcher-wake-lock
+real-herdr-gated
+$ FM_TEST_RUN_QUEUE=bogus bin/fm-test-run.sh --family pure-contract-unit
+fm-test-run: FM_TEST_RUN_QUEUE must be auto or off (got 'bogus')
+rc=2
+$ FM_TEST_RUN_QUEUE=on bin/fm-test-run.sh --family pure-contract-unit  (removed mode)
+fm-test-run: FM_TEST_RUN_QUEUE must be auto or off (got 'on')
+rc=2
+broad run after TERM: rc=143
+$ bin/fm-test-queue.sh status   (after cancel)
+test-queue: slots=1 load_ceiling=2 load1=999 serving=0 waiting=0 stale=0 spool=/tmp/nm-adm.O5O9iC/spool
