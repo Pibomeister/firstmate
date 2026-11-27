@@ -12,6 +12,12 @@ TMP_ROOT=$(fm_test_tmproot fm-fleet-snapshot)
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
+# This suite verifies snapshot meaning and rendering, not read deadlines.
+# Leave room for nested fixture probes on a loaded host.
+export FM_SNAPSHOT_ENDPOINT_TIMEOUT=${FM_SNAPSHOT_ENDPOINT_TIMEOUT:-20}
+export FM_CREW_STATE_PANE_TIMEOUT=${FM_CREW_STATE_PANE_TIMEOUT:-15}
+export FM_SNAPSHOT_CREW_STATE_TIMEOUT=${FM_SNAPSHOT_CREW_STATE_TIMEOUT:-30}
+
 make_fakebin() {  # <dir>
   local fb
   fb=$(fm_fakebin "$1")
@@ -180,7 +186,7 @@ test_fixture_snapshot_json() {
     | .secondmate_projects == ["alpha","beta","gamma"]
       and .endpoint.agent_alive == "alive"
       and (.actions.watch | contains("do not routinely fm-peek"))
-  ' >/dev/null || fail "secondmate return-channel guidance missing"
+  ' >/dev/null || fail "secondmate return-channel guidance missing: $out"
   printf '%s' "$out" | jq -e '
     .tasks[] | select(.id == "secondmate-task")
     | .paths.status_log.last_event
@@ -557,6 +563,10 @@ EOF
 
 test_backlog_tasks_axi_forms_and_overrides() {
   local home data projects fakebin out view
+  # This fixture checks parsing, overrides, and rendering, not read deadlines.
+  # Give the nested endpoint read and its enclosing state read time to finish
+  # on a loaded host instead of asserting against a timed-out observation.
+  local -x FM_CREW_STATE_PANE_TIMEOUT=15 FM_SNAPSHOT_CREW_STATE_TIMEOUT=30
   home=$(make_home overrides)
   data=$TMP_ROOT/override-data
   projects=$TMP_ROOT/override-projects
@@ -685,6 +695,10 @@ EOF
       and .paths.report.path == ($data + "/bold-task/report.md")
       and .paths.report.present == true
   ' >/dev/null || fail "bold task did not join to override-backed backlog and report"
+  printf '%s' "$out" | jq -e '
+    .tasks[] | select(.id == "bold-task")
+    | .current_state.state == "done" and .current_state.source == "status-log"
+  ' >/dev/null || fail "override task observation did not resolve its done status: $out"
   view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_DATA_OVERRIDE="$data" FM_PROJECTS_OVERRIDE="$projects" "$VIEW")
   assert_contains "$view" "| bold-task | done / status-log | scout | alpha | tmux | present | $data/bold-task/report.md" \
     "view should render bold in-flight row from snapshot"
@@ -794,7 +808,9 @@ test_view_renders_snapshot() {
   home=$(make_home view)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  # This checks rendering, not the endpoint deadline. A loaded host can
+  # spend the production two-second bound starting the fixture probe.
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
   assert_contains "$view" "| ship-task | working / pane | ship | alpha | tmux | present | https://github.com/kunchenguid/firstmate/pull/9" \
     "view should render ship row from snapshot"
   assert_contains "$view" "| queued-task | Queued Task | alpha | ship | ship-task | -" \
@@ -823,7 +839,7 @@ test_view_renders_dead_secondmate_agent_status() {
     "projects=alpha, beta"
   printf 'working: watching delegated scope\n' > "$home/state/dead-secondmate.status"
   fakebin=$(make_fakebin "$home")
-  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  view=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_ENDPOINT_TIMEOUT=20 "$VIEW")
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead |" \
     "view should distinguish a present secondmate endpoint from a dead agent"
   assert_contains "$view" "| dead-secondmate | unknown / none | secondmate | $home/secondmate-home | tmux | present / dead | - | $home/secondmate-home (absent) |" \
@@ -1182,6 +1198,11 @@ test_session_endpoint_comes_from_the_lock_sidecar() {
   assert_not_contains "$view" "Session endpoint: unknown unknown" "unknown is one word, not a pane"
   pass "the fleet snapshot and view read the lock sidecar endpoint"
 }
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
 
 fm_test_run \
   test_session_endpoint_comes_from_the_lock_sidecar \

@@ -4987,7 +4987,7 @@ test_heartbeat_no_change_absorbed() {
 
 test_attended_open_work_heartbeat_floor() {
   local dir state fakebin out now mode
-  for mode in received queued task held paused closed secondmate; do
+  for mode in received loaded queued task held paused closed secondmate; do
     dir=$(make_case "attended-heartbeat-$mode")
     state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
     now=$(date +%s)
@@ -4995,7 +4995,7 @@ test_attended_open_work_heartbeat_floor() {
     set_mtime "$((now - 901))" "$state/.last-heartbeat"
     printf '3\n' > "$state/.heartbeat-streak"
     case "$mode" in
-      received|queued)
+      received|loaded|queued)
         printf '2026-10-31T00:00:00Z\t%s\treceived\tgoal\tsummary=work\n' "$now" > "$state/dispatch-log.tsv"
         [ "$mode" != queued ] || printf '2026-10-31T00:00:01Z\t%s\tqueued\tgoal\treason=waiting\n' "$now" >> "$state/dispatch-log.tsv"
         ;;
@@ -5025,8 +5025,9 @@ test_attended_open_work_heartbeat_floor() {
       FM_HOME="$dir" bash -c '. "$1"; fm_supervision_needed "$2"' bash \
         "$ROOT/bin/fm-supervision-lib.sh" "$state" || fail "open $mode did not need supervision"
     fi
+    printf '%s 0.00 0.00\n' "$([ "$mode" = loaded ] && echo 300.00 || echo 1.00)" > "$dir/load"
     PATH="$fakebin:$PATH" FM_HOME="$dir" FM_STATE_OVERRIDE="$state" FM_WATCH_NOW="$now" FM_WATCH_ONCE=1 \
-      FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 "$WATCH" > "$out" \
+      FM_LOAD_FILE="$dir/load" FM_POLL=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 "$WATCH" > "$out" \
       || fail "watcher failed for attended heartbeat $mode"
     case "$mode" in closed|secondmate|held|paused)
       [ ! -s "$out" ] || fail "$mode home caused an extra heartbeat: $(cat "$out")"
@@ -5038,7 +5039,7 @@ test_attended_open_work_heartbeat_floor() {
     awk -F '\t' '$3 == "heartbeat" && $4 == "heartbeat" { found=1 } END { exit !found }' \
       "$state/.wake-queue" || fail "open $mode did not queue a durable heartbeat"
   done
-  pass "primary open goals and tasks arm and surface the heartbeat; closed, secondmate, held and paused homes retain cadence"
+  pass "primary open goals and tasks arm and surface the heartbeat, under high load too; closed, secondmate, held and paused homes retain cadence"
 }
 
 test_heartbeat_backstop_surfaces_a_masked_status() {

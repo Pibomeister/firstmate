@@ -8,6 +8,15 @@
 # atomically refresh parent-side cached copies of remote home summaries under
 # state/secondmate-summary-cache; those observational cache writes are its only
 # fleet-state mutation.
+# In a home with an existing state directory, the --json and
+# --secondmate-home-summary modes are single-flight per home
+# (state/.fleet-snapshot.lock): a second run waits up to 30 seconds for the holder to
+# finish and never starts while it runs; past that bound it prints no
+# document, names the holder on stderr, and exits 75 without starting
+# its fan-out, so overlapping monitoring under load cannot multiply the
+# churn it exists to observe.
+# A home without state stays stateless; --contribution-input never takes this lock.
+# With FM_TEST_SEAM=1, FM_SNAPSHOT_SINGLE_FLIGHT_WAIT overrides that wait.
 #
 # Top-level fields:
 #   schema: stable schema id.
@@ -332,6 +341,28 @@ snapshot_stage() {  # <stage-name>
   { printf '%s\t%s\n' "$1" "$((SECONDS - SNAPSHOT_STAGE_START + ${FM_SNAPSHOT_STAGE_BASE:-0}))" \
       >&"$FM_SNAPSHOT_STAGE_FD"; } 2>/dev/null || true
 }
+
+# The header owns the snapshot single-flight contract. Wait before refusing
+# because callers such as home-summary refresh have no fresher copy to use.
+# The lock helper reclaims dead holders; do not initialize an absent state
+# directory merely to lock an observational read.
+if [ "$OUTPUT_MODE" != contribution-input ] && [ -d "$STATE" ]; then
+  # shellcheck source=bin/fm-wake-lib.sh
+  # shellcheck disable=SC1091
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  SNAPSHOT_LOCK="$STATE/.fleet-snapshot.lock"
+  SNAPSHOT_SINGLE_FLIGHT_WAIT=30
+  if [ "${FM_TEST_SEAM:-0}" = 1 ]; then
+    case "${FM_SNAPSHOT_SINGLE_FLIGHT_WAIT:-}" in
+      ''|*[!0-9]*) ;;
+      *) SNAPSHOT_SINGLE_FLIGHT_WAIT=$((10#$FM_SNAPSHOT_SINGLE_FLIGHT_WAIT)) ;;
+    esac
+  fi
+  if ! fm_lock_acquire_wait_max "$SNAPSHOT_LOCK" "$SNAPSHOT_SINGLE_FLIGHT_WAIT"; then
+    echo "fm-fleet-snapshot: another snapshot is already running in this home (pid ${FM_LOCK_HELD_PID:-unknown}); not starting a second" >&2
+    exit 75
+  fi
+fi
 
 bool_json() {
   if [ "$1" = 1 ]; then printf 'true'; else printf 'false'; fi
@@ -1615,6 +1646,7 @@ snapshot_cleanup() {
   snapshot_task_cleanup
   snapshot_collection_cleanup
   cleanup_json_files
+  [ -z "${SNAPSHOT_LOCK:-}" ] || fm_lock_release "$SNAPSHOT_LOCK"
 }
 trap snapshot_cleanup EXIT
 

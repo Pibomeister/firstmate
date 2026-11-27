@@ -414,6 +414,11 @@ esac
 # The primary home's open-goal predicate is shared with watcher arming.
 # shellcheck source=bin/fm-supervision-lib.sh
 . "$SCRIPT_DIR/fm-supervision-lib.sh"
+# Host-load throttling of the periodic monitoring cadences below (home-summary
+# refreshes, the heartbeat ticker and the heartbeat wake cadence); the
+# library owns the probe, threshold, and interval arithmetic.
+# shellcheck source=bin/fm-load-lib.sh
+. "$SCRIPT_DIR/fm-load-lib.sh"
 
 WATCH_LOCK="$STATE/.watch.lock"
 WATCH_PATH="$SCRIPT_DIR/fm-watch.sh"
@@ -497,10 +502,11 @@ HEARTBEAT_MAX=${FM_HEARTBEAT_MAX:-7200}  # heartbeat backoff cap
 CHECK_INTERVAL=${FM_CHECK_INTERVAL:-300}  # seconds between *.check.sh sweeps
 CHECK_TIMEOUT=${FM_CHECK_TIMEOUT:-30}     # seconds allowed per *.check.sh
 # Expensive idle collection (the home summary and the heartbeat ledger) runs on
-# a relevant change and otherwise once per idle interval. Each idle due is drawn
+# a relevant change when calm and otherwise once per idle interval. Each idle due is drawn
 # from [interval - jitter, interval], so homes started together drift apart and
 # no idle due exceeds the interval. Cheap liveness (the watcher beat) and
-# event delivery keep the poll period.
+# event delivery keep the poll period. The collection scheduling sections below
+# own how the load policy modifies each cadence.
 watch_secs_or() {  # <output-variable> <value> <default>: a whole positive count, else the default
   case "$2" in
     ''|*[!0-9]*) printf -v "$1" '%s' "$3" ;;
@@ -5299,20 +5305,30 @@ fi
 # re-derives current state from the owning home anyway, while beacon freshness
 # is what the whole supervision chain rests on.
 #
-# A status signal launches the helper at once. Without one, it launches only
-# when both the ledger and this watcher's last launch are older than the idle
-# gap drawn at that launch, so a stale ledger cannot cause launches on every
-# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
+# A status signal launches the helper at once when load is calm. Under load,
+# subsequent launches in this watcher wait at least the load-scaled minimum
+# idle gap (interval minus jitter) after its last launch. Without a status
+# signal, it launches only when both the ledger and this watcher's last launch
+# are older than the idle gap drawn at that launch, scaled by the current load
+# factor, so a stale ledger cannot cause launches on every poll.
+# fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
 home_summary_refresh_detached() {
+  local now factor
   if [ -n "$HOME_SUMMARY_PID" ]; then
     if kill -0 "$HOME_SUMMARY_PID" 2>/dev/null; then
       return 0
     fi
     wait "$HOME_SUMMARY_PID" || true
     HOME_SUMMARY_PID=
+  fi
+  fm_watch_now now
+  factor=$(fm_load_factor)
+  if [ "$factor" -gt 1 ] && [ "$HOME_SUMMARY_LAST" -gt 0 ] \
+    && [ $((now - HOME_SUMMARY_LAST)) -lt $(((HOME_SUMMARY_INTERVAL - HOME_SUMMARY_JITTER) * factor)) ]; then
+    return 0
   fi
   FM_HOME_SUMMARY_IF_IDLE=1 \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
@@ -5324,10 +5340,11 @@ home_summary_refresh_detached() {
   watch_idle_due HOME_SUMMARY_GAP 0 "$HOME_SUMMARY_INTERVAL" "$HOME_SUMMARY_JITTER"
 }
 home_summary_idle_due() {
-  local now
+  local now gap
   fm_watch_now now
-  [ $((now - HOME_SUMMARY_LAST)) -ge "$HOME_SUMMARY_GAP" ] \
-    && [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_GAP" ]
+  gap=$((HOME_SUMMARY_GAP * $(fm_load_factor)))
+  [ $((now - HOME_SUMMARY_LAST)) -ge "$gap" ] \
+    && [ "$(age_of "$STATE/home-summary.json")" -ge "$gap" ]
 }
 
 # Opt-in lane capacity facts (docs/configuration.md "Lane capacity"): publish
@@ -5391,6 +5408,14 @@ load_relief_check_detached() {
 # HEARTBEAT_LEDGER_JITTER, HEARTBEAT_LEDGER_IDLE] after each launch. The larger
 # of POLL rounded up to whole seconds and HEARTBEAT_LEDGER_IDLE is the cycle
 # period passed to the heartbeat's stale bound (stale_after_secs, HB-3).
+# While the host load is above the bin/fm-load-lib.sh throttle threshold each
+# idle due is drawn from the throttled idle interval instead, and a relevant
+# change waits for that idle due rather than launching at once. Once calm,
+# a relevant change can launch early; without one the existing due remains.
+# The next launch draws its idle due using the current load factor. Each
+# launch reads the throttle factor once and passes it to the heartbeat as
+# FM_HEARTBEAT_LOAD_FACTOR, so its stale bound and its own too-soon guard use
+# the same factor as that launch's next idle due.
 # An in-flight publication defers the next launch until a poll sees it finish.
 # Event delivery and the watcher beat never wait on this ledger. The first launch is
 # immediate; the ticker stops when this watcher exits or no longer holds the
@@ -5401,12 +5426,14 @@ FLEET_HEARTBEAT_SEEN=
 FLEET_HEARTBEAT_CHANGE_FILE=$STATE/.heartbeat-ledger-change
 FLEET_HEARTBEAT_CHANGE_GEN=0
 FLEET_HEARTBEAT_CYCLE=$HEARTBEAT_LEDGER_IDLE
+FLEET_HEARTBEAT_FACTOR=1
 [ "$FLEET_HEARTBEAT_CYCLE" -ge "$POLL_CEILING" ] || FLEET_HEARTBEAT_CYCLE=$POLL_CEILING
 fleet_heartbeat_launch() {
   # Pass the cycle period defined above, never the wake heartbeat cadence
   # (bin/fm-heartbeat.sh stale_after_secs).
+  FLEET_HEARTBEAT_FACTOR=$(fm_load_factor)
   FM_HOME=$FM_HOME FM_ROOT_OVERRIDE=$FM_ROOT FM_STATE_OVERRIDE=$STATE FM_CONFIG_OVERRIDE=$CONFIG \
-    FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE \
+    FM_HEARTBEAT_CYCLE_SECS=$FLEET_HEARTBEAT_CYCLE FM_HEARTBEAT_LOAD_FACTOR=$FLEET_HEARTBEAT_FACTOR \
     "${FM_HEARTBEAT_BIN:-$SCRIPT_DIR/fm-heartbeat.sh}" --write </dev/null >/dev/null 2>&1 &
   FLEET_HEARTBEAT_PID=$!
 }
@@ -5428,8 +5455,19 @@ fleet_heartbeat_mark_change() {
   printf '%s:%s\n' "$WATCHER_PID" "$FLEET_HEARTBEAT_CHANGE_GEN" > "$FLEET_HEARTBEAT_CHANGE_FILE" 2>/dev/null || true
 }
 
+# fleet_heartbeat_ledger_generated <output-variable>: the launch epoch of
+# the last publication whose stale bound counted the throttled cycle.
+fleet_heartbeat_ledger_generated() {
+  local v
+  [ -f "$STATE/heartbeat.json" ] || return 1
+  v=$(jq -r 'select(.throttled == true) | .generated_epoch // empty' \
+    "$STATE/heartbeat.json" 2>/dev/null) || return 1
+  case "$v" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$((10#$v))"
+}
+
 fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in flight, $2 the token it saw
-  local nap now due token
+  local nap now due token generated='' launch_generated='' anchor candidate
   FLEET_HEARTBEAT_PID=$1 FLEET_HEARTBEAT_SEEN=$2
   trap - EXIT
   trap 'exit 0' HUP INT TERM
@@ -5437,7 +5475,18 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     RANDOM=$FM_WATCH_RANDOM_SEED
   fi
   fm_watch_now now
-  watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
+  # A re-armed ticker anchors its first due to the last actual publication,
+  # so an immediate launch that the heartbeat skips cannot move that due a
+  # full throttled interval past the publication's freshness bound.
+  anchor=$now
+  if fleet_heartbeat_ledger_generated generated && [ "$generated" -le "$now" ]; then
+    anchor=$generated
+    launch_generated=$generated
+  fi
+  watch_idle_due due "$anchor" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
+  if [ "$due" -le "$now" ]; then
+    watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
+  fi
   while :; do
     # Sleep one poll, or only until a nearer idle due, so the idle interval is
     # the launch interval rather than the next poll after it.
@@ -5452,13 +5501,40 @@ fleet_heartbeat_ticker() {  # runs in its own subshell; $1 is the publication in
     if [ -n "$FLEET_HEARTBEAT_PID" ] && kill -0 "$FLEET_HEARTBEAT_PID" 2>/dev/null; then
       continue
     fi
+    if [ -n "$FLEET_HEARTBEAT_PID" ]; then
+      wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
+      FLEET_HEARTBEAT_PID=
+      fm_watch_now now
+      # A launch that published nothing leaves generated_epoch unchanged.
+      # Preserve the deadline anchored to that publication instead of the
+      # later full interval drawn when the skipped launch started.
+      if fleet_heartbeat_ledger_generated generated; then
+        if [ -n "$launch_generated" ] && [ "$generated" = "$launch_generated" ]; then
+          candidate=$((generated + HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))
+          if [ "$candidate" -gt "$now" ] && [ "$candidate" -lt "$due" ]; then
+            due=$candidate
+          fi
+        fi
+        launch_generated=$generated
+      else
+        launch_generated=
+      fi
+    fi
     fleet_heartbeat_change_token token
     fm_watch_now now
-    [ "$token" != "$FLEET_HEARTBEAT_SEEN" ] || [ "$now" -ge "$due" ] || continue
+    if [ "$now" -lt "$due" ]; then
+      [ "$token" != "$FLEET_HEARTBEAT_SEEN" ] || continue
+      [ "$(fm_load_factor)" = 1 ] || continue
+    fi
     [ -z "$FLEET_HEARTBEAT_PID" ] || wait "$FLEET_HEARTBEAT_PID" 2>/dev/null || true
     FLEET_HEARTBEAT_SEEN=$token
+    if fleet_heartbeat_ledger_generated generated; then
+      launch_generated=$generated
+    else
+      launch_generated=
+    fi
     fleet_heartbeat_launch
-    watch_idle_due due "$now" "$HEARTBEAT_LEDGER_IDLE" "$HEARTBEAT_LEDGER_JITTER"
+    watch_idle_due due "$now" "$((HEARTBEAT_LEDGER_IDLE * FLEET_HEARTBEAT_FACTOR))" "$HEARTBEAT_LEDGER_JITTER"
   done
 }
 
@@ -6503,6 +6579,11 @@ EOF
   [ "$hb" -gt "$HEARTBEAT_MAX" ] && hb=$HEARTBEAT_MAX
   open_work=0
   WATCH_WAIT_BUDGET=$POLL
+  # Host-load throttle (bin/fm-load-lib.sh): above the load threshold the
+  # heartbeat wake cadence stretches by the throttle factor, because the fleet
+  # scan behind this cadence is part of the churn being relieved; the attended
+  # open-work cap below still holds, and a calm load restores the cadence.
+  hb=$(fm_load_interval "$hb")
   if ! afk_present && heartbeat_open_work; then
     open_work=1
     [ "$hb" -le 885 ] || hb=885

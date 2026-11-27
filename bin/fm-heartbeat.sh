@@ -29,6 +29,7 @@
 #   fm_home           resolved operational home
 #   stale_after_secs  the stale bound: the watcher's configured cycle period
 #                     (bin/fm-watch.sh), passed as FM_HEARTBEAT_CYCLE_SECS,
+#                     scaled by this launch's load factor (see below),
 #                     never the wake heartbeat cadence,
 #                     plus the stale-grace-secs key of config/heartbeat
 #                     (default 60; docs/configuration.md), plus one whole-run cap;
@@ -55,8 +56,11 @@
 #                     stale_after_secs after its last publication: that is the
 #                     detection delay, plus the verdict reader's own cadence.
 #                     With the defaults (DEADLINE 240, READ 3) the cap is 411 s,
-#                     so the watcher's default 300 s idle cycle and a 60 s
-#                     grace give a 771 s delay.
+#                     so without load throttling the watcher's default 300 s
+#                     idle cycle and a 60 s grace give a 771 s delay.
+#   throttled         true when this publication's stale_after_secs counted the
+#                     host-load throttled cycle (see the throttle paragraph
+#                     below), else false
 #   snapshot          {ok, schema, generated, failure} for the fleet snapshot read
 #   primary           supervising firstmate session (not a ship/scout task row)
 #     terminal          {backend, target, present} from this writer's environment
@@ -123,9 +127,23 @@
 # use it to simulate slow reads without touching the real fleet snapshot.
 #
 # bin/fm-watch.sh runs --write detached and single-flight from an independent
-# ticker on a relevant change and otherwise once per idle interval (its header
-# owns that cadence), so no read here can hold a watcher poll and no watcher
+# ticker under the cadence owned by bin/fm-watch.sh's collection scheduling
+# section, so no read here can hold a watcher poll and no watcher
 # loop work can delay a launch.
+#
+# Host-load throttle (bin/fm-load-lib.sh owns the probe and arithmetic):
+# while the 1-minute load is above the throttle threshold, a launch more
+# than one base cycle short of the throttled cycle interval after the
+# previous publication's launch (its generated_epoch) exits 0 without
+# publishing or starting a snapshot. stale_after_secs counts the throttled
+# cycle and the ledger records that as throttled:true, and the guard skips
+# only after such a publication, so the first launch under load still
+# publishes the extended bound and the health verdict never reads the
+# deliberate gap as a dead publisher. A calm load restores the ordinary
+# cadence on the next launch. The load is read once per launch: the watcher
+# passes the throttle factor it used for this launch's next idle due as
+# FM_HEARTBEAT_LOAD_FACTOR, and both the guard and the stale bound use that
+# factor; a direct invocation without it probes the load once at startup.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -200,6 +218,15 @@ command -v jq >/dev/null 2>&1 || {
 # shellcheck source=bin/fm-captain-inbox-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-captain-inbox-lib.sh"
+# Host-load throttling of this periodic publication; the library owns the
+# probe, threshold, and interval arithmetic.
+# shellcheck source=bin/fm-load-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-load-lib.sh"
+case "${FM_HEARTBEAT_LOAD_FACTOR:-}" in
+  '' | 0* | *[!0-9]*) HEARTBEAT_LOAD_FACTOR=$(fm_load_factor) ;;
+  *) HEARTBEAT_LOAD_FACTOR=$FM_HEARTBEAT_LOAD_FACTOR ;;
+esac
 
 HEARTBEAT_NOW=${FM_HEARTBEAT_NOW:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}
 HEARTBEAT_EPOCH=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$HEARTBEAT_NOW" +%s 2>/dev/null \
@@ -767,11 +794,19 @@ heartbeat_ready_pr_discovery() {
 heartbeat_publish() {
   local snapshot_meta tmp=$HEARTBEAT_WORK/heartbeat.json weekly ready_pr
   local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} grace stale_after=null run_cap lead read discovery published
+  local stretched throttled=false
   # HB-3 stale bound: the cycle period the watcher passed plus the FQ-5 grace
   # plus one whole-run cap (see the header). With no usable cycle period
-  # the bound is null.
+  # the bound is null. Under host-load throttling the true launch
+  # interval is the throttled one, so the cycle enters the bound throttled
+  # too.
   grace=$(_fm_context_config_value "$CONFIG/heartbeat" stale-grace-secs zero-ok) || grace=60
   case "$cycle" in '' | 0* | *[!0-9]*) cycle= ;; esac
+  if [ -n "$cycle" ]; then
+    stretched=$((cycle * HEARTBEAT_LOAD_FACTOR))
+    [ "$stretched" = "$cycle" ] || throttled=true
+    cycle=$stretched
+  fi
   lead=$FM_HEARTBEAT_DEADLINE
   [ "$FM_HEARTBEAT_SNAPSHOT_TIMEOUT" -le "$lead" ] || lead=$FM_HEARTBEAT_SNAPSHOT_TIMEOUT
   read=$FM_HEARTBEAT_READ_TIMEOUT
@@ -816,6 +851,7 @@ heartbeat_publish() {
     --arg fm_home "$FM_HOME" \
     --argjson stale_after "$stale_after" \
     --argjson published_epoch "$published" \
+    --argjson throttled "$throttled" \
     --argjson snapshot "$snapshot_meta" \
     --argjson primary "$PRIMARY_JSON" \
     --argjson weekly "$weekly" \
@@ -824,7 +860,7 @@ heartbeat_publish() {
     --rawfile failures "$HEARTBEAT_WORK/failures" \
     '($failures | split("\n") | map(select(. != ""))) as $f
     | {schema:"fm-heartbeat.v1",generated:$generated,generated_epoch:$generated_epoch,
-       published_epoch:$published_epoch,fm_home:$fm_home,stale_after_secs:$stale_after,
+       published_epoch:$published_epoch,fm_home:$fm_home,stale_after_secs:$stale_after,throttled:$throttled,
        snapshot:$snapshot,primary:$primary,tasks:$tasks[0],weekly_allowance:$weekly,ready_pr_discovery:$ready_pr,
        failure:(if ($f | length) == 0 then null else {reason:($f[:10] | join("; ")),count:($f | length)} end)}' > "$tmp" \
     && chmod 600 "$tmp" \
@@ -842,8 +878,36 @@ heartbeat_on_signal() {
   exit 0
 }
 
+# Load throttle: while the host load is above the bin/fm-load-lib.sh
+# threshold, a publication launched less than the throttled cycle interval
+# ago is still fresh enough, so this launch publishes nothing and exits 0 -
+# the snapshot fan-out it would have started is exactly the churn being
+# relieved. The guard skips only after a publication whose stale bound
+# already counted the throttled cycle (throttled:true), so the first launch
+# under load publishes that extended bound. Age is measured between
+# launches, from the prior ledger's
+# generated_epoch, and the guard skips only while that age is more than one
+# base cycle short of the throttled interval, so a launch paced about one
+# throttled interval after the prior one publishes even when startup
+# latency shifts either stamp by a few seconds. The guard needs the
+# watcher-passed cycle and a readable prior generated_epoch; without either
+# it never skips, and a calm load never skips, so the ordinary cadence returns as soon as the load falls back.
+heartbeat_throttle_skip() {
+  local cycle=${FM_HEARTBEAT_CYCLE_SECS:-} launched effective
+  case "$cycle" in '' | 0* | *[!0-9]*) return 1 ;; esac
+  [ "$HEARTBEAT_LOAD_FACTOR" -gt 1 ] || return 1
+  [ -f "$LEDGER" ] || return 1
+  launched=$(jq -r 'select(.throttled == true) | .generated_epoch // empty' "$LEDGER" 2>/dev/null) || return 1
+  case "$launched" in ''|*[!0-9]*) return 1 ;; esac
+  effective=$((cycle * HEARTBEAT_LOAD_FACTOR))
+  [ $((HEARTBEAT_EPOCH - launched)) -lt $((effective - cycle)) ]
+}
+
 if [ ! -d "$STATE" ]; then
   echo "fm-heartbeat: no state directory at $STATE; nothing published" >&2
+  exit 0
+fi
+if heartbeat_throttle_skip; then
   exit 0
 fi
 find "$STATE" -maxdepth 1 -type d -name '.heartbeat-work.*' -mmin +10 -exec rm -rf {} + 2>/dev/null || true
