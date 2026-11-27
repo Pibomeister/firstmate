@@ -57,8 +57,9 @@
 #   captain    Writes a handoff with bin/fm-ledger.sh handoff and starts a
 #              successor on the first eligible primary runtime (claude, codex,
 #              or agy; a Claude account switch on tmux only) through
-#              bin/fm-handoff-launch.sh, which verifies the lock transfer and
-#              never kills this session. Runs only when this session holds the
+#              bin/fm-handoff-launch.sh, which verifies the lock transfer;
+#              the successor then closes this session's terminal through
+#              bin/fm-handoff-close.sh. Runs only when this session holds the
 #              lock and the home needs supervision (bin/fm-supervision-lib.sh).
 #              Records the switch like worker, in state/.failover-captain.
 #
