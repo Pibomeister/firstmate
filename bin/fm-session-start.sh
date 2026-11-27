@@ -8,10 +8,10 @@
 # data/projects.md, data/secondmates.md, data/captain.md,
 # data/captain-shared.md, data/learnings.md, then run
 # fm-lock.sh, fm-wake-drain.sh, then read data/backlog.md, every state/*.meta,
-# and every state/*.status. The digest now prints one line per live task and
+# and every state/*.status. The digest now prints one line per observed task and
 # points at bin/fm-crew-state.sh for full detail.
-# Every one of those reads is UNCONDITIONAL at every session start, so they
-# belong in a script, not in N agent turns.
+# These startup reads belong in a script, not in N agent turns; optional task
+# observations follow the RUNTIME BOUND contract below.
 #
 # COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
 # fm-wake-drain.sh, and fm-startup-network.sh as real subprocesses and prints
@@ -78,7 +78,7 @@
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the two digests below.
 #   6. fleet digest   - a compact data/backlog.md identity/metadata listing,
-#                       one line per live task (id, project, last recorded
+#                       one line per observed task (id, project, last recorded
 #                       state, recorded PR URL, age, and a bounded per-task
 #                       endpoint-liveness read folded into that same line),
 #                       one line per orphan status log, the away posture
@@ -87,11 +87,13 @@
 #                       stays on demand (bin/fm-crew-state.sh <id> for the
 #                       reconciled state; the raw state/<id>.meta and
 #                       state/<id>.status files for the records). The
-#                       per-task endpoint reads run serially, so with a
-#                       wedged backend the stage's ceiling is tasks x the
-#                       per-read bound (FM_SESSION_START_ENDPOINT_TIMEOUT,
-#                       default 10s) and can itself reach the digest's
-#                       runtime bound. It ends with the dispatch ledger's
+#                       optional task and orphan-status observation runs under
+#                       half the remaining startup budget, reserving the tail
+#                       for recovery/context. The per-read endpoint bound
+#                       (FM_SESSION_START_ENDPOINT_TIMEOUT, default 10s) stays
+#                       unchanged. Unfinished observations are disclosed as
+#                       deferred/unverified, never alive or dead by inference.
+#                       It ends with the dispatch ledger's
 #                       `overdue` lines, when any (bin/fm-dispatch-log.sh).
 #   7. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
@@ -192,7 +194,8 @@
 #   - An in-flight row is listed once: one the held group already lists, or a
 #     plain one (no hold, no blocked_by) whose state/<id>.meta exists, is left
 #     out of the in-flight group, and its id is named in a disclosure line,
-#     because the held group or Work under way prints it.
+#     because the held group prints it or Work under way observes it subject
+#     to the RUNTIME BOUND contract below.
 #   - Only the plain queued (dispatchable-now) listing is bounded, by
 #     FM_SESSION_START_QUEUED_LIMIT, default 5. Anything it omits is disclosed
 #     with an exact remainder count and the command that shows the rest, so a
@@ -216,8 +219,8 @@
 # compatible tasks-axi is available, or `data/backlog.md` when the file body is
 # truly needed.
 #
-# WORK-UNDER-WAY LINES: the fleet digest prints exactly one line per live
-# task - id, project, last recorded state word, recorded PR URL, age, and the
+# WORK-UNDER-WAY LINES: within the RUNTIME BOUND below, the fleet digest prints
+# one line per observed task - id, project, last recorded state word, recorded PR URL, age, and the
 # endpoint verdict - instead of the full meta body plus a status tail it used
 # to re-print. A status line is a wake EVENT rather than current state
 # (AGENTS.md section 8), so the state word is only the last recorded event;
@@ -233,8 +236,9 @@
 # stays under 30 KB (tests/fm-session-start.test.sh pins that on a fixture
 # home). Nothing safety-relevant is cut to get there: the lock verdict, CAPTAIN
 # ORDERS, every wake record, OPEN DECISIONS, UNREAD STATUS, the
-# WAKE_ACK_REQUIRED line, actionable diagnostics, and every live task id print
-# in every case. Long, stable material is summarized or pointed at instead:
+# WAKE_ACK_REQUIRED line, and actionable diagnostics stay visible. Optional task
+# observations follow the RUNTIME BOUND below. Long, stable material is
+# summarized or pointed at instead:
 #   - A CONTEXT file over FM_SESSION_START_CONTEXT_INLINE_MAX bytes (default
 #     2048) is INDEXED: its absolute path, size, and a line-numbered outline of
 #     its headings, or of its list items when it has at most a title heading,
@@ -259,7 +263,16 @@
 # listing are unbounded subprocesses, while each per-task endpoint read runs
 # in its own crash-isolated child under FM_SESSION_START_ENDPOINT_TIMEOUT
 # (default 10s). So the whole digest still runs as ONE bounded child of this
-# script (FM_SESSION_START_TIMEOUT, default 120s). The deferred network stage
+# script (FM_SESSION_START_TIMEOUT, default 120s).
+# Optional task observation uses the existing function timeout owner and half
+# the remaining body budget. An endpoint read is deferred without starting
+# when its configured window exceeds that initial observation budget; the
+# aggregate deadline can still interrupt a later read. Observations needing no
+# endpoint read can still complete. A deferred observation leaves
+# its input records intact, prints a targeted reconciliation cue, and does not
+# publish a fresh full-startup completion or AGENTS baseline receipt.
+#
+# The deferred network stage
 # deliberately sits OUTSIDE that bound,
 # in its own process group under its own aggregate deadline, so a truncated
 # digest neither waits for it nor orphans it unbounded. The
@@ -318,6 +331,8 @@
 #             full re-emit.
 set -u
 
+SESSION_START_BODY_SECONDS=${SECONDS:-0}
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -372,13 +387,15 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
+SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
+# A non-positive or non-numeric budget is not a budget (`timeout 0` disables
+# the deadline outright), so an unusable value falls back to the default
+# rather than silently removing the bound.
+case "$SESSION_START_BUDGET" in ''|*[!0-9]*) SESSION_START_BUDGET=120 ;; esac
+[ "$SESSION_START_BUDGET" -gt 0 ] 2>/dev/null || SESSION_START_BUDGET=120
+SESSION_START_FLEET_DEFERRED=0
+
 if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
-  SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
-  # A non-positive or non-numeric budget is not a budget (`timeout 0` disables
-  # the deadline outright), so an unusable value falls back to the default
-  # rather than silently removing the bound.
-  case "$SESSION_START_BUDGET" in ''|*[!0-9]*) SESSION_START_BUDGET=120 ;; esac
-  [ "$SESSION_START_BUDGET" -gt 0 ] 2>/dev/null || SESSION_START_BUDGET=120
   SESSION_START_STAGE_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-session-start-stage.XXXXXX" 2>/dev/null) || SESSION_START_STAGE_FILE=
   if [ -z "$SESSION_START_STAGE_FILE" ]; then
     # Without a breadcrumb the bound still holds; only the banner's precision
@@ -1794,7 +1811,7 @@ stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
 Everything below prints once for this session start: a compact
-data/backlog.md listing, one line per live task and per orphan status log,
+data/backlog.md listing, optional task and orphan-status observations,
 and the CONTEXT files (data/projects.md, data/secondmates.md, data/captain.md,
 data/captain-shared.md, data/learnings.md, and the tracked
 docs/learnings/overnight-learnings.md under the code root), each in full when
@@ -1816,6 +1833,8 @@ Go to a source directly only when:
     data/backlog.md),
   - NETWORK CHECKS reported checks still IN PROGRESS and this turn needs their
     verdict (bin/fm-startup-network.sh report),
+  - a FLEET OBSERVATION DEFERRED notice left that task's observation unverified
+    (use the targeted per-task reader before acting),
   - or a STARTUP TRUNCATED banner named the stage that would have printed it,
     or a context re-emit opened with a read cue because the harness cut the
     digest short: that stage's sources were never emitted and must be
@@ -1829,64 +1848,102 @@ stage fleet-state
 section "FLEET STATE"
 print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
-subsection "Work under way (state/*.meta)"
-printf 'One line per live task: id, project, last recorded state, PR URL, age, endpoint.\n'
-printf 'Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.\n'
-META_FOUND=0
-STALE_COUNT=0
-STALE_ENTRIES=
-for meta in "$STATE"/*.meta; do
-  [ -f "$meta" ] || continue
-  META_FOUND=1
-  id=$(basename "$meta" .meta)
-  status="$STATE/$id.status"
-  window=$(fm_meta_get "$meta" window)
-  target=$(fm_backend_target_of_meta "$meta")
-  if [ -n "$window" ]; then
-    backend=$(fm_backend_of_meta "$meta")
-    endpoint_rc=0
-    fm_session_start_endpoint_read "$backend" "${target:-$window}" "fm-$id" || endpoint_rc=$?
-    # Only the timeout owner's own statuses mean the read itself failed: 124 is
-    # the bound firing and >=128 is a signal death. Every other nonzero status
-    # is the probe's own verdict that the endpoint is gone.
-    if [ "$endpoint_rc" -eq 0 ]; then
-      endpoint='alive'
-    elif [ "$endpoint_rc" -eq 124 ] || [ "$endpoint_rc" -ge 128 ]; then
-      endpoint='error'
+# Task/endpoint observation is optional; it must not consume the recovery tail.
+print_startup_task_observations() {
+  local observation_budget=$1
+  local meta id status window target backend endpoint_rc endpoint
+  local task_state task_pr task_age
+  local META_FOUND STALE_COUNT STALE_ENTRIES ORPHAN_STATUS_FOUND
+  subsection "Work under way (state/*.meta)"
+  printf 'One line per live task: id, project, last recorded state, PR URL, age, endpoint.\n'
+  printf 'Full detail: bin/fm-crew-state.sh <id> (reconciled state); raw records: state/<id>.meta and state/<id>.status.\n'
+  META_FOUND=0
+  STALE_COUNT=0
+  STALE_ENTRIES=
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] || continue
+    META_FOUND=1
+    id=$(basename "$meta" .meta)
+    status="$STATE/$id.status"
+    window=$(fm_meta_get "$meta" window)
+    target=$(fm_backend_target_of_meta "$meta")
+    if [ -n "$window" ]; then
+      # Check at the read boundary, including records created during observation.
+      # 75 is an internal deferred verdict, never a failed endpoint read.
+      [ "$observation_budget" -ge "$ENDPOINT_TIMEOUT" ] || return 75
+      backend=$(fm_backend_of_meta "$meta")
+      endpoint_rc=0
+      fm_session_start_endpoint_read "$backend" "${target:-$window}" "fm-$id" || endpoint_rc=$?
+      # Only the timeout owner's own statuses mean the read itself failed: 124 is
+      # the bound firing and >=128 is a signal death. Every other nonzero status
+      # is the probe's own verdict that the endpoint is gone.
+      if [ "$endpoint_rc" -eq 0 ]; then
+        endpoint='alive'
+      elif [ "$endpoint_rc" -eq 124 ] || [ "$endpoint_rc" -ge 128 ]; then
+        endpoint='error'
+      else
+        endpoint='dead'
+      fi
     else
-      endpoint='dead'
+      endpoint='unknown'
     fi
-  else
-    endpoint='unknown'
+    task_state=$(fm_task_state_word "$status")
+    task_pr=$(fm_task_pr_url "$meta" "$status")
+    task_age=$(fm_task_age "$meta")
+    if is_stale_task "$endpoint" "$task_pr" "$task_age"; then
+      STALE_COUNT=$((STALE_COUNT + 1))
+      STALE_ENTRIES="$STALE_ENTRIES $id:$task_state:$task_age:$endpoint"
+      continue
+    fi
+    printf '%s project=%s state=%s pr=%s age=%s endpoint=%s\n' \
+      "$id" "$(fm_task_project_label "$meta")" "$task_state" "$task_pr" "$task_age" "$endpoint"
+  done
+  [ "$META_FOUND" -eq 1 ] || printf '(none)\n'
+  if [ "$STALE_COUNT" -gt 0 ]; then
+    printf '%d stale task(s) (endpoint dead or unknown, at least %d days old, no recorded PR), condensed to id:state:age:endpoint:%s\n' \
+      "$STALE_COUNT" "$STALE_TASK_DAYS" "$STALE_ENTRIES"
   fi
-  task_state=$(fm_task_state_word "$status")
-  task_pr=$(fm_task_pr_url "$meta" "$status")
-  task_age=$(fm_task_age "$meta")
-  if is_stale_task "$endpoint" "$task_pr" "$task_age"; then
-    STALE_COUNT=$((STALE_COUNT + 1))
-    STALE_ENTRIES="$STALE_ENTRIES $id:$task_state:$task_age:$endpoint"
-    continue
-  fi
-  printf '%s project=%s state=%s pr=%s age=%s endpoint=%s\n' \
-    "$id" "$(fm_task_project_label "$meta")" "$task_state" "$task_pr" "$task_age" "$endpoint"
-done
-[ "$META_FOUND" -eq 1 ] || printf '(none)\n'
-if [ "$STALE_COUNT" -gt 0 ]; then
-  printf '%d stale task(s) (endpoint dead or unknown, at least %d days old, no recorded PR), condensed to id:state:age:endpoint:%s\n' \
-    "$STALE_COUNT" "$STALE_TASK_DAYS" "$STALE_ENTRIES"
-fi
 
-subsection "Orphan status logs (state/*.status without matching .meta)"
-printf 'One line per orphan log: id and last recorded state. Full log: state/<id>.status.\n'
-ORPHAN_STATUS_FOUND=0
-for status in "$STATE"/*.status; do
-  [ -f "$status" ] || continue
-  id=$(basename "$status" .status)
-  [ -f "$STATE/$id.meta" ] && continue
-  ORPHAN_STATUS_FOUND=1
-  printf '%s state=%s\n' "$id" "$(fm_task_state_word "$status")"
-done
-[ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
+  subsection "Orphan status logs (state/*.status without matching .meta)"
+  printf 'One line per orphan log: id and last recorded state. Full log: state/<id>.status.\n'
+  ORPHAN_STATUS_FOUND=0
+  for status in "$STATE"/*.status; do
+    [ -f "$status" ] || continue
+    id=$(basename "$status" .status)
+    [ -f "$STATE/$id.meta" ] && continue
+    ORPHAN_STATUS_FOUND=1
+    printf '%s state=%s\n' "$id" "$(fm_task_state_word "$status")"
+  done
+  [ "$ORPHAN_STATUS_FOUND" -eq 1 ] || printf '(none)\n'
+}
+
+print_startup_task_observations_bounded() {
+  local elapsed remaining observation_budget observer_rc reason
+  elapsed=$(( ${SECONDS:-0} - SESSION_START_BODY_SECONDS ))
+  [ "$elapsed" -ge 0 ] || elapsed=0
+  remaining=$((10#$SESSION_START_BUDGET - elapsed))
+  observation_budget=$((remaining / 2))
+  if [ "$observation_budget" -lt 1 ]; then
+    reason='the remaining startup budget is reserved for recovery context'
+  elif fm_run_timed_fn "$observation_budget" print_startup_task_observations "$observation_budget"; then
+    return 0
+  else
+    observer_rc=$?
+    if [ "$observer_rc" -eq 75 ]; then
+      reason='the remaining budget cannot safely verify the task sources'
+    elif [ "$observer_rc" -eq 124 ]; then
+      reason='the optional task observation reached its aggregate deadline'
+    else
+      reason="the optional task observation failed (exit $observer_rc)"
+    fi
+  fi
+  SESSION_START_FLEET_DEFERRED=1
+  printf '\nFLEET OBSERVATION DEFERRED: %s.\n' "$reason"
+  printf 'Deferred endpoint observations are unverified; no verdict is available for records not printed above.\n'
+  printf 'Task and orphan-status sources remain intact. Read one task with bin/fm-crew-state.sh <id> before acting on it.\n'
+}
+
+print_startup_task_observations_bounded
 
 subsection "AFK"
 # The away posture is the record (bin/fm-afk-contract.sh); the legacy flag
@@ -2030,12 +2087,17 @@ This script never starts supervision itself.
 
 EOF
 fi
-cat <<'EOF'
+if [ "$SESSION_START_FLEET_DEFERRED" -eq 1 ]; then
+  printf 'Startup context was emitted, but task observations remain deferred and unverified.\n'
+  printf 'The READ-ONCE CONTRACT applies to emitted sources; unprinted task observations still need targeted reconciliation.\n'
+else
+  cat <<'EOF'
 The digest above is complete for this session start. The READ-ONCE CONTRACT
 section near the top of it governs what may still be read from disk.
 EOF
+fi
 
-if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
+if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ] && [ "$SESSION_START_FLEET_DEFERRED" -eq 0 ]; then
   COMPLETION_RECORDED=0
   COMPLETION_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
   fm_session_pid_valid "$COMPLETION_PID" || COMPLETION_PID=
@@ -2053,6 +2115,8 @@ if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
       printf '\nSESSION_START_AGENTS_BASELINE: not recorded - a later supported rebuild will re-emit AGENTS.md.\n'
     fi
   fi
+elif [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ] && [ "$SESSION_START_FLEET_DEFERRED" -eq 1 ]; then
+  printf '\nSESSION_START_COMPLETION: not recorded - optional task observations were deferred.\n'
 fi
 
 exit 0

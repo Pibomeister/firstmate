@@ -92,9 +92,9 @@ The full digest updates the completion record in this order:
 
 1. It acquires the lock.
 2. It clears the completion record.
-3. It republishes the lock owner's pid only after every stage completes.
+3. It republishes the lock owner's pid only when the digest satisfies the completion rules in the `bin/fm-session-start.sh` header.
 
-So `clear` or `compact` cannot skip startup sweeps after a truncated run.
+So `clear` or `compact` cannot skip startup sweeps after a truncated run or deferred task observations.
 
 `bin/fm-lock.sh` treats a lock as this session's own when it is owned through either of these:
 
@@ -144,11 +144,7 @@ Some digest work remains local but unbounded:
 - Tool version probes.
 - The backlog listing.
 
-So the whole digest still runs as one bounded child, default 120s via `FM_SESSION_START_TIMEOUT`.
-
-Each per-task endpoint liveness read runs serially in its own crash-isolated child, bounded by `FM_SESSION_START_ENDPOINT_TIMEOUT` (default 10s; a non-numeric or zero value falls back to the default).
-So a read that hangs or dies becomes that task's own `endpoint=error` field and the digest continues.
-With a wedged backend the stage's ceiling is tasks times that per-read bound and can itself reach the digest bound.
+The [`bin/fm-session-start.sh` header](../bin/fm-session-start.sh) owns the digest deadline, endpoint-read isolation, optional task-observation budget, and deferred-reconciliation and completion-receipt rules.
 
 The per-item backlog row reads inside bootstrap's reconcile and close-replay sweeps are the exception.
 Each of those reads is bounded by `FM_BACKLOG_ROW_TIMEOUT_SECS` (default 10s) through `bin/fm-backlog-transition-lib.sh`.

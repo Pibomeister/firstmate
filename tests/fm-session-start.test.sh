@@ -4463,6 +4463,142 @@ PY
   pass "session start preserves shared-state baseline byte-for-byte across missing python3, locks, timeouts, corruption, unreadable files, inaccessible parent directories, transient lookup failures, and failed or malformed baseline reads"
 }
 
+check_fleet_probe_budget_keeps_recovery_context() {  # <read-only:0|1>
+  local read_only=$1 rec root case_home fakebin holder='' out rc i
+  rec=$(new_world "fleet-budget-$read_only")
+  IFS='|' read -r root case_home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_fake_herdr_hanging_read "$fakebin" p-live p-slow
+  i=1
+  while [ "$i" -le 32 ]; do
+    printf 'window=lab:p-slow\nkind=ship\nbackend=herdr\n' > "$case_home/state/probe-$i.meta"
+    i=$((i + 1))
+  done
+  printf '123\t1\tcheck\tlab\tpreserve the unhandled event\n' > "$case_home/state/.wake-queue"
+  cp "$case_home/state/.wake-queue" "$case_home/queue.before"
+  if [ "$read_only" -eq 1 ]; then
+    sleep 300 &
+    holder=$!
+    printf '%s\n' "$holder" > "$case_home/state/.lock"
+    cp "$case_home/state/.lock" "$case_home/lock.before"
+  fi
+  rc=0
+  out=$(unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_PID CLAUDE_SESSION_ID
+    FM_HOME_SUMMARY_TIMEOUT=1 FM_SESSION_START_ENDPOINT_TIMEOUT=2 \
+      FM_SESSION_START_TIMEOUT=35 run_session_start "$case_home" "$root" "$fakebin:$BASE_PATH") || rc=$?
+  if [ -n "$holder" ]; then
+    kill "$holder" 2>/dev/null || true
+    wait "$holder" 2>/dev/null || true
+  fi
+  expect_code 0 "$rc" 'a recovery digest must remain readable'
+  if [ "$read_only" -eq 1 ]; then
+    cmp "$case_home/queue.before" "$case_home/state/.wake-queue" || fail 'read-only digest consumed a queued event'
+    cmp "$case_home/lock.before" "$case_home/state/.lock" || fail 'read-only digest changed its foreign lock'
+    assert_contains "$out" 'READ-ONLY SESSION' 'fixture did not reach the lock-refused path'
+  else
+    assert_not_contains "$out" 'READ-ONLY SESSION' 'fixture did not prove lock ownership'
+    assert_contains "$(cat "$case_home/state/.wake-queue")" "$(cat "$case_home/queue.before")" \
+      'locked startup consumed the original queued event'
+    assert_absent "$case_home/state/.session-start-complete" 'deferred observations published full completion'
+    assert_contains "$out" 'SESSION_START_COMPLETION: not recorded' 'deferred completion was not disclosed'
+  fi
+  assert_contains "$out" 'FLEET STATE' 'fixture did not reach fleet-state'
+  assert_contains "$out" 'NEXT STEP' 'aggregate endpoint waits hid the recovery continuation'
+  assert_contains "$out" "$(printf '\nCONTEXT\n')" 'aggregate endpoint waits hid the context section'
+  assert_contains "$out" 'endpoint observations are unverified' 'deferred endpoints were not disclosed'
+  assert_not_contains "$out" 'STARTUP TRUNCATED - SESSION START' 'per-row bounds exhausted the digest budget'
+  assert_not_contains "$out" 'The digest above is complete' 'deferred observations claimed a complete digest'
+}
+
+test_read_only_fleet_probe_budget_keeps_recovery_context() {
+  check_fleet_probe_budget_keeps_recovery_context 1
+  pass 'a read-only large-home digest preserves recovery context and discloses deferred endpoints'
+}
+
+test_deferred_fleet_probe_does_not_publish_completion() {
+  check_fleet_probe_budget_keeps_recovery_context 0
+  pass 'a locked startup defers slow observations without publishing full completion'
+}
+
+test_padded_startup_budget_is_decimal() {
+  local rec root case_home fakebin out
+  rec=$(new_world padded-budget)
+  IFS='|' read -r root case_home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_PID CLAUDE_SESSION_ID
+    FM_SESSION_START_TIMEOUT=090 run_session_start "$case_home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" 'STARTUP TRUNCATED - SESSION START' 'a valid padded decimal budget broke startup'
+  assert_contains "$out" 'Work under way (state/*.meta)' 'padded-budget startup skipped its task observation'
+  assert_contains "$out" 'NEXT STEP' 'padded-budget startup lost its continuation'
+  assert_present "$case_home/state/.session-start-complete" 'padded-budget startup did not complete'
+  pass 'a padded positive startup budget retains its decimal meaning'
+}
+
+test_empty_fleet_does_not_need_a_probe_window() {
+  local rec root case_home fakebin out
+  rec=$(new_world empty-probe-window)
+  IFS='|' read -r root case_home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  out=$(unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_PID CLAUDE_SESSION_ID
+    FM_SESSION_START_ENDPOINT_TIMEOUT=120 run_session_start "$case_home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" 'FLEET OBSERVATION DEFERRED:' 'an empty fleet was deferred without any probe work'
+  assert_contains "$out" 'NEXT STEP' 'empty-fleet startup lost its continuation'
+  assert_present "$case_home/state/.session-start-complete" 'empty-fleet startup did not complete'
+  pass 'an empty fleet completes without reserving an unused endpoint window'
+}
+
+test_unfitting_endpoint_window_is_deferred_without_probe() {
+  local rec root case_home fakebin holder out
+  rec=$(new_world unfitting-probe-window)
+  IFS='|' read -r root case_home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}:${2:-}" = pane:get ]; then
+  printf 'queried\n' >> "$FM_UNFITTING_PROBE_LOG"
+fi
+exit 1
+SH
+  chmod +x "$fakebin/herdr"
+  printf 'window=lab:p-unqueried\nkind=ship\nbackend=herdr\n' > "$case_home/state/probe.meta"
+  sleep 300 &
+  holder=$!
+  printf '%s\n' "$holder" > "$case_home/state/.lock"
+  out=$(unset CODEX_THREAD_ID CODEX_SESSION_ID CLAUDE_PID CLAUDE_SESSION_ID
+    FM_UNFITTING_PROBE_LOG="$case_home/probe.log" FM_SESSION_START_ENDPOINT_TIMEOUT=120 \
+      run_session_start "$case_home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  assert_absent "$case_home/probe.log" 'an endpoint read started without its full configured window'
+  assert_contains "$out" 'FLEET OBSERVATION DEFERRED:' 'the unverified endpoint was not disclosed'
+  assert_contains "$out" 'NEXT STEP' 'the unfitting probe consumed the recovery continuation'
+  assert_absent "$case_home/state/.session-start-complete" 'an unverified probe published full completion'
+  pass 'an unfitting endpoint window is deferred without a native query'
+}
+
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit "$?"
+fi
+
+test_padded_startup_budget_is_decimal
+test_empty_fleet_does_not_need_a_probe_window
+test_unfitting_endpoint_window_is_deferred_without_probe
+test_read_only_fleet_probe_budget_keeps_recovery_context
+test_deferred_fleet_probe_does_not_publish_completion
 test_context_digest_absent_empty_present
 test_full_digest_compact_keeps_auto_away_activity
 test_context_large_files_are_indexed

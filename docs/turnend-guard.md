@@ -343,6 +343,7 @@ Away daemon ownership retains its existing allow path.
 
 A local tmux or Herdr Codex secondmate with a validated parent/inbox binding uses the existing watcher outside the model turn instead.
 `bin/fm-watch.sh`'s header owns its command interfaces.
+Public eligibility and start refusals include their reason; a missing current native endpoint registration remains a prerequisite rather than permission to reuse a stale binding.
 Its actionable events ring the existing durable steering inbox, while the watcher's ordinary triage absorbs no-change heartbeats and retains the actionable-status backstop.
 The Stop guard allows a supervised stop only with the live watcher, session/process identity and delivery route proven.
 An active-hook continuation can also end after its own checkpoint closes, retaining pending wakes.

@@ -3385,7 +3385,10 @@ test_secondmate_other_owner_keeps_protocol() {
   printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$dir/parent" > "$dir/.fm-secondmate-parent"
   : > "$dir/state/task1.meta"
   for mode in --managed-hold --grok-hold; do
-    bash -c 'sleep 60; :' fm-watch.sh "$mode" & owner=$!
+    bash -c '
+      trap "kill %1 2>/dev/null; wait; exit" TERM
+      sleep 60 & wait
+    ' fm-watch.sh "$mode" & owner=$!
     identity=$(bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$owner") || fail "could not read the $mode watcher's identity"
     record_watcher_lock "$dir" "$owner" "$identity"
     touch "$dir/state/.last-watcher-beat"
@@ -3525,7 +3528,12 @@ SH
   # A healthy leftover --grok-hold watcher (left by a Grok-era launch or a
   # detached Stop-hook hold) holds this home's lock, and another home has
   # a watcher of its own: the production start must stop only this home's.
-  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
+  # Stop and reap the sleeper when its watcher wrapper receives TERM, so it
+  # cannot outlive cleanup while holding the test runner output pipe open.
+  bash -c '
+    trap "kill %1 2>/dev/null; wait; exit" TERM
+    sleep 300 & wait
+  ' fm-watch.sh --grok-hold & fake_watcher=$!
   mkdir -p "$dir/state/.watch.lock" "$dir/other/state/.watch.lock"
   printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
   printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"
@@ -3588,7 +3596,10 @@ SH
 
   # A failed binding proof behind a healthy leftover watcher must leave that
   # watcher running: the start proves the new binding before it stops it.
-  bash -c 'sleep 300; :' fm-watch.sh --grok-hold & fake_watcher=$!
+  bash -c '
+    trap "kill %1 2>/dev/null; wait; exit" TERM
+    sleep 300 & wait
+  ' fm-watch.sh --grok-hold & fake_watcher=$!
   mkdir -p "$dir/state/.watch.lock"
   printf '%s\n' "$fake_watcher" > "$dir/state/.watch.lock/pid"
   printf '%s\n' "$dir" > "$dir/state/.watch.lock/fm-home"

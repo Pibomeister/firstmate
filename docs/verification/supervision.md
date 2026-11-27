@@ -206,7 +206,8 @@ The detailed reconciliation and task chronology stay in the private audit report
 ### Per-task endpoint reads cannot truncate the digest
 
 A per-task backend endpoint liveness read that dies mid-read inside the digest process takes every later stage with it, and a parent wrapper that banners only the runtime-bound exit stays silent about the missing sections.
-The digest now runs each per-task endpoint read in its own bounded child (`FM_SESSION_START_ENDPOINT_TIMEOUT`, default 10s) whose death, hang, or nonzero surprise becomes that task's own `endpoint=error` field, and the parent wrapper banners ANY nonzero child exit, naming the stage and the abnormal exit status.
+The [`bin/fm-session-start.sh` header](../../bin/fm-session-start.sh) owns endpoint-read isolation, aggregate observation limits, deferral, and parent-wrapper failure reporting.
+The cases below verify individual read failures within the observation budget and an unexpected digest-child death.
 Verified on 2026-09-27 with the deterministic process-tree tests that reproduce both failure shapes with real processes and no harness:
 
 ```sh
