@@ -59,10 +59,11 @@ A viewport that cannot be read is unknown: no dialog key and no quota pick, and 
 Other backends, including Orca without a recorded Droid frame, fall back to the last 60 captured rows.
 
 Once per pass, not once per home, the watchdog also samples host memory and swap through [`bin/fm-memory-guard.sh`](../bin/fm-memory-guard.sh), with no daemon of its own.
-That script's header owns the readers, the `config/memory-guard` keys, the sample log, the alarm lines, and the reap-scratch classification rules.
+That script's header owns the readers, the `config/memory-guard` keys, the sample log, the alarm lines, the scratch classification rules, and the stop procedure.
 An alarm in force is an open gap on every pass, and a new alarm line is an open gap on the pass that prints it.
 A sample that fails or times out after 30 seconds is a gap and never stops the pass.
-The guard never signals a process; the watchdog also passes `--observe` unless its own `mode` is `act`, so a dry run does not even classify scratch.
+The guard signals a process only when `config/memory-guard` sets `mode=stop-scratch`, and then only a scratch process; the watchdog also passes `--observe` unless its own `mode` is `act`, so a dry run neither classifies nor stops scratch.
+A stop is an alarm line, so the pass that stops a scratch process reports it as a host gap.
 The memory guard restarts a process's sustained window after a 600 second gap, so an `interval-secs` above 600 means no process alarm fires.
 
 ## Layer check chain
