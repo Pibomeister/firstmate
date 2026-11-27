@@ -117,11 +117,18 @@
 #     that holds that row. After round 1 a new finding blocks only with a
 #     REPRO-BEGIN/REPRO-END reproduction that verify-finding shows red at the
 #     head and green at the merge base, or as security, destructive or
-#     data-loss; otherwise ak asks for a follow-up.
+#     data-loss; otherwise ak asks for a follow-up. run executes a
+#     reproduction only with config/merge-review repro=on, because the script
+#     is reviewer-written and not sandboxed. By default (repro=off) the prompt
+#     offers no reproduction block, run executes none, and a new finding is
+#     recorded without evidence, so it is filed as a follow-up unless it is
+#     security, destructive or data-loss.
 #   - Once valid reviews from two families stand, run appends the round with
 #     ak review ledger add and binds this head to the ledger's line count and
-#     digest in <head>/ledger.bind. A rerun at a recorded head calls only
-#     seats without a valid receipt and appends nothing new.
+#     digest in <head>/ledger.bind. A rerun at a recorded head calls no seat
+#     and appends nothing new. It writes a missing binding again, but never
+#     rebinds an existing one, so a head whose merge base moved since its
+#     round stays incomplete.
 #   - check calls ak review decide with any integrity failure: invalid
 #     evidence, an unfinished batch, a changed ledger prefix, a round recorded
 #     at another merge base, or fewer than two families. The rounds cap at 3;
@@ -251,6 +258,7 @@ MR_SEAT_MODEL=()
 MR_SEAT_EFFORT=()
 MR_ROUND=
 MR_AK=
+MR_REPRO=off
 MR_CONVERGE_MODE=
 MR_SCOPE_OUTCOME=
 MR_COVERED=
@@ -376,6 +384,12 @@ mr_config_load() {
         esac
         { [ -f "$val" ] && [ -x "$val" ]; } || mr_die "config/merge-review line $n: ak $val is not an executable file"
         MR_AK=$val
+        ;;
+      repro)
+        case "$val" in
+          on | off) MR_REPRO=$val ;;
+          *) mr_die "config/merge-review line $n: repro must be on or off" ;;
+        esac
         ;;
       *) mr_die "config/merge-review line $n: unknown key \"$key\"" ;;
     esac
@@ -1291,7 +1305,7 @@ mr_converge_prompt() {
     'category is one of correctness, security, destructive, data-loss, convention, reuse, test-gap, docs. P0 is a wrong merge, data loss or a security defect, P1 a defect in ordinary use, P2 an edge case outside ordinary use, and P3 a note. P2 and P3 never block. <path> is relative to the repository root. <cause-key> is lowercase words joined by single hyphens.' \
     'A security, destructive or data-loss finding adds this line directly after its FINDING line:' \
     'RISK: <the asset at risk> -> <the action that harms it>'
-  if [ -n "$MR_COVERED" ]; then
+  if [ -n "$MR_COVERED" ] && [ "$MR_REPRO" = on ]; then
     printf '%s\n' \
       'To back a new finding with a reproduction, put this block directly after its FINDING line (and its RISK line). The script runs with bash from the repository root as a new test file under tests/, and must exit nonzero while the defect is present:' \
       'REPRO-BEGIN' \
@@ -1401,7 +1415,7 @@ mr_converge_evidence() {  # <repo> <round.out.json> <first-seat-input>
 
 # Record this run's round in the ledger once valid reviews from two model
 # families stand at this head. A rerun at a head the ledger already holds
-# closes a round a stopped run left open, or repairs a missing binding, and
+# closes a round a stopped run left open, or writes a missing binding, and
 # records nothing else.
 mr_converge_record() {  # <repo>
   local repo=$1 i id seat receipt events state covered open_head families=0 fam='' repro=0 rec first
@@ -1421,7 +1435,7 @@ mr_converge_record() {  # <repo>
     return 0
   fi
   if [ "$covered" = "$MR_HEAD" ]; then
-    if [ -n "$(mr_ledger_bind_problem "$MR_STORE")" ] || [ "$(mr_receipt_get "$MR_STORE/ledger.bind" base)" != "$MR_BASE" ]; then
+    if [ ! -e "$MR_STORE/ledger.bind" ] && [ ! -L "$MR_STORE/ledger.bind" ]; then
       printf '[]\n' > "$MR_WORK/ledger/none.json"
       { mr_ledger_add "$MR_WORK/ledger/none.json" "$MR_WORK/ledger/none.out.json" &&
         mr_ledger_bind "$MR_WORK/ledger/none.out.json" "$MR_CONVERGE_MODE"; } || mr_die 'cannot bind this head to the review ledger'
@@ -1479,7 +1493,7 @@ mr_converge_record() {  # <repo>
   jq -s 'add | map(del(.n))' "$events.scope.json" "$events.open.json" \
     $(sed "s#^\\(.*\\)\$#$MR_WORK/ledger/\\1.json#" "$MR_WORK/ledger/seats") > "$events.json" \
     || mr_die 'cannot build the ledger events'
-  if [ -n "$MR_COVERED" ]; then
+  if [ -n "$MR_COVERED" ] && [ "$MR_REPRO" = on ]; then
     while IFS= read -r seat; do
       for rec in "$MR_WORK/ledger/$seat.repro"/*.sh; do
         [ ! -s "$rec" ] || repro=1
@@ -1635,10 +1649,10 @@ mr_run_cleanup() {
 }
 
 # A converging run calls no seat when ak carries the earlier verdict to this
-# head or holds the change.
+# head or holds the change, or when the ledger already holds this head's round.
 mr_run_calls_seats() {
   case "$MR_CONVERGE_MODE" in
-    carry | hold | recorded-carry) return 1 ;;
+    carry | hold | recorded | recorded-carry) return 1 ;;
   esac
 }
 

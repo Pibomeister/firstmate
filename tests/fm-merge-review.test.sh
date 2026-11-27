@@ -1879,6 +1879,7 @@ test_converge_a_reproduced_new_finding_blocks() {
   local rc=0 store
   converge_skip 'converge: reproduced new finding' && return 0
   converge_case converge-repro
+  printf 'repro=on\n' >> "$HOME_DIR/config/merge-review"
   run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
   expect_code 0 "$rc" "converge repro: round 1 ($(cat "$CASE/stderr"))"
   converge_next_head 'a second change'
@@ -1891,6 +1892,57 @@ test_converge_a_reproduced_new_finding_blocks() {
   store=$(store_dir)
   assert_present "$store/evidence/F1/result" "converge repro: the reproduction evidence is missing"
   pass "a new finding whose reproduction fails at the head and passes at the merge base blocks"
+}
+
+test_converge_a_reproduction_runs_only_with_the_opt_in() {
+  local rc=0 store
+  converge_skip 'converge: reproduction without the opt-in' && return 0
+  converge_case converge-repro-off
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge repro-off: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" 'REPRO-BEGIN' "touch '$CASE/repro-ran'" 'exit 1' 'REPRO-END' > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge repro-off: a closure round with a reproduction and no opt-in"
+  assert_absent "$CASE/repro-ran" "converge repro-off: the reviewer-written reproduction ran without repro=on"
+  store=$(store_dir)
+  assert_absent "$store/evidence/F1" "converge repro-off: reproduction evidence was recorded without repro=on"
+  assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge repro-off: an unrun reproduction blocked the change ($(cat "$CASE/stdout"))"
+  assert_grep ' action=file-follow-ups ' "$CASE/stdout" "converge repro-off: the finding was not filed as a follow-up ($(cat "$CASE/stdout"))"
+  pass "without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking"
+}
+
+test_converge_a_moved_merge_base_never_approves_the_old_round() {
+  local rc=0 base feature store
+  converge_skip 'converge: moved merge base' && return 0
+  converge_case converge-moved-base
+  base=$(git -C "$REPO" rev-parse refs/remotes/origin/main)
+  feature=$HEAD_SHA
+  git -C "$REPO" reset -q --hard "$base"
+  printf 'an upstream change\n' > "$REPO/upstream.txt"
+  git -C "$REPO" add upstream.txt
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' commit -qm upstream
+  git -C "$REPO" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' cherry-pick "$feature" >/dev/null
+  HEAD_SHA=$(git -C "$REPO" rev-parse HEAD)
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge moved-base: round 1 at the first merge base ($(cat "$CASE/stderr"))"
+  git -C "$REPO" update-ref refs/remotes/origin/main "$(git -C "$REPO" rev-parse HEAD^)"
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  [ "$rc" -ne 0 ] || fail "converge moved-base: the rerun at a moved merge base approved ($(cat "$CASE/stdout"))"
+  assert_no_grep 'merge-review: approved' "$CASE/stdout" "converge moved-base: the old round approved at the new merge base"
+  assert_equals 1 "$(calls agy)" "converge moved-base: a seat was called for a head the ledger already holds"
+  store=$(store_dir)
+  assert_equals "$base" "$(sed -n 's/^base=//p' "$store/ledger.bind")" "converge moved-base: the ledger binding was moved to the new merge base"
+  rc=0
+  run_supervisor check "$PR_URL" --head "$HEAD_SHA" --base "$(git -C "$REPO" rev-parse HEAD^)" || rc=$?
+  expect_code 1 "$rc" "converge moved-base: a supervisor check at the new merge base"
+  assert_grep 'merge-review: incomplete' "$CASE/stdout" "converge moved-base: the check is not incomplete ($(cat "$CASE/stdout"))"
+  pass "a head whose merge base moved after its round calls no seat and stays incomplete, never approved"
 }
 
 test_converge_an_unchanged_delta_carries_without_seats() {
@@ -1972,6 +2024,8 @@ fm_test_run \
   test_converge_fix_only_round_closes_a_blocking_finding \
   test_converge_a_new_finding_without_a_repro_is_filed_not_blocking \
   test_converge_a_reproduced_new_finding_blocks \
+  test_converge_a_reproduction_runs_only_with_the_opt_in \
+  test_converge_a_moved_merge_base_never_approves_the_old_round \
   test_converge_an_unchanged_delta_carries_without_seats \
   test_converge_a_changed_ledger_never_approves \
   test_converge_the_round_cap_parks_without_approving \
