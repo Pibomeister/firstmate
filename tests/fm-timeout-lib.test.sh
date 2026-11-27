@@ -440,6 +440,404 @@ test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace() {
   pass "fm_exec_timed's GNU timeout fallback kills a TERM-ignoring command once the grace has passed"
 }
 
+# A TERM sent to a caller bounded by an external timeout runner must stop the
+# runner's group, so a TERM-ignoring command never outlives its caller.
+test_run_timed_external_forwards_a_caller_term() {
+  local dir fb tool caller pid rc=0 i=0
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed forwards a caller TERM through its external runner (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    PATH=$fb fm_run_timed 60 bash -c 'trap "" TERM; echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
+  ) &
+  caller=$!
+  wait_for_file "$dir/pid"
+  pid=$(cat "$dir/pid")
+  kill -TERM "$caller"
+  wait "$caller" 2>/dev/null || rc=$?
+  [ "$rc" -ne 0 ] || fail "a caller stopped by TERM reported success"
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 250 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "a TERM-ignoring command outlived its caller's TERM under the external runner"
+    fi
+    sleep 0.02
+  done
+  pass "fm_run_timed forwards a caller TERM through its external runner"
+}
+
+test_run_timed_external_forwards_a_caller_term_under_a_trapping_parent() {
+  local dir fb tool parent caller pid i=0
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed forwards a subshell caller's TERM under a parent that traps every forwarded signal (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term-trapping-parent"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  # The parent's traps are not the subshell caller's, though newer Bash still
+  # reports their text inside the subshell until its first trap change.
+  (
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    trap 'exit 129' HUP
+    (
+      . "$ROOT/bin/fm-timeout-lib.sh"
+      PATH=$fb fm_run_timed 60 bash -c 'trap "" TERM; echo $$ > "$1"; exec sleep 300' _ "$dir/pid"
+    ) &
+    echo "$!" > "$dir/caller"
+    wait
+  ) &
+  parent=$!
+  wait_for_file "$dir/pid"
+  wait_for_file "$dir/caller"
+  pid=$(cat "$dir/pid")
+  caller=$(cat "$dir/caller")
+  kill -TERM "$caller"
+  wait "$parent" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 250 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail "a TERM-ignoring command outlived its subshell caller's TERM under a parent that traps every forwarded signal"
+    fi
+    sleep 0.02
+  done
+  pass "fm_run_timed forwards a subshell caller's TERM under a parent that traps every forwarded signal"
+}
+
+test_run_timed_external_keeps_a_caller_trap_that_defers_term() {
+  local dir fb tool caller rc=0 out
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed keeps a caller's deferring TERM trap under its external runner (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-term-deferred"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  # The caller absorbs TERM the way a cleanup handler does. A TERM during the
+  # bounded command must neither stop that command nor drop the caller's trap.
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    # shellcheck disable=SC2064  # The event path is fixed when the trap is set.
+    trap "echo absorbed >> '$dir/events'" TERM
+    PATH=$fb fm_run_timed 30 bash -c 'echo $$ > "$1/pid"; sleep 2; echo finished >> "$1/events"' _ "$dir"
+    echo "rc=$?" >> "$dir/events"
+    trap -p TERM >> "$dir/events"
+  ) &
+  caller=$!
+  wait_for_file "$dir/pid"
+  kill -TERM "$caller"
+  wait "$caller" 2>/dev/null || rc=$?
+  out=$(cat "$dir/events" 2>/dev/null || true)
+  [ "$rc" -eq 0 ] || fail "a caller that absorbs TERM exited $rc under the external runner: $out"
+  printf '%s\n' "$out" | grep -qx absorbed || fail "the caller's TERM trap did not run: $out"
+  printf '%s\n' "$out" | grep -qx finished || fail "a deferred TERM stopped the bounded command: $out"
+  printf '%s\n' "$out" | grep -qx 'rc=0' || fail "the bounded command did not report its own status after a deferred TERM: $out"
+  printf '%s\n' "$out" | grep -q "^trap -- .*absorbed.* SIGTERM$" || fail "the caller's TERM trap was dropped after the bounded command: $out"
+  pass "fm_run_timed keeps a caller's deferring TERM trap under its external runner"
+}
+
+# A shell started with TERM ignored cannot restore it, so the watchdog and its
+# sleep ignore TERM too. A finished call must still return at once rather than
+# wait on that watchdog forever (no deadline) or until its bound (a deadline).
+test_bash_runner_returns_when_term_is_ignored_on_entry() {
+  local dir bound caller i
+  dir="$TMP_ROOT/term-ignored-on-entry"
+  mkdir -p "$dir"
+  for bound in none 30; do
+    (
+      trap '' TERM
+      exec bash -c '
+        . "$1/bin/fm-timeout-lib.sh"
+        work() { echo done; }
+        if [ "$2" = none ]; then fm_run_cancellable_fn work; else fm_run_timed_fn "$2" work; fi
+        echo "rc=$?" > "$3"
+      ' _ "$ROOT" "$bound" "$dir/rc-$bound" >/dev/null 2>&1
+    ) &
+    caller=$!
+    i=0
+    while kill -0 "$caller" 2>/dev/null; do
+      i=$((i + 1))
+      if [ "$i" -ge 500 ]; then
+        pkill -KILL -P "$caller" 2>/dev/null || true
+        kill -KILL "$caller" 2>/dev/null || true
+        fail "a finished call under bound $bound did not return within 10s when TERM was ignored on entry"
+      fi
+      sleep 0.02
+    done
+    wait "$caller" 2>/dev/null || true
+    [ "$(cat "$dir/rc-$bound" 2>/dev/null)" = rc=0 ] \
+      || fail "a finished call under bound $bound lost its status when TERM was ignored on entry"
+  done
+  pass "the bash runner returns a finished call at once even when TERM is ignored on entry"
+}
+
+# A caller killed before its parent reaps it is a zombie that still answers
+# kill -0. Its cancellable call has no deadline, so the watchdog must treat the
+# zombie as gone and stop the command.
+test_cancellable_command_stops_when_its_killed_caller_is_unreaped() {
+  local dir holder owner pid state i=0
+  dir="$TMP_ROOT/unreaped-caller"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+echo "$$" > "$2/owner"
+fm_run_cancellable_fn bash -c 'echo "$$" > "$1"; exec sleep 300' _ "$2/pid"
+OWNER
+  # sh becomes a sleep that never reaps, so the killed caller stays a zombie.
+  sh -c 'bash "$1" "$2" "$3" & exec sleep 60' _ "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  holder=$!
+  wait_for_file "$dir/pid"
+  owner=$(cat "$dir/owner")
+  pid=$(cat "$dir/pid")
+  kill -KILL "$owner"
+  while :; do
+    state=$(ps -o stat= -p "$owner" 2>/dev/null || true)
+    case "$state" in *Z*) break ;; '') kill -KILL "$pid" "$holder" 2>/dev/null; fail 'fixture: the killed caller was reaped, so the case is vacuous' ;; esac
+    i=$((i + 1))
+    [ "$i" -lt 250 ] || { kill -KILL "$pid" "$holder" 2>/dev/null; fail 'fixture: the killed caller never became a zombie'; }
+    sleep 0.02
+  done
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" "$holder" 2>/dev/null || true
+      fail 'a cancellable command outlived its killed, unreaped caller by 10s'
+    fi
+    sleep 0.02
+  done
+  kill -KILL "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass 'a cancellable command stops when its killed caller is a zombie not yet reaped'
+}
+
+# The zombie probe forks a ps process, and most bounded commands finish inside
+# the watchdog's first second, so a check made before the watchdog has slept
+# must not probe. The caller's xtrace, which the watchdog inherits, shows every
+# probe it runs; a command that lasts past a sleep proves the trace reaches it.
+test_watchdog_does_not_probe_for_a_zombie_before_its_first_sleep() {
+  local dir kind probes
+  dir="$TMP_ROOT/first-check-probe"
+  mkdir -p "$dir"
+  cat > "$dir/caller.sh" <<'CALLER'
+. "$1/bin/fm-timeout-lib.sh"
+dir=$2
+caller=$$
+watchdog_slept() {
+  local w n=0
+  while :; do
+    for w in $(pgrep -P "$caller"); do
+      pgrep -P "$w" -f '^sleep 1$' >/dev/null && return 0
+    done
+    n=$((n + 1))
+    [ "$n" -lt 500 ] || return 3
+    command -p sleep 0.02
+  done
+}
+traced() {  # <trace-name> <runner...>
+  local name=$1 rc=0
+  shift
+  set -x
+  "$@" 2> "$dir/$name.trace" || rc=$?
+  set +x
+  echo "$rc" > "$dir/$name.rc"
+}
+traced bounded fm_run_timed_fn 30 watchdog_slept
+traced cancellable fm_run_cancellable_fn watchdog_slept
+traced long fm_run_timed_fn 30 command -p sleep 2.5
+CALLER
+  bash "$dir/caller.sh" "$ROOT" "$dir" >/dev/null 2>&1
+  for kind in bounded cancellable long; do
+    [ "$(cat "$dir/$kind.rc" 2>/dev/null)" = 0 ] || fail "fixture: the $kind call did not finish cleanly"
+  done
+  probes=$(grep -cE '^[+]+ (command -p )?ps( |$)' "$dir/long.trace" || true)
+  [ "$probes" -gt 0 ] || fail 'fixture: the trace never showed the watchdog probe after a sleep, so the case is vacuous'
+  for kind in bounded cancellable; do
+    probes=$(grep -cE '^[+]+ (command -p )?ps( |$)' "$dir/$kind.trace" || true)
+    [ "$probes" -eq 0 ] || fail "a $kind call forked $probes zombie probe(s) before the watchdog first slept"
+  done
+  pass 'the watchdog does not fork a zombie probe before its first sleep'
+}
+
+# A caller that cancels from its TERM trap and is then killed during the cancel
+# grace must still not leave a command that ignores TERM running: the watchdog
+# outlives the grace and stops it once the caller is gone.
+test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace() {
+  local dir owner pid i=0
+  dir="$TMP_ROOT/killed-during-cancel"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+echo "$$" > "$2/owner"
+trap 'fm_cancel_bash_timeout; exit 143' TERM
+fm_run_cancellable_fn bash -c 'trap "" TERM; echo "$$" > "$1"; exec sleep 300' _ "$2/pid"
+OWNER
+  bash "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  wait_for_file "$dir/pid"
+  owner=$(cat "$dir/owner")
+  pid=$(cat "$dir/pid")
+  kill -TERM "$owner"
+  sleep 0.3
+  kill -KILL "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail 'a command that ignores TERM outlived its caller killed during the cancel grace by 10s'
+    fi
+    sleep 0.02
+  done
+  pass 'a cancelled command stops when its caller is killed during the cancel grace'
+}
+
+# A cancel can land after the command starts but before its watchdog exists.
+# The owner's DEBUG trap cancels at the first command it runs after its first
+# background launch, so the caller is killed during the cancel with no
+# watchdog yet launched to outlive it.
+test_command_cancelled_before_its_watchdog_stops_when_its_caller_is_killed() {
+  local dir owner pid i=0
+  dir="$TMP_ROOT/killed-before-watchdog"
+  mkdir -p "$dir"
+  cat > "$dir/owner.sh" <<'OWNER'
+. "$1/bin/fm-timeout-lib.sh"
+case_dir=$2
+echo "$$" > "$case_dir/owner"
+on_term() { fm_cancel_bash_timeout; exit 143; }
+trap on_term TERM
+cancel_after_first_launch() {
+  local last nounset=0
+  case $- in *u*) nounset=1; set +u ;; esac
+  last=$!
+  [ "$nounset" -eq 0 ] || set -u
+  [ -n "$last" ] && [ ! -e "$case_dir/cancelling" ] || return 0
+  while [ ! -s "$case_dir/pid" ]; do command -p sleep 0.02; done
+  : > "$case_dir/cancelling"
+  on_term
+}
+set -T
+trap cancel_after_first_launch DEBUG
+fm_run_cancellable_fn bash -c 'trap "" TERM; echo "$$" > "$1"; exec sleep 300' _ "$case_dir/pid"
+OWNER
+  bash "$dir/owner.sh" "$ROOT" "$dir" >/dev/null 2>&1 &
+  owner=$!
+  while [ ! -e "$dir/cancelling" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 500 ] || fail 'the owner never cancelled after launching its command'
+    sleep 0.02
+  done
+  pid=$(cat "$dir/pid")
+  sleep 0.3
+  kill -KILL "$owner" 2>/dev/null || true
+  wait "$owner" 2>/dev/null || true
+  i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$pid" 2>/dev/null || true
+      fail 'a command cancelled before its watchdog outlived its caller killed during the cancel by 10s'
+    fi
+    sleep 0.02
+  done
+  pass 'a command cancelled before its watchdog stops when its caller is killed during the cancel'
+}
+
+# A trap the caller installs during the wait, here from its own USR1 handler, is
+# the caller's: the external runner must not remove it when it restores the
+# forwarding traps it set, even when the caller's trap calls the forwarding
+# handler as one of its steps. A TERM that reaches such a trap runs it once and
+# leaves control with it rather than re-raising TERM into it.
+test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait() {
+  local dir fb tool action caller i=0 cleanups
+  if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    pass "fm_run_timed keeps a trap the caller set during the wait (skipped: no timeout binary on this host)"
+    return 0
+  fi
+  dir="$TMP_ROOT/external-caller-trap"
+  fb="$dir/bin"
+  mkdir -p "$fb"
+  for tool in timeout gtimeout bash sleep cat rm mktemp; do
+    command -v "$tool" >/dev/null 2>&1 && ln -s "$(command -v "$tool")" "$fb/$tool"
+  done
+  for action in 'echo caller-cleanup' 'echo caller-cleanup; _fm_external_timeout_forward TERM'; do
+    rm -f "$dir/trap"
+    # shellcheck disable=SC2016  # Expanded by the child shell.
+    bash -c '
+      . "$1/bin/fm-timeout-lib.sh"
+      self=$(exec /bin/sh -c "echo \$PPID")
+      trap "trap \"$4\" TERM" USR1
+      ( sleep 1; kill -USR1 "$self" ) &
+      PATH=$2 fm_run_timed 10 sleep 2
+      trap -p TERM > "$3"
+    ' _ "$ROOT" "$fb" "$dir/trap" "$action" >/dev/null 2>&1
+    grep -q 'caller-cleanup' "$dir/trap" \
+      || fail "the external runner removed the TERM trap [$action] the caller set during the wait: [$(cat "$dir/trap" 2>/dev/null)]"
+  done
+  rm -f "$dir/events"
+  # shellcheck disable=SC2016  # Expanded by the child shell.
+  bash -c '
+    . "$1/bin/fm-timeout-lib.sh"
+    self=$(exec /bin/sh -c "echo \$PPID")
+    trap "trap \"echo cleanup >> $3/events; _fm_external_timeout_forward TERM\" TERM" USR1
+    ( sleep 1; kill -USR1 "$self"; sleep 1; kill -TERM "$self" ) &
+    PATH=$2 fm_run_timed 10 sleep 5
+    echo returned >> "$3/events"
+  ' _ "$ROOT" "$fb" "$dir" >/dev/null 2>&1 &
+  caller=$!
+  while kill -0 "$caller" 2>/dev/null; do
+    i=$((i + 1))
+    if [ "$i" -ge 500 ]; then
+      kill -KILL "$caller" 2>/dev/null || true
+      fail "a caller trap that calls the forwarding handler still had TERM re-raised into it after 10s"
+    fi
+    sleep 0.02
+  done
+  wait "$caller" 2>/dev/null || true
+  cleanups=$(grep -c cleanup "$dir/events" 2>/dev/null || true)
+  [ "$cleanups" = 1 ] || fail "a caller trap that calls the forwarding handler ran ${cleanups:-0} times for one TERM, not once"
+  grep -q returned "$dir/events" || fail "a caller trap that calls the forwarding handler lost control: the call never returned to it"
+  pass "fm_run_timed keeps a trap the caller set during the wait, including one that calls the forwarding handler"
+}
+
+# fm_run_cancellable_fn has no deadline, so a runner that cannot start must not
+# report the bound status 124; a finite bound keeps its 124 refusal.
+test_cancellable_runner_start_failure_is_not_a_bound() {
+  local dir rc_none=0 rc_bound=0 ran
+  dir="$TMP_ROOT/cancellable-start-failure"
+  mkdir -p "$dir"
+  ran="$dir/ran"
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    TMPDIR="$dir/missing" fm_run_cancellable_fn touch "$ran"
+  ) || rc_none=$?
+  [ "$rc_none" -eq 125 ] || fail "a cancellable runner that could not start returned $rc_none, not 125"
+  [ ! -e "$ran" ] || fail "a cancellable runner that could not start still ran its command"
+  fm_timed_out "$rc_none" && fail "a cancellable runner start failure reads as a fired bound"
+  (
+    . "$ROOT/bin/fm-timeout-lib.sh"
+    TMPDIR="$dir/missing" fm_run_timed_fn 5 touch "$ran"
+  ) || rc_bound=$?
+  [ "$rc_bound" -eq 124 ] || fail "a bounded runner that could not start returned $rc_bound, not its 124 refusal"
+  pass "a cancellable runner start failure reports 125, never the bound status"
+}
+
 test_timed_out_names_exactly_the_bound_statuses() {
   local status verdict
   for status in 124 137 0 1 125 127 143 ''; do
@@ -1057,4 +1455,14 @@ test_perl_is_preferred_over_timeout
 test_refuses_rather_than_running_unbounded
 test_rejects_malformed_bounds_before_running_anything
 test_gnu_timeout_kills_a_term_ignoring_command_after_the_grace
+test_run_timed_external_forwards_a_caller_term
+test_run_timed_external_forwards_a_caller_term_under_a_trapping_parent
+test_run_timed_external_keeps_a_caller_trap_that_defers_term
+test_bash_runner_returns_when_term_is_ignored_on_entry
+test_cancellable_command_stops_when_its_killed_caller_is_unreaped
+test_watchdog_does_not_probe_for_a_zombie_before_its_first_sleep
+test_cancelled_command_stops_when_its_caller_is_killed_during_the_grace
+test_command_cancelled_before_its_watchdog_stops_when_its_caller_is_killed
+test_run_timed_external_keeps_a_trap_the_caller_set_during_the_wait
+test_cancellable_runner_start_failure_is_not_a_bound
 test_timed_out_names_exactly_the_bound_statuses

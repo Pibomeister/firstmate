@@ -141,7 +141,7 @@ In each home the scan considers only that home's long-inactive direct ordinary c
 A secondmate retains a durable receipt for its idempotent report through the established parent route, and main-home captain presentation retains a separate receipt; neither path performs a forge or PR check.
 A secondmate home's terminal child ledger lines, PR registrations, captain holds, and merges are published on that same parent route by the scripts that record them, so no captain-facing outcome depends on the mate model appending it ([secondmate-parent-channel.md](secondmate-parent-channel.md)).
 Absorbed wakes advance their suppression markers, log to `state/.watch-triage.log`, and keep the watcher blocking without a queue record or LLM turn.
-Each `fm-wake-drain.sh` presentation runs the same liveness guard as the supervision scripts, so a lapsed watcher chain surfaces even on a turn that only handles queued wakes.
+Each `fm-wake-drain.sh` presentation attempts the same liveness guard as the supervision scripts, even when its open-decisions bound (owned by its [header](../bin/fm-wake-drain.sh)) expires, so a turn that only handles queued wakes can surface a lapsed watcher chain or an incomplete-presentation diagnostic.
 Routine watcher polling, supervision no-ops, and absorbed benign wakes stay silent.
 Elapsed waiting time can trigger the optional [open-decision reminders](configuration.md#open-decision-reminders-configopen-decision-reminders).
 A declared external wait or an attended verified captain-held transfer trades that silence for one bounded recheck per pause window, naming the dependency or decision owner; while the away-posture record exists, captain-held work waits without rechecks and remains visible in the return brief.

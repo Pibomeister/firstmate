@@ -87,7 +87,10 @@
 # so a crash between stopping, wake presentation, and blocker handling fails
 # closed. It retains the presented wake, buffered-escalation, wedge-marker,
 # health, and posture-record evidence until every gate-holding blocker is closed
-# and `check` succeeds. Repeated begin/check calls are idempotent. `guard` and
+# and `check` succeeds. A failed drain retains its completed stdout in that
+# evidence and the return brief, because completed sections may already have
+# presentation receipts; catch-up stays gated until a successful retry.
+# Repeated begin/check calls are idempotent. `guard` and
 # `catchup-summary` never mutate state and are suitable for ordinary read
 # entrypoints such as fm-bearings-snapshot.sh. `guard` separates its two
 # refusal branches by exit status so a reporting surface can keep refusing
@@ -1000,7 +1003,6 @@ EOF
     append_evidence lifecycle 'durable wake drain failed; retry catch-up before ordinary work' "$evidence"
     lifecycle_ok=0
     drain_ok=0
-    drained=""
   fi
   grep -v '^WAKE_ACK_REQUIRED:' "$drain_err" >&2 || true
   wake_ack_line=$(grep '^WAKE_ACK_REQUIRED:' "$drain_err" | tail -1)

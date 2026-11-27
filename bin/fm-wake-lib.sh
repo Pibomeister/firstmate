@@ -1670,6 +1670,8 @@ _fm_lock_acquire_wait_handoff() {  # <lockdir> <caller-pid>
     ownerdir=$lockdir
   fi
   fm_current_pid current || { fm_lock_release "$lockdir"; return 1; }
+  # The caller may have died during the wait; never hand a lock to a dead pid.
+  fm_pid_alive "$caller_pid" || { fm_lock_release "$lockdir"; return 1; }
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
   # Drop this helper's start time before the pid changes hands and record the
   # caller's only after, so fm_lock_holder_alive never pairs one holder's pid

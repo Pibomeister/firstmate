@@ -179,7 +179,7 @@ test_signal_catchup_without_running_watcher() {
 }
 
 test_stale_enqueue_before_suppressor() {
-  local dir state fakebin out drain_out capture_file window key pane_hash
+  local dir state fakebin out drain_out capture_file window key pane_hash watcher
   dir=$(make_case stale)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -200,7 +200,11 @@ test_stale_enqueue_before_suppressor() {
   printf '%s' "$pane_hash" > "$state/.hash-$key"
   printf '1\n' > "$state/.count-$key"
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  wait_for_exit "$!" 40 || fail "watcher did not exit for stale pane"
+  watcher=$!
+  # As in signal catch-up, time queue behavior after startup owns its lock.
+  # Keep the same runtime bound; interpreter/import contention is separate.
+  wait_for_watcher_lock "$watcher" "$state" || fail "watcher never started for stale pane"
+  wait_for_exit "$watcher" 40 || fail "watcher did not exit for stale pane"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print stale wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after stale wake failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "stale wake was not queued"
@@ -213,7 +217,7 @@ test_stale_enqueue_before_suppressor() {
 # the queue-safety invariant - enqueue the stale wake BEFORE advancing the .stale-*
 # suppressor - so a watcher killed between the two never swallows the surfaced finish.
 test_not_working_stale_enqueue_before_suppressor() {
-  local dir state fakebin out drain_out capture_file window key pane_hash
+  local dir state fakebin out drain_out capture_file window key pane_hash watcher
   dir=$(make_case stale-stopped)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -237,7 +241,9 @@ test_not_working_stale_enqueue_before_suppressor() {
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" \
     FM_STALE_ESCALATE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  wait_for_exit "$!" 40 || fail "watcher did not surface a not-provably-working stale"
+  watcher=$!
+  wait_for_watcher_lock "$watcher" "$state" || fail "watcher never started for a not-provably-working stale"
+  wait_for_exit "$watcher" 40 || fail "watcher did not surface a not-provably-working stale"
   grep -Fx "stale: $window" "$out" >/dev/null || fail "watcher did not print the immediate stale wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after the immediate stale wake failed"
   grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "immediate stale wake was not queued"
@@ -247,7 +253,7 @@ test_not_working_stale_enqueue_before_suppressor() {
 }
 
 test_check_output_is_queued() {
-  local dir state fakebin out drain_out check_file
+  local dir state fakebin out drain_out check_file watcher
   dir=$(make_case check)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -262,7 +268,9 @@ SH
   FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-check-register.sh" task >/dev/null \
     || fail "could not register queue custom check"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  wait_for_exit "$!" 40 || fail "watcher did not exit for check output"
+  watcher=$!
+  wait_for_watcher_lock "$watcher" "$state" || fail "watcher never started for check output"
+  wait_for_exit "$watcher" 40 || fail "watcher did not exit for check output"
   grep -F "check: $check_file: merged: https://example.test/pr/1" "$out" >/dev/null || fail "watcher did not print check wake"
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" || fail "drain after check wake failed"
   grep "$(printf '\tcheck\t')" "$drain_out" | grep -F "$check_file" | grep -F 'merged: https://example.test/pr/1' >/dev/null || fail "check wake was not queued"
@@ -271,7 +279,7 @@ SH
 }
 
 test_multiline_check_output_wakes_as_one_line() {
-  local dir state fakebin out drain_out check_file
+  local dir state fakebin out drain_out check_file watcher
   dir=$(make_case check-multiline)
   state="$dir/state"
   fakebin="$dir/fakebin"
@@ -286,7 +294,9 @@ SH
   FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-check-register.sh" task >/dev/null \
     || fail "could not register multi-line custom check"
   PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=0 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
-  wait_for_exit "$!" 40 || fail "watcher did not exit for multi-line check output"
+  watcher=$!
+  wait_for_watcher_lock "$watcher" "$state" || fail "watcher never started for multi-line check output"
+  wait_for_exit "$watcher" 40 || fail "watcher did not exit for multi-line check output"
   # Wake consumers keep only lines carrying a wake prefix, so every check line
   # must ride the one prefixed line, matching the queued row's payload.
   [ "$(grep -c '' "$out")" -eq 1 ] || fail "multi-line check wake spanned more than one output line"

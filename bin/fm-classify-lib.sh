@@ -1391,6 +1391,8 @@ EOF
 # kind, as `<n>:<kind>`), `offset`, `ident`, then the folded open set.
 # The optional timed view uses a separate `.timed` cursor and adds `:timed3`
 # to the version; status_open_decisions_incremental owns its row format.
+# A long fold also saves a cursor at a whole-line boundary every 64 lines, so a
+# caller stopped at a deadline resumes from its last checkpoint.
 # FM_OPEN_DECISIONS_FOLD_VERSION must be bumped whenever
 # _fm_decision_fold_line semantics change, so persisted state from an older
 # interpretation is discarded and rebuilt from byte 0; the kind suffix does the
@@ -1525,7 +1527,12 @@ _fm_status_file_mtime() {  # <status-file>
 # (the watcher and the away-mode daemon both classify the same stream) never
 # truncate each other's chunk.
 _fm_status_span_scratch() {  # <status-file>
-  printf '%s.span.%s' "$(_fm_open_decisions_cursor_path "$1")" "$$"
+  _fm_status_scratch_path "$(_fm_open_decisions_cursor_path "$1").span.$$"
+}
+
+_fm_status_scratch_path() {
+  local path=$1
+  printf '%s/%s' "${_FM_STATUS_SCRATCH_DIR:-${path%/*}}" "${path##*/}"
 }
 
 _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
@@ -1551,7 +1558,7 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed] [strict]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor kind fold_version timed=${3:-} read_rc=0
+  local kind fold_version timed=${3:-} read_rc=0 folded='' folded_lines=0
   case "$timed" in ''|timed) ;; *) return 2 ;; esac
   # `strict` makes every read failure below return 3 instead of 0, for a caller
   # that must not read the already-trusted set (empty without a cursor) as the
@@ -1635,7 +1642,7 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
   fi
 
   if [ "$offset" -lt "$size" ]; then
-    chunk_file="$cf.read.$$"
+    chunk_file=$(_fm_status_scratch_path "$cf.read.$$")
     _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
       || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$read_rc"; }
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
@@ -1652,24 +1659,72 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
       && printf '%s\t%s\n' "$f" "$chunk_size" >> "$FM_OPEN_DECISIONS_READ_PROBE"
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+    # shellcheck disable=SC2094 # The deadline exit removes the chunk only before returning; the open descriptor stays valid.
     while IFS= read -r line || [ -n "$line" ]; do
       _fm_decision_fold_line_into open "$open" "$line" "$resolve" "$held" "$kind" "$timed"
+      folded="$folded$line"$'\n'
+      folded_lines=$((folded_lines + 1))
+      # A long cold fold saves whole-line progress every 64 lines, so a caller
+      # stopped at its deadline resumes there instead of from byte 0. A caller
+      # that sets _FM_OPEN_DECISIONS_DEADLINE (a $SECONDS value) stops the fold
+      # at the first checkpoint past it with status 124; the fleet scans below
+      # also stop before their next task once a fold past it made progress.
+      if [ "$folded_lines" -ge 64 ]; then
+        _fm_status_byte_length "$folded"
+        if [ "$((offset + _FM_STATUS_BYTE_LENGTH))" -lt "$size" ]; then
+          offset=$((offset + _FM_STATUS_BYTE_LENGTH))
+          _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" \
+            || true
+          if _fm_open_decisions_deadline_passed; then
+            rm -f "$chunk_file"
+            return 124
+          fi
+        fi
+        folded=''
+        folded_lines=0
+      fi
     done < "$chunk_file"
     rm -f "$chunk_file"
     offset=$size
     cursor_dirty=1
   fi
   if [ "$cursor_dirty" -eq 1 ]; then
-    target_cursor="$cf.tmp.$$"
-    {
-      printf 'version=%s\n' "$fold_version"
-      printf 'offset=%s\n' "$offset"
-      printf 'ident=%s\n' "$cur_ident"
-      if [ -n "$open" ]; then printf '%s' "$open"; fi
-    } > "$target_cursor" || return 1
-    mv -f "$target_cursor" "$cf" || return 1
+    _fm_open_decisions_write_cursor "$cf" "$fold_version" "$offset" "$cur_ident" "$open" || return 1
   fi
   printf '%s' "$open"
+}
+
+# True once a caller-set _FM_OPEN_DECISIONS_DEADLINE (a $SECONDS value) has passed.
+_fm_open_decisions_deadline_passed() {
+  [ -n "${_FM_OPEN_DECISIONS_DEADLINE:-}" ] && [ "$SECONDS" -ge "$_FM_OPEN_DECISIONS_DEADLINE" ]
+}
+
+# The decision-fold cursor's current text for <status-file>, empty when absent;
+# the fleet scans compare it around a fold to see whether that fold made progress.
+_fm_open_decisions_cursor_text() {  # <status-file>
+  local cf
+  cf=$(_fm_open_decisions_cursor_path "$1")
+  [ -f "$cf" ] || return 0
+  LC_ALL=C command cat "$cf" 2>/dev/null || true
+}
+
+# Byte length of <text>, independent of the caller's locale.
+_fm_status_byte_length() {  # <text>; sets _FM_STATUS_BYTE_LENGTH
+  local LC_ALL=C
+  _FM_STATUS_BYTE_LENGTH=${#1}
+}
+
+# Atomically replace one decision-fold cursor with a consistent offset/open pair.
+_fm_open_decisions_write_cursor() {  # <cursor> <version> <offset> <ident> <open-set>
+  local target
+  target=$(_fm_status_scratch_path "$1.tmp.$$")
+  {
+    printf 'version=%s\n' "$2"
+    printf 'offset=%s\n' "$3"
+    printf 'ident=%s\n' "$4"
+    if [ -n "$5" ]; then printf '%s' "$5"; fi
+  } > "$target" || { rm -f "$target"; return 1; }
+  mv -f "$target" "$1" || { rm -f "$target"; return 1; }
 }
 
 # Incremental sibling of scan_open_decisions: same fleet-wide directory walk and
@@ -1677,14 +1732,25 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
 # each task's status log through status_open_decisions_incremental instead of
 # the whole-file status_open_decisions, so a fleet-wide per-drain scan stays
 # bounded by new appends rather than total lifetime log size across every task.
+# Past _FM_OPEN_DECISIONS_DEADLINE it returns 124 before folding another task,
+# but only once this call has moved some task's cursor after the deadline: each
+# folded task already committed its own cursor, so a retry resumes past it, and
+# an unchanged prefix of warm tasks can never use the whole bound on every retry.
 scan_open_decisions_incremental() {  # <state>
-  local state=$1 f task open line exclude
+  local state=$1 f task open line exclude fold_rc late=0 before
   exclude=$(status_scan_parent_channel_exclude "$state")
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
+    [ "$late" -ne 2 ] || return 124
     task=$(basename "$f"); task="${task%.status}"
-    open=$(status_open_decisions_incremental "$f") || continue
+    [ "$late" -ne 0 ] || ! _fm_open_decisions_deadline_passed || late=1
+    [ "$late" -eq 0 ] || before=$(_fm_open_decisions_cursor_text "$f")
+    fold_rc=0
+    open=$(status_open_decisions_incremental "$f") || fold_rc=$?
+    [ "$fold_rc" -ne 124 ] || return 124
+    [ "$late" -eq 0 ] || [ "$before" = "$(_fm_open_decisions_cursor_text "$f")" ] || late=2
+    [ "$fold_rc" -eq 0 ] || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
@@ -1815,11 +1881,8 @@ EOF
     fi
     ident=$cur_ident
   else
-    legacy=$(_fm_open_decisions_cursor_path "$f")
-    if [ -e "$legacy" ] || [ -L "$legacy" ]; then
-      status_open_decisions_cursor_offset "$f"
-      return
-    fi
+    # A decision fold can finish before output fails. Only a presentation
+    # receipt proves these bytes reached the consumer.
     offset=0
     ident=$(_fm_open_decisions_file_ident "$f") || return 1
   fi
@@ -2102,7 +2165,7 @@ EOF
 }
 
 status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presented-task-ids>]
-  local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident f offset lines line safe
+  local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident offset safe
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     safe=false
@@ -2110,24 +2173,11 @@ status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presente
 $fully_presented
 " in *$'\n'"$task"$'\n'*) safe=true ;; esac
     if [ "$safe" = false ]; then
-      f="$state/$task.status"
-      offset=$(status_presentation_cursor_offset "$f") || return 1
-      lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
-      # Once any informational line in this span is presented fleet-wide, the
-      # contiguous cursor may advance through the captured endpoint. Routine
-      # lines remain unacknowledged only while they are the sole unread content,
-      # preserving delayed signal annotations without replaying a handled note
-      # that happened to follow a routine line.
-      while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-          *[![:space:]]*)
-            if status_line_is_unread_surface "$line"; then safe=true; break; fi
-            ;;
-        esac
-      done <<EOF
-$lines
-EOF
-      if [ "$safe" = false ]; then endpoint=$offset; fi
+      # The caller already classified the captured span while preparing its
+      # output. Tasks without presented annotations or informational rows keep
+      # their routine context available for a delayed signal.
+      offset=$(status_presentation_cursor_offset "$state/$task.status") || return 1
+      endpoint=$offset
     fi
     printf '%s\t%s\t%s\n' "$task" "$endpoint" "$ident" || return 1
   done <<EOF
@@ -2137,7 +2187,7 @@ EOF
 
 status_commit_presentation_snapshot() {  # <state> <snapshot>
   local state=$1 snapshot=$2 task endpoint ident f cur_ident size tmp backstop acknowledged_task acknowledged_endpoint
-  tmp="$state/.status-presentation-cursor.tmp.$$"
+  tmp=$(_fm_status_scratch_path "$state/.status-presentation-cursor.tmp.$$")
   : > "$tmp" || return 1
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
@@ -2166,12 +2216,21 @@ EOF
   mv -f "$tmp" "$state/.status-presentation-cursor" || { rm -f "$tmp"; return 1; }
 }
 
+# Snapshot sibling of scan_open_decisions_incremental, with the same
+# progress-gated between-task deadline.
 scan_open_decisions_snapshot() {  # <state> <task-and-endpoint-snapshot>
-  local state=$1 snapshot=$2 task endpoint ident f open line
+  local state=$1 snapshot=$2 task endpoint ident f open line fold_rc late=0 before
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
+    [ "$late" -ne 2 ] || return 124
     f="$state/$task.status"
-    open=$(status_open_decisions_incremental "$f" "$endpoint") || return 1
+    [ "$late" -ne 0 ] || ! _fm_open_decisions_deadline_passed || late=1
+    [ "$late" -eq 0 ] || before=$(_fm_open_decisions_cursor_text "$f")
+    fold_rc=0
+    open=$(status_open_decisions_incremental "$f" "$endpoint") || fold_rc=$?
+    [ "$fold_rc" -ne 124 ] || return 124
+    [ "$late" -eq 0 ] || [ "$before" = "$(_fm_open_decisions_cursor_text "$f")" ] || late=2
+    [ "$fold_rc" -eq 0 ] || return 1
     [ -n "$open" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
@@ -2196,8 +2255,9 @@ EOF
 # presented byte offset, and one atomic replacement commits only the contiguous
 # status spans that were successfully presented. A quiet fleet scan leaves
 # routine working/done bytes unacknowledged so a subsequently published signal
-# can still annotate them. A missing manifest row or changed file identity is
-# offset 0 for the current file, while malformed or unreadable cursor state
+# can still annotate them. A missing manifest or row, or changed file identity,
+# is offset 0 for the current file; a decision-fold cursor never seeds a
+# presentation receipt. Malformed or unreadable presentation cursor state
 # aborts presentation without advancing any offset. A trusted cursor at EOF
 # prints nothing, so already-presented bytes are not replayed as new. Teardown
 # retires a task's manifest row with its status file, so reusing a task ID starts
@@ -2205,10 +2265,9 @@ EOF
 # reserved-key resolutions are the fleet-wide unread surface;
 # they are not open decisions and are not persisted in the folded open-set.
 
-# Read the legacy per-task open-decisions cursor used to seed the presentation
-# offset before the fleet manifest exists. A fold-version mismatch, identity
-# mismatch, or offset past the current size falls back to 0. Never writes unless
-# a caller explicitly requests a migration snapshot.
+# Read the per-task decision-fold offset for classification ownership.
+# A fold-version mismatch, identity mismatch, or offset past the current size
+# falls back to 0. This offset is not a presentation receipt.
 status_open_decisions_cursor_offset() {  # <status-file>
   local f=$1 cf offset=0 ident='' version='' cursor_data first rest open=''
   local offset_line ident_line cur_ident size fold_version
@@ -2282,7 +2341,7 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
   local f=$1 captured_end=${2:-} cf offset size actual_size chunk_file line rc=0
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   cf=$(_fm_open_decisions_cursor_path "$f")
-  chunk_file="$cf.unread.$$"
+  chunk_file=$(_fm_status_scratch_path "$cf.unread.$$")
   offset=$(status_presentation_cursor_offset "$f") || return 1
   case "$offset" in ''|*[!0-9]*) return 1 ;; esac
   actual_size=$(_fm_status_file_size "$f") || return 1
@@ -2314,7 +2373,7 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
 status_line_is_unread_surface() {  # <status-line>
   local line=$1 verb key note resolve held prefix
   [ -n "$line" ] || return 1
-  verb=$(status_line_verb "$line")
+  status_line_verb "$line" verb
   [ "$verb" = note ] && return 0
   resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}

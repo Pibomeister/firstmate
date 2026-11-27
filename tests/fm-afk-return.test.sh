@@ -1024,6 +1024,79 @@ EOF
   pass "a drain that cannot record its branch-outcome presentation keeps the return's catch-up gated until a check records it"
 }
 
+test_return_preserves_receipted_output_after_late_failure() {
+  local dir stage f out rc state
+  for stage in status outcomes; do
+    dir="$TMP_ROOT/late-failure-$stage"
+    install_runner "$dir"
+    rm "$dir/bin/fm-wake-drain.sh"
+    for f in "$ROOT"/bin/*; do
+      [ -e "$dir/bin/${f##*/}" ] || cp -R "$f" "$dir/bin/"
+    done
+    state="$dir/home/state"
+    : > "$dir/home/config/supervision-host"
+    contract_in "$dir" enter --words 'watch the fleet' >/dev/null || fail 'could not enter disposable away posture'
+    printf 'note: completed status must reach the return consumer\n' > "$state/demo.status"
+    outcome_in "$dir" append --task demo --verdict routine --summary 'completed routine must reach the return consumer' >/dev/null \
+      || fail 'could not seed routine outcome'
+    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" /bin/bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      fm_wake_append check late-timeout "pending wake must remain queued"
+    ' _ "$dir" || fail 'could not seed wake'
+    cp "$state/.wake-queue" "$dir/queue.before"
+    mv "$dir/bin/fm-branch-outcome.sh" "$dir/bin/fm-branch-outcome.real.sh"
+    cat > "$dir/bin/fm-branch-outcome.sh" <<'SH'
+#!/usr/bin/env bash
+real="$(dirname "$0")/fm-branch-outcome.real.sh"
+if [ -f "$FM_HOME/block-late" ]; then
+  stage=$(cat "$FM_HOME/block-late")
+  case "$stage:${1:-}" in
+    status:present)
+      : > "$FM_HOME/late-phase-reached"
+      exit 1 ;;
+    outcomes:mark-read)
+      "$real" "$@" || exit "$?"
+      : > "$FM_HOME/late-phase-reached"
+      exit 1 ;;
+  esac
+fi
+exec "$real" "$@"
+SH
+    printf '%s\n' "$stage" > "$dir/home/block-late"
+    chmod +x "$dir/bin/"*.sh
+    rc=0
+    out=$(FM_TEST_HARNESS=claude FM_WAKE_DRAIN_PRESENTATION_TIMEOUT=120 FM_CONFIG_OVERRIDE="$dir/home/config" run_return "$dir" begin) || rc=$?
+    assert_equals 3 "$rc" 'late failure must retain the return gate'
+    [ -f "$dir/home/late-phase-reached" ] || fail "drain did not reach the intended late failure ($stage): $out"
+    assert_contains "$out" 'durable wake drain failed' 'return did not report the drain failure'
+    assert_contains "$out" 'completed status must reach the return consumer' 'return discarded receipted status'
+    [ -s "$state/.status-presentation-cursor" ] || fail 'fixture did not commit the status receipt'
+    if [ "$stage" = outcomes ]; then
+      assert_equals 1 "$(cat "$state/.branch-outcomes-cursor")" 'fixture did not commit the routine receipt'
+      assert_contains "$out" 'demo: completed routine must reach the return consumer' 'return discarded receipted routine outcome'
+    fi
+    cmp "$dir/queue.before" "$state/.wake-queue" || fail 'failed return acknowledged wakes'
+    [ -s "$state/.afk-return-catchup" ] || fail 'failed return cleared catch-up'
+    assert_not_contains "$out" 'catch-up clear' 'failed return announced completion'
+    assert_not_contains "$out" 'WAKE_ACK_REQUIRED:' 'failed return published an acknowledgement command'
+    rc=0
+    run_return "$dir" guard >/dev/null || rc=$?
+    assert_equals 4 "$rc" 'ordinary work must remain gated after the failure'
+    rc=0
+    FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" "$ROOT/bin/fm-afk-launch.sh" start-native >/dev/null 2>&1 || rc=$?
+    [ "$rc" -ne 0 ] || fail 'failed catch-up allowed away re-entry'
+    rm "$dir/home/block-late"
+    out=$(FM_TEST_HARNESS=claude FM_CONFIG_OVERRIDE="$dir/home/config" run_return "$dir" check) || fail "retry did not recover: $out"
+    assert_contains "$out" 'catch-up clear' 'successful retry did not clear catch-up'
+    cmp "$dir/queue.before" "$state/.wake-queue" || fail 'successful presentation implicitly acknowledged wakes'
+    FM_TEST_HARNESS=claude FM_HOME="$dir/home" FM_STATE_OVERRIDE="$state" FM_CONFIG_OVERRIDE="$dir/home/config" \
+      "$dir/bin/fm-wake-drain.sh" > "$dir/final.out" 2> "$dir/final.err" || fail 'ordinary drain failed after retry'
+    assert_no_grep 'completed status must reach the return consumer' "$dir/final.out" 'committed status was replayed'
+    assert_no_grep 'demo: completed routine must reach the return consumer' "$dir/final.out" 'committed outcome was replayed'
+  done
+  pass 'late status and routine receipts reach the return consumer while incomplete catch-up stays gated'
+}
+
 test_return_brief_lists_landed_work_awaiting_cleanup() {
   local dir out landed_line failed_line handled_line
   dir="$TMP_ROOT/brief-landed"
@@ -1933,6 +2006,12 @@ test_quiet_receipt_never_bypasses_away_or_legacy_gate() {
   pass 'quiet receipt does not reinterpret legacy gates, bypass, or deadlock later real away gates'
 }
 
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit "$?"
+fi
+
+test_return_preserves_receipted_output_after_late_failure
 test_quiet_exit_retains_detail_without_away_gate
 test_quiet_receipt_failure_preserves_original_buffer
 test_quiet_archive_and_presentation_interruptions

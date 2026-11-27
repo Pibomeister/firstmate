@@ -7,17 +7,48 @@
 # a supervision-host home the supervision session's new and unprocessed
 # outcomes (BRANCH OUTCOMES), then assert liveness.
 #
+# Usage: fm-wake-drain.sh
+#        fm-wake-drain.sh --ack-through <sequence> --recovery-generation <token>
+# FM_WAKE_DRAIN_PRESENTATION_TIMEOUT bounds only the OPEN DECISIONS fold
+# (default 30s, positive whole seconds). That fold saves its progress every 64
+# lines and after each task, so each bounded attempt resumes where the last one
+# stopped. Past the bound it stops at its next checkpoint, or before its next
+# task once a fold past the bound made progress, so no retry repeats only
+# unchanged tasks; the drain still presents record divergence, branch outcomes
+# and liveness, then returns 124 naming phase status-open-decisions.
+# Every other presentation phase runs to completion without a bound, so a
+# large unpresented span finishes slowly rather than never.
+# Already completed sections keep their receipts; incomplete status output never
+# commits its presentation receipt. This command never acknowledges queue rows
+# without the explicit sequence/generation acknowledgement arguments.
+# Queue-lock waits retain their existing bound.
+#
 # Keep sequence-bound row consumption independent from generation-bound episode
 # retirement; docs/watcher-continuity.md owns the recovery contract.
-# Every scratch file this script mints (.main-eligible-rows.tmp.*,
+# Queue-mutation scratch files (.main-eligible-rows.tmp.*,
 # .wake-rows.consume.*, .wake-queue.retire.*, .wake-queue.ack.*,
-# .wake-queue.actor-view.*) is created and removed under the queue lock, so one
+# .wake-queue.actor-view.*) are created and removed under the queue lock, so one
 # found while taking that lock was left by a drain that died mid-write; each
 # locked drain rotates such leftovers away before doing anything else.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks, acknowledgement
 # included, wait at most fm_wake_queue_lock_acquire's bound (bin/fm-wake-lib.sh)
 # and exit 1 with the state untouched past it.
+# Status-presentation scratch lives in one attempt-owned directory under state/,
+# named with the invoking process's pid.
+# On exit, including timeout, INT or TERM, the invoking process stops and reaps
+# its presentation worker before removing that directory; other readers' scratch
+# is left intact.
+# A later drain removes a directory whose owning pid is no longer alive, which
+# covers an owner killed before its exit trap could run, unless the worker pid
+# recorded there is still alive or, with none recorded, the directory is under
+# a minute old.
+# When the cancellable presentation runner cannot start, the drain prints a
+# WAKE DRAIN NOTE and presents without it rather than reporting a fold timeout.
+# When that directory cannot be created, the drain prints STATUS PRESENTATION
+# INCOMPLETE, still presents branch outcomes and liveness, and exits 1.
+# An invalid FM_WAKE_DRAIN_PRESENTATION_TIMEOUT falls back to 30 seconds with a
+# stderr note, so acknowledgement never fails on a bad presentation bound.
 set -u
 
 SCRIPT_DIR="$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; CDPATH='' cd -- "${d:-/}" && pwd)"
@@ -54,9 +85,17 @@ PRESENTED_MAX=0
 ACK_FINGERPRINTS=
 ACK_NOTICE_FINGERPRINTS=
 PRESENTATION_LOCK_TIMEOUT=${FM_STATUS_PRESENTATION_LOCK_TIMEOUT:-10}
-BRANCH_OUTCOMES_RC=0
+DRAIN_PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-30}
+_FM_STATUS_SCRATCH_DIR=
+DRAIN_PARENT_PID=
+fm_current_pid DRAIN_PARENT_PID || exit 1
 case "$PRESENTATION_LOCK_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_LOCK_TIMEOUT=10 ;; esac
-
+case "$DRAIN_PRESENTATION_TIMEOUT" in
+  ''|0*|*[!0-9]*)
+    printf 'wake drain: FM_WAKE_DRAIN_PRESENTATION_TIMEOUT is not positive whole seconds; using 30\n' >&2
+    DRAIN_PRESENTATION_TIMEOUT=30
+    ;;
+esac
 # --- per-actor consume (docs/watcher-continuity.md "Per-actor acknowledgement") --
 # main (FM_SUPERVISION_ACTOR unset or "main", via fm-lease-lib.sh's fm_lease_actor
 # - the same actor identity fm-send.sh/fm-control.sh/fm-teardown.sh already use)
@@ -457,7 +496,8 @@ EOF
 # when the fold later advances the cursor. Prints nothing when nothing is
 # unread, which is the common case.
 print_unread_status_section() {
-  local snapshot=${1:-} unread task line shown=0
+  local snapshot=${1:-} unread task line previous_task='' shown=0
+  STATUS_UNREAD_PRESENTED=
 
   if [ -n "$snapshot" ]; then
     unread=$(scan_unread_surface_snapshot "$STATE" "$snapshot") || return 1
@@ -474,6 +514,11 @@ print_unread_status_section() {
       printf 'UNREAD STATUS (new since last drain, not re-printed after this presentation):\n' || return 1
     fi
     printf '%s\n' "$line" || return 1
+    if [ "$task" != "$previous_task" ]; then
+      STATUS_UNREAD_PRESENTED="$STATUS_UNREAD_PRESENTED
+$task"
+      previous_task=$task
+    fi
     shown=$((shown + 1))
   done <<EOF
 $unread
@@ -499,13 +544,17 @@ EOF
 # common case.
 print_open_decisions_section() {
   local snapshot=${1:-} open task key verb note line item_bytes=220 global_bytes=4000
-  local output='' used=0 shown=0 omitted=0 bytes
+  local output='' used=0 shown=0 omitted=0 bytes fold_rc=0
+  # The one bounded presentation phase; fm-classify-lib.sh's fold reads this.
+  local _FM_OPEN_DECISIONS_DEADLINE=$((SECONDS + DRAIN_PRESENTATION_TIMEOUT))
 
   if [ -n "$snapshot" ]; then
-    open=$(scan_open_decisions_snapshot "$STATE" "$snapshot") || return 1
+    open=$(scan_open_decisions_snapshot "$STATE" "$snapshot") || fold_rc=$?
   else
-    open=$(scan_open_decisions_incremental "$STATE") || return 1
+    open=$(scan_open_decisions_incremental "$STATE") || fold_rc=$?
   fi
+  [ "$fold_rc" -ne 124 ] || return 124
+  [ "$fold_rc" -eq 0 ] || return 1
   [ -n "$open" ] || return 0
 
   while IFS=$(printf '\t') read -r task key verb note; do
@@ -787,24 +836,34 @@ cap_outcome_line() {  # <line> <max-bytes>
 }
 
 print_status_sections() {
-  local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared
+  local snapshot=${1:-} fully_presented=${2:-} acknowledged prepared sections_rc=0
   if [ -z "$snapshot" ]; then snapshot=$(status_presentation_snapshot "$STATE") || return 1; fi
   [ -n "$snapshot" ] || return 0
-  acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented") || return 1
-  prepared=$(mktemp "$STATE/.status-presentation.prepared.XXXXXX") || return 1
-  if ! {
+  prepared=$(mktemp "$_FM_STATUS_SCRATCH_DIR/.status-presentation.prepared.XXXXXX") || return 1
+  {
     print_unread_status_section "$snapshot" \
       && print_status_outcome_backstop_section "$snapshot" \
       && print_open_decisions_section "$snapshot" \
       && print_record_divergence_section
-  } > "$prepared"; then
+  } > "$prepared" || sections_rc=$?
+  if [ "$sections_rc" -ne 0 ]; then
     rm -f -- "$prepared"
-    return 1
+    # 124 is the open-decisions fold reaching its bound; anything else failed.
+    [ "$sections_rc" -eq 124 ] || return 1
+    # Divergence keeps no receipt, so a fold that reached its bound does not
+    # withhold it.
+    print_record_divergence_section
+    return 124
   fi
+  # Reuse the unread scan instead of reading and classifying the span twice.
+  acknowledged=$(status_acknowledge_presented_snapshot "$STATE" "$snapshot" "$fully_presented
+$STATUS_UNREAD_PRESENTED") || { rm -f -- "$prepared"; return 1; }
   # Prepare every section before presentation, but do not commit its receipt
   # until the prepared bytes reach stdout. If the consumer closes or fails,
   # leave the receipt behind so the next drain can recover the presentation.
-  if ! command cat "$prepared"; then
+  # Bash 3.2 can exec-optimize `command cat` in the asynchronous timeout
+  # worker. Isolate that transfer so receipt publication still runs afterward.
+  if ! (command cat "$prepared"); then
     rm -f -- "$prepared"
     return 1
   fi
@@ -842,18 +901,102 @@ print_status_presentation() {  # [<deduped-raw-rows>]
       fully_presented=$(printf '%s\n' "$annotation_manifest" | awk -F '\t' '$2 == "direct" { sub(/\.status$/, "", $1); print $1 }') || rc=1
     fi
   fi
-  if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=1; fi
+  if [ "$rc" -eq 0 ] && [ -n "$snapshot" ]; then print_status_sections "$snapshot" "$fully_presented" || rc=$?; fi
   fm_lock_release "$lock"
+  return "$rc"
+}
+
+# Runs in its own cancellable subshell. No child variables are needed by queue
+# acknowledgement, which has its own separate locked path. A status failure
+# other than the fold bound stays silent in the exit status, as it always has.
+drain_presentation_worker() {  # [<deduped-raw-rows>]
+  local branch_rc=0 status_rc=0
+  # Record this worker's own pid (Bash 3.2 has no BASHPID) so a later drain's
+  # orphan sweep keeps the directory while this worker still runs. Scratch this
+  # worker cannot register in is treated as scratch that could not be created.
+  [ -z "$_FM_STATUS_SCRATCH_DIR" ] \
+    || (exec /bin/sh -c 'echo "$PPID"') > "$_FM_STATUS_SCRATCH_DIR/worker.pid" 2>/dev/null \
+    || _FM_STATUS_SCRATCH_DIR=
+  if [ -n "$_FM_STATUS_SCRATCH_DIR" ]; then
+    print_status_presentation "${1:-}" || status_rc=$?
+  else
+    printf 'STATUS PRESENTATION INCOMPLETE: status scratch could not be created; retry unfinished presentation.\n'
+    branch_rc=1
+  fi
+  print_branch_outcomes_section || branch_rc=1
+  assert_watcher_liveness
+  [ "$status_rc" -ne 124 ] || return 124
+  return "$branch_rc"
+}
+
+# A drain killed before its exit trap ran leaves its attempt directory behind.
+# The directory name carries its owner's pid, and a live owner always has a
+# live pid, so only a directory whose owner is gone is removed. Directories
+# without an owner pid are never touched. A killed owner's worker can outlive
+# it until its watchdog stops it, so a directory whose recorded worker pid is
+# still live is kept too; a reused pid only delays removal to a later sweep.
+# A worker records its pid just after it starts, so a directory with no
+# recorded worker is removed only once it is older than a minute.
+sweep_orphan_presentation_scratch() {
+  local dir owner worker
+  for dir in "$STATE"/.wake-drain-presentation.*.*; do
+    [ -d "$dir" ] || continue
+    owner=${dir#"$STATE"/.wake-drain-presentation.}
+    owner=${owner%%.*}
+    case "$owner" in ''|*[!0-9]*) continue ;; esac
+    [ "$owner" != "$DRAIN_PARENT_PID" ] || continue
+    kill -0 "$owner" 2>/dev/null && continue
+    ps -p "$owner" >/dev/null 2>&1 && continue
+    worker=$(cat "$dir/worker.pid" 2>/dev/null || true)
+    case "$worker" in
+      ''|*[!0-9]*)
+        [ -n "$(find "$dir" -prune -mmin +1 2>/dev/null)" ] || continue
+        ;;
+      *)
+        kill -0 "$worker" 2>/dev/null && continue
+        ps -p "$worker" >/dev/null 2>&1 && continue
+        ;;
+    esac
+    rm -rf -- "$dir" 2>/dev/null || true
+  done
+}
+
+run_drain_presentation() {  # [<deduped-raw-rows>]
+  local rc=0
+  sweep_orphan_presentation_scratch
+  _FM_STATUS_SCRATCH_DIR=$(mktemp -d "$STATE/.wake-drain-presentation.$DRAIN_PARENT_PID.XXXXXX" 2>/dev/null) \
+    || _FM_STATUS_SCRATCH_DIR=
+  fm_run_cancellable_fn drain_presentation_worker "${1:-}" || rc=$?
+  if [ "$rc" -eq 125 ]; then
+    # The cancellable runner could not start, so the worker never ran. Present
+    # in a plain subshell so branch outcomes and liveness still run; an
+    # interrupt then waits for that subshell instead of reaping it.
+    printf 'WAKE DRAIN NOTE: pid=%s cancellable presentation runner could not start (no temporary file); presenting without it.\n' \
+      "$DRAIN_PARENT_PID" >&2
+    rc=0
+    ( drain_presentation_worker "${1:-}" ) || rc=$?
+  fi
+  if [ "$rc" -eq 124 ]; then
+    printf 'WAKE DRAIN INCOMPLETE: pid=%s phase=status-open-decisions exceeded %ss decision-fold bound; retry unfinished presentation.\n' \
+      "$DRAIN_PARENT_PID" "$DRAIN_PRESENTATION_TIMEOUT" >&2
+  fi
   return "$rc"
 }
 
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
-  local status=$?
+  local status=$? current_pid
+  trap '' INT TERM
   [ -z "$DRAIN_TMP" ] || rm -f -- "$DRAIN_TMP" 2>/dev/null || true
   [ -z "$DRAIN_VIEW_TMP" ] || rm -f -- "$DRAIN_VIEW_TMP" 2>/dev/null || true
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
+  fi
+  fm_current_pid current_pid || current_pid=
+  if [ "$current_pid" = "$DRAIN_PARENT_PID" ]; then
+    fm_cancel_bash_timeout
+    [ -z "$_FM_STATUS_SCRATCH_DIR" ] || rm -rf -- "$_FM_STATUS_SCRATCH_DIR"
+    _FM_STATUS_SCRATCH_DIR=
   fi
   exit "$status"
 }
@@ -1042,13 +1185,12 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   esac
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
-  (print_status_presentation) || true
-  print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
     printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation %s\n' "${RECOVERY_MARKER_TOKEN##*:}" >&2
   fi
-  assert_watcher_liveness
-  exit "$BRANCH_OUTCOMES_RC"
+  rc=0
+  run_drain_presentation || rc=$?
+  exit "$rc"
 fi
 
 if [ "$ACTOR" = main ]; then
@@ -1064,10 +1206,9 @@ if [ "$ACTOR" = main ]; then
     print_branch_held_notice
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
-    (print_status_presentation) || true
-    print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
-    assert_watcher_liveness
-    exit "$BRANCH_OUTCOMES_RC"
+    rc=0
+    run_drain_presentation || rc=$?
+    exit "$rc"
   fi
 fi
 
@@ -1127,7 +1268,6 @@ DRAIN_LOCK_HELD=false
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 
-(print_status_presentation "$RAW_ROWS") || true
-print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
-assert_watcher_liveness
-exit "$BRANCH_OUTCOMES_RC"
+rc=0
+run_drain_presentation "$RAW_ROWS" || rc=$?
+exit "$rc"
