@@ -179,6 +179,7 @@ Verified on 2026-11-25 on macOS arm64 with Bash 3.2.57.
 `tests/fm-handoff-close.test.sh` runs the production close against real harness-shaped processes, with fake tmux and Orca CLIs that act only on fixture processes.
 The close drill in `tests/fm-handoff-launch.test.sh` runs the real launcher, acknowledgement, lock transfer, and close end to end, with a fake Orca that describes the predecessor's terminal.
 Neither test closes a real tmux pane or Orca terminal, so the live CLI close receipt rests on the existing endpoint-close evidence below.
+On 2026-11-27 `tests/fm-handoff-close.test.sh` was re-run after the close was pinned to the exact tmux pane id; its window-target line below fails on the earlier script, which closed the wrong pane, and passes on the fix.
 
 Refresh both with:
 
@@ -189,6 +190,7 @@ bash bin/fm-test-run.sh tests/fm-handoff-close.test.sh tests/fm-handoff-launch.t
 Selected output:
 
 ```text
+ok - a window-style tmux target closes only the proven predecessor pane
 ok - a committed transfer closes the recorded tmux pane and records one row
 ok - a committed transfer closes the recorded Orca terminal and records one row
 ok - an uncommitted or unvalidated transfer closes nothing
