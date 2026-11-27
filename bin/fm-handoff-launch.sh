@@ -41,8 +41,14 @@
 # and digest. fm-lock.sh validates that ack before moving the live lock.
 # The launch prompt names the handoff by path and never includes its text.
 # bin/fm-handoff-lib.sh owns the warning when that document is longer than 60 lines.
-# The predecessor is never killed. On Orca, failed attempts retain their panes
-# for diagnosis. A failed attempt's nonce expires and cannot take ownership.
+# Each claim records the predecessor's own endpoint from state/.lock-session.
+# After a committed verified transfer, the successor's fm-handoff-ack.sh runs
+# bin/fm-handoff-close.sh, which closes only that endpoint once it proves the
+# endpoint still hosts this predecessor; its header owns the proof and the one
+# event it records. This launcher never signals the predecessor itself. A
+# failed, expired, or unresolved handoff closes nothing: the predecessor and,
+# on Orca, failed attempts' panes stay for diagnosis. A failed attempt's nonce
+# expires and cannot take ownership.
 # Every unfinished exit after handoff_started emits one handoff_failed event,
 # unless the lock already moved to a successor with a valid ack: that exit
 # records completion instead. Completion and failure are decided only while
@@ -337,6 +343,23 @@ record_completion() {
   fm_failover_log "event=successor_ready pid=$(cat "$STATE/.lock") $SUCC_RECORD" || true
 }
 
+# The predecessor's own endpoint, for bin/fm-handoff-close.sh after a committed
+# transfer. Read under the claim lock from the sidecar fm-lock.sh wrote for
+# this exact instance in this home; anything less concrete records none.
+predecessor_endpoint() {
+  local session="$STATE/.lock-session" backend terminal
+  PRED_BACKEND='' PRED_TERMINAL=''
+  [ -f "$session" ] && [ ! -L "$session" ] || return 0
+  [ "$(sed -n 's/^anchor_pid=//p' "$session")" = "$PRED_PID" ] \
+    && [ "$(sed -n 's/^anchor_start=//p' "$session")" = "$PRED_START" ] \
+    && [ "$(sed -n 's/^worktree=//p' "$session")" = "${FM_HOME%/}" ] || return 0
+  backend=$(sed -n 's/^backend=//p' "$session")
+  terminal=$(sed -n 's/^terminal=//p' "$session")
+  case "$backend" in ''|unknown|*[!A-Za-z0-9_-]*) return 0 ;; esac
+  case "$terminal" in ''|unknown|*[!A-Za-z0-9_.:%-]*) return 0 ;; esac
+  PRED_BACKEND=$backend PRED_TERMINAL=$terminal
+}
+
 # The successor's argv for this attempt's prompt; launch data stays argv.
 successor_argv() {
   case "$SUCC_HARNESS" in
@@ -353,6 +376,7 @@ for attempt in 1 2; do
   if [ "$(cat "$STATE/.lock")" != "$PRED_PID" ] || ! fm_session_lock_handoff_actor_authorized "$STATE" "$FM_HOME" "$SCRIPT_DIR/fm-watch.sh"; then
     die 'predecessor no longer owns the lock'
   fi
+  predecessor_endpoint
   NONCE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
   remaining=$((MONO_DEADLINE - SECONDS))
   [ "$remaining" -gt 0 ] || fail_handoff deadline
@@ -364,7 +388,10 @@ for attempt in 1 2; do
   tmp=$(mktemp "$STATE/.handoff-pending.XXXXXX")
   jq -n --arg nonce "$NONCE" --arg doc "$HANDOFF" --arg sha "$SHA256" \
     --arg start "$PRED_START" --argjson pid "$PRED_PID" --argjson deadline "$CLAIM_DEADLINE" --arg successor "$SUCC_RECORD" \
-    '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline,successor:$successor}' > "$tmp"
+    --arg pbackend "$PRED_BACKEND" --arg pterminal "$PRED_TERMINAL" \
+    '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline,successor:$successor,
+      predecessor_backend:($pbackend | if . == "" then null else . end),
+      predecessor_terminal:($pterminal | if . == "" then null else . end)}' > "$tmp"
   mv "$tmp" "$STATE/.handoff-pending"
   fm_lock_release "$STATE/.lock.acquire"
   CLAIM_HELD=0

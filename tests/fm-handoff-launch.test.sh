@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Executable handoff regression and failure drill. All state and processes
-# belong to a temporary home. The Orca transport is fake; lock and ack are real.
+# belong to a temporary home. The Orca transport is fake; lock, ack, and the
+# predecessor close are real.
 set -eu
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
@@ -87,6 +88,26 @@ chmod +x "$FM_HANDOFF_DELAY_BIN/rm"
 cat > "$FAKEBIN/orca" <<'EOF'
 #!/usr/bin/env bash
 set -eu
+# In close mode the predecessor's own terminal exists: a connected local
+# terminal of this home whose pty session is the predecessor process.
+if [ "$FM_HANDOFF_LAB_MODE" = close ]; then
+  case "$1 $2 ${4:-}" in
+    'terminal show term_predecessor')
+      if [ -e "$FM_HOME/state/pred-terminal-closed" ]; then
+        printf '{"ok":false,"error":{"code":"terminal_handle_stale"}}\n'; exit 1
+      fi
+      jq -n --arg wt "$FM_HOME" '{ok:true,result:{terminal:{handle:"term_predecessor",connected:true,writable:true,
+        executionHostId:"local",ptyId:"pty-pred",worktreePath:$wt}}}'
+      exit 0 ;;
+    'diagnostics memory '*)
+      jq -n --argjson pid "$(cat "$FM_HOME/pred.pid")" '{ok:true,result:{worktrees:[{sessions:[{sessionId:"pty-pred",pid:$pid}]}]}}'
+      exit 0 ;;
+    'terminal close term_predecessor')
+      touch "$FM_HOME/state/pred-terminal-closed"
+      kill -HUP "$(cat "$FM_HOME/pred.pid")"
+      exit 0 ;;
+  esac
+fi
 [ "$1 $2" = 'agent launch' ] || exit 91
 shift 2
 prompt=
@@ -303,7 +324,7 @@ run_case() {
   test_cleanup_processes
   rm -f "$LAB/state/".* "$LAB/state/attempts" "$LAB/state/handoff-events.log" "$LAB/state/"successor-*.out "$LAB/rc" "$LAB/ack.out" \
     "$LAB/state/tmux-target" "$LAB/state/tmux-setup-nonce" "$LAB/state/polling" "$LAB/state/session.keep" "$LAB/state/lock.keep" "$LAB/state/claim-held" \
-    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" "$LAB/state/second-signal-killed" \
+    "$LAB/state/claim-wait" "$LAB/state/no-claim-wait" "$LAB/state/premature" "$LAB/state/retire-delayed" "$LAB/state/claim-busy" "$LAB/state/claim-released" "$LAB/state/second-signal-killed" "$LAB/state/pred-terminal-closed" \
     "$LAB/launcher.pid" "$LAB/pred.pid" 2>/dev/null || true
   printf '%s\n' "${2:-orca}" > "$LAB/config/backend"
   printf '# Quoting-hostile handoff\nRead this document.\n' > "$LAB/data/handoff ) '.md"
@@ -320,6 +341,7 @@ run_case() {
   esac
   # `arm` fires the real hook's planned fresh start first, so a failing mode
   # exercises the gate that firing sets.
+  [ "$mode" != close ] || budget=$LAB_SUCCESS_BUDGET
   if [ "$mode" = success ] || [ "${3:-}" = arm ]; then
     [ "$mode" != success ] || budget=$LAB_SUCCESS_BUDGET
     printf 'compact-at-tokens=100000\nfresh-start-after=0\n' > "$LAB/config/handoff-trigger"
@@ -337,6 +359,8 @@ run_case() {
   limit=$((SECONDS + budget + LAB_SLACK + LAB_STARTUP))
   while [ "$SECONDS" -lt "$limit" ]; do
     [ ! -f "$LAB/rc" ] || return 0
+    # The closed predecessor never writes its exit status.
+    if [ "$mode" = close ] && grep -q ' event=predecessor_close' "$LAB/state/handoff-events.log" 2>/dev/null; then return 0; fi
     if [ "$mode" = pred-dies ] && [ -f "$LAB/launcher.pid" ] \
       && ! kill -0 "$(cat "$LAB/launcher.pid")" 2>/dev/null; then return 0; fi
     sleep 0.1
@@ -730,7 +754,11 @@ jq '.sha256="wrong"' "$LAB/ack.backup" > "$ack"
 run_hook_fixture Stop >/dev/null 2>&1 && fail 'tampered ack must not clear the Stop gate'
 mv "$LAB/ack.backup" "$ack"
 [ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'lock did not transfer'
-kill -0 "$(cat "$LAB/pred.pid")" || fail 'predecessor must not be killed'
+# This fake Orca cannot describe the predecessor's terminal, so the close is
+# refused and recorded, and the predecessor keeps running.
+kill -0 "$(cat "$LAB/pred.pid")" || fail 'an unprovable predecessor endpoint must not be closed'
+grep -q " event=predecessor_close_refused nonce=$nonce attempt=0 pid=$(cat "$LAB/pred.pid") handle=orca:term_predecessor reason=endpoint_unproven\$" "$LAB/state/handoff-events.log" \
+  || fail "an unprovable endpoint must be recorded as a refusal: $(cat "$LAB/state/handoff-events.log")"
 # Regression: the predecessor never exits, yet the launcher completes and the
 # lock names the acknowledged successor rather than waiting for an exit.
 [ "$(cat "$LAB/state/.lock")" = "$(jq -r .harness_pid "$ack")" ] || fail 'lock must name the acknowledged successor'
@@ -741,7 +769,7 @@ locate=$(bash "$ROOT/bin/fm-captain-locate.sh")
 assert_contains "$locate" 'handle=term_lab_1' 'discovery follows lock holder'
 assert_contains "$locate" "pid=$(cat "$LAB/state/.lock")" 'discovery names lock pid'
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$(jq -r .sha256 "$ack")" >/dev/null 2>&1 && fail 'replay from another process must refuse'
-pass 'verified successor ack transfers the lock while predecessor remains alive; discovery follows it'
+pass 'verified successor ack transfers the lock; an unprovable predecessor endpoint stays open; discovery follows it'
 # Discovery refuses a sidecar that changes while it is read.
 RACE_BIN="$TMP_ROOT/race-bin"
 mkdir -p "$RACE_BIN"
@@ -901,6 +929,12 @@ failed_nonce=$(printf '%s\n' "$failed_line" | sed -n 's/.* nonce=\([0-9a-f]*\) .
 assert_contains "$ack_line" " nonce=${failed_nonce:-missing} " 'the settling ack must name the unresolved nonce'
 [ "$(cat "$LAB/state/.lock")" != "$(cat "$LAB/pred.pid")" ] || fail 'the delayed transfer must commit'
 [ ! -e "$LAB/state/.lease-task-a" ] || fail 'the committed transfer must retire the predecessor lease'
+# The launcher reported this handoff unresolved, so the late commit closes nothing.
+limit=$((SECONDS + LAB_SLACK + 20))
+while ! grep -q ' event=predecessor_close' "$LAB/state/handoff-events.log" && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+grep -Eq " event=predecessor_close_refused nonce=$failed_nonce .* reason=(launch_failed|not_completed)\$" "$LAB/state/handoff-events.log" \
+  || fail "an unresolved handoff must record a refused close: $(cat "$LAB/state/handoff-events.log")"
+kill -0 "$(cat "$LAB/pred.pid")" || fail 'an unresolved handoff must leave the predecessor running'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL delayed-successor: a busy claim at the deadline is unresolved, then settled by the ack'
 
@@ -912,10 +946,29 @@ ack_pid=$(jq -r .harness_pid "$LAB/data/handoff-ack-$(sed -n 's/^nonce=//p' "$LA
 [ "$(grep -c ' event=handoff_ack .* reason=stale_takeover$' "$LAB/state/handoff-events.log")" = 1 ] \
   || fail "the stale takeover must be named in the log: $(cat "$LAB/state/handoff-events.log")"
 grep -q 'reason=lock_held$' "$LAB/state/handoff-events.log" && fail 'a dead predecessor must not log lock_held'
+grep -q ' event=predecessor_close' "$LAB/state/handoff-events.log" && fail 'a stale takeover must not attempt a close'
 assert_not_contains "$(cat "$LAB/ack.out")" 'another live firstmate session' 'a dead predecessor is not reported live'
 [ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log" || true)" = 0 ] || fail 'a stale takeover is not a failed handoff'
 cat "$LAB/state/handoff-events.log"
 pass 'DRILL pred-dies: the successor takes the stale lock and the log names that path'
+
+# A committed transfer closes the predecessor's recorded terminal at once.
+run_case close
+pred=$(cat "$LAB/pred.pid")
+limit=$((SECONDS + LAB_SLACK + 20))
+while ! grep -q ' event=predecessor_close' "$LAB/state/handoff-events.log" && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+nonce=$(sed -n 's/^nonce=//p' "$LAB/state/.handoff-successor")
+[ -n "$nonce" ] || fail "the launcher must record completion before its terminal closes: $(cat "$LAB/state/handoff-events.log")"
+ack_pid=$(jq -r .harness_pid "$LAB/data/handoff-ack-$nonce.json")
+[ "$(cat "$LAB/state/.lock")" = "$ack_pid" ] || fail 'the lock must name the acknowledged successor'
+grep -q " event=handoff_ack nonce=$nonce .* reason=lock_transferred\$" "$LAB/state/handoff-events.log" || fail 'the close follows a verified transfer'
+grep -q " event=predecessor_closed nonce=$nonce attempt=0 pid=$pred handle=orca:term_predecessor reason=closed\$" "$LAB/state/handoff-events.log" \
+  || fail "the close row must name the handoff, endpoint, and result: $(cat "$LAB/state/handoff-events.log") $(cat "$LAB/ack.out" 2>/dev/null)"
+[ -e "$LAB/state/pred-terminal-closed" ] || fail 'the recorded predecessor terminal must be closed'
+! kill -0 "$pred" 2>/dev/null || fail 'the predecessor must be gone'
+kill -0 "$ack_pid" || fail 'the successor must keep running'
+cat "$LAB/state/handoff-events.log"
+pass 'DRILL close: a committed transfer closes the predecessor terminal and records one row'
 
 run_case success unsupported-backend
 [ "$(cat "$LAB/rc")" != 0 ] || fail 'unsupported backend must refuse'
@@ -933,6 +986,8 @@ for mode in exit parse reject no-ack unprovable wrong-sha stale expired hung-lau
   [ "$(cat "$LAB/state/attempts")" = 2 ] || fail "$mode must retry exactly once in a fresh pane"
   [ ! -e "$LAB/state/.handoff-successor" ] || fail "$mode must not clear the stop gate"
   [ "$(cat "$LAB/state/.lock")" = "$(cat "$LAB/pred.pid")" ] || fail "$mode moved predecessor lock"
+  grep -q ' event=predecessor_close' "$LAB/state/handoff-events.log" && fail "$mode must not attempt a close"
+  kill -0 "$(cat "$LAB/pred.pid")" || fail "$mode must leave the predecessor running"
   grep -q '^HANDOFF v1 .* event=handoff_failed ' "$LAB/state/handoff-events.log" || fail "$mode must emit machine-readable failure"
   [ "$(grep -c ' event=handoff_failed ' "$LAB/state/handoff-events.log")" = 1 ] || fail "$mode must emit its failure exactly once"
   started=$(sed -n 's/^HANDOFF v1 ts=\([0-9]*\) event=handoff_started .*/\1/p' "$LAB/state/handoff-events.log")

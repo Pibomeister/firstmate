@@ -2,10 +2,13 @@
 # Shared verified-handoff contract. Callers source session-lock-lib and wake-lib.
 # Pending claim: state/.handoff-pending JSON version=1, nonce, handoff, sha256,
 # predecessor_pid/start, deadline (Unix seconds), successor (the launcher's
-# runtime choice and quota verdict, informational). Only the owning predecessor
-# creates it. The successor reads the document and calls fm-handoff-ack.sh.
+# runtime choice and quota verdict, informational), and predecessor_backend/
+# predecessor_terminal (the predecessor's own endpoint, or null). Only the
+# owning predecessor creates it. The successor reads the document and calls
+# fm-handoff-ack.sh.
 # Ack: data/handoff-ack-<nonce>.json version=1, nonce, harness_pid, fm_lock_pid,
-# harness_start, terminal_handle, sha256. fm_lock_pid is the proposed anchor;
+# harness_start, terminal_handle, sha256, plus the claim's handoff and
+# predecessor fields for bin/fm-handoff-close.sh. fm_lock_pid is the proposed anchor;
 # it becomes authoritative only after fm-lock.sh validates it under .lock.acquire
 # and .fm-lease-command.lock and replaces the predecessor. An ack alone never
 # clears the Stop gate. Expired/nonmatching claims cannot transfer a live lock.
@@ -13,7 +16,8 @@
 # and the same informational successor line.
 #
 # Watchdog wire format (stdout and append-only state/handoff-events.log):
-# HANDOFF v1 ts=<epoch> event=<handoff_started|handoff_retry|handoff_ack|handoff_failed|handoff_reject>
+# HANDOFF v1 ts=<epoch> event=<handoff_started|handoff_retry|handoff_ack|handoff_failed|handoff_reject|
+#   predecessor_closed|predecessor_close_failed|predecessor_close_refused>
 #   nonce=<hex-or-none> attempt=<0|1|2> pid=<digits-or-0> handle=<safe-token-or-none> reason=<safe-token>
 # Each event is ONE line, fields in that order; no prose or paths on the wire.
 # reason=lock_held_unbound (always nonce=none) is a refused session during a
@@ -31,6 +35,9 @@
 # handoff_ack reason=lock_transferred is a verified transfer from a live
 # predecessor; reason=stale_takeover means the predecessor was proven dead and
 # the successor took the lock through the ordinary stale-owner path.
+# The predecessor_* events follow a lock_transferred ack: one per handoff, with
+# pid=<predecessor pid> and handle=<backend>:<terminal>; bin/fm-handoff-close.sh
+# owns their reasons.
 #
 # Launch failure: state/.handoff-launch-failed is one line,
 #   at=<epoch> pid=<predecessor-pid> nonce=<hex-or-none> attempt=<0|1|2> reason=<safe-token>

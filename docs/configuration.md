@@ -503,7 +503,7 @@ A fresh start asks the session to file its open asks, proposals, and orders as l
 Anything learned after the document is recorded goes into durable records, never into an addendum file, because the successor reads only the hashed document and re-checks live records at pickup.
 A primary launches its successor with `bin/fm-handoff-launch.sh <handoff file>` on the home's recorded Orca or tmux backend.
 The launcher and `bin/fm-handoff-ack.sh` implement the acknowledgement and lock-transfer contract owned by `bin/fm-handoff-lib.sh`; its header defines the records and watchdog events.
-The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session.
+The launcher refuses rather than guess when the backend or harness cannot be determined, and it never kills or interrupts the current session itself.
 Its `--help` owns background-launch and unfinished-exit behavior.
 Orca uses `orca agent launch` with a prompt argument; tmux executes direct argv.
 A tmux pane does not inherit the session's environment, so a tmux successor launched without an account choice is given the session's own `CLAUDE_CONFIG_DIR` or `CODEX_HOME`.
@@ -518,12 +518,18 @@ The launch prompt names that document by path and does not include its text.
 A document longer than 60 lines warns, and the launch still passes only the path.
 `bin/fm-handoff-lib.sh` owns that line cap.
 The predecessor remains alive until the acknowledgement is validated and the lock transfers under the existing claim and task-lease locks.
-The predecessor then ends its turn and retires; it must not continue fleet mutations after the transfer.
+It must not continue fleet mutations after the transfer.
+Each claim records the predecessor's own terminal from the lock sidecar.
+Right after a committed transfer, the successor's acknowledgement closes that exact tmux pane or Orca terminal through `bin/fm-handoff-close.sh`, without waiting for the hourly idle-shell reap.
+The close happens only when it can prove that the recorded terminal still hosts the same predecessor process and not the successor.
+Every close attempt writes one `handoff-events.log` row that names the handoff nonce, the terminal, and the result, or the reason nothing was closed; the script's header owns the proof and the reasons.
+A terminal on another backend, or one that cannot be proven, is reported in that row and left open.
 Two fresh terminal attempts share one ten-minute budget; the launcher emits a parseable failure if neither completes.
 Every such failure, and any unfinished exit of a later launch, writes `state/.handoff-launch-failed`, which names the predecessor that still holds the lock.
 A later launch removes that record when it starts.
 A missing or invalid acknowledgement cannot move the predecessor's live lock.
-On Orca, failed panes remain available for diagnosis; on every backend, a failed attempt's expired claim cannot take ownership.
+A failed, expired, or unresolved handoff closes nothing: the predecessor keeps running, and on Orca the failed attempts' panes remain available for diagnosis.
+On every backend, a failed attempt's expired claim cannot take ownership.
 `bin/fm-captain-locate.sh` reports the verified lock holder and its terminal handle for supervisor discovery; its header owns the output format.
 The lock transfers while the predecessor is still alive, so the handoff does not wait for an external exit.
 The successor confirms the handoff sha256 and stops on a mismatch.
@@ -605,7 +611,8 @@ The whole failover call, every relaunch included, ends strictly inside the watch
 
 A Claude captain is detected by the tracked StopFailure hook in `.claude/settings.json`.
 When the session holds the lock and the home has open work, the hook writes a handoff with `bin/fm-ledger.sh handoff` and starts a successor on the next eligible primary runtime through `bin/fm-handoff-launch.sh`.
-The successor takes the lock after its verified acknowledgement, and the old session is never killed and never holds the lock against it.
+The successor takes the lock after its verified acknowledgement, so the old session never holds the lock against it.
+The successor then closes the old session's terminal under the proof that the handoff section above describes.
 A second mate's home leaves its own captain failover to its parent, which uses [supervisor failover](#supervisor-failover).
 
 Every switch is recorded in the dispatch log as a `failover` event with its time, task, from, to, and reason (`bin/fm-dispatch-log.sh`).

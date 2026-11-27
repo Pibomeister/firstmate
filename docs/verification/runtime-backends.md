@@ -159,7 +159,7 @@ Selected output:
 
 ```text
 ok - supervisor endpoint metadata retains precedence and generation
-ok - verified successor ack transfers the lock while predecessor remains alive; discovery follows it
+ok - verified successor ack transfers the lock; an unprovable predecessor endpoint stays open; discovery follows it
 ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
 ok - tmux resume discovers %32 and preserves explicit metadata precedence
 ok - orca resume discovers term_new and preserves explicit metadata precedence
@@ -172,6 +172,34 @@ The resume fixtures keep the previous process alive while a new process with the
 The interruption hits during the redirected backend call; the error drill fails the poll operation after launch.
 Both require exactly one failure on the original stdout and in the durable event log.
 The shared session-lock ancestry suite passed on the same host; it covers other supported primary harness identities, re-keys, task leases, and rewake ownership through their existing integration surfaces.
+
+### Predecessor close after a verified handoff
+
+Verified on 2026-11-25 on macOS arm64 with Bash 3.2.57.
+`tests/fm-handoff-close.test.sh` runs the production close against real harness-shaped processes, with fake tmux and Orca CLIs that act only on fixture processes.
+The close drill in `tests/fm-handoff-launch.test.sh` runs the real launcher, acknowledgement, lock transfer, and close end to end, with a fake Orca that describes the predecessor's terminal.
+Neither test closes a real tmux pane or Orca terminal, so the live CLI close receipt rests on the existing endpoint-close evidence below.
+On 2026-11-27 `tests/fm-handoff-close.test.sh` was re-run after the close was pinned to the exact tmux pane id; its window-target line below fails on the earlier script, which closed the wrong pane, and passes on the fix.
+
+Refresh both with:
+
+```sh
+bash bin/fm-test-run.sh tests/fm-handoff-close.test.sh tests/fm-handoff-launch.test.sh
+```
+
+Selected output:
+
+```text
+ok - a window-style tmux target closes only the proven predecessor pane
+ok - a committed transfer closes the recorded tmux pane and records one row
+ok - a committed transfer closes the recorded Orca terminal and records one row
+ok - an uncommitted or unvalidated transfer closes nothing
+ok - a handoff the launcher did not complete, or reported failed, closes nothing
+ok - an expired handoff closes nothing
+ok - an unsupported backend is reported and nothing is killed
+ok - DRILL delayed-successor: a busy claim at the deadline is unresolved, then settled by the ack
+ok - DRILL close: a committed transfer closes the predecessor terminal and records one row
+```
 
 ### Successor runtime choice and supervisor failover
 

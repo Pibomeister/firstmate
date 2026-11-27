@@ -5,6 +5,11 @@
 # one-time transfer in fm-lock.sh. Every rejection emits handoff_reject.
 # A predecessor proven dead yields the ordinary stale takeover, recorded as
 # handoff_ack reason=stale_takeover rather than lock_transferred.
+# The ack also keeps the claim's handoff path and predecessor pid, start, and
+# endpoint, so the close stays bound to this nonce after the claim is retired.
+# After handoff_ack reason=lock_transferred it runs bin/fm-handoff-close.sh,
+# which closes the predecessor's terminal or records why it did not; a close
+# result never changes this script's exit status. A stale takeover closes nothing.
 set -eu
 umask 077
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -37,11 +42,17 @@ handle=$(fm_handoff_endpoint_handle) || reject no_terminal
 case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) reject no_terminal ;; esac
 start=$(fm_session_process_start "$pid") || reject no_harness
 tmp=$(mktemp "$FM_HOME/data/.handoff-ack.XXXXXX") || reject write_failed
-jq -n --arg nonce "$nonce" --arg sha "$sha" --arg handle "$handle" \
+jq --arg nonce "$nonce" --arg sha "$sha" --arg handle "$handle" \
   --arg start "$start" --argjson pid "$pid" \
-  '{version:1,nonce:$nonce,sha256:$sha,harness_pid:$pid,fm_lock_pid:$pid,harness_start:$start,terminal_handle:$handle}' > "$tmp"
+  'if .nonce != $nonce then error("stale claim") else
+    {version:1,nonce:$nonce,sha256:$sha,harness_pid:$pid,fm_lock_pid:$pid,harness_start:$start,terminal_handle:$handle,
+      handoff,predecessor_pid,predecessor_start,
+      predecessor_backend:(.predecessor_backend // null),predecessor_terminal:(.predecessor_terminal // null)} end' \
+  "$claim" > "$tmp" 2>/dev/null || { rm -f "$tmp"; reject stale_nonce; }
 mv "$tmp" "$FM_HOME/data/handoff-ack-$nonce.json"
 lock_out=$(FM_HANDOFF_NONCE="$nonce" bash "$SCRIPT_DIR/fm-lock.sh") || reject lock_refused
 reason=lock_transferred
 case "$lock_out" in *handoff_takeover=stale_takeover*) reason=stale_takeover ;; esac
 fm_handoff_event handoff_ack "$nonce" 0 "$pid" "$handle" "$reason"
+[ "$reason" = lock_transferred ] || exit 0
+bash "$SCRIPT_DIR/fm-handoff-close.sh" "$nonce" || true
