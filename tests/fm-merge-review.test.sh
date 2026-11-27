@@ -1835,6 +1835,18 @@ test_converge_a_near_miss_category_is_dropped_not_recorded() {
   pass "a converging round drops a finding whose category only resembles a declared one"
 }
 
+test_converge_a_finding_in_a_path_with_a_space_blocks() {
+  local rc=0
+  converge_skip 'converge: path with a space' && return 0
+  converge_case converge-space-path
+  printf '%s\n' 'FINDING: P0 | correctness | introduced | docs/My Notes.md:12 | note-parser | The parser drops this file.' > "$STUB/claude.extra"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge space path: run with a P0 finding in a path with a space ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge space path: the finding did not block ($(cat "$CASE/stdout"))"
+  assert_grep 'docs/My Notes.md' "$(ledger_file)" "converge space path: the finding never reached the ledger"
+  pass "a converging round records and blocks on a finding whose path contains a space"
+}
+
 test_converge_fix_only_round_closes_a_blocking_finding() {
   local rc=0 store
   converge_skip 'converge: fix-only round' && return 0
@@ -1909,6 +1921,7 @@ test_converge_a_reproduced_new_finding_blocks() {
   assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge repro: the reproduced finding did not block ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
   store=$(store_dir)
   assert_present "$(find "$store/evidence" -path "$store/evidence/F1.*/result" 2>/dev/null | head -n 1)" "converge repro: the reproduction evidence is missing"
+  assert_grep 'comes with a reproduction that fails at the head and passes at the merge base' "$STUB/agy.prompt" "converge repro: the closure prompt did not offer a blocking reproduction"
   pass "a new finding whose reproduction fails at the head and passes at the merge base blocks"
 }
 
@@ -1986,6 +1999,8 @@ test_converge_a_reproduction_runs_only_with_the_opt_in() {
   assert_absent "$store/evidence" "converge repro-off: reproduction evidence was recorded without repro=on"
   assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge repro-off: an unrun reproduction blocked the change ($(cat "$CASE/stdout"))"
   assert_grep ' action=file-follow-ups ' "$CASE/stdout" "converge repro-off: the finding was not filed as a follow-up ($(cat "$CASE/stdout"))"
+  assert_grep 'This round runs no reproduction' "$STUB/agy.prompt" "converge repro-off: the closure prompt did not say no reproduction runs"
+  assert_no_grep 'comes with a reproduction' "$STUB/agy.prompt" "converge repro-off: the closure prompt promised a reproduction would block"
   pass "without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking"
 }
 
@@ -2097,6 +2112,7 @@ test_converge_configuration_refuses_an_unsafe_ak() {
 fm_test_run \
   test_converge_full_round_records_the_ledger_and_approves \
   test_converge_a_near_miss_category_is_dropped_not_recorded \
+  test_converge_a_finding_in_a_path_with_a_space_blocks \
   test_converge_fix_only_round_closes_a_blocking_finding \
   test_converge_a_new_finding_without_a_repro_is_filed_not_blocking \
   test_converge_a_reproduced_new_finding_blocks \

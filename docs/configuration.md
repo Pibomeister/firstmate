@@ -1305,7 +1305,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
 | `ak` | absolute path to an executable agent-kit `ak` | Turns on the converging review: each round is recorded in a per-pull-request ledger, and agent-kit's `ak review scope` and `ak review decide` choose the next round and the verdict. Every seat id must map to a distinct agent-kit seat id. |
-| `repro` | `on` or `off` (default `off`) | Converging review only. With `on`, a fix-only round runs each reviewer-written reproduction at the head and the merge base, so a new finding it proves blocks. The script is not sandboxed and runs on the worker host. With `off`, no reproduction runs, and a new finding is filed as a follow-up unless it is a security, destructive or data-loss finding. |
+| `repro` | `on` or `off` (default `off`) | Converging review only. With `on`, a fix-only round runs each reviewer-written reproduction at the head, and at the merge base only when it fails at the head, so a new finding it proves blocks. The script is not sandboxed and runs on the worker host. With `off`, no reproduction runs, and a new finding is filed as a follow-up unless it is a security, destructive or data-loss finding. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.
 Two reviews from one family count as one, so a run needs seats from at least two families.

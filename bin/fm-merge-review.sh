@@ -1284,8 +1284,16 @@ mr_converge_prompt() {
   if [ -n "$MR_COVERED" ]; then
     printf '%s\n' \
       "This is a fix-only round of a converging review. delta.patch in your working directory is the change since $MR_COVERED, the last head this review covered (sha256 $MR_DELTA_SHA). Review delta.patch and the behavior it affects. Read diff.patch and snapshot/ only for context, and do not review the rest of the change again." \
-      'A new finding blocks only when it comes with a reproduction that fails at the head and passes at the merge base, or when it is a security, destructive or data-loss finding that names the asset at risk and the action that harms it. Every other new finding is filed as a follow-up and does not block.' \
       ''
+    if [ "$MR_REPRO" = on ]; then
+      printf '%s\n' \
+        'A new finding blocks only when it comes with a reproduction that fails at the head and passes at the merge base, or when it is a security, destructive or data-loss finding that names the asset at risk and the action that harms it. Every other new finding is filed as a follow-up and does not block.' \
+        ''
+    else
+      printf '%s\n' \
+        'This round runs no reproduction. A new finding blocks only when it is a security, destructive or data-loss finding that names the asset at risk and the action that harms it. Every other new finding is filed as a follow-up and does not block.' \
+        ''
+    fi
   else
     printf '%s\n' \
       'This is the full round of a converging review. Later rounds review only the change since this head and check the findings this round records, so report every finding you would hold the change for now.' \
@@ -1360,7 +1368,7 @@ mr_converge_parse() {  # <review> <ak-seat> <verdict> <out.json> <repro-dir>
           | select((.[2] | test("^P[0-3]$"))
               and (.[3] as $c | ["correctness", "security", "destructive", "data-loss", "convention", "reuse", "test-gap", "docs"] | index([$c]) != null)
               and (.[4] == "introduced" or .[4] == "pre-existing")
-              and (.[5] | test("^[^/ ][^ ]*$")) and ((.[5] | split("/")) | index("..") | not)
+              and (.[5] | test("^[^/\\s]")) and ((.[5] | split("/")) | index("..") | not)
               and (.[6] | test("^[1-9][0-9]{0,8}$"))
               and (.[7] | test("^[a-z0-9]+(-[a-z0-9]+)*$")) and ((.[7] | length) <= 64)
               and (.[8] | test("\\S")))
