@@ -7,6 +7,7 @@ Model weights stay outside this loop.
 The page stores the measurement window, the summary baselines, the drafted goals, the council result, and the before/after summary.
 Per-pull-request rows stay outside the repository.
 `bin/fm-rsi-measure.sh` owns the calculation.
+`bin/fm-rsi-instrument.sh` fills the review-round and intervention fields that the calculation reads.
 
 ## Baselines
 
@@ -32,12 +33,15 @@ The command does not contact a forge.
 Held work stays in the sample.
 This loop does not land a pull request to move a figure.
 
-Review rounds in this loop's reading are the forge fallback.
-One round is one submission whose state is `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`.
-The no-mistakes review-step source was not joined, so this count is not that source.
-Intervention fields were left null.
-The forge record does not carry steering messages or captain decisions.
-The command keeps a null instrument field out of the rate.
+The caller first puts a forge review count on each merged row.
+One forge round is one submission whose state is `APPROVED`, `CHANGES_REQUESTED`, or `COMMENTED`.
+`bin/fm-rsi-instrument.sh` then reads the Firstmate home and the no-mistakes state database, both read-only.
+Its header owns the sources and the counting rules.
+Where a no-mistakes run names the pull request, its review-step rounds replace the forge count.
+Where no run names it, the forge count stays, and the row says so.
+Intervention fields come from the task status, the steering inbox, and the dispatch ledger.
+A pull request with no surviving task record keeps null intervention fields.
+The measure command keeps a null instrument field out of the rate.
 
 The window-end open set is every pull request created before `2026-11-27T06:00:00Z` that was not closed before that instant.
 A pull request that was closed and later reopened is outside that reconstruction.
@@ -83,7 +87,7 @@ A live convening would call seats `claude:sonnet` and `agy:gemini-4-argon-high`.
 That call would spend, and this loop's limits forbid spend.
 This task does not change the shared watchdog config.
 No council pick exists.
-There is no ruling path.
+A live convening is pending the captain's decision, because it would spend.
 Option A remains the drafted recommendation this branch implemented.
 
 ## Before and after
@@ -108,12 +112,27 @@ None of those rows is unexplained.
 The one open AgentKit row is younger than 24 hours, so it has no class line.
 Window-end class lines are not listed here, because those class fields were null.
 
-Forge review submissions for the window:
+The first readings used forge review submissions only:
 Firstmate median 0.00, maximum 1, n=28, missing 0.
 AgentKit median 0.00, maximum 0, n=13, missing 0.
-Intervention-free completion is missing for all 28 Firstmate rows and all 13 AgentKit rows.
+Intervention-free completion was missing for all 28 Firstmate rows and all 13 AgentKit rows.
+
+The producer re-read the same window at the `2026-11-27T20:02:45Z` snapshot.
+
+| Instrument | Firstmate | AgentKit |
+| --- | --- | --- |
+| Review rounds, median and maximum | 3.00 and 23, n=28 | 0.00 and 13, n=13 |
+| Rows with a no-mistakes run record | 24 of 28 | 4 of 13 |
+| Rows on the forge fallback | 4 of 28 | 9 of 13 |
+| Intervention-free completion | 0 free of 1 completed, 27 missing | 0 free of 0 completed, 13 missing |
+
+The one completed Firstmate row had 7 interventions before green.
+The other rows are missing because cleanup removed their task status and steering records.
+This home keeps no task status archive, so those records cannot be read again.
+The AgentKit second mate home has no task records for the window.
 That missing count is not a rate of zero.
+The figures for new work fill in only while its task records still exist.
 
 No AgentKit code change is in this loop.
 The command reads caller-supplied rows for any repository.
-Joining no-mistakes review steps, and calling the command from the goal digest, are later work.
+Keeping task records after cleanup, and calling both commands from the goal digest, are later work.
