@@ -1,0 +1,4 @@
+worker observation is blocked inside its probe (lock 2 held)
+contribution-input rc=0 after 3s; worker observation still running: yes
+{"tasks":[{"id":"task","has_current_state":false}]}
+worker observation rc=0 tasks=1

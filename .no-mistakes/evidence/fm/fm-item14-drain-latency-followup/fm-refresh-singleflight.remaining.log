@@ -1,0 +1,3 @@
+ok - a detached probe cannot retain the completed snapshot's output capture
+ok - relay failure remains a failed publication and a fresh pass can recover
+ok - a signal-stopped holder is not shared, so a queued waiter collects for itself

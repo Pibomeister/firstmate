@@ -1,0 +1,5 @@
+ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+ok - inbox: a hostile-name doorbell executes as a no-op in bare shells
+ok - inbox: terminal-control inbox names are rejected without typing
+ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+not ok - a stuck doorbell whose first Enter is lost should still report rung, got rc 2

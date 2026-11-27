@@ -1,0 +1,12 @@
+### Scenario A: overlapping readers share one complete pass
+exit codes: holder=0 waiter1=0 waiter2=0; worker probe entries=1 (expect 1)
+all three outputs byte-identical
+{"schema":"fm-fleet-snapshot.v1","generated":"2026-11-27T14:44:33Z","tasks":[{"id":"task","state":"unknown"}]}
+### Scenario B: a later independent call collects again
+exit=0; worker probe entries=2 (expect 2); generated before=2026-11-27T14:44:33Z after=2026-11-27T14:44:50Z
+### Scenario C: a signal-stopped holder is not shared with its waiter
+holder exit=143 (expect 143); waiter exit=0 (expect 0); worker probe entries=2 (expect >=2)
+holder stdout bytes=0
+{"schema":"fm-fleet-snapshot.v1","tasks":[{"id":"task","state":"unknown"}]}
+.fleet-observation-json
+leftover lock: none

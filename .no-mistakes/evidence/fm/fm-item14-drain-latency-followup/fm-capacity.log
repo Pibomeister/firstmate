@@ -1,0 +1,9 @@
+ok - absent config/lane-capacity reports counts and no target
+ok - the Constrained line is printed only when config/lane-capacity exists
+ok - a target yields open lanes, full, and never a negative count
+ok - cpu, memory, and disk pressure close every lane and are named
+ok - unavailable probes print unknown and do not constrain
+ok - a malformed target is reported, not guessed
+ok - keyed config lines parse, and unknown, repeated, or malformed lines are refused
+ok - a fresh beat replaces probes, and its warn level closes lanes with its reason
+not ok - a stale beat must fall back to probes with its age in why (expected 'probe|ok|true', got 'probe|ok|false')

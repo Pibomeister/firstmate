@@ -1,0 +1,4 @@
+1..19
+ok - the fleet snapshot and view read the lock sidecar endpoint
+ok - empty fleet snapshot and view use explicit absence markers
+not ok - ship task state, PR, body, and stale event hints wrong
