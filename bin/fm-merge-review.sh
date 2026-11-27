@@ -1358,7 +1358,7 @@ mr_converge_parse() {  # <review> <ak-seat> <verdict> <out.json> <repro-dir>
     | [{kind: "verdict", seat: $seat, word: $word}]
       + [ $rows[] | select(.[0] == "F" and length == 9)
           | select((.[2] | test("^P[0-3]$"))
-              and ([.[3]] | inside(["correctness", "security", "destructive", "data-loss", "convention", "reuse", "test-gap", "docs"]))
+              and (.[3] as $c | ["correctness", "security", "destructive", "data-loss", "convention", "reuse", "test-gap", "docs"] | index([$c]) != null)
               and (.[4] == "introduced" or .[4] == "pre-existing")
               and (.[5] | test("^[^/ ][^ ]*$")) and ((.[5] | split("/")) | index("..") | not)
               and (.[6] | test("^[1-9][0-9]{0,8}$"))

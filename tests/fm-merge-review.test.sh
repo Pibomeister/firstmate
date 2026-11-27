@@ -1817,6 +1817,24 @@ test_converge_full_round_records_the_ledger_and_approves() {
   pass "a converging full round records the ledger and approves through ak review decide"
 }
 
+test_converge_a_near_miss_category_is_dropped_not_recorded() {
+  local rc=0
+  converge_skip 'converge: near-miss category' && return 0
+  converge_case converge-near-miss
+  {
+    printf '%s\n' 'FINDING: P2 | correct | introduced | feature.txt:1 | near-correct | A prefix of a declared category.'
+    printf '%s\n' 'FINDING: P2 | doc | introduced | feature.txt:2 | near-docs | A prefix of a declared category.'
+    printf '%s\n' 'FINDING: P2 |  | introduced | feature.txt:3 | no-category | An empty category.'
+  } > "$STUB/claude.extra"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge near-miss: run with malformed categories ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_grep "merge-review: approved head=$HEAD_SHA seats=" "$CASE/stdout" "converge near-miss: the round was not recorded and approved"
+  assert_no_grep 'near-correct' "$(ledger_file)" "converge near-miss: a category prefix reached the ledger"
+  assert_no_grep 'near-docs' "$(ledger_file)" "converge near-miss: a category prefix reached the ledger"
+  assert_no_grep 'no-category' "$(ledger_file)" "converge near-miss: an empty category reached the ledger"
+  pass "a converging round drops a finding whose category only resembles a declared one"
+}
+
 test_converge_fix_only_round_closes_a_blocking_finding() {
   local rc=0 store
   converge_skip 'converge: fix-only round' && return 0
@@ -2021,6 +2039,7 @@ test_converge_configuration_refuses_an_unsafe_ak() {
 
 fm_test_run \
   test_converge_full_round_records_the_ledger_and_approves \
+  test_converge_a_near_miss_category_is_dropped_not_recorded \
   test_converge_fix_only_round_closes_a_blocking_finding \
   test_converge_a_new_finding_without_a_repro_is_filed_not_blocking \
   test_converge_a_reproduced_new_finding_blocks \
