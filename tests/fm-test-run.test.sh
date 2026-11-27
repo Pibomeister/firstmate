@@ -2579,10 +2579,11 @@ SH
 }
 
 # Run the fixture runner with only the admission inputs a case names; the outer
-# suite's own ticket, inner-runner marker, and CI marker never leak in.
+# suite's own ticket, inner-runner marker, CI marker, and a queued --json run's
+# offload refusal never leak in.
 queue_fixture_run() {
   env -u FM_TEST_QUEUE_HELD -u FM_TEST_RUN_INNER -u FM_TEST_RUN_ADMITTED -u GITHUB_ACTIONS \
-    -u FM_TEST_RUN_QUEUE FM_TEST_SEAM=1 FM_TEST_QUEUE_POLL=0.1 "$@"
+    -u FM_TEST_RUN_QUEUE -u FM_TEST_QUEUE_REMOTE_DISABLE FM_TEST_SEAM=1 FM_TEST_QUEUE_POLL=0.1 "$@"
 }
 
 queue_fixture_selection() {
