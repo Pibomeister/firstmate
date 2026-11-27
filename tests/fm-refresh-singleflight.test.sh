@@ -327,6 +327,30 @@ SH
   pass "a signal-stopped holder is not shared, so a queued waiter collects for itself"
 }
 
+test_snapshot_unwritable_state_collects_without_the_lock() {
+  local fixture_home="$TMP_ROOT/readonly-state" pid i=0 rc=0
+  if [ "$(id -u)" = 0 ]; then
+    pass "unwritable state is not testable as root, which can write a mode 555 directory"
+    return 0
+  fi
+  make_flight_home "$fixture_home"
+  chmod 555 "$fixture_home/state"
+  FM_HOME="$fixture_home" "$ROOT/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/out.json" 2>/dev/null &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 900 ]; do sleep 0.1; i=$((i + 1)); done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    chmod 755 "$fixture_home/state"
+    fail "a snapshot whose state directory cannot hold the lock never finished"
+  fi
+  wait "$pid" || rc=$?
+  chmod 755 "$fixture_home/state"
+  [ "$rc" = 0 ] || fail "a snapshot whose state directory cannot hold the lock failed: $rc"
+  jq -e '.schema == "fm-fleet-snapshot.v1"' "$fixture_home/out.json" >/dev/null || fail "a snapshot whose state directory cannot hold the lock gave no complete result"
+  pass "a state directory that cannot hold the lock still yields a complete unshared snapshot"
+}
+
 if [ "$#" -gt 0 ]; then
   for test in "$@"; do "$test"; done
 else
@@ -340,4 +364,5 @@ else
   test_snapshot_detached_probe_cannot_hold_output_capture_open
   test_snapshot_relay_failure_is_not_success
   test_snapshot_signal_stopped_holder_is_not_shared
+  test_snapshot_unwritable_state_collects_without_the_lock
 fi

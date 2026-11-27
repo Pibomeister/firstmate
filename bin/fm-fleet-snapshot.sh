@@ -409,7 +409,18 @@ if [ -d "$STATE" ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  # A failed acquire that leaves no lock path means the lock cannot be created
+  # here (an unwritable or full state directory). After a few spaced tries,
+  # collect without single-flight, as an ordinary observational pass would.
+  snapshot_flight_unlockable=0
   while ! fm_lock_try_acquire "$SNAPSHOT_FLIGHT_LOCK"; do
+    if [ ! -e "$SNAPSHOT_FLIGHT_LOCK" ] && [ ! -L "$SNAPSHOT_FLIGHT_LOCK" ]; then
+      snapshot_flight_unlockable=$((snapshot_flight_unlockable + 1))
+      [ "$snapshot_flight_unlockable" -lt 5 ] || break
+      sleep 0.2
+      continue
+    fi
+    snapshot_flight_unlockable=0
     # Completed-result reads are builtin I/O until a result is ready. Retry
     # the identity-aware lock at most once per two seconds while it exists,
     # rather than making every waiting reader fork identity probes at 5 Hz.
@@ -421,33 +432,35 @@ if [ -d "$STATE" ]; then
       snapshot_flight_tick=$((snapshot_flight_tick + 1))
     done
   done
-  # A waiter can share a pass that finished before it acquired the lock.
-  # Release this newly acquired lock if that read exits successfully or fails.
-  trap 'rc=$?; fm_lock_release "$SNAPSHOT_FLIGHT_LOCK"; exit "$rc"' EXIT
-  snapshot_flight_read || true
-  SNAPSHOT_FLIGHT_TMP=$(umask 077; mktemp "$STATE/.fleet-observation.XXXXXX") || exit 1
-  (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") || exit 1
-  snapshot_stage_fd=${FM_SNAPSHOT_STAGE_FD:-}
-  snapshot_stage_fd=${snapshot_stage_fd#"${snapshot_stage_fd%%[!0]*}"}
-  mkfifo -m 600 "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-  # The temporary read/write opener makes startup nonblocking even if the
-  # relay exits early. It is closed in both processes before any probes start.
-  # A normal background relay can be waited for on stock macOS Bash 3.2 too.
-  if [ "$snapshot_stage_fd" = 6 ]; then
-    exec 7<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-    tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 7>&- &
-    SNAPSHOT_FLIGHT_RELAY_PID=$!
-    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-    exec 7>&-
-  else
-    exec 6<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-    tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 6>&- &
-    SNAPSHOT_FLIGHT_RELAY_PID=$!
-    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-    exec 6>&-
+  if [ "$snapshot_flight_unlockable" -lt 5 ]; then
+    # A waiter can share a pass that finished before it acquired the lock.
+    # Release this newly acquired lock if that read exits successfully or fails.
+    trap 'rc=$?; fm_lock_release "$SNAPSHOT_FLIGHT_LOCK"; exit "$rc"' EXIT
+    snapshot_flight_read || true
+    SNAPSHOT_FLIGHT_TMP=$(umask 077; mktemp "$STATE/.fleet-observation.XXXXXX") || exit 1
+    (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") || exit 1
+    snapshot_stage_fd=${FM_SNAPSHOT_STAGE_FD:-}
+    snapshot_stage_fd=${snapshot_stage_fd#"${snapshot_stage_fd%%[!0]*}"}
+    mkfifo -m 600 "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+    # The temporary read/write opener makes startup nonblocking even if the
+    # relay exits early. It is closed in both processes before any probes start.
+    # A normal background relay can be waited for on stock macOS Bash 3.2 too.
+    if [ "$snapshot_stage_fd" = 6 ]; then
+      exec 7<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+      tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 7>&- &
+      SNAPSHOT_FLIGHT_RELAY_PID=$!
+      exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+      exec 7>&-
+    else
+      exec 6<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+      tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 6>&- &
+      SNAPSHOT_FLIGHT_RELAY_PID=$!
+      exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
+      exec 6>&-
+    fi
+    SNAPSHOT_FLIGHT_HELD=1
+    trap 'snapshot_flight_finish "$?"' EXIT
   fi
-  SNAPSHOT_FLIGHT_HELD=1
-  trap 'snapshot_flight_finish "$?"' EXIT
 fi
 
 # Stage timing: with FM_SNAPSHOT_STAGE_FD set to an open append descriptor, each
