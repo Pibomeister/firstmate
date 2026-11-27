@@ -1,0 +1,39 @@
+== mode=active-pred recorded_terminal=lab:0 pane_A(pred)=%0 pane_B(stranger)=%1 active=%0
+panes before: %0:pid=3229 %1:pid=3474 
+close exit=0
+close output: HANDOFF v1 ts=1795778981 event=predecessor_closed nonce=0123456789abcdef0123456789abcdef attempt=0 pid=3383 handle=tmux:lab:0 reason=closed
+panes after: %1:pid=3474 
+predecessor 3383: gone
+stranger 3474: alive
+successor 4769: alive
+/tmp/fm-live-c23/drive.sh: line 12:  4769 Terminated: 15          ( exec -a claude "$LAB/bin/claude" -c "$LOOP" )
+
+== mode=active-stranger recorded_terminal=lab:0 pane_A(pred)=%0 pane_B(stranger)=%1 active=%1
+panes before: %0:pid=21691 %1:pid=21874 
+close exit=1
+close output: HANDOFF v1 ts=1795778985 event=predecessor_close_refused nonce=0123456789abcdef0123456789abcdef attempt=0 pid=21827 handle=tmux:lab:0 reason=endpoint_unproven
+panes after: %0:pid=21691 %1:pid=21874 
+predecessor 21827: alive
+stranger 21874: alive
+successor 23006: alive
+/tmp/fm-live-c23/drive.sh: line 12: 23006 Terminated: 15          ( exec -a claude "$LAB/bin/claude" -c "$LOOP" )
+
+== mode=pane-id recorded_terminal=%0 pane_A(pred)=%0 pane_B(stranger)=%1 active=%1
+panes before: %0:pid=47147 %1:pid=55328 
+close exit=0
+close output: HANDOFF v1 ts=1795778997 event=predecessor_closed nonce=0123456789abcdef0123456789abcdef attempt=0 pid=49257 handle=tmux:%0 reason=closed
+panes after: %1:pid=55328 
+predecessor 49257: gone
+stranger 55328: alive
+successor 55914: alive
+/tmp/fm-live-c23/drive.sh: line 12: 55914 Terminated: 15          ( exec -a claude "$LAB/bin/claude" -c "$LOOP" )
+
+== mode=missing recorded_terminal=%99 pane_A(pred)=%0 pane_B(stranger)=%1 active=%1
+panes before: %0:pid=44649 %1:pid=45306 
+close exit=1
+close output: HANDOFF v1 ts=1795779023 event=predecessor_close_refused nonce=0123456789abcdef0123456789abcdef attempt=0 pid=45087 handle=tmux:%99 reason=endpoint_unproven
+panes after: %0:pid=44649 %1:pid=45306 
+predecessor 45087: alive
+stranger 45306: alive
+successor 46517: alive
+/tmp/fm-live-c23/drive.sh: line 12: 46517 Terminated: 15          ( exec -a claude "$LAB/bin/claude" -c "$LOOP" )

@@ -1,0 +1,2 @@
+not ok - a window target that resolves to the predecessor pane must close: HANDOFF v1 ts=1795778848 event=predecessor_close_failed nonce=0123456789abcdef0123456789abcdef attempt=0 pid=1828 handle=tmux:firstmate:0 reason=predecessor_present
+exit=1
