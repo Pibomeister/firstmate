@@ -1,0 +1,8 @@
+# ack run by real Claude Code session (no claim on disk)
+HANDOFF v1 ts=1795793555 event=handoff_reject nonce=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa attempt=0 pid=38976 handle=term_late reason=missing_claim
+ack rc=1
+# events log:
+HANDOFF v1 ts=1795793254 event=handoff_started nonce=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa attempt=1 pid=0 handle=term_owner reason=awaiting_ack
+HANDOFF v1 ts=1795793555 event=handoff_reject nonce=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa attempt=0 pid=38976 handle=term_late reason=missing_claim
+# recorded pid process:
+38976 ~/.local/bin/claude

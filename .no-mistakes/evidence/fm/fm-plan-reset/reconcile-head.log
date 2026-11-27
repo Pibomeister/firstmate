@@ -3,5 +3,14 @@ ok - a late refused successor is ended once, with its nonce proven on screen and
 ok - the lock owner, the caller, the captain handle, task endpoints and handoff parties are never ended
 ok - no terminal is touched while a handoff claim or a lock change is in progress
 ok - a foreign, unproven or unclosable terminal is left open and reported once
-not ok - a terminal Orca describes as closed is recorded as gone (expected 'gone terminal_closed', got '')
-bash tests/fm-handoff-reconcile.test.sh  1.89s user 4.55s system 3% cpu 2:48.20 total
+ok - only Orca's exact closed or unknown-handle answer is read as gone; every other failure is tried again
+ok - a run cut off between the close and its record is completed and reported by the next run
+ok - a handle refused under several attempts is judged by the newest one this home launched
+ok - refusing a late successor arms the check that ends it, and no other refusal does
+ok - only a refused successor of an attempt this home launched and never acknowledged is a candidate
+ok - a terminal whose screen still shows the nonce is closed only while it runs the refused successor
+ok - a refused successor records its own harness pid with the reject
+ok - bad arguments are refused and a home with nothing to reconcile is a quiet success
+FM_TEST_COMPLETE
+bash tests/fm-handoff-reconcile.test.sh  5.55s user 14.22s system 7% cpu 4:09.41 total
+rc=0

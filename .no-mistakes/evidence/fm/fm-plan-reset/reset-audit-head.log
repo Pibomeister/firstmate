@@ -13,5 +13,18 @@ ok - silent deletion of a queued backlog item fails with its exact ID
 ok - offline comparison, home isolation, and manifest validation fail closed
 ok - external symlink targets and unsupported backlog backends cannot escape the local audit
 ok - partial TOON, unsupported Beads layouts, and inherited adapter redirects fail closed
-fm-reset-audit: spawnSync bash ETIMEDOUT
-not ok - snapshot before
+ok - audit log retention is bounded and concurrent writers cannot overwrite it
+ok - durable captain orders must stay open or finish with their done or parked record across a reset
+ok - an order renamed between two directory reads is kept once, in its later state
+ok - compare --at records the reset time rather than the compare time
+ok - a staged handoff becomes exactly one PASS row stamped with the time of the reset
+ok - a staged snapshot older than 30 minutes is replaced by the launcher and never recorded as a handoff
+ok - the launcher keeps a staged snapshot only when it stays fresh through the whole launch budget
+ok - a launch longer than 30 minutes still records its verified handoff exactly once
+ok - each compaction settles at its own time and a loss is one FAIL row plus one line
+ok - settle --now prints every verdict, and an unreadable reset is kept, reported once, and never recorded
+ok - at most 20 resets wait: a further snapshot is refused until one settles, and a staged handoff is still taken
+ok - settle waits out a task close in progress, respects a held row lock, and removes an orphaned one
+ok - the check is armed only while a reset or a late successor waits, stays silent on PASS, and never touches a foreign check
+ok - the lifecycle commands do nothing for directories outside this home and refuse malformed calls
+rc=0
