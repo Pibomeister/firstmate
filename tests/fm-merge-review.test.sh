@@ -1270,7 +1270,7 @@ if [ -f feature.txt ]; then exit 1; fi"
   pass "verify-finding: publication refuses to replace evidence that appeared while the reproduction ran"
 }
 
-test_verify_finding_red_at_both_keeps_the_finding_blocking() {
+test_verify_finding_red_at_both_is_classified_red_at_both() {
   local rc=0
   make_case verify-red-at-both
   write_repro repro.sh 'echo "always broken"; exit 1'
@@ -1279,7 +1279,7 @@ test_verify_finding_red_at_both_keeps_the_finding_blocking() {
   expect_verify_field 'red-at-both' "verify red at both"
   expect_verify_field 'head_result=red' "verify red at both"
   expect_verify_field 'base_result=red' "verify red at both"
-  pass "verify-finding: red at both the head and the merge base is red-at-both, never pre-existing"
+  pass "verify-finding: red at both the head and the merge base is red-at-both"
 }
 
 test_verify_finding_red_at_both_on_a_script_the_head_adds() {
@@ -1293,7 +1293,7 @@ test_verify_finding_red_at_both_on_a_script_the_head_adds() {
   expect_verify_field 'red-at-both' "verify new script"
   expect_verify_field 'head_result=red' "verify new script"
   expect_verify_field 'base_result=red' "verify new script"
-  pass "verify-finding: a failing script the head adds is red-at-both, so the finding still blocks"
+  pass "verify-finding: a failing script the head adds is red-at-both"
 }
 
 test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file() {
@@ -1908,8 +1908,62 @@ test_converge_a_reproduced_new_finding_blocks() {
   expect_code 1 "$rc" "converge repro: a closure round with a reproduced finding"
   assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge repro: the reproduced finding did not block ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
   store=$(store_dir)
-  assert_present "$store/evidence/F1/result" "converge repro: the reproduction evidence is missing"
+  assert_present "$(find "$store/evidence" -path "$store/evidence/F1.*/result" 2>/dev/null | head -n 1)" "converge repro: the reproduction evidence is missing"
   pass "a new finding whose reproduction fails at the head and passes at the merge base blocks"
+}
+
+test_converge_a_green_sibling_reproduction_keeps_the_introduced_one() {
+  local rc=0
+  converge_skip 'converge: introduced and green reproductions in one round' && return 0
+  converge_case converge-repro-sibling
+  printf 'repro=on\n' >> "$HOME_DIR/config/merge-review"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge sibling: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" 'REPRO-BEGIN' '[ ! -f feature.txt ]' 'REPRO-END' > "$STUB/agy.extra"
+  printf '%s\n' 'FINDING: P1 | correctness | introduced | feature.txt:2 | other-break | feature.txt breaks the writer.' \
+    'REPRO-BEGIN' 'exit 0' 'REPRO-END' > "$STUB/claude.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge sibling: a closure round with an introduced and a green reproduction"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge sibling: the introduced reproduction did not block ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_grep '"kind":"round-close"' <(tail -n 1 "$(ledger_file)") "converge sibling: the round was left open"
+  pass "a green reproduction beside an introduced one in the same round never drops the introduced evidence"
+}
+
+test_converge_a_red_at_both_reproduction_does_not_block() {
+  local rc=0
+  converge_skip 'converge: red-at-both reproduction' && return 0
+  converge_case converge-repro-both
+  printf 'repro=on\n' >> "$HOME_DIR/config/merge-review"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge red-at-both: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' "$FINDING_P1" 'REPRO-BEGIN' 'exit 1' 'REPRO-END' > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge red-at-both: a reproduction red at both blocked ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  pass "a correctness finding whose reproduction is red at the head and at the merge base does not block"
+}
+
+test_converge_a_red_at_both_security_reproduction_still_blocks() {
+  local rc=0
+  converge_skip 'converge: red-at-both security reproduction' && return 0
+  converge_case converge-repro-both-security
+  printf 'repro=on\n' >> "$HOME_DIR/config/merge-review"
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 0 "$rc" "converge red-at-both security: round 1 ($(cat "$CASE/stderr"))"
+  converge_next_head 'a second change'
+  echo block > "$STUB/agy.mode"
+  printf '%s\n' 'FINDING: P1 | security | introduced | feature.txt:1 | reader-leaks | feature.txt leaks a token.' \
+    'RISK: the deploy token -> anyone who reads feature.txt can deploy' 'REPRO-BEGIN' 'exit 1' 'REPRO-END' > "$STUB/agy.extra"
+  rc=0
+  run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge red-at-both security: a closure round with a security finding red at both"
+  assert_grep "merge-review: blocked head=$HEAD_SHA" "$CASE/stdout" "converge red-at-both security: the security finding did not block ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  pass "a security finding whose reproduction is red at both still blocks"
 }
 
 test_converge_a_reproduction_runs_only_with_the_opt_in() {
@@ -1926,7 +1980,7 @@ test_converge_a_reproduction_runs_only_with_the_opt_in() {
   expect_code 1 "$rc" "converge repro-off: a closure round with a reproduction and no opt-in"
   assert_absent "$CASE/repro-ran" "converge repro-off: the reviewer-written reproduction ran without repro=on"
   store=$(store_dir)
-  assert_absent "$store/evidence/F1" "converge repro-off: reproduction evidence was recorded without repro=on"
+  assert_absent "$store/evidence" "converge repro-off: reproduction evidence was recorded without repro=on"
   assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge repro-off: an unrun reproduction blocked the change ($(cat "$CASE/stdout"))"
   assert_grep ' action=file-follow-ups ' "$CASE/stdout" "converge repro-off: the finding was not filed as a follow-up ($(cat "$CASE/stdout"))"
   pass "without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking"
@@ -2043,6 +2097,9 @@ fm_test_run \
   test_converge_fix_only_round_closes_a_blocking_finding \
   test_converge_a_new_finding_without_a_repro_is_filed_not_blocking \
   test_converge_a_reproduced_new_finding_blocks \
+  test_converge_a_green_sibling_reproduction_keeps_the_introduced_one \
+  test_converge_a_red_at_both_reproduction_does_not_block \
+  test_converge_a_red_at_both_security_reproduction_still_blocks \
   test_converge_a_reproduction_runs_only_with_the_opt_in \
   test_converge_a_moved_merge_base_never_approves_the_old_round \
   test_converge_an_unchanged_delta_carries_without_seats \
@@ -2057,7 +2114,7 @@ fm_test_run \
   test_verify_finding_waits_for_a_child_that_ignores_sigterm \
   test_verify_finding_runs_one_frozen_copy_on_both_sides \
   test_verify_finding_never_replaces_evidence_written_during_the_run \
-  test_verify_finding_red_at_both_keeps_the_finding_blocking \
+  test_verify_finding_red_at_both_is_classified_red_at_both \
   test_verify_finding_red_at_both_on_a_script_the_head_adds \
   test_verify_finding_red_at_both_on_a_function_the_head_adds_to_an_existing_file \
   test_verify_finding_a_wrong_helper_path_at_the_head_is_introduced \

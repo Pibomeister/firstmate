@@ -71,8 +71,6 @@ SINCE=
 shift
 while [ $# -gt 0 ]; do
   case "$1" in
-    # An empty argument is an option the caller left out.
-    '') ;;
     --stat) STAT_ONLY=true ;;
     --since)
       SINCE=${2:-}

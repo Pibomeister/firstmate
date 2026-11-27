@@ -72,10 +72,10 @@
 #         (base only, when the head was not red).
 #         introduced  red at the head and green at the merge base: an
 #                     evidence-backed finding.
-#         red-at-both red at the head and at the merge base. This command
-#                     never marks a finding pre-existing; only the council
-#                     or the captain may, and until then the finding keeps
-#                     its normal blocking standing.
+#         red-at-both red at the head and at the merge base: the defect
+#                     predates the change, so the finding does not block
+#                     unless it is a security, destructive or data-loss
+#                     finding.
 #         no-evidence anything else; the finding keeps its normal standing
 #                     and rests on reading alone.
 #         The snapshot holds committed files only, so a reproduction that
@@ -189,7 +189,7 @@
 #     diff.<sha256>.patch  the diff the seat reviewed
 #     delta.<sha256>.patch converging closure rounds: the change since the
 #                          covered head
-#     scope.json, ledger.bind, evidence/F<n>/
+#     scope.json, ledger.bind, evidence/F<n>.<random>/
 #                          converging review: ak's scope record, the head's
 #                          ledger binding, and reproduction evidence
 # A seat id is <family>.<harness>.<model>. check counts a receipt only while
@@ -1380,8 +1380,7 @@ mr_converge_parse() {  # <review> <ak-seat> <verdict> <out.json> <repro-dir>
 # evidence lines as a JSON array. <round.out.json> maps each input line to the
 # row id ak gave it.
 mr_converge_evidence() {  # <repo> <round.out.json> <first-seat-input>
-  local repo=$1 record=$2 idx=$3 seat line rec id path result head_exit base_exit sha out
-  printf '[]\n' > "$MR_WORK/ledger/evidence.json"
+  local repo=$1 record=$2 idx=$3 seat line rec id path result base_exit sha out
   while IFS= read -r seat; do
     while IFS= read -r line; do
       idx=$((idx + 1))
@@ -1391,22 +1390,16 @@ mr_converge_evidence() {  # <repo> <round.out.json> <first-seat-input>
       id=$(jq -r --argjson k "$idx" '.outcomes[] | select(.input == $k) | .id // empty' "$record")
       [[ "$id" =~ ^F[1-9][0-9]*$ ]] || continue
       path="tests/merge-review-repro-$(mr_lower "$id").test.sh"
-      out="$MR_STORE/evidence/$id"
       mkdir -p "$MR_STORE/evidence" || mr_die 'cannot prepare the evidence directory'
-      [ ! -e "$out" ] || continue
+      out=$(mktemp -d "$MR_STORE/evidence/$id.XXXXXX") || mr_die 'cannot prepare the evidence directory'
       result=$("$0" verify-finding --repo "$repo" --head "$MR_HEAD" --base "$MR_BASE" --repro "$rec" --path "$path" \
         --out "$out" 2>>"$MR_WORK/ledger/verify.err" | grep '^verify-finding: ') || continue
-      head_exit=
-      base_exit=
-      case " $result " in *' head_result=red '*) head_exit=1 ;; *' head_result=green '*) head_exit=0 ;; esac
-      case " $result " in *' base_result=red '*) base_exit=1 ;; *' base_result=green '*) base_exit=0 ;; esac
-      [ -n "$head_exit" ] || continue
+      case " $result " in *' head_result=red '*) ;; *) continue ;; esac
+      case " $result " in *' base_result=red '*) base_exit=1 ;; *' base_result=green '*) base_exit=0 ;; *) continue ;; esac
       sha=$(printf '%s\n' "$result" | sed -n 's/.* repro_sha256=\([0-9a-f]\{64\}\).*/\1/p')
       [ -n "$sha" ] || continue
-      jq --arg id "$id" --arg ref "$out/result" --arg h "$MR_HEAD" --arg s "sha256:$sha" \
-        --arg he "$head_exit" --arg be "$base_exit" \
-        '. + [{kind: "evidence", id: $id, evidence: ({kind: "repro", ref: $ref, head: $h, exit: ($he | tonumber), sha256: $s}
-          + (if $be == "" then {} else {base_exit: ($be | tonumber)} end))}]' \
+      jq --arg id "$id" --arg ref "$out/result" --arg h "$MR_HEAD" --arg s "sha256:$sha" --argjson be "$base_exit" \
+        '. + [{kind: "evidence", id: $id, evidence: {kind: "repro", ref: $ref, head: $h, exit: 1, base_exit: $be, sha256: $s}}]' \
         "$MR_WORK/ledger/evidence.json" > "$MR_WORK/ledger/evidence.json.new" &&
         mv -f "$MR_WORK/ledger/evidence.json.new" "$MR_WORK/ledger/evidence.json"
     done < <(jq -c '.[]' "$MR_WORK/ledger/$seat.json")
@@ -1500,20 +1493,21 @@ mr_converge_record() {  # <repo>
       done
     done < "$MR_WORK/ledger/seats"
   fi
-  if [ "$repro" -eq 0 ]; then
-    jq '. + [{kind: "round-close"}]' "$events.json" > "$events.closed.json" || mr_die 'cannot build the ledger events'
-    mv -f "$events.closed.json" "$events.json"
+  printf '[]\n' > "$MR_WORK/ledger/evidence.json"
+  if [ "$repro" -eq 1 ]; then
+    # A trial add on a copy of the ledger names the rows the reproductions
+    # attach to, so the round, its evidence and its close land in one batch.
+    cp "$MR_LEDGER" "$MR_WORK/ledger/trial.jsonl" || mr_die 'cannot copy the review ledger'
+    mr_ak ledger add --ledger "$MR_WORK/ledger/trial.jsonl" --event "$events.json" --out "$events.trial.json" \
+      --repo "$repo" --snapshot "$MR_WORK/snapshot" >/dev/null \
+      || mr_die 'ak review ledger add refused the round; this head stays unrecorded'
+    mr_converge_evidence "$repo" "$events.trial.json" "$first"
   fi
+  jq -s '.[0] + .[1] + [{kind: "round-close"}]' "$events.json" "$MR_WORK/ledger/evidence.json" > "$events.closed.json" \
+    || mr_die 'cannot build the ledger events'
+  mv -f "$events.closed.json" "$events.json"
   mr_ledger_add "$events.json" "$events.out.json" --repo "$repo" --snapshot "$MR_WORK/snapshot" \
     || mr_die 'ak review ledger add refused the round; this head stays unrecorded'
-  if [ "$repro" -eq 1 ]; then
-    # The round stays open while the reproductions run, so their evidence
-    # lands in the round that reported them.
-    mr_converge_evidence "$repo" "$events.out.json" "$first"
-    jq '. + [{kind: "round-close"}]' "$MR_WORK/ledger/evidence.json" > "$MR_WORK/ledger/close.json"
-    mr_ledger_add "$MR_WORK/ledger/close.json" "$events.out.json" \
-      || mr_die 'ak review ledger add refused the reproduction evidence; the round stays open'
-  fi
   mr_ledger_bind "$events.out.json" "$MR_CONVERGE_MODE" || mr_die 'cannot bind this head to the review ledger'
   mr_ledger_unlock
 }
