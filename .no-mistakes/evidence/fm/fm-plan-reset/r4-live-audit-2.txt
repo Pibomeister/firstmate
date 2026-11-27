@@ -1,0 +1,14 @@
+$ simulate a reset that silently loses the order, the queued item and the goal
+$ fm-reset-audit.sh compare --before before.json --kind handoff
+FAIL kind=handoff DRIFT backlog:hold-live,backlog:q-live,goal:goal-live,hold:hold-live,order:1795738315-b8c3c1f1
+rc=1
+$ tail -1 state/reset-audit.tsv
+1795738342	handoff	FAIL	backlog:hold-live,backlog:q-live,goal:goal-live,hold:hold-live,order:1795738315-b8c3c1f1
+$ restore records, then finish the order properly (ack + done) -> PASS
+acked 1795738315-b8c3c1f1
+  kind=order from=lab at=2026-11-27T00:11:55Z
+--
+live order text
+--
+When finished: bin/fm-order.sh finish 1795738315-b8c3c1f1 done|parked <outcome>
+  fm-order.sh finish <id> done|parked [--] <outcome>... | -

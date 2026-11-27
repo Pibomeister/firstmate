@@ -1,0 +1,17 @@
+$ seed goal, queued task, hold, captain order
+2026-11-27T00:11:49Z received goal-live: summary=live goal
+rc=0
+rc=0
+rc=0
+queued 1795738315-b8c3c1f1
+  kind=order state=pending wake=ok nudge=none
+rc=0
+$ fm-reset-audit.sh snapshot --out before.json
+rc=0
+{"goals":1,"holds":1,"orders":[{"id":"1795738315-b8c3c1f1","state":"pending"}],"items":0}
+$ compare (nothing lost)
+PASS kind=handoff
+rc=0
+$ simulate loss: delete order file, hold, goal ledger row
+dispatch-log.tsv
+reset-audit.tsv

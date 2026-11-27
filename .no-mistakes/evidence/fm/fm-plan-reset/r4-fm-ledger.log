@@ -1,0 +1,37 @@
+1..28
+ok - claim is opt-in, exclusive and resumable without replacing its identity
+ok - approval, scope, dependencies, decisions, quota and standing holds refuse claims; in-flight work stays owned
+ok - two claimants and two launch calls produce one worker; a lost response and late replay do not duplicate it
+tests/fm-ledger.test.sh: line 543: 44335 Killed: 9               FM_HOME="$HOME_DIR" bash -c '
+    source "$1/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$FM_HOME/state/.spawn-claim-one.lock" || exit 1
+    "$1/bin/fm-ledger.sh" claim-begin claim-one "$2" "$FM_HOME/projects/alpha" || exit 1
+    kill -KILL "$$"
+  ' _ "$ROOT" "$token" > /dev/null 2>&1
+ok - a killed prelaunch dispatcher can be released without reusing its dispatch identity
+ok - a parked source order revokes the claim even when backlog and brief are unchanged
+ok - claim rejects a project symlink outside the home projects root
+ok - a hold arriving after snapshot validation refuses receipt publication
+ok - refused claim publications remove their receipt staging files
+ok - claims start only approved, unheld work recorded by a supervisor in its own home
+ok - supervisor release preserves current ownership and requires proof that a delivered endpoint is gone
+ok - unprepared items do not stall ready work and claim guidance stays inside one home
+ok - spawn claim transitions wait for concurrent claim lock without losing launch completion
+ok - a hold published after claim-launch refuses spawn before worker delivery
+ok - a crash after claim-launch forces relaunch through the delivery-point hold recheck
+ok - a claimant waits for a concurrent claim scan instead of refusing
+ok - intake files each ask as its own queued item, replays retries, and refuses unknown sources
+ok - intake replays only the same source, project, title, and id, and refuses an id that names another item
+ok - public-followup obligations in the ready listing are never counted as ready work
+ok - a failed scheduled evaluation is reported once and retried on the next sweep
+ok - plan groups each project's items by in flight, ready by priority, blocked, and held, and marks short projects
+ok - next prints the next ready item without changing the ledger and exits 3 when nothing is ready
+ok - depth reports every active project below the ready target
+ok - done items are not counted as active or blocked work
+ok - the scheduled check reports a thin ready queue once per check time in the captain's zone
+ok - unfiled lists only open orders that no ledger item records
+ok - handoff writes a self-contained document from the ledger and refuses unfiled orders and delta chains
+ok - arm installs and registers the scheduled check, and min-ready=0 disarms it
+ok - arm and disarm never replace or remove a task's check that shares the ready-depth name
+FM_TEST_COMPLETE
+rc=0 secs=594

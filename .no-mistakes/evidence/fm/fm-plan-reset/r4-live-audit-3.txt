@@ -1,0 +1,29 @@
+$ fm-order.sh finish <id> done -- shipped
+done 1795738315-b8c3c1f1
+rc=0
+$ compare (order finished with outcome) -> expect PASS
+PASS kind=compaction
+rc=0
+
+=== stale staged snapshot: verified-transfer fallback ===
+$ stage; age staged file 40 min
+rc=0
+$ successor bootstrap path: begin --kind handoff --if-staged (stale) -> records nothing
+rc=0
+0
+$ launcher path: begin --kind handoff --if-staged --for 600 (stale) -> claims nothing, staged file remains
+rc=0
+/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.pbOMwo/state/reset-audit-staged.json
+$ launcher cleanup fallback: begin --kind handoff -> takes its own snapshot
+rc=0
+1795738368-handoff-15343.json
+=== fresh staged: launcher claim by rename, successor finds nothing ===
+stage rc=0
+launcher rc=0
+successor rc=0
+handoff pending records: 1; staged present: no
+$ settle --now
+PASS kind=handoff at=1795738380
+rc=0
+1795738367	compaction	PASS	-
+1795738380	handoff	PASS	-
