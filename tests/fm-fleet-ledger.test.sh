@@ -85,9 +85,14 @@ run_lifecycle() {
     printf 'resolved: [key=pick-one]  chose a\n'
     printf 'partial line without its newline'
   } >> "$HOME_DIR/state/$TASK.status"
-  out=$(in_home env FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
-    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 2 2>&1)
-  case "$out" in *"checkpoint:"*|*"signal:"*) ;; *) fail "watcher checkpoint did not run: $out" ;; esac
+  # Wait for a complete poll, rather than interrupting startup after two seconds.
+  # The checkpoint bound still catches a stalled watcher on a loaded host.
+  out=$(in_home env FM_WATCH_ONCE=1 FM_POLL=1 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 \
+    "$ROOT/bin/fm-watch-checkpoint.sh" --seconds 120 2>&1) \
+    || fail "watcher checkpoint failed: $out"
+  case "$out" in
+    *"checkpoint: no actionable wake within "*) fail "watcher did not complete its poll: $out" ;;
+  esac
   LEDGER_AFTER_POLL=$(cat "$HOME_DIR/state/fleet-ledger.jsonl" 2>/dev/null || true)
   printf ' finished\ndone: ready in branch\n' >> "$HOME_DIR/state/$TASK.status"
   printf 'landed\n' > "$WT_DIR/landed.txt"

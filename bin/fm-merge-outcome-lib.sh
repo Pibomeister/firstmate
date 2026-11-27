@@ -22,8 +22,8 @@
 # is committed, so a failed commit stays eligible for at-least-once retry and
 # may rarely duplicate rather than leave a merge silent.
 #
-# Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
-# source beyond its sourced libraries.
+# Sourced by bin/fm-pr-merge.sh, bin/fm-self-land.sh, bin/fm-watch.sh, and
+# tests. No side effects on source beyond its sourced libraries.
 
 _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-pr-lib.sh
