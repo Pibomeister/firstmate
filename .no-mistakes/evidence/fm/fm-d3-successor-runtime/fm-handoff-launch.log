@@ -1,0 +1,36 @@
+ok - tmux resume discovers %32 and preserves explicit metadata precedence
+ok - tmux resume discovers old_endpoint and preserves explicit metadata precedence
+ok - orca resume discovers term_new and preserves explicit metadata precedence
+ok - orca resume discovers term_explicit and preserves explicit metadata precedence
+HANDOFF v1 ts=1795810655 event=handoff_started nonce=abbfb3b98a459506e2386520191c675c attempt=1 pid=34364 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795810656 event=handoff_failed nonce=abbfb3b98a459506e2386520191c675c attempt=1 pid=34364 handle=none reason=interrupted
+ok - DRILL interrupt: one failure on stdout and log, predecessor lock retained
+HANDOFF v1 ts=1795810677 event=handoff_started nonce=1ee4f781ad93d52a4a21775792ac8300 attempt=1 pid=58556 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795810678 event=handoff_failed nonce=1ee4f781ad93d52a4a21775792ac8300 attempt=1 pid=58556 handle=none reason=error
+ok - DRILL error-exit: one failure on stdout and log, predecessor lock retained
+ok - a handoff that omits an open captain order is refused before any claim, record, or launch
+ok - a failed planned fresh start releases its Stop gate and falls back to auto-compaction
+ok - a launch interrupted before any attempt still records its failure for the surviving session
+ok - a launch interrupted while removing the earlier failure record still records its failure
+ok - supervisor endpoint metadata retains precedence and generation
+ok - a transfer that rolls back after its verdict preserves predecessor leases
+ok - a lease retirement error after commit keeps the committed transfer
+ok - an interruption during lease retirement after commit keeps the committed transfer
+ok - a transfer interrupted after its line-1 write restores predecessor ownership and leases
+ok - a second signal during transaction rollback preserves ownership and releases its locks
+ok - a sidecar-less transfer interrupted after its line-1 write restores the predecessor
+ok - discovery reports only committed endpoints across an uncommitted transfer
+ok - lock endpoints follow supervisor-target precedence for nested and inherited terminals
+ok - verified successor ack transfers the lock; an unprovable predecessor endpoint stays open; discovery follows it
+ok - discovery reports a pid and handle only from one unchanged snapshot
+ok - a completed handoff retires its claim, so later refused sessions emit no reject
+ok - foreign launch is refused and dead lock holders are not captain endpoints
+ok - tmux launches direct argv outside tmux in its home session and transfers the verified lock
+ok - tmux inside a session opens the successor in that session
+HANDOFF v1 ts=1795811037 event=predecessor_close_refused nonce=eb1b2d881d0bbcd38f787a35986560fb attempt=0 pid=18102 handle=orca:term_predecessor reason=endpoint_unproven
+HANDOFF v1 ts=1795811090 event=handoff_retry nonce=08b491a8d5808f1d4d8a5a94c5ad502a attempt=2 pid=64393 handle=none reason=awaiting_ack
+HANDOFF v1 ts=1795811103 event=handoff_ack nonce=08b491a8d5808f1d4d8a5a94c5ad502a attempt=0 pid=21379 handle=%9 reason=lock_transferred
+HANDOFF v1 ts=1795811109 event=predecessor_close_refused nonce=08b491a8d5808f1d4d8a5a94c5ad502a attempt=0 pid=64393 handle=orca:term_predecessor reason=endpoint_unproven
+ok - DRILL tmux-display-timeout: expired setup starts a fresh verified retry within the shared budget
+Terminated: 15
+rc=124

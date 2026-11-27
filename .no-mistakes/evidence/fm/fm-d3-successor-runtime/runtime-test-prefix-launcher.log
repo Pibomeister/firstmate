@@ -1,0 +1,9 @@
+ok - claude to codex: verified lock transfer onto codex with the replacement and reason recorded
+ok - codex successor follows config/codex-permission-mode on tmux
+ok - codex on orca: argv agent launch, unmeasured quota disclosed and not blocking
+ok - claude to agy: trusted home transfers on tmux; untrusted home and orca refuse before launch
+ok - agy trust: physical-only does not count; the logical cwd and a differing -c path must both be trusted
+ok - claude account switch: the successor runs on the chosen declared account
+not ok - account switch from an opus predecessor: handoff must complete: successor runtime: model opus, from the predecessor; effort default: the predecessor's launch recorded none, so the runtime's own applies; setting-sources default: the predecessor's launch recorded none, so the runtime's own applies
+error: successor quota is exhausted (harness=claude model=opus account=/private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-handoff-launch-runtime.tv4DGy/acctD reason=claude_pool_exhausted verdict=exhausted scope=model:opus runway=exhausted_now effort=default setting_sources=default model_from=predecessor effort_from=unrecorded setting_sources_from=unrecorded predecessor_model=opus predecessor_effort=none predecessor_setting_sources=none); choose another account or runtime, for example with bin/fm-supervisor-failover.sh 
+rc=1
