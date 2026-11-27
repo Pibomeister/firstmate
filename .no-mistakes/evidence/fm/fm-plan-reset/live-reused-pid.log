@@ -1,0 +1,14 @@
+holder=22130 ident=ab41864d78fed0beae317e512c0ae85522099d16b72cea69314722da2d16a2da ps=Fri Nov 27 18:36:22 2026     sleep 600
+other=22149 ident=c21f6637597056c17398135039dad23d542f0a2c6e873c42629add2c231d25e0 ps=Fri Nov 27 18:36:22 2026     sleep 601
+PASS: the other job's start time plus command digests to a different value
+apply: handoff reconcile: a late successor terminal term_reused of a failed handoff attempt was left open (successor_not_proven); it can never own this home, close it by hand when it is not in use
+handoff reconcile: a late successor terminal term_none of a failed handoff attempt was left open (successor_not_proven); it can never own this home, close it by hand when it is not in use
+outcomes:
+1795804586	22222222222222222222222222222222	term_reused	left	successor_not_proven
+1795804586	33333333333333333333333333333333	term_none	left	successor_not_proven
+PASS: the terminal whose pid now matches a different job's identity is left open
+PASS: a reject that recorded no identity is left open
+PASS: no close was sent
+PASS: both screens are still open
+PASS: the process holding the reused pid and the unidentified process are still alive
+failures=0

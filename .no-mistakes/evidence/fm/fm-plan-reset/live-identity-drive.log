@@ -1,0 +1,109 @@
+=== lab /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT ===
+=== tools: node=/opt/homebrew/opt/node@24/bin/node jq=/usr/bin/jq tasks-axi=/opt/homebrew/bin/tasks-axi ===
+=== scenario: matching identity retires the terminal ===
+trace product_ident 59900
+trace independent_ident 59900
+match pid=59900
+match ps=Fri Nov 27 18:34:57 2026     sleep 600
+match product_ident=68c0c3196021faccaa8bdd4b9e0ec488473f9f5f605be2e715e74707e5fd427c
+match independent_ident=68c0c3196021faccaa8bdd4b9e0ec488473f9f5f605be2e715e74707e5fd427c
+PASS: identity digest equals sha256 of the live process start time and command
+match dry: retire term_match (nonce 11111111111111111111111111111111 on its screen, successor pid 59900 in its session)
+PASS: dry run would retire the terminal whose live process still has the recorded identity
+match apply: handoff reconcile: ended the late successor terminal term_match of a failed handoff attempt; its last screen is saved at data/handoff-late/11111111111111111111111111111111.txt
+match outcome: retired nonce_proven
+PASS: apply records the proven terminal as retired
+PASS: Orca was asked to close the proven terminal and then described it as closed
+PASS: the terminal read was saved before the close
+=== scenario: reused pid is left alive ===
+trace product_ident 84225
+trace product_ident 84216
+reused holder=84216 other=84225 noident=84243
+reused holder_ident=ec793e2fb3c58f0e30ccb97f25302d6fefcc289fc520c43717962e16b41defc4 other_ident=ec793e2fb3c58f0e30ccb97f25302d6fefcc289fc520c43717962e16b41defc4
+FAIL: could not prepare two different live identities (a=ec793e2fb3c58f0e30ccb97f25302d6fefcc289fc520c43717962e16b41defc4 b=ec793e2fb3c58f0e30ccb97f25302d6fefcc289fc520c43717962e16b41defc4)
+=== scenario: exec changes the command of a recorded pid ===
+trace product_ident 86300
+exec pid=86300 before_ps=Fri Nov 27 18:35:04 2026     /bin/bash /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT/swap.sh /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT/exec.pid /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT/exec.ready /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT/exec.go
+exec before_ident=4cde8032909b13e0a14834d5ba12dcb6e973b504a688c5153a368a35fce1d72a
+trace product_ident 86300
+exec after_ps=Fri Nov 27 18:35:04 2026     sleep 600
+exec after_ident=ec793e2fb3c58f0e30ccb97f25302d6fefcc289fc520c43717962e16b41defc4
+PASS: after exec the same pid has a different start-time-plus-command digest
+exec apply: handoff reconcile: a late successor terminal term_exec of a failed handoff attempt was left open (successor_not_proven); it can never own this home, close it by hand when it is not in use
+exec outcome: left successor_not_proven
+PASS: a pid whose command changed after the reject is not closed
+PASS: the terminal of the exec-changed process stayed open
+PASS: the process that reused the recorded pid by exec is still alive
+=== scenario: real ack records identity and arms only a late successor ===
+ack unknown rc=1
+PASS: a successor with no claim is refused
+ack unknown harness=5616 recorded_pid=5616
+ack unknown ps=Fri Nov 27 18:35:09 2026     /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-live-identity.b04EJT/bin/claude -c \012      printf "%s\n" "$$" > "$PIDFILE"\012      raw=$(COLUMNS=10000 LC_ALL=C TZ=UTC0 ps -p $$ -o lstart= -o command=)\012      printf "%s\n" "$raw" > "$PSFILE"\012      stripped=$(printf "%s\n" "$raw" | sed "s/^[[:space:]]*//")\012      if command -v sha256sum >/dev/null 2>&1; then\012        printf "%s\n" "$stripped" | sha256sum | awk "{print \$1}" > "$IDENTFILE"\012      else\012        printf "%s\n" "$stripped" | shasum -a 256 | awk "{print \$1}" > "$IDENTFILE"\012      fi\012      bash "$ACK" "$NONCE" 0 >/dev/null 2>&1\012      exit $?\012    
+ack unknown expect_ident=03d929f8f0aa0aaf05a2cd872a9a54a75f34aa11a4a5dabdc3a139438f7b5c1c recorded_ident=03d929f8f0aa0aaf05a2cd872a9a54a75f34aa11a4a5dabdc3a139438f7b5c1c
+PASS: the reject records the harness pid, not the ack script pid
+PASS: the reject identity is the sha256 of that harness process start time and command
+PASS: refusing a nonce this home never launched does not arm the reset-audit check
+ack late rc=1
+ack late harness=9724 recorded_pid=9724 recorded_ident=2a5256c32fc7390c5d0bc52f34ecf1c0dda39d8a4dbfab12052ba304c4f3741c expect=2a5256c32fc7390c5d0bc52f34ecf1c0dda39d8a4dbfab12052ba304c4f3741c
+PASS: a late refusal records that harness process identity
+ack waiting: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	term_ack
+PASS: the late refusal is waiting to be reconciled
+PASS: refusing a late successor arms the reset-audit check
+=== scenario: reset audit PASS and DRIFT ===
+audit seed goal_rc=0 hold_rc=0 order_rc=0 order_id=1795804523-b065095e
+audit intact rc=0 out=(node:56709) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:58739) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS kind=handoff
+PASS: an intact home compares as PASS
+unhold rc=0 err=ok: unhold hold-one -> cleared
+task:
+  id: hold-one
+  title: Choose the approach
+  state: queued
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: captain
+  repo: firstmate
+  priority: "-"
+  created: 2026-11-27
+  closed: "-"
+  deps: none
+  links: none
+  body: "Captain hold set: 2026-11-27T18:35:15Z"
+help[1]:
+  - Run `tasks-axi ready` to see dispatchable work
+(node:59738) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+audit drift rc=1 out=(node:62221) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:63270) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL kind=handoff DRIFT goal:goal-open,hold:hold-one,order:1795804523-b065095e
+audit row: 1795804531	handoff	FAIL	goal:goal-open,hold:hold-one,order:1795804523-b065095e
+PASS: losing an open goal, an unanswered hold, and an open order compares as DRIFT and names each one
+PASS: the audit row records the same three losses
+=== scenario: arm the check only while a reset waits ===
+arm idle rc=0
+PASS: an idle home does not gain a reset-audit check
+begin rc=0 out=
+pending compactions=1
+PASS: recording a compaction arms the check and leaves one pending reset
+settle rc=0 out=PASS kind=compaction at=1795804532
+settle row: 1795804532	compaction	PASS	-
+PASS: settling an unchanged compaction records PASS
+sweep rc=0 err=
+PASS: once nothing is waiting, sweep retires the check
+=== failures: 1 ===
+LIVE DRIVE FAILED
+
+NOTE: the FAIL above is a setup collision, not a close of the wrong process.
+Two `sleep 600` processes started in the same second have the same ps lstart
+and the same command, so they share one identity digest. The follow-up drive
+in live-reused-pid.log records a different command (`sleep 601`) as the
+reject identity and leaves the live `sleep 600` holder and its terminal open.
