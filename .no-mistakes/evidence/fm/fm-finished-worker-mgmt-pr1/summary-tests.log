@@ -1,0 +1,26 @@
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - summary idle jitter shortens a bounded launch gap while watcher beats continue
+ok - persistent summary refresh failures retry once per idle gap while watcher beats continue
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@0 producer@1)
+ok - every lock-held deadline records bounded backoff before admission resumes
+ok - refresh publishes through the bounded Bash fallback without an external timer
+ok - TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers
+ok - real Bash worker TERM preserves direct status and best-effort diagnostics
+ok - summary idle refreshes slow above load 200 and resume ordinary pacing below it
+ok - status signals respect the loaded summary gap and refresh promptly when calm
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer interruption cannot overwrite a later atomic replacement
+ok - best-effort publication logs and continues
+not ok - best-effort refresh waited 4 seconds on its lock
+tests/lib.sh: line 334: 61039 Killed: 9               FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" bash -c '
+  . "$1/bin/fm-wake-lib.sh"
+  fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"
+  : > "$3"
+  # Held until killed below: on a loaded host the timed steps that need the
+  # lock busy can together outlast any short fixed hold.
+  exec sleep 600
+' _ "$ROOT" "$HOME_DIR" "$LOCK_MARKER"

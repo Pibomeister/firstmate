@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_watcher_publishes_every_cycle_whatever_its_loop_work"
+  ],
+  "exit": 0,
+  "seconds": 27.4
+}

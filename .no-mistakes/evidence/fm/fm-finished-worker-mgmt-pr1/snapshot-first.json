@@ -1,7 +1,7 @@
 {
   "schema": "fm-fleet-snapshot.v1",
-  "generated": "2026-11-26T14:29:56Z",
-  "fm_home": "{run-worktree}/.gate-tests/live/locks",
+  "generated": "2026-11-26T16:32:29Z",
+  "fm_home": "{run-worktree}/.test-phase/live-homes/snapshot-lock",
   "session": {
     "endpoint": {
       "backend": "unknown",
@@ -10,14 +10,14 @@
   },
   "roots": {
     "fm_root": "{run-worktree}",
-    "state": "{run-worktree}/.gate-tests/live/locks/state",
-    "data": "{run-worktree}/.gate-tests/live/locks/data",
-    "config": "{run-worktree}/.gate-tests/live/locks/config",
-    "projects": "{run-worktree}/.gate-tests/live/locks/projects"
+    "state": "{run-worktree}/.test-phase/live-homes/snapshot-lock/state",
+    "data": "{run-worktree}/.test-phase/live-homes/snapshot-lock/data",
+    "config": "{run-worktree}/.test-phase/live-homes/snapshot-lock/config",
+    "projects": "{run-worktree}/.test-phase/live-homes/snapshot-lock/projects"
   },
   "backlog": {
+    "path": "{run-worktree}/.test-phase/live-homes/snapshot-lock/data/backlog.md",
     "present": true,
-    "path": "{run-worktree}/.gate-tests/live/locks/data/backlog.md",
     "records": []
   },
   "tasks": [],
@@ -54,10 +54,10 @@
       "complete": true,
       "reason": null,
       "provenance": "registered-table",
-      "path": "{run-worktree}/.gate-tests/live/locks/data/secondmates.md",
+      "path": "{run-worktree}/.test-phase/live-homes/snapshot-lock/data/secondmates.md",
       "freshness": {
         "status": "fresh",
-        "observed_at": "2026-11-26T14:29:56Z"
+        "observed_at": "2026-11-26T16:32:29Z"
       },
       "records": [],
       "input_truncated": false,

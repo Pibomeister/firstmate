@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_a_relevant_change_collects_without_waiting_for_idle"
+  ],
+  "exit": 0,
+  "seconds": 14.3
+}

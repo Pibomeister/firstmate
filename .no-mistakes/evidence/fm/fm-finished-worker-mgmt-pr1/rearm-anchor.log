@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_rearmed_ticker_anchors_due_to_last_publication
+1..1
+ok - a re-armed ticker anchors its first due to the last publication
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 44.0s

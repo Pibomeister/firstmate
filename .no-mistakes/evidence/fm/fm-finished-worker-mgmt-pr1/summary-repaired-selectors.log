@@ -1,0 +1,3 @@
+1..3
+ok - summary idle refreshes slow above load 200 and resume ordinary pacing below it
+not ok - the loaded summary watcher stopped polling (observed 2 polls; stdout: heartbeat; stderr: )

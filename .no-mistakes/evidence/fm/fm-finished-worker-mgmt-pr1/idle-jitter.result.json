@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_jittered_idle_gaps_stay_within_the_interval"
+  ],
+  "exit": 0,
+  "seconds": 80.6
+}

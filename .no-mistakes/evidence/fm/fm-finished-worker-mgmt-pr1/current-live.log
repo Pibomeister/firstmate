@@ -1,0 +1,25 @@
+$ python3 .test-validation/live-driver.py
+Concurrent full snapshot: exit=75, stdout='', stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 73516); not starting a second
+Cheap contribution read while full snapshot is stopped: exit=0, nonempty=True
+First real snapshot resumed, printed valid JSON, and released its lock.
+Second real snapshot waited while the holder was stopped; both completed after resume with no lock left.
+Real snapshot --json returned valid JSON and preserved absent state/.
+Real snapshot --secondmate-home-summary returned valid JSON and preserved absent state/.
+Real snapshot-backed heartbeat: load 200 bound=571, load 300 bound=871, throttled=True.
+Repeated hot launch inside skip window preserved the published ledger byte-for-byte.
+Hot heartbeat one second short of the 400-second interval published again; no doubled skip gap.
+Watcher-passed factor 4 with a calm load file still published the extended stale bound.
+Calm direct launch resumed publication immediately and restored the ordinary bound.
+Watcher first publication: generated=1795713861, published=1795713871, bound=511.
+Injected a durable wake under load; no early heartbeat publication followed.
+Real watcher with base idle 10s and load 300 published again after 41s; prior bound covered the gap.
+Load fell and a durable wake triggered calm publication; generated gap=16s.
+Watcher published real home summary: generated=1795713939, load=300, base interval=8s, loaded interval=32s.
+A synthetic task/status append did not bypass the loaded summary gap.
+Real home-summary producer ran again after 50s; watcher liveness beat advanced during throttling.
+Calm status append published a new real summary after 17s.
+One real watcher cycle at load 300, heartbeat age 901s and open goal: exit=0, stdout='heartbeat', durable wake='1795714097\t1\theartbeat\theartbeat\theartbeat'
+FAIL Local watcher retries filesystem-rejected heartbeat publications at loaded spacing without a storm: name 'stat' is not defined
+All driver-owned process groups stopped; disposable homes removed.
+
+EXIT 1 elapsed 303.2s

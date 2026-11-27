@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_failed_heartbeat_publications_keep_retry_interval
+1..1
+ok - failed publications retain the throttled retry interval for expired and recent ledgers
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 101.0s

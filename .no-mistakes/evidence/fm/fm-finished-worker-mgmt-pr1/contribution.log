@@ -1,0 +1,4 @@
+$ bash tests/fm-fleet-snapshot-contribution-input.test.sh
+ok - contribution-input propagates a failing jq assembly as a non-zero exit
+
+EXIT 0 elapsed 2.1s

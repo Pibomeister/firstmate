@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_rearmed_ticker_anchors_due_to_last_publication"
+  ],
+  "exit": 0,
+  "seconds": 44.0
+}

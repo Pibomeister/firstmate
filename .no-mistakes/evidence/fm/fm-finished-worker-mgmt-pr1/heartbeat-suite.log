@@ -1,0 +1,154 @@
+$ bash tests/fm-heartbeat.test.sh
+ok - --write publishes every field atomically with a null failure on a clean run
+ok - no_mistakes_run reads the real status shape and refuses a sibling branch's run
+ok - fm_nm_select_run chooses the run, and an unusable choice reads as unknown
+ok - a hung run head check is bounded, unknown, and sets failure
+not ok - a detached worktree did not keep the selection path: {
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-26T17:23:45Z",
+  "generated_epoch": 1795713825,
+  "published_epoch": 1795713839,
+  "fm_home": "{run-worktree}/.test-validation/tmp/fm-heartbeat.wGKhmz/nm-detached",
+  "stale_after_secs": null,
+  "throttled": false,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-11-26T17:23:45Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": "01a218de-d479-7582-8098-6883517e707b"
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "hb-task",
+      "terminal": {
+        "backend": "tmux",
+        "target": "fmtest:hb",
+        "exists": false
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "none",
+        "detail": "backend target gone: fmtest:hb"
+      },
+      "last_commit": {
+        "sha": "ab83f5e622f7811e9a2bdc22de4bd80d84f2d8bb",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": {
+        "run_id": "01RUN",
+        "step": "review",
+        "active": true
+      },
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": [],
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    }
+  ],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1795713825,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s",
+    "count": 1
+  }
+}
+
+EXIT 1 elapsed 130.3s

@@ -1,0 +1,8 @@
+{
+  "backlog": {
+    "records": [],
+    "path": "{run-worktree}/.test-live-monitoring/snapshot/data/backlog.md",
+    "present": true
+  },
+  "tasks": []
+}

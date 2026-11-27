@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Synthetic load crosses 200 and monitoring returns to its ordinary interval",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Concurrent real snapshots wait or refuse; contribution reads, normal release, and dead-holder recovery remain available",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Both real read-only snapshot modes preserve a stateless synthetic home",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Real heartbeat extends freshness once, suppresses early collection, tolerates jitter, and restores calm cadence",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Loaded watcher with synthetic open work emits its overdue supervision wake within the existing cap",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  },
+  {
+    "name": "Real publication write failures preserve the prior ledger and retain loaded retry spacing",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-product-transcript.log",
+    "reason": "Real local CLI; disposable synthetic lab homes."
+  }
+]

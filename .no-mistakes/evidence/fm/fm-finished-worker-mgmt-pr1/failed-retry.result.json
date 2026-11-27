@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_failed_heartbeat_publications_keep_retry_interval"
+  ],
+  "exit": 0,
+  "seconds": 101.0
+}

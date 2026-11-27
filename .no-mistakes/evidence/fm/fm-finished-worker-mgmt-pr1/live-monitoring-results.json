@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Heartbeat follows load threshold, skips duplicate hot reads, tolerates launch jitter, restores calm cadence, and preserves launch-factor freshness",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log",
+    "reason": "Real local CLI on disposable synthetic lab homes."
+  },
+  {
+    "name": "Full snapshots serialize per synthetic home, refuse contention, release normal locks, and recover a killed real holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log",
+    "reason": "Real local CLI on disposable synthetic lab homes."
+  },
+  {
+    "name": "Read-only JSON and home-summary snapshots preserve a synthetic stateless home",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log",
+    "reason": "Real local CLI on disposable synthetic lab homes."
+  }
+]

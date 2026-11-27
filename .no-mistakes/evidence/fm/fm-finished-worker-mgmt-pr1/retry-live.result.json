@@ -1,0 +1,8 @@
+{
+  "command": [
+    "python3",
+    ".test-validation/retry-live.py"
+  ],
+  "exit": 1,
+  "seconds": 154.7
+}

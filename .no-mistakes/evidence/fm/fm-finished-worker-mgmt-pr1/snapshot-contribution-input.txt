@@ -1,0 +1,8 @@
+{
+  "backlog": {
+    "path": "{run-worktree}/.test-phase/live-homes/snapshot-lock/data/backlog.md",
+    "present": true,
+    "records": []
+  },
+  "tasks": []
+}

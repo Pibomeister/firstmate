@@ -1,0 +1,14 @@
+SCENARIO watcher and summary load pacing
+Initial real heartbeat launch=1795717094, summary launch=1795717102, stale bound=571
+Appended a real wake-queue event under synthetic load 300
+heartbeat publication 1795717135
+summary publication 1795717163
+Hot gaps: heartbeat=41s; summary=61s; cheap beat advanced 3 times
+Calm recovery: heartbeat launch gap=36s; summary gap=36s
+SCENARIO failed publication retries
+Observed real heartbeat attempt 1 pid=49584; inject process failure before publication
+Observed real heartbeat attempt 2 pid=55411; inject process failure before publication
+Observed real heartbeat attempt 3 pid=99748; inject process failure before publication
+Real crashed-publication retry gaps: [2.53, 10.67]
+FAIL AssertionError(('publication failure caused a retry storm', [2.53, 10.67]))
+All owned watcher groups stopped; disposable homes removed.

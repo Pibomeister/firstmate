@@ -1,0 +1,5 @@
+$ bash tests/fm-heartbeat.test.sh test_unchanged_home_collects_once_per_idle_interval
+1..1
+not ok - the watcher beat advanced only 5 time(s) across ten polls
+
+EXIT 1 elapsed 111.7s

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "Real local watcher defers hot-load changes, publishes before its freshness deadline, and restores calm heartbeat cadence while cheap beats advance",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher.log; watch-heartbeat-initial.json; watch-heartbeat-calm.json",
+    "reason": "Actual watcher, heartbeat and snapshot executables; synthetic load file and wake-queue events in a disposable home."
+  },
+  {
+    "name": "Real local home-summary snapshots slow to the loaded interval and resume ordinary publication after load falls",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher.log; watch-summary-initial.json; watch-summary-calm.json",
+    "reason": "Actual watcher and home-summary writer with synthetic load; no replacement producer."
+  },
+  {
+    "name": "failed publication retries",
+    "result": "fail",
+    "live": true,
+    "evidence": "live-watcher.log",
+    "reason": "('publication failure caused a retry storm', [2.53, 10.67])"
+  }
+]

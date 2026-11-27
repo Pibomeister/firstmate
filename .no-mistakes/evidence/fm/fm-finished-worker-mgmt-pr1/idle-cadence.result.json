@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_unchanged_home_collects_once_per_idle_interval"
+  ],
+  "exit": 1,
+  "seconds": 111.7
+}

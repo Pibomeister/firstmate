@@ -1,0 +1,10 @@
+{
+  "load": 300,
+  "prior_heartbeat_age_secs": 901,
+  "configured_base_secs": 600,
+  "backoff_streak": 3,
+  "exit": 0,
+  "observed_stdout": "heartbeat\n",
+  "wake_queue": "1795717390\t1\theartbeat\theartbeat\theartbeat\n",
+  "result": "pass"
+}

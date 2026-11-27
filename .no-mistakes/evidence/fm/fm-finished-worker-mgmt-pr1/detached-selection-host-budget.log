@@ -1,0 +1,6 @@
+$ env FM_HEARTBEAT_READ_TIMEOUT=15 bash tests/fm-heartbeat.test.sh test_worktree_off_recorded_branch_is_unknown
+1..1
+ok - a worktree off its recorded branch or with an unread branch reads as unknown
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 157.6s

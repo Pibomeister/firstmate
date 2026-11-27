@@ -1,0 +1,4 @@
+$ env FM_TEST_ONLY=test_attended_open_work_heartbeat_floor bash tests/fm-watch-triage.test.sh
+ok - primary open goals and tasks arm and surface the heartbeat, under high load too; closed, secondmate, held and paused homes retain cadence
+
+EXIT 0 elapsed 235.1s

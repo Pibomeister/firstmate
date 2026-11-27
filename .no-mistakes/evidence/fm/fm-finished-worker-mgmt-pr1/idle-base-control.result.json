@@ -1,0 +1,11 @@
+{
+  "command": [
+    "env",
+    "FM_TEST_CODE_ROOT={run-worktree}/.test-validation/baseline",
+    "bash",
+    "tests/.validation-fm-heartbeat.sh",
+    "test_unchanged_home_collects_once_per_idle_interval"
+  ],
+  "exit": 0,
+  "seconds": 57.1
+}

@@ -1,0 +1,8 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-load-throttle.test.sh"
+  ],
+  "exit": 0,
+  "seconds": 112.7
+}

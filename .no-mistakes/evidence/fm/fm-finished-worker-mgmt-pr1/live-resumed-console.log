@@ -1,0 +1,14 @@
+10:37:54 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:38:35 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711081, "published_epoch": 1795711115, "throttled": true, "stale_after_secs": 511, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:38:35 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711094, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}
+10:38:40 Appended real durable wake and synthetic status while loaded; observing unchanged launch counts before 40s deadline.
+10:38:44 watch-cadence: watcher stopped (exit=-15); real launches={'heartbeat': [5.971], 'summary': [13.218]}
+10:38:44 FAIL Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes: 
+10:38:44 START Real publication write failures preserve the prior ledger and retain loaded retry spacing
+10:38:46 Real unwritable-state heartbeat: exit=0, stderr=fm-heartbeat: cannot create a work directory in {run-worktree}/.test-phase/live-homes/watch-failed-publication/state; nothing published
+10:38:46 FAIL Real publication write failures preserve the prior ledger and retain loaded retry spacing: 
+10:38:46 START Loaded watcher with synthetic open work emits its overdue supervision wake within the existing cap
+10:39:11 Real one-shot loaded watcher stdout=heartbeat
+10:39:11 Durable wake queue=1795711147	1	heartbeat	heartbeat	heartbeat
+10:39:11 PASS Loaded watcher with synthetic open work emits its overdue supervision wake within the existing cap
+10:39:11 Removed all live disposable homes.

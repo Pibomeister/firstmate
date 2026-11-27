@@ -1,0 +1,18 @@
+$ python3 .test-validation/retry-live.py
+Filesystem-protected ledger rejected a real heartbeat publication: mv: rename {run-worktree}/.test-validation/live/failed-publication/state/.heartbeat-work.znwElq/heartbeat.json to {run-worktree}/.test-validation/live/failed-publication/state/heartbeat.json: Operation not permitted
+fm-heartbeat: could not write {run-worktree}/.test-validation/live/failed-publication/state/heartbeat.json
+Observed real heartbeat collection attempt at 1795714150.252
+Observed real heartbeat collection attempt at 1795714211.628
+Observed real heartbeat collection attempt at 1795714276.441
+Failed publication retries kept loaded interval 60s; actual collection gaps=[61.38, 64.81]; old ledger remained intact.
+All driver-owned process groups stopped; disposable homes removed.
+Traceback (most recent call last):
+  File "{run-worktree}/.test-validation/retry-live.py", line 241, in <module>
+    shutil.rmtree(BASE);transcript.close()
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/shutil.py", line 722, in rmtree
+    onerror(os.rmdir, path, sys.exc_info())
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/shutil.py", line 720, in rmtree
+    os.rmdir(path)
+OSError: [Errno 66] Directory not empty: '{run-worktree}/.test-validation/live'
+
+EXIT 1 elapsed 154.7s

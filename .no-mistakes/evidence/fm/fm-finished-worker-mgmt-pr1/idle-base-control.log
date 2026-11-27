@@ -1,0 +1,6 @@
+$ env FM_TEST_CODE_ROOT={run-worktree}/.test-validation/baseline bash tests/.validation-fm-heartbeat.sh test_unchanged_home_collects_once_per_idle_interval
+1..1
+ok - an unchanged home collects once per idle interval while the watcher beat keeps the poll period
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 57.1s

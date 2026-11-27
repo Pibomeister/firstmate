@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_watcher_poll_does_not_wait_for_heartbeat
+1..1
+ok - a watcher poll does not wait for a slow heartbeat
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 44.3s

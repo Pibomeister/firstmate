@@ -1,0 +1,3 @@
+check: rearm-resurface
+signal: {run-worktree}/.test-phase/live-homes/watch-cadence/state/probe.status
+signal: {run-worktree}/.test-phase/live-homes/watch-cadence/state/probe.status

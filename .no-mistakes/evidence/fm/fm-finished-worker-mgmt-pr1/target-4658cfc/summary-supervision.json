@@ -1,0 +1,7 @@
+{
+  "wrapper_pid": 87403,
+  "suite_pid": 92952,
+  "reason": "Initial supervisor timeout extended while the same required suite continues; resume supervisor only once suite exits so its actual exit status is retained.",
+  "wait_seconds": 106.3,
+  "suite_state_before_resume": "Z"
+}

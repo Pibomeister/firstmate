@@ -1,0 +1,34 @@
+[
+  {
+    "selector": "test_a_change_under_load_waits_for_the_throttled_idle_due",
+    "exit": 1
+  },
+  {
+    "selector": "test_rearmed_ticker_anchors_due_to_last_publication",
+    "exit": 0
+  },
+  {
+    "selector": "test_failed_heartbeat_publications_keep_retry_interval",
+    "exit": 0
+  },
+  {
+    "selector": "test_status_change_collects_before_grace_without_a_wake",
+    "exit": 0
+  },
+  {
+    "selector": "test_unchanged_home_collects_once_per_idle_interval",
+    "exit": 1
+  },
+  {
+    "selector": "test_jittered_idle_gaps_stay_within_the_interval",
+    "exit": 1
+  },
+  {
+    "selector": "test_a_relevant_change_collects_without_waiting_for_idle",
+    "exit": 0
+  },
+  {
+    "selector": "test_watcher_publishes_its_cycle_period_not_the_wake_cadence",
+    "exit": 0
+  }
+]

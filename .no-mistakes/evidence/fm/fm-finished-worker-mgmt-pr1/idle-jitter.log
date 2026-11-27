@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_jittered_idle_gaps_stay_within_the_interval
+1..1
+ok - jittered idle gaps stay between the interval less the jitter and the interval
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 80.6s

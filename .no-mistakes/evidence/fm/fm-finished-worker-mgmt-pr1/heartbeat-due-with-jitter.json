@@ -1,15 +1,15 @@
 {
   "schema": "fm-heartbeat.v1",
-  "generated": "2026-11-26T14:30:21Z",
-  "generated_epoch": 1795703421,
-  "published_epoch": 1795703425,
-  "fm_home": "{run-worktree}/.gate-tests/live/heartbeat",
+  "generated": "2026-11-26T16:33:55Z",
+  "generated_epoch": 1795710835,
+  "published_epoch": 1795710869,
+  "fm_home": "{run-worktree}/.test-phase/live-homes/heartbeat",
   "stale_after_secs": 871,
   "throttled": true,
   "snapshot": {
     "ok": true,
     "schema": "fm-fleet-snapshot.v1",
-    "generated": "2026-11-26T14:30:21Z",
+    "generated": "2026-11-26T16:33:55Z",
     "failure": null
   },
   "primary": {
@@ -39,8 +39,11 @@
       "recorded": false
     },
     "writer": {
-      "anchor_pid": 69303,
-      "session_id": "01a21840-60d8-76c2-8db9-cddb5381a4b0"
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": "01a218ab-7012-7783-8fd2-5ea7883a7603"
     },
     "last_turn": {
       "unknown": true,
@@ -70,10 +73,13 @@
   },
   "ready_pr_discovery": {
     "schema": "fm-ready-pr-discovery.v1",
-    "generated_epoch": 1795703421,
+    "generated_epoch": 1795710835,
     "runs": [],
     "unreadable": [],
     "warnings": []
   },
-  "failure": null
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s",
+    "count": 1
+  }
 }

@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_a_change_under_load_waits_for_the_throttled_idle_due"
+  ],
+  "exit": 0,
+  "seconds": 16.7
+}

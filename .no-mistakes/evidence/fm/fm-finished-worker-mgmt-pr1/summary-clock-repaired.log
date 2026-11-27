@@ -1,0 +1,5 @@
+1..3
+ok - summary idle refreshes slow above load 200 and resume ordinary pacing below it
+ok - status signals respect the loaded summary gap and refresh promptly when calm
+ok - TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers
+FM_TEST_COMPLETE

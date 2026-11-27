@@ -1,0 +1,8 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-home-summary-refresh.test.sh"
+  ],
+  "exit": 0,
+  "seconds": 1379.6
+}

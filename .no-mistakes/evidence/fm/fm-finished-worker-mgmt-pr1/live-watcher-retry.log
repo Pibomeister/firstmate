@@ -1,0 +1,6 @@
+SCENARIO failed publication retries
+Observed real heartbeat attempt 1 pid=21710; inject process failure before publication
+Observed real heartbeat attempt 2 pid=64140; inject process failure before publication
+Observed real heartbeat attempt 3 pid=11714; inject process failure before publication
+Real crashed-publication retry gaps: [16.96, 10.07]
+All owned watcher groups stopped; disposable homes removed.

@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Real local watcher retains a throttled retry interval after actual heartbeat processes fail against an overdue synthetic ledger",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher.log; watch-retry.err",
+    "reason": "Real heartbeat processes were observed and killed in the disposable watcher process group; scheduler and prior ledger remained live."
+  }
+]

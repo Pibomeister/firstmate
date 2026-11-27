@@ -1,0 +1,8 @@
+{
+  "command": [
+    "python3",
+    ".test-validation/live-driver.py"
+  ],
+  "exit": 1,
+  "seconds": 303.2
+}

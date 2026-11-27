@@ -1,0 +1,11 @@
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - summary idle jitter shortens a bounded launch gap while watcher beats continue
+ok - persistent summary refresh failures retry once per idle gap while watcher beats continue
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@1 producer@2)
+ok - every lock-held deadline records bounded backoff before admission resumes
+ok - refresh publishes through the bounded Bash fallback without an external timer
+not ok - cancellation retained the publication lock

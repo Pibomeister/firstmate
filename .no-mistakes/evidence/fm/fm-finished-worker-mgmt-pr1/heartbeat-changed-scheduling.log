@@ -1,0 +1,6 @@
+1..4
+ok - an unchanged home collects once per idle interval while the watcher beat keeps the poll period
+ok - a change under load waits for the throttled idle due instead of resetting it
+ok - a re-armed ticker anchors its first due to the last publication
+ok - failed publications retain the throttled retry interval for expired and recent ledgers
+FM_TEST_COMPLETE

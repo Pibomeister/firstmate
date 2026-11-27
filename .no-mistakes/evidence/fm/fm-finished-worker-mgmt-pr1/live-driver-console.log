@@ -1,0 +1,42 @@
+10:32:27 START Synthetic load crosses 200 and monitoring returns to its ordinary interval
+10:32:27 load=200.00, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 load=200.01, base=15s, actual interval=60s; expected=60s (intent: above 200 -> four times)
+10:32:28 load=300, base=15s, actual interval=60s; expected=60s (intent: above 200 -> four times)
+10:32:28 load=199, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 load=bad, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 Missing load input preserves 15s interval.
+10:32:28 PASS Synthetic load crosses 200 and monitoring returns to its ordinary interval
+10:32:28 START Concurrent real snapshots wait or refuse; contribution reads, normal release, and dead-holder recovery remain available
+10:32:30 Stopped actual snapshot pid=17182 while its per-home lock was held.
+10:32:32 Concurrent --json: exit=75, stdout bytes=0, stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 17182); not starting a second
+10:32:34 Concurrent --secondmate-home-summary: exit=75, stdout bytes=0, stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 17182); not starting a second
+10:32:35 Contribution-input succeeds while full snapshot is stopped.
+10:32:44 Resumed holder and waiting real snapshot both exited 0; lock absent after normal completion.
+10:32:55 SIGKILLed holder: next actual snapshot reclaimed stale lock, emitted valid JSON, and removed the lock.
+10:32:55 PASS Concurrent real snapshots wait or refuse; contribution reads, normal release, and dead-holder recovery remain available
+10:32:55 START Both real read-only snapshot modes preserve a stateless synthetic home
+10:32:59 --json: exit=0, schema=fm-fleet-snapshot.v1, state directory remains absent.
+10:33:03 --secondmate-home-summary: exit=0, schema=fm-secondmate-home-summary.v1, state directory remains absent.
+10:33:03 PASS Both real read-only snapshot modes preserve a stateless synthetic home
+10:33:03 START Real heartbeat extends freshness once, suppresses early collection, tolerates jitter, and restores calm cadence
+10:33:29 heartbeat-at-threshold: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710784, "published_epoch": 1795710809, "throttled": false, "stale_after_secs": 571, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:33:54 heartbeat-first-hot: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710810, "published_epoch": 1795710833, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:33:54 Immediate second hot heartbeat exits 0 and preserves prior ledger byte-for-byte (no collection).
+10:34:29 heartbeat-due-with-jitter: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710835, "published_epoch": 1795710869, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:34:54 heartbeat-calm-recovery: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710870, "published_epoch": 1795710893, "throttled": false, "stale_after_secs": 571, "failure": null}
+10:35:22 heartbeat-pinned-hot-factor-on-calm-load: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710895, "published_epoch": 1795710921, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s", "count": 2}}
+10:35:52 heartbeat-pinned-calm-factor-on-hot-load: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710923, "published_epoch": 1795710952, "throttled": false, "stale_after_secs": 571, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:35:52 Both load-crossing directions obey watcher-passed launch factor instead of re-probing.
+10:35:52 PASS Real heartbeat extends freshness once, suppresses early collection, tolerates jitter, and restores calm cadence
+10:35:52 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+Exception in thread Thread-1:
+Traceback (most recent call last):
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/threading.py", line 973, in _bootstrap_inner
+    self.run()
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/threading.py", line 910, in run
+    self._target(*self._args, **self._kwargs)
+  File "{run-worktree}/.test-phase/live.py", line 220, in drain
+    for line in self.p.stderr:
+  File "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/codecs.py", line 322, in decode
+    (result, consumed) = self._buffer_decode(data, self.errors, final)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xe2 in position 3479: invalid continuation byte

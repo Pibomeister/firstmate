@@ -1,0 +1,54 @@
+$ bash tests/fm-home-summary-refresh.test.sh
+ok - watcher-carried status append publishes the real home summary
+ok - large backlog snapshots and home-summary publication stay within exec limits
+ok - fleet snapshot transport does not require or mutate operational state
+ok - parent snapshot consumes large child ledgers without argument transport
+ok - live watcher cadence bounds publication staleness without signals
+ok - summary idle jitter shortens a bounded launch gap while watcher beats continue
+ok - persistent summary refresh failures retry once per idle gap while watcher beats continue
+fm-home-summary-refresh: summary producer failed with exit 7 in stage producer (stages: lock-wait@1 producer@4)
+ok - every lock-held deadline records bounded backoff before admission resumes
+ok - refresh publishes through the bounded Bash fallback without an external timer
+ok - TERM and HUP promptly cancel owned refresh work without late publication on exec and Bash timers
+ok - real Bash worker TERM preserves direct status and best-effort diagnostics
+ok - summary idle refreshes slow above load 200 and resume ordinary pacing below it
+ok - status signals respect the loaded summary gap and refresh promptly when calm
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer interruption cannot overwrite a later atomic replacement
+ok - best-effort publication logs and continues
+ok - best-effort refresh bounds publication lock acquisition
+ok - a deadline failure names the slow stage and keeps the last good summary
+ok - a signalled parent removes its stage file
+ok - the producer never recreates a deleted stage log
+ok - stage-file open is bounded by the refresh deadline
+ok - best-effort refresh bounds validation and publication
+ok - a stage file created before a deadline kill is removed
+ok - parent-side stage-file reads and removals are bounded
+ok - an unreadable stage file is reported as unreadable
+ok - parent loss leaves no running refresh worker or stage file
+ok - a first refresh on a home without a state directory names its stage
+ok - a stray stage path override never touches an unrelated file
+Terminated: 15
+ok - a deadline names the lock-wait, validate and publish stages
+ok - a failure the worker handles itself names its stage
+ok - current-state reads refill a free slot and never change the summary
+ok - row composition overlaps behind the window and keeps every task row identical
+ok - task ids that extend another task's row file name keep separate rows
+ok - best-effort refresh bounds state initialization
+ok - best-effort refresh logs worker termination
+ok - best-effort refresh bounds failure reporting fallback
+ok - valid publication ignores an unavailable failure record
+ok - publication completes on a home carrying accumulated status history
+ok - producer skips remote per-task state probes
+ok - a stalled publication does not delay the watcher liveness beacon
+ok - publication remains single-flight across watcher restart
+ok - bootstrap scopes retained failures to the current publication
+ok - failure records preserve refresh attempt ordering
+ok - repeated publication failure is reported at session start until it clears
+ok - failed refresh backs off from 30 to 1800 seconds and resets on publication
+ok - a queued refresh checks backoff after taking the lock
+ok - timeout backoff precedes admission and cannot undo a later publication
+ok - a stalled timeout backoff write remains bounded while holding the lock
+ok - backoff eligibility and failure reads cannot hold a lifecycle caller
+
+EXIT 0 elapsed 1379.6s

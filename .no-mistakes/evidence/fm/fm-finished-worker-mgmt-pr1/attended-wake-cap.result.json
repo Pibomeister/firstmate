@@ -1,0 +1,10 @@
+{
+  "command": [
+    "env",
+    "FM_TEST_ONLY=test_attended_open_work_heartbeat_floor",
+    "bash",
+    "tests/fm-watch-triage.test.sh"
+  ],
+  "exit": 0,
+  "seconds": 235.1
+}

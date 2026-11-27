@@ -1,0 +1,85 @@
+{
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-20T17:00:00Z",
+  "generated_epoch": 1795194000,
+  "published_epoch": 1795717014,
+  "fm_home": "{run-worktree}/.test-live-monitoring/heartbeat",
+  "stale_after_secs": 812,
+  "throttled": true,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-11-20T17:00:00Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": "01a2190a-da88-75c2-809e-509f64c5f12d"
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1795194000,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s",
+    "count": 1
+  }
+}

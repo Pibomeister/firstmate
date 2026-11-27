@@ -1,0 +1,8 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-fleet-snapshot-view.test.sh"
+  ],
+  "exit": 1,
+  "seconds": 481.2
+}

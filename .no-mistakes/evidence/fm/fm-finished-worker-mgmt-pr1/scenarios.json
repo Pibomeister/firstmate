@@ -1,0 +1,51 @@
+[
+  {
+    "name": "A local heartbeat publishes the extended bound above synthetic load 200, suppresses an immediate duplicate, tolerates launch jitter, and restores the calm bound",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log; hb-threshold.json; hb-hot.json; hb-jitter.json; hb-recovered.json; hb-launch-factor.json; hb-unreadable.json",
+    "reason": "Real heartbeat and fleet-snapshot commands; synthetic load file and prior ledger. An absent primary anchor sometimes timed out; snapshot collection and the load/freshness assertions completed."
+  },
+  {
+    "name": "A local watcher defers hot-load changes, keeps advancing cheap beats, restores calm heartbeat cadence, and preserves the attended open-work wake cap",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher.log (pacing section); watch-heartbeat-initial.json; watch-heartbeat-calm.json; live-cap-result.json; live-cap-queue.tsv",
+    "reason": "Real watcher, heartbeat and snapshot commands in synthetic marked lab homes; real wake-queue writes. The cap check used a synthetic open dispatch goal and prior heartbeat timestamp."
+  },
+  {
+    "name": "A local watcher spaces retries after real heartbeat processes crash without replacing an overdue prior ledger",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher-retry.log; watch-retry.err",
+    "reason": "Real heartbeat launch processes were killed inside the disposable watcher tree. The corrected observer selected only direct watcher/ticker children; the initial observer also counted a subshell and was discarded."
+  },
+  {
+    "name": "Local home-summary snapshots slow under synthetic high load and return to shorter publication gaps after load falls",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-watcher.log (pacing section); watch-summary-initial.json; watch-summary-calm.json",
+    "reason": "Real watcher, home-summary writer and snapshot producer; synthetic load and wake events, with no replacement producer."
+  },
+  {
+    "name": "Concurrent full snapshots serialize per local home, refuse a still-running holder, release normal locks, and recover a killed real holder",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log; snapshot-refused.err; summary-refused.err; snapshot-holder.out; snapshot-other-home.out; snapshot-reclaimed.out",
+    "reason": "A real producer was stopped after acquiring its lock, then resumed; another was killed. Real competing JSON and summary producers returned 75 without documents; another home remained independent."
+  },
+  {
+    "name": "A cheap local contribution-input read succeeds while a full snapshot in the same synthetic home owns the lock",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log; contribution-independent.out",
+    "reason": "The real contribution-input command ran while the real full-snapshot holder was stopped with its lock held."
+  },
+  {
+    "name": "Read-only JSON and home-summary snapshots leave a synthetic stateless local home without a state directory",
+    "result": "pass",
+    "live": true,
+    "evidence": "live-monitoring.log; stateless-json.out; stateless-summary.out",
+    "reason": "Both real snapshot output modes ran against a disposable home whose state directory was absent; the driver asserted that it stayed absent."
+  }
+]

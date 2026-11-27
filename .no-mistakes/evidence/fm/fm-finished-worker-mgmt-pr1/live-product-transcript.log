@@ -1,0 +1,77 @@
+10:32:27 START Synthetic load crosses 200 and monitoring returns to its ordinary interval
+10:32:27 load=200.00, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 load=200.01, base=15s, actual interval=60s; expected=60s (intent: above 200 -> four times)
+10:32:28 load=300, base=15s, actual interval=60s; expected=60s (intent: above 200 -> four times)
+10:32:28 load=199, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 load=bad, base=15s, actual interval=15s; expected=15s (intent: above 200 -> four times)
+10:32:28 Missing load input preserves 15s interval.
+10:32:28 PASS Synthetic load crosses 200 and monitoring returns to its ordinary interval
+10:32:28 START Concurrent real snapshots wait or refuse; contribution reads, normal release, and dead-holder recovery remain available
+10:32:30 Stopped actual snapshot pid=17182 while its per-home lock was held.
+10:32:32 Concurrent --json: exit=75, stdout bytes=0, stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 17182); not starting a second
+10:32:34 Concurrent --secondmate-home-summary: exit=75, stdout bytes=0, stderr=fm-fleet-snapshot: another snapshot is already running in this home (pid 17182); not starting a second
+10:32:35 Contribution-input succeeds while full snapshot is stopped.
+10:32:44 Resumed holder and waiting real snapshot both exited 0; lock absent after normal completion.
+10:32:55 SIGKILLed holder: next actual snapshot reclaimed stale lock, emitted valid JSON, and removed the lock.
+10:32:55 PASS Concurrent real snapshots wait or refuse; contribution reads, normal release, and dead-holder recovery remain available
+10:32:55 START Both real read-only snapshot modes preserve a stateless synthetic home
+10:32:59 --json: exit=0, schema=fm-fleet-snapshot.v1, state directory remains absent.
+10:33:03 --secondmate-home-summary: exit=0, schema=fm-secondmate-home-summary.v1, state directory remains absent.
+10:33:03 PASS Both real read-only snapshot modes preserve a stateless synthetic home
+10:33:03 START Real heartbeat extends freshness once, suppresses early collection, tolerates jitter, and restores calm cadence
+10:33:29 heartbeat-at-threshold: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710784, "published_epoch": 1795710809, "throttled": false, "stale_after_secs": 571, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:33:54 heartbeat-first-hot: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710810, "published_epoch": 1795710833, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:33:54 Immediate second hot heartbeat exits 0 and preserves prior ledger byte-for-byte (no collection).
+10:34:29 heartbeat-due-with-jitter: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710835, "published_epoch": 1795710869, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:34:54 heartbeat-calm-recovery: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710870, "published_epoch": 1795710893, "throttled": false, "stale_after_secs": 571, "failure": null}
+10:35:22 heartbeat-pinned-hot-factor-on-calm-load: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710895, "published_epoch": 1795710921, "throttled": true, "stale_after_secs": 871, "failure": {"reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s", "count": 2}}
+10:35:52 heartbeat-pinned-calm-factor-on-hot-load: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795710923, "published_epoch": 1795710952, "throttled": false, "stale_after_secs": 571, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:35:52 Both load-crossing directions obey watcher-passed launch factor instead of re-probing.
+10:35:52 PASS Real heartbeat extends freshness once, suppresses early collection, tolerates jitter, and restores calm cadence
+10:35:52 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:37:01 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:37:54 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:38:35 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711081, "published_epoch": 1795711115, "throttled": true, "stale_after_secs": 511, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:38:35 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711094, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}
+10:38:40 Appended real durable wake and synthetic status while loaded; observing unchanged launch counts before 40s deadline.
+10:38:44 watch-cadence: watcher stopped (exit=-15); real launches={'heartbeat': [5.971], 'summary': [13.218]}
+10:38:44 FAIL Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes: 
+10:38:44 START Real publication write failures preserve the prior ledger and retain loaded retry spacing
+10:38:46 Real unwritable-state heartbeat: exit=0, stderr=fm-heartbeat: cannot create a work directory in {run-worktree}/.test-phase/live-homes/watch-failed-publication/state; nothing published
+10:38:46 FAIL Real publication write failures preserve the prior ledger and retain loaded retry spacing: 
+10:38:46 START Loaded watcher with synthetic open work emits its overdue supervision wake within the existing cap
+10:39:11 Real one-shot loaded watcher stdout=heartbeat
+10:39:11 Durable wake queue=1795711147	1	heartbeat	heartbeat	heartbeat
+10:39:11 PASS Loaded watcher with synthetic open work emits its overdue supervision wake within the existing cap
+10:39:11 Removed all live disposable homes.
+10:40:10 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:40:42 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711217, "published_epoch": 1795711241, "throttled": true, "stale_after_secs": 591, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:40:42 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711220, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}
+10:40:51 Appended real durable wake and synthetic status while loaded; observing unchanged launch counts before 120s deadline.
+10:41:37 Before loaded deadline: one launch each; watcher liveness beat advanced despite deferred collection.
+10:44:39 watch-cadence: watcher stopped (exit=-15); real launches={'heartbeat': [6.291], 'summary': [8.168, 139.37]}
+10:44:39 FAIL Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes: timed out waiting for 120s throttled collections
+10:44:39 START Real publication write failures preserve the prior ledger and retain loaded retry spacing
+10:44:40 Real unwritable-state heartbeat: exit=0, stderr=fm-heartbeat: cannot create a work directory in {run-worktree}/.test-phase/live-homes/watch-failed-publication/state; nothing published
+10:45:58 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:46:43 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711573, "published_epoch": 1795711602, "throttled": true, "stale_after_secs": 591, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:46:43 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711579, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}
+10:48:38 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:49:22 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711731, "published_epoch": 1795711761, "throttled": true, "stale_after_secs": 591, "failure": {"reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s", "count": 2}}
+10:49:22 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711737, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}
+10:49:34 Appended real durable wake and synthetic status while loaded; observing unchanged launch counts before 120s deadline.
+10:50:10 Before loaded deadline: one launch each; watcher liveness beat advanced despite deferred collection.
+10:51:12 heartbeat: real loaded launch gap=121.000s, configured base=30s, loaded=120s.
+10:51:12 summary: real loaded launch gap=138.000s, configured base=30s, loaded=120s.
+10:51:19 watch-cadence-second-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711851, "published_epoch": 1795711879, "throttled": true, "stale_after_secs": 591, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:51:25 Calm change at 163.598s: next heartbeat=163.290s; summary=166.290s.
+10:51:53 watch-cadence-calm-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711883, "published_epoch": 1795711913, "throttled": false, "stale_after_secs": 501, "failure": {"reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s", "count": 2}}
+10:52:04 watch-cadence: watcher stopped (exit=-15); real launches={'heartbeat': [11.29, 132.29, 163.29], 'summary': [15.29, 153.29, 166.29]}
+10:52:04 PASS Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:52:05 START Real publication write failures preserve the prior ledger and retain loaded retry spacing
+10:52:17 Real unwritable-state heartbeat: exit=0, stderr=fm-heartbeat: cannot create a work directory in {run-worktree}/.test-phase/live-homes/watch-failed-publication/state; nothing published
+10:54:16 Actual unwritable-state retry launch times=[93.421, 106.421, 118.421], gaps=[13.0, 12.0]; expected loaded interval=12s, not per-poll retries.
+10:54:16 failed-publication-preserved-ledger: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711982, "published_epoch": 1795712029, "throttled": true, "stale_after_secs": 483, "failure": {"reason": "primary writer anchor timed out after 3s; primary writer session timed out after 3s", "count": 2}}
+10:54:18 watch-failed-publication: watcher stopped (exit=-15); real launches={'heartbeat': [41.421, 93.421, 106.421, 118.421], 'summary': []}
+10:54:18 PASS Real publication write failures preserve the prior ledger and retain loaded retry spacing
+10:54:18 Removed all live disposable homes.

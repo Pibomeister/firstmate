@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_watcher_runs_one_heartbeat_at_a_time
+1..1
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 80.8s

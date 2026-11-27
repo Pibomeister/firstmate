@@ -1,0 +1,238 @@
+ok - --write publishes every field atomically with a null failure on a clean run
+ok - no_mistakes_run reads the real status shape and refuses a sibling branch's run
+ok - fm_nm_select_run chooses the run, and an unusable choice reads as unknown
+ok - a hung run head check is bounded, unknown, and sets failure
+ok - a worktree off its recorded branch or with an unread branch reads as unknown
+ok - a terminal or parked run binds only through the worktree head
+ok - only an answered daemon-down suppresses an active run's live claim
+ok - a failed no-mistakes read is unknown and sets failure
+ok - the heartbeat publishes the oldest unread captain inbox note age
+ok - real fractional transcripts give last turn and used tokens, with remaining unknown
+ok - a transcript older than the spawn, or with no spawn epoch, fills no field
+ok - two Claude transcripts since spawn blank only transcript-derived fields
+ok - a remote task is unknown even when its worktree path exists locally
+ok - remaining context comes from the harness's own pane text, else unknown
+not ok - an ungated repo was recorded as a failure: {
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-26T16:44:50Z",
+  "generated_epoch": 1795711490,
+  "published_epoch": 1795711504,
+  "fm_home": "{run-worktree}/.test-phase/tmp/fm-heartbeat.azMCgy/ungated",
+  "stale_after_secs": null,
+  "throttled": false,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-10-30T12:00:00Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "writer runs in no harness session"
+      },
+      "session_id": "01a218ab-7012-7783-8fd2-5ea7883a7603"
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "task-a",
+      "terminal": {
+        "backend": "tmux",
+        "target": {
+          "unknown": true,
+          "reason": "no endpoint recorded"
+        },
+        "exists": {
+          "unknown": true,
+          "reason": "endpoint not read"
+        }
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "unknown",
+        "detail": null
+      },
+      "last_commit": {
+        "sha": "ed57dcad824602eaa41c1ca22309ae74601f6781",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": {
+        "unknown": true,
+        "reason": "repo has no gate"
+      },
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": {
+          "unknown": true,
+          "reason": "open decisions not read"
+        },
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    },
+    {
+      "id": "task-b",
+      "terminal": {
+        "backend": "tmux",
+        "target": {
+          "unknown": true,
+          "reason": "no endpoint recorded"
+        },
+        "exists": {
+          "unknown": true,
+          "reason": "endpoint not read"
+        }
+      },
+      "session": {
+        "unknown": true,
+        "reason": "no readable session for this harness and worktree"
+      },
+      "last_turn": {
+        "unknown": true,
+        "reason": "no transcript found"
+      },
+      "composer_state": "unknown",
+      "context_left": {
+        "used_tokens": {
+          "unknown": true,
+          "reason": "transcript had no token usage"
+        },
+        "remaining": {
+          "unknown": true,
+          "reason": "harness showed no context text in its pane"
+        },
+        "derived": {
+          "unknown": true,
+          "reason": "no readable transcript"
+        }
+      },
+      "stage": {
+        "state": "unknown",
+        "source": "unknown",
+        "detail": null
+      },
+      "last_commit": {
+        "sha": "ed57dcad824602eaa41c1ca22309ae74601f6781",
+        "branch": "fm/hb-task"
+      },
+      "last_push": {
+        "unknown": true,
+        "reason": "no local no-mistakes or origin ref for the branch"
+      },
+      "pr_head": null,
+      "no_mistakes_run": {
+        "unknown": true,
+        "reason": "repo has no gate"
+      },
+      "last_output_time": {
+        "unknown": true,
+        "reason": "no terminal or transcript activity read since this spawn"
+      },
+      "open_asks": {
+        "decisions": {
+          "unknown": true,
+          "reason": "open decisions not read"
+        },
+        "inbox_unhandled": {
+          "unknown": true,
+          "reason": "no readable inbox directory"
+        }
+      }
+    }
+  ],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1795711490,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": {
+    "reason": "primary writer anchor timed out after 3s",
+    "count": 1
+  }
+}

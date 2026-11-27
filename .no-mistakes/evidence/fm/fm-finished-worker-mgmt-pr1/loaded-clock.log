@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_a_change_under_load_waits_for_the_throttled_idle_due
+1..1
+ok - a change under load waits for the throttled idle due instead of resetting it
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 16.7s

@@ -1,0 +1,10 @@
+{
+  "command": [
+    "bash",
+    "tests/.validation-fm-fleet-snapshot-view.sh",
+    "test_view_renders_snapshot",
+    "test_view_renders_dead_secondmate_agent_status"
+  ],
+  "exit": 0,
+  "seconds": 38.0
+}

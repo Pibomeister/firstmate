@@ -1,0 +1,63 @@
+Real local product validation at 01f00bd6ec89c3a8fa784e5a491087b56be75090
+All homes and inputs are synthetic and disposable. No operator fleet endpoints were addressed.
+
+SCENARIO Heartbeat follows load threshold, skips duplicate hot reads, tolerates launch jitter, restores calm cadence, and preserves launch-factor freshness
+hb-threshold: exit=0
+hb-threshold: {"generated_epoch": 1795194000, "throttled": false, "stale_after_secs": 512, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+hb-hot: exit=0
+hb-hot: {"generated_epoch": 1795194000, "throttled": true, "stale_after_secs": 812, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+hb-skip: exit=0
+hot immediate repeat: ledger bytes unchanged; no duplicate collection
+hb-jitter: exit=0
+hb-jitter: {"generated_epoch": 1795194000, "throttled": true, "stale_after_secs": 812, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+hb-recovered: exit=0
+hb-recovered: {"generated_epoch": 1795194000, "throttled": false, "stale_after_secs": 512, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+hb-launch-factor: exit=0
+hb-launch-factor: {"generated_epoch": 1795194000, "throttled": true, "stale_after_secs": 812, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+hb-unreadable: exit=0
+hb-unreadable: {"generated_epoch": 1795194000, "throttled": false, "stale_after_secs": 512, "snapshot": {"ok": true, "schema": "fm-fleet-snapshot.v1", "generated": "2026-11-20T17:00:00Z", "failure": null}, "failure": null}
+SCENARIO Full snapshots serialize per synthetic home, refuse contention, release normal locks, and recover a killed real holder
+real snapshot holder stopped after acquiring home lock: 78561
+snapshot-refused: exit=75
+summary-refused: exit=75
+contribution-independent: exit=0
+snapshot-other-home: exit=0
+snapshot-holder: exit=0
+same-home full reads refused with exit 75; contribution and other-home reads succeeded; normal exit released lock
+snapshot-reclaimed: exit=0
+killed holder left dead ownership; next real producer reclaimed it and released cleanly
+SCENARIO Read-only JSON and home-summary snapshots preserve a synthetic stateless home
+stateless-json: exit=0
+stateless-json: schema=fm-fleet-snapshot.v1; state directory remains absent
+stateless-summary: exit=0
+stateless-summary: schema=fm-secondmate-home-summary.v1; state directory remains absent
+All owned command groups stopped; disposable homes removed.
+
+SCENARIO watcher and summary load pacing
+Initial real heartbeat launch=1795717094, summary launch=1795717102, stale bound=571
+Appended a real wake-queue event under synthetic load 300
+heartbeat publication 1795717135
+summary publication 1795717163
+Hot gaps: heartbeat=41s; summary=61s; cheap beat advanced 3 times
+Calm recovery: heartbeat launch gap=36s; summary gap=36s
+
+SCENARIO failed publication retries
+Observed real heartbeat attempt 1 pid=21710; inject process failure before publication
+Observed real heartbeat attempt 2 pid=64140; inject process failure before publication
+Observed real heartbeat attempt 3 pid=11714; inject process failure before publication
+Real crashed-publication retry gaps: [16.96, 10.07]
+All owned watcher groups stopped; disposable homes removed.
+
+Open-work heartbeat cap, real one-poll watcher persisted result:
+{
+  "load": 300,
+  "prior_heartbeat_age_secs": 901,
+  "configured_base_secs": 600,
+  "backoff_streak": 3,
+  "exit": 0,
+  "observed_stdout": "heartbeat\n",
+  "wake_queue": "1795717390\t1\theartbeat\theartbeat\theartbeat\n",
+  "result": "pass"
+}
+
+The initial retry observer counted a heartbeat subshell as another launch. The corrected observer counts only direct watcher/ticker children; its completed rerun is shown above.

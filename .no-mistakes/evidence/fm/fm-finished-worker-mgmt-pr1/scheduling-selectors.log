@@ -1,0 +1,46 @@
+Running test_a_change_under_load_waits_for_the_throttled_idle_due
+1..1
+
+not ok - the next collection came 16s after the first, past the 12s throttled idle due
+
+Running test_rearmed_ticker_anchors_due_to_last_publication
+1..1
+ok - a re-armed ticker anchors its first due to the last publication
+FM_TEST_COMPLETE
+
+
+Running test_failed_heartbeat_publications_keep_retry_interval
+1..1
+ok - failed publications retain the throttled retry interval for expired and recent ledgers
+FM_TEST_COMPLETE
+
+
+Running test_status_change_collects_before_grace_without_a_wake
+1..1
+ok - a status-only change refreshes the heartbeat before grace without creating a wake
+FM_TEST_COMPLETE
+
+
+Running test_unchanged_home_collects_once_per_idle_interval
+1..1
+
+not ok - the watcher beat advanced only 4 time(s) across ten polls
+
+Running test_jittered_idle_gaps_stay_within_the_interval
+1..1
+
+not ok - a jittered idle gap left [1, 8]: 5 3 3 7 5 3 4 9 6 
+
+Running test_a_relevant_change_collects_without_waiting_for_idle
+1..1
+ok - an appended wake or a status line collects at once, without waiting for the idle interval
+FM_TEST_COMPLETE
+
+
+Running test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+1..1
+ok - AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence
+FM_TEST_COMPLETE
+
+
+[{"selector": "test_a_change_under_load_waits_for_the_throttled_idle_due", "exit": 1}, {"selector": "test_rearmed_ticker_anchors_due_to_last_publication", "exit": 0}, {"selector": "test_failed_heartbeat_publications_keep_retry_interval", "exit": 0}, {"selector": "test_status_change_collects_before_grace_without_a_wake", "exit": 0}, {"selector": "test_unchanged_home_collects_once_per_idle_interval", "exit": 1}, {"selector": "test_jittered_idle_gaps_stay_within_the_interval", "exit": 1}, {"selector": "test_a_relevant_change_collects_without_waiting_for_idle", "exit": 0}, {"selector": "test_watcher_publishes_its_cycle_period_not_the_wake_cadence", "exit": 0}]

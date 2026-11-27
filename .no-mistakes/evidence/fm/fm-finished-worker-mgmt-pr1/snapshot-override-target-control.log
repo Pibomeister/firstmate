@@ -1,0 +1,6 @@
+$ bash tests/.validation-fm-fleet-snapshot-view.sh test_backlog_tasks_axi_forms_and_overrides
+1..1
+ok - snapshot parses tasks-axi rows and respects operational overrides
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 12.1s

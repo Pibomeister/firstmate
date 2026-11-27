@@ -1,0 +1,8 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh"
+  ],
+  "exit": 1,
+  "seconds": 130.3
+}

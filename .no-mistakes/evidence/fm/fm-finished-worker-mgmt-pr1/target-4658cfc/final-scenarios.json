@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Concurrent local full snapshots serialize, recover, and release locks while cheap reads remain available",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local read-only snapshots preserve a synthetic stateless home in both full output modes",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local snapshot-backed heartbeat follows synthetic load threshold, skip window, jitter, launch factor, and calm recovery",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local watcher defers synthetic loaded wake collection to its due, preserves freshness, and resumes calm collection",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local home summaries pace synthetic loaded status activity and idle refreshes while liveness continues",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local attended watcher with a synthetic open goal retains the 15-minute wake cap under load 300",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-monitoring.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  },
+  {
+    "name": "Local watcher retries filesystem-rejected heartbeat publications at loaded spacing without a storm",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-retry.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

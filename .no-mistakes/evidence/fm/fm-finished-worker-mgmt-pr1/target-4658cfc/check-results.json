@@ -1,0 +1,223 @@
+[
+  {
+    "label": "attended-wake-cap",
+    "command": [
+      "env",
+      "FM_TEST_ONLY=test_attended_open_work_heartbeat_floor",
+      "bash",
+      "tests/fm-watch-triage.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 235.1
+  },
+  {
+    "label": "calm-change",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_a_relevant_change_collects_without_waiting_for_idle"
+    ],
+    "exit": 0,
+    "seconds": 14.3
+  },
+  {
+    "label": "contribution",
+    "command": [
+      "bash",
+      "tests/fm-fleet-snapshot-contribution-input.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 2.1
+  },
+  {
+    "label": "current-live",
+    "command": [
+      "python3",
+      ".test-validation/live-driver.py"
+    ],
+    "exit": 1,
+    "seconds": 303.2
+  },
+  {
+    "label": "detached-selection-host-budget",
+    "command": [
+      "env",
+      "FM_HEARTBEAT_READ_TIMEOUT=15",
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_worktree_off_recorded_branch_is_unknown"
+    ],
+    "exit": 0,
+    "seconds": 157.6
+  },
+  {
+    "label": "failed-retry",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_failed_heartbeat_publications_keep_retry_interval"
+    ],
+    "exit": 0,
+    "seconds": 101.0
+  },
+  {
+    "label": "heartbeat-suite",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 130.3
+  },
+  {
+    "label": "idle-base-control",
+    "command": [
+      "env",
+      "FM_TEST_CODE_ROOT={run-worktree}/.test-validation/baseline",
+      "bash",
+      "tests/.validation-fm-heartbeat.sh",
+      "test_unchanged_home_collects_once_per_idle_interval"
+    ],
+    "exit": 0,
+    "seconds": 57.1
+  },
+  {
+    "label": "idle-cadence",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_unchanged_home_collects_once_per_idle_interval"
+    ],
+    "exit": 1,
+    "seconds": 111.7
+  },
+  {
+    "label": "idle-jitter",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_jittered_idle_gaps_stay_within_the_interval"
+    ],
+    "exit": 0,
+    "seconds": 80.6
+  },
+  {
+    "label": "load-throttle-suite",
+    "command": [
+      "bash",
+      "tests/fm-load-throttle.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 112.7
+  },
+  {
+    "label": "loaded-clock",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_a_change_under_load_waits_for_the_throttled_idle_due"
+    ],
+    "exit": 0,
+    "seconds": 16.7
+  },
+  {
+    "label": "rearm-anchor",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_rearmed_ticker_anchors_due_to_last_publication"
+    ],
+    "exit": 0,
+    "seconds": 44.0
+  },
+  {
+    "label": "retry-live",
+    "command": [
+      "python3",
+      ".test-validation/retry-live.py"
+    ],
+    "exit": 1,
+    "seconds": 154.7
+  },
+  {
+    "label": "slow-watcher-loop",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_watcher_publishes_every_cycle_whatever_its_loop_work"
+    ],
+    "exit": 0,
+    "seconds": 27.4
+  },
+  {
+    "label": "snapshot-override-target-control",
+    "command": [
+      "bash",
+      "tests/.validation-fm-fleet-snapshot-view.sh",
+      "test_backlog_tasks_axi_forms_and_overrides"
+    ],
+    "exit": 0,
+    "seconds": 12.1
+  },
+  {
+    "label": "snapshot-render-tail",
+    "command": [
+      "bash",
+      "tests/.validation-fm-fleet-snapshot-view.sh",
+      "test_view_renders_snapshot",
+      "test_view_renders_dead_secondmate_agent_status"
+    ],
+    "exit": 0,
+    "seconds": 38.0
+  },
+  {
+    "label": "snapshot-view-suite",
+    "command": [
+      "bash",
+      "tests/fm-fleet-snapshot-view.test.sh"
+    ],
+    "exit": 1,
+    "seconds": 481.2
+  },
+  {
+    "label": "summary-loaded",
+    "command": [
+      "bash",
+      "tests/fm-home-summary-refresh.test.sh",
+      "test_summary_idle_pacing_follows_load",
+      "test_summary_status_pacing_follows_load",
+      "test_snapshot_preserves_absent_state"
+    ],
+    "exit": 0,
+    "seconds": 75.6
+  },
+  {
+    "label": "summary-suite",
+    "command": [
+      "bash",
+      "tests/fm-home-summary-refresh.test.sh"
+    ],
+    "exit": 0,
+    "seconds": 1379.6
+  },
+  {
+    "label": "watcher-poll-progress",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_watcher_poll_does_not_wait_for_heartbeat"
+    ],
+    "exit": 0,
+    "seconds": 44.3
+  },
+  {
+    "label": "watcher-single-flight",
+    "command": [
+      "bash",
+      "tests/fm-heartbeat.test.sh",
+      "test_watcher_runs_one_heartbeat_at_a_time"
+    ],
+    "exit": 0,
+    "seconds": 80.8
+  }
+]

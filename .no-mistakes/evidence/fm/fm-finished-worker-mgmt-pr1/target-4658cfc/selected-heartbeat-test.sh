@@ -1,0 +1,1678 @@
+#!/usr/bin/env bash
+# Behavioral coverage for bin/fm-heartbeat.sh: snapshot-backed assembly, atomic
+# --write publication, explicit unknowns, the failure field, bounded reads, stopped
+# runs, and detached single-flight watcher publication.
+# Optional arguments select test functions; no arguments run the full suite.
+set -u
+
+# shellcheck source=tests/lib.sh
+# shellcheck disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+if [ -n "${FM_TEST_CODE_ROOT:-}" ]; then ROOT=$FM_TEST_CODE_ROOT; fi
+
+HEARTBEAT="$ROOT/bin/fm-heartbeat.sh"
+WATCH="$ROOT/bin/fm-watch.sh"
+TMP_ROOT=$(fm_test_tmproot fm-heartbeat)
+FAKEBIN=$(fm_fakebin "$TMP_ROOT")
+WATCH_PID=
+
+command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
+
+cleanup() {
+  [ -z "$WATCH_PID" ] || kill -KILL "$WATCH_PID" >/dev/null 2>&1 || true
+  fm_test_cleanup
+}
+trap cleanup EXIT
+
+unset FM_HEARTBEAT_BIN TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION REX_SESSION REX_BLOCK TERM_PROGRAM \
+  FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND FM_BACKEND
+unset FM_HEARTBEAT_CYCLE_SECS
+export PATH="$FAKEBIN:$PATH"
+export CLAUDE_CONFIG_DIR="$TMP_ROOT/claude"
+
+cat > "$FAKEBIN/tmux" <<'SH'
+#!/usr/bin/env bash
+[ "${FAKE_TMUX_MODE:-}" != hang ] || sleep 30
+case "${1:-}" in
+  display-message) printf '%1\n' ;;
+  list-panes) [ "${FAKE_TMUX_MODE:-}" = gone ] || printf '%%1\n' ;;
+  capture-pane) printf 'fixture pane\n%s\n> \n' "${FAKE_PANE_TEXT:-}" ;;
+esac
+exit 0
+SH
+cat > "$FAKEBIN/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FAKE_NM_MARKER:-}" ] || : > "$FAKE_NM_MARKER"
+if [ "${1:-}" = daemon ]; then
+  case "${FAKE_NM_DAEMON:-up}" in
+    up) printf '● daemon running\n' ;;
+    stopped) printf '○ daemon not running\n' ;;
+    refused) exit 1 ;;
+    hang) sleep 30 ;;
+    hang-ignore-term) trap '' TERM; sleep 30 ;;
+  esac
+  exit 0
+fi
+head=${FAKE_NM_HEAD:-abc1234}
+if [ "$#" = 1 ] && [ "$1" = axi ]; then
+  [ -z "${FAKE_NM_OVERVIEW_FAIL:-}" ] || exit 1
+  case "${FAKE_NM_MODE:-none}" in
+    run) rows="01RUN,fm/hb-task,running,$head,\"\"" ;;
+    sibling) rows="01RUN,${FAKE_NM_SIBLING:-fm/older-sibling},running,$head,\"\"" ;;
+    terminal) rows="01OLD,fm/hb-task,completed,$head,\"\"" ;;
+    parked) rows="01OLD,fm/hb-task,running,$head,\"\"" ;;
+    newer-failed) rows="01NEW,fm/hb-task,failed,$head,\"\"
+01RUN,fm/hb-task,running,$head,\"\"" ;;
+    competing) rows="01NEW,fm/hb-task,running,$head,\"\"
+01RUN,fm/hb-task,running,$head,\"\"" ;;
+  esac
+  count=$(printf '%s\n' "$rows" | wc -l | tr -d ' ')
+  printf 'count: %s of %s total\nruns[%s]{id,branch,status,head,pr}:\n' "$count" "$count" "$count"
+  printf '%s\n' "$rows" | sed 's/^/  /'
+  exit 0
+fi
+detail_mode=${FAKE_NM_MODE:-none}
+case "$detail_mode" in newer-failed|competing) detail_mode=run ;; esac
+if [ "${4:-}" = 01NEW ]; then detail_mode=newer-detail; fi
+if [ "${3:-}" = --run ] && [ -n "${FAKE_NM_RUN_FAIL:-}" ]; then exit 1; fi
+case "$detail_mode" in
+  none)
+    printf 'current_branch: fm/hb-task\nruns_on_current_branch: 0\n'
+    ;;
+  run|sibling)
+    branch=fm/hb-task
+    [ "$detail_mode" = run ] || branch=${FAKE_NM_SIBLING:-fm/older-sibling}
+    cat <<EOF
+run:
+  id: "01RUN"
+  branch: $branch
+  status: running
+  head: "$head"
+  pr: ""
+  findings: none
+  steps[2]{step,status,findings,duration_ms}:
+    intent,completed,0,0
+    review,running,0,0
+  active_steps[1]{step,active_for,last_activity,agent_pid,round}:
+    review,1m,now,123,1
+EOF
+    [ -z "${FAKE_NM_SYNC:-}" ] || printf 'branch_sync:\n  state: %s\n' "$FAKE_NM_SYNC"
+    ;;
+  terminal)
+    printf 'run:\n  id: "01OLD"\n  branch: fm/hb-task\n  status: completed\n  head: "%s"\n' "$head"
+    ;;
+  parked)
+    printf 'run:\n  id: "01OLD"\n  branch: fm/hb-task\n  status: running\n  awaiting_agent: parked 1h\n  head: "%s"\n' "$head"
+    ;;
+  newer-detail)
+    printf 'run:\n  id: "01NEW"\n  branch: fm/hb-task\n  status: failed\n  head: "%s"\n' "$head"
+    ;;
+  ungated)
+    printf "error: repo not initialized (run 'no-mistakes init' first)\n"
+    exit 1
+    ;;
+  fail) echo 'daemon unreachable' >&2; exit 1 ;;
+  hang) sleep 30 ;;
+esac
+exit 0
+SH
+cat > "$FAKEBIN/quota-axi" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FAKE_QUOTA_DELAY:-}" ] || sleep "$FAKE_QUOTA_DELAY"
+if [ -n "${FAKE_QUOTA_JSON:-}" ]; then
+  printf '%s\n' "$FAKE_QUOTA_JSON"
+  exit 0
+fi
+exit 1
+SH
+chmod +x "$FAKEBIN/tmux" "$FAKEBIN/no-mistakes" "$FAKEBIN/quota-axi"
+
+make_home() {
+  local home="$TMP_ROOT/$1"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects/ship"
+  printf '# fixture home\n' > "$home/AGENTS.md"
+  fm_git_init_commit "$home/projects/ship"
+  git -C "$home/projects/ship" checkout -q -b fm/hb-task
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] hb-task - heartbeat fixture (repo: firstmate) (kind: ship) (since 2026-10-30)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/hb-task.meta" \
+    "window=fmtest:hb" \
+    "worktree=$home/projects/ship" \
+    "project=firstmate" \
+    "harness=claude" \
+    "kind=ship" \
+    "branch=fm/hb-task" \
+    "spawn_gen=s1000000000.1.1"
+  printf 'working: fixture\n' > "$home/state/hb-task.status"
+  printf '%s\n' "$home"
+}
+
+# The ledger is the script's persisted public output.
+ledger() {  # <home>
+  printf '%s\n' "$1/state/heartbeat.json"
+}
+
+publish() {  # <home> [ENV=value...]
+  local home=$1
+  shift
+  env FM_HOME="$home" "$@" "$HEARTBEAT" --write || fail "heartbeat --write failed"
+}
+
+assert_ledger() {  # <home> <jq-filter> <message>
+  jq -e "$2" "$(ledger "$1")" >/dev/null \
+    || fail "$3: $(cat "$(ledger "$1")" 2>/dev/null)"
+}
+
+assert_no_work_left() {  # <home>
+  local left
+  left=$(find "$1/state" -maxdepth 1 -name '.heartbeat*' 2>/dev/null)
+  [ -z "$left" ] || fail "temp files leaked: $left"
+}
+
+# Canned snapshot with two live-worktree tasks, so read-failure cases do not also
+# wait for the real snapshot's bounded no-mistakes reads.
+canned_snapshot() {  # <home>
+  local home=$1 script="$1/canned-snapshot.sh"
+  jq -n --arg wt "$home/projects/ship" '{schema:"fm-fleet-snapshot.v1",generated:"2026-10-30T12:00:00Z",
+    tasks:[{id:"task-a",branch:"fm/hb-task",harness:"claude",backend:"tmux",paths:{worktree:{path:$wt}}},
+           {id:"task-b",branch:"fm/hb-task",harness:"codex",backend:"tmux",paths:{worktree:{path:$wt}}}]}' \
+    > "$home/canned-snapshot.json"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+cat "$home/canned-snapshot.json"
+SH
+  chmod +x "$script"
+  printf '%s\n' "$script"
+}
+
+set_spawn_gen() {  # <home> <value-or-empty>
+  local meta="$1/state/hb-task.meta"
+  grep -v '^spawn_gen=' "$meta" > "$meta.next"
+  [ -z "$2" ] || printf 'spawn_gen=%s\n' "$2" >> "$meta.next"
+  mv "$meta.next" "$meta"
+}
+
+task_transcript() {  # <home> -> transcript path for the fixture worktree
+  local slug
+  slug=$(printf '%s' "$1/projects/ship" | LC_ALL=C sed 's/[^A-Za-z0-9]/-/g')
+  mkdir -p "$CLAUDE_CONFIG_DIR/projects/$slug"
+  printf '%s\n' "$CLAUDE_CONFIG_DIR/projects/$slug/sess-task.jsonl"
+}
+
+wait_for_file() {  # <path> <seconds>
+  local i=0
+  while [ ! -e "$1" ] && [ "$i" -lt $(( $2 * 10 )) ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$1" ]
+}
+
+test_ledger_schema_and_clean_run() {
+  local home
+  home=$(make_home clean)
+  # This fixture checks a clean publication, not the production read deadline.
+  # Allow ancestry discovery to finish on the loaded hosts this change targets.
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_HEARTBEAT_READ_TIMEOUT=15
+  assert_ledger "$home" '
+    .schema == "fm-heartbeat.v1"
+    and .generated == "2026-10-30T12:00:00Z"
+    and .snapshot.ok == true
+    and .failure == null
+    and (.tasks | length) == 1
+    and .tasks[0].id == "hb-task"
+    and (.tasks[0].stage.state | type) == "string"
+    and (.tasks[0].last_commit.sha | type) == "string"
+    and .tasks[0].no_mistakes_run == null
+    and .tasks[0].terminal.target == "fmtest:hb"
+    and (.tasks[0].composer_state | type) == "string"
+    and .tasks[0].session.unknown == true
+    and .tasks[0].last_turn.unknown == true
+    and .tasks[0].context_left.used_tokens.unknown == true
+    and .weekly_allowance.unknown == true
+    and .weekly_allowance.reason == "quota-axi could not be read"
+  ' "clean run ledger is wrong"
+  assert_no_work_left "$home"
+  [ "$(stat -c %a "$(ledger "$home")" 2>/dev/null || stat -f %Lp "$(ledger "$home")")" = 600 ] \
+    || fail "ledger is not mode 600"
+  pass "--write publishes every field atomically with a null failure on a clean run"
+}
+
+test_no_mistakes_run_is_parsed_from_real_status() {
+  local home
+  home=$(make_home nm-run)
+  publish "$home" FAKE_NM_MODE=run
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}' \
+    "active run was not published"
+  publish "$home" FAKE_NM_MODE=sibling
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == null' \
+    "a run on another branch was attributed to this task"
+  pass "no_mistakes_run reads the real status shape and refuses a sibling branch's run"
+}
+
+test_selection_owner_decides_the_run() {
+  local home head
+  home=$(make_home nm-select)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  publish "$home" FAKE_NM_MODE=newer-failed "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01NEW",step:null,active:false}' \
+    "an older live run hid a newer failure"
+  publish "$home" FAKE_NM_MODE=competing "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '
+    (.tasks[0].no_mistakes_run.reason | test("competing live runs"))
+    and (.failure.reason | test("competing live runs"))
+  ' "competing live runs were not reported as unknown"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_OVERVIEW_FAIL=1
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("overview exit"))' \
+    "a failed overview read was not unknown with a failure"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_RUN_FAIL=1
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("01RUN unreadable"))' \
+    "a failed selected-run read was not unknown with a failure"
+  pass "fm_nm_select_run chooses the run, and an unusable choice reads as unknown"
+}
+
+test_run_head_check_is_bounded() {
+  local home head real_git fake
+  home=$(make_home nm-head-bound)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  git -C "$home/projects/ship" -c user.name=t -c user.email=t@example.invalid commit -q --allow-empty -m next
+  real_git=$(command -v git)
+  fake="$TMP_ROOT/hanging-git"
+  mkdir -p "$fake"
+  cat > "$fake/git" <<SH
+#!/usr/bin/env bash
+case "\$*" in *merge-base*) sleep 30 ;; esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fake/git"
+  publish "$home" FAKE_NM_MODE=terminal "FAKE_NM_HEAD=$head" FM_HEARTBEAT_READ_TIMEOUT=1 "PATH=$fake:$PATH"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true and (.failure.reason | test("run head timed out"))' \
+    "a hung head check was not bounded and recorded"
+  pass "a hung run head check is bounded, unknown, and sets failure"
+}
+
+test_worktree_off_recorded_branch_is_unknown() {
+  local home real_git fake script
+  home=$(make_home nm-moved)
+  git -C "$home/projects/ship" update-ref refs/remotes/origin/fm/hb-task HEAD
+  git -C "$home/projects/ship" checkout -q -b fm/hb-other
+  publish "$home" FAKE_NM_MODE=sibling FAKE_NM_SIBLING=fm/hb-other
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run.unknown == true
+    and (.tasks[0].no_mistakes_run.reason | test("fm/hb-other") and test("fm/hb-task"))
+    and (.tasks[0].last_commit.sha | type == "string")
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+  ' "a moved worktree published a confident run, commit branch, or push value"
+
+  home=$(make_home nm-detached)
+  git -C "$home/projects/ship" checkout -q --detach
+  publish "$home" FAKE_NM_MODE=run
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true} and .tasks[0].last_commit.branch == "fm/hb-task" and .failure == null' \
+    "a detached worktree did not keep the selection path"
+
+  real_git=$(command -v git)
+  fake="$TMP_ROOT/branch-git"
+  mkdir -p "$fake"
+  cat > "$fake/git" <<SH
+#!/usr/bin/env bash
+case "\$*" in
+  *symbolic-ref*)
+    [ "\${FAKE_GIT_BRANCH:-}" != hang ] || sleep 30
+    exit 128
+    ;;
+esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fake/git"
+  home=$(make_home nm-branch-unread)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" "PATH=$fake:$PATH"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
+    and (.failure.reason | test("worktree branch unreadable"))
+  ' "a failed branch read was treated as a match"
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FAKE_GIT_BRANCH=hang FM_HEARTBEAT_READ_TIMEOUT=1 "PATH=$fake:$PATH"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {unknown:true,reason:"worktree branch unread"}
+    and .tasks[0].last_push == .tasks[0].no_mistakes_run
+    and .tasks[0].last_commit.branch == .tasks[0].no_mistakes_run
+    and (.failure.reason | test("worktree branch timed out"))
+  ' "a hung branch read was treated as a match"
+  pass "a worktree off its recorded branch or with an unread branch reads as unknown"
+}
+
+test_settled_run_binds_only_on_worktree_head() {
+  local home head mode
+  home=$(make_home nm-settled)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  for mode in terminal parked; do
+    publish "$home" FAKE_NM_MODE=$mode
+    assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+      "a stale $mode run on a reused branch was attributed"
+  done
+  publish "$home" FAKE_NM_MODE=terminal "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01OLD",step:null,active:false}' \
+    "a terminal run at the worktree head was not published"
+  publish "$home" FAKE_NM_MODE=parked "FAKE_NM_HEAD=$head"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {run_id:"01OLD",step:null,active:true}' \
+    "a parked run at the worktree head was not published"
+  pass "a terminal or parked run binds only through the worktree head"
+}
+
+test_daemon_answer_qualifies_executing_run() {
+  local home head answer
+  home=$(make_home nm-daemon)
+  head=$(git -C "$home/projects/ship" rev-parse HEAD)
+  for answer in stopped refused; do
+    publish "$home" FAKE_NM_MODE=run "FAKE_NM_DAEMON=$answer"
+    assert_ledger "$home" '.tasks[0].no_mistakes_run.unknown == true' \
+      "daemon $answer: a stale executing record was attributed"
+    publish "$home" FAKE_NM_MODE=run "FAKE_NM_DAEMON=$answer" "FAKE_NM_HEAD=$head"
+    assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01RUN" and .active.unknown == true' \
+      "daemon $answer: a matching record claimed a live run"
+  done
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=stopped FAKE_NM_SYNC=pipeline_owned
+  assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01RUN" and .active.unknown == true' \
+    "a pipeline-owned run did not bind with an unknown live claim"
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=hang FM_HEARTBEAT_NM_TIMEOUT=1
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}
+    and (.failure.reason | test("daemon status timed out"))
+  ' "an unanswered probe dropped a live run or left failure null"
+  # A probe that ignores TERM is killed one second after its bound; that kill
+  # is still no answer, never an answered daemon-down.
+  publish "$home" FAKE_NM_MODE=run FAKE_NM_DAEMON=hang-ignore-term FM_HEARTBEAT_NM_TIMEOUT=1
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run == {run_id:"01RUN",step:"review",active:true}
+    and (.failure.reason | test("daemon status timed out"))
+  ' "a TERM-ignoring probe killed at its bound read as an answered daemon-down"
+  publish "$home" FAKE_NM_MODE=parked "FAKE_NM_HEAD=$head" FAKE_NM_DAEMON=stopped
+  assert_ledger "$home" '.tasks[0].no_mistakes_run | .run_id == "01OLD" and .active.unknown == true' \
+    "a parked run claimed to be live with its daemon down"
+  pass "only an answered daemon-down suppresses an active run's live claim"
+}
+
+test_failed_status_is_unknown_not_no_run() {
+  local home script
+  home=$(make_home nm-fail)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=fail FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '
+    .tasks[0].no_mistakes_run.unknown == true
+    and (.failure.reason | test("no-mistakes status exit"))
+    and .tasks[0].open_asks.decisions.unknown == true
+    and .tasks[0].open_asks.inbox_unhandled.unknown == true
+    and .tasks[0].pr_head == null
+  ' "failed status did not read as unknown with a failure"
+  pass "a failed no-mistakes read is unknown and sets failure"
+}
+
+test_primary_unread_inbox_age_is_published() {
+  local home note
+  home=$(make_home unread-inbox)
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "no pending captain inbox note should publish a null unread age"
+  mkdir -p "$home/state/inbox"
+  note="$home/state/inbox/123-abc.note"
+  printf 'id=123-abc\n--\nstalled\n' > "$note"
+  fm_touch_epoch "$(( $(date +%s) - 600 ))" "$note"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds >= 590' \
+    "the oldest pending captain inbox note should publish its age"
+  # Both published surfaces share one age rule, so they agree on the same inbox.
+  local hb_age ready_age
+  hb_age=$(jq -r '.primary.unread_inbox_age_seconds' "$(ledger "$home")")
+  ready_age=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" "$ROOT/bin/fm-inbox.sh" ready \
+    | jq -r '.wake_consumer.unread_inbox_age_seconds')
+  [ -n "$hb_age" ] && [ -n "$ready_age" ] && [ "$hb_age" != null ] && [ "$ready_age" != null ] \
+    || fail "both surfaces should report an unread age for the same inbox (heartbeat=$hb_age ready=$ready_age)"
+  [ $(( hb_age - ready_age )) -ge -10 ] && [ $(( hb_age - ready_age )) -le 10 ] \
+    || fail "heartbeat and readiness disagree on the unread age (heartbeat=$hb_age ready=$ready_age)"
+  mkdir -p "$home/state/inbox/handled"
+  mv "$note" "$home/state/inbox/handled/"
+  publish "$home"
+  assert_ledger "$home" '.primary.unread_inbox_age_seconds == null' \
+    "a handled captain inbox note should no longer publish an unread age"
+  pass "the heartbeat publishes the oldest unread captain inbox note age"
+}
+
+test_transcript_fields_with_fractional_timestamps() {
+  local home project line
+  home=$(make_home transcript)
+  line='{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}'
+  printf 'sess-primary\n' > "$home/state/.lock-session"
+  project="$CLAUDE_CONFIG_DIR/projects/primary-project"
+  mkdir -p "$project"
+  printf '%s\n' "$line" > "$project/sess-primary.jsonl"
+  printf '%s\n' "$line" > "$(task_transcript "$home")"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '
+    .primary.session.trusted_id == "sess-primary"
+    and .primary.last_turn.age_seconds == 60
+    and .primary.last_turn.observed_at == "2026-10-30T11:59:00.123Z"
+    and .primary.context_left.used_tokens == 90000
+    and .primary.context_left.remaining.unknown == true
+    and .tasks[0].session.id == "sess-task"
+    and .tasks[0].last_turn.age_seconds == 60
+    and .tasks[0].context_left.used_tokens == 90000
+    and .tasks[0].last_output_time.source == "transcript"
+  ' "transcript facts were not read"
+  pass "real fractional transcripts give last turn and used tokens, with remaining unknown"
+}
+
+test_leftover_transcript_in_a_reused_slot_is_ignored() {
+  local home transcript now
+  home=$(make_home reused-slot)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}' > "$transcript"
+  fm_touch_epoch "$(( now - 3600 ))" "$transcript"
+  set_spawn_gen "$home" "s$now.1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true
+    and .tasks[0].last_turn.unknown == true
+    and .tasks[0].context_left.used_tokens.unknown == true
+    and .tasks[0].last_output_time.unknown == true' \
+    "a transcript older than the spawn was attributed to this task"
+  set_spawn_gen "$home" "s$(( now - 7200 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.id == "sess-task"' \
+    "a transcript written since the spawn was not read"
+  set_spawn_gen "$home" ""
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true' \
+    "a transcript was attributed with no spawn epoch"
+  pass "a transcript older than the spawn, or with no spawn epoch, fills no field"
+}
+
+test_ambiguous_transcript_when_two_qualify() {
+  local home transcript now other script
+  home=$(make_home ambiguous-transcripts)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  other="${transcript%.jsonl}-other.jsonl"
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:00:00.123Z"}' > "$transcript"
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:01:00.123Z"}' > "$other"
+  fm_touch_epoch "$now" "$transcript"
+  fm_touch_epoch "$(( now + 1 ))" "$other"
+  set_spawn_gen "$home" "s$(( now - 60 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].session.unknown == true
+    and .tasks[0].session.reason == "ambiguous transcript"
+    and .tasks[0].last_turn.reason == "ambiguous transcript"
+    and .tasks[0].context_left.used_tokens.reason == "ambiguous transcript"
+    and .tasks[0].last_output_time.reason == "ambiguous transcript"' \
+    "two qualifying transcripts were attributed to one mate"
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  script=$(canned_snapshot "$home")
+  jq --arg gen "s$(( now - 60 )).1.1" '.tasks[0] += {endpoint:{target:"fmtest:hb",exists:true},spawn_gen:$gen}' \
+    "$home/canned-snapshot.json" > "$home/live.json"
+  mv "$home/live.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_PANE_TEXT='12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].session.reason == "ambiguous transcript"
+    and .tasks[0].context_left.used_tokens.reason == "ambiguous transcript"
+    and .tasks[0].context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[0].last_output_time.source == "terminal"' \
+    "ambiguity discarded evidence that does not come from a transcript"
+  pass "two Claude transcripts since spawn blank only transcript-derived fields"
+}
+
+test_remote_task_never_reads_a_local_worktree() {
+  local home transcript now script
+  home=$(make_home remote-task)
+  now=$(date +%s)
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T12:00:00.123Z"}' > "$transcript"
+  fm_touch_epoch "$now" "$transcript"
+  script=$(canned_snapshot "$home")
+  jq --arg gen "s$(( now - 60 )).1.1" '.tasks[0] += {remote:{host:"host-b",root:"/remote/root"},kind:"secondmate",spawn_gen:$gen}
+    | .tasks[1] += {harness:"claude",spawn_gen:$gen}' \
+    "$home/canned-snapshot.json" > "$home/remote.json"
+  mv "$home/remote.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_NM_MODE=run FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  # shellcheck disable=SC2016 # $remote and $local are jq variables.
+  assert_ledger "$home" '
+    (.tasks[] | select(.id == "task-a")) as $remote
+    | (.tasks[] | select(.id == "task-b")) as $local
+    | $remote.last_commit == {unknown:true,reason:"worktree is on remote host"}
+    and $remote.last_push == $remote.last_commit
+    and $remote.no_mistakes_run == $remote.last_commit
+    and $remote.session.unknown == true
+    and $remote.last_turn.unknown == true
+    and ($local.last_commit.sha | type) == "string"
+    and $local.session.id == "sess-task"
+  ' "a remote task published facts from a local directory at the same path"
+  pass "a remote task is unknown even when its worktree path exists locally"
+}
+
+test_remaining_context_comes_from_pane_text() {
+  local home script
+  home=$(make_home pane-context)
+  script=$(canned_snapshot "$home")
+  jq '.tasks[0].endpoint = {target:"fmtest:hb",exists:true}' "$home/canned-snapshot.json" > "$home/live.json"
+  mv "$home/live.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_PANE_TEXT='  12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.primary.context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[0].context_left.remaining == {percent:12,source:"terminal"}
+    and .tasks[1].context_left.remaining.unknown == true' \
+    "pane context text was not read"
+  publish "$home" FAKE_PANE_TEXT='Context left until auto-compact: 7%' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.percent == 7' \
+    "the other harness wording was not read"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.unknown == true' \
+    "a pane with no context text did not read as unknown"
+  publish "$home" FAKE_PANE_TEXT=$'a mate quoted 3% until auto-compact\none\ntwo\nthree\nfour' \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.tasks[0].context_left.remaining.unknown == true' \
+    "text quoted above the harness status was read as context"
+  pass "remaining context comes from the harness's own pane text, else unknown"
+}
+
+test_ungated_repo_is_unknown_not_failure() {
+  local home script
+  home=$(make_home ungated)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=ungated FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].no_mistakes_run == {unknown:true,reason:"repo has no gate"}
+    and .failure == null' "an ungated repo was recorded as a failure"
+  pass "an ungated repo is unknown with no failure"
+}
+
+test_last_output_needs_real_activity() {
+  local home
+  home=$(make_home last-output)
+  touch "$home/state/hb-task.meta" "$home/state/hb-task.status" "$home/state/hb-task.turn-ended"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "meta, status, or turn-ended counted as output"
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "terminal"' \
+    "the pane-change marker was not read as output"
+  pass "last output comes from terminal evidence, never .meta, .status, or .turn-ended"
+}
+
+test_leftover_terminal_marker_is_ignored() {
+  local home now
+  home=$(make_home leftover-marker)
+  now=$(date +%s)
+  printf 'abc' > "$home/state/.hash-fmtest_hb"
+  fm_touch_epoch "$(( now - 3600 ))" "$home/state/.hash-fmtest_hb"
+  set_spawn_gen "$home" "s$now.1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a marker older than the spawn counted as output"
+  set_spawn_gen "$home" "s$(( now - 7200 )).1.1"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "terminal"' \
+    "a marker written since the spawn was not read"
+  set_spawn_gen "$home" ""
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a marker counted as output with no spawn epoch"
+  pass "a terminal marker older than the spawn, or with no spawn epoch, is not output"
+}
+
+test_secondmate_frozen_marker_is_ignored() {
+  local home script transcript now
+  home=$(make_home secondmate-marker)
+  script=$(canned_snapshot "$home")
+  now=$(date +%s)
+  jq --arg gen "s$(( now - 7200 )).1.1" '.tasks = [.tasks[0] + {kind:"secondmate",spawn_gen:$gen,endpoint:{target:"fmtest:sm",exists:false}}]' \
+    "$home/canned-snapshot.json" > "$home/secondmate.json"
+  mv "$home/secondmate.json" "$home/canned-snapshot.json"
+  printf 'abc' > "$home/state/.hash-fmtest_sm"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].last_output_time.unknown == true' \
+    "a secondmate's frozen marker counted as output"
+  transcript=$(task_transcript "$home")
+  printf '%s\n' '{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z"}' > "$transcript"
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '.tasks[0].last_output_time.source == "transcript"' \
+    "a secondmate's qualifying transcript was not read"
+  pass "a secondmate's marker is ignored and its transcript still qualifies"
+}
+
+test_missing_primary_endpoint_skips_pane_read() {
+  local home script
+  home=$(make_home primary-gone)
+  script=$(canned_snapshot "$home")
+  jq '.tasks = []' "$home/canned-snapshot.json" > "$home/empty.json"
+  mv "$home/empty.json" "$home/canned-snapshot.json"
+  publish "$home" FAKE_TMUX_MODE=gone FAKE_PANE_TEXT='12% until auto-compact' FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '.primary.terminal.present == false
+    and .primary.context_left.remaining.unknown == true' \
+    "a missing primary endpoint still had its pane read for context"
+  pass "a missing primary endpoint gets no pane context read"
+}
+
+test_last_push_names_the_local_ref() {
+  local home sha
+  home=$(make_home last-push)
+  sha=$(git -C "$home/projects/ship" rev-parse HEAD)
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.unknown == true' "no ref should be unknown"
+  git -C "$home/projects/ship" update-ref refs/remotes/origin/fm/hb-task "$sha"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.ref == "origin/fm/hb-task"' "origin ref not reported"
+  git -C "$home/projects/ship" update-ref refs/remotes/no-mistakes/fm/hb-task "$sha"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].last_push.ref == "no-mistakes/fm/hb-task"' "gate ref not preferred"
+  pass "last_push reads local gate and origin refs and names the source"
+}
+
+test_snapshot_failure_is_recorded() {
+  local home
+  home=$(make_home snap-fail)
+  publish "$home" FM_SNAPSHOT_BUDGET=0
+  assert_ledger "$home" '.snapshot.ok == false and .snapshot.failure.reason != null
+    and (.tasks | length) == 0 and (.failure.reason | test("snapshot"))' \
+    "snapshot failure was not recorded"
+  pass "a failed snapshot read sets failure without guessing task rows"
+}
+
+test_unreadable_fields_report_unknown() {
+  local home
+  home=$(make_home unknown-fields)
+  fm_write_meta "$home/state/no-wt.meta" \
+    "window=fmtest:nwt" \
+    "worktree=$home/projects/missing-tree" \
+    "project=firstmate" \
+    "harness=claude" \
+    "kind=ship" \
+    "spawn_gen=fm.hb999999"
+  printf 'working: no worktree\n' > "$home/state/no-wt.status"
+  publish "$home"
+  assert_ledger "$home" '
+    (.tasks[] | select(.id == "no-wt") | .last_commit.unknown) == true
+    and (.tasks[] | select(.id == "no-wt") | .last_push.unknown) == true
+    and (.tasks[] | select(.id == "no-wt") | .no_mistakes_run.unknown) == true
+    and .primary.last_turn.unknown == true
+    and .primary.session.trusted_id.unknown == true
+  ' "unreadable fields did not report unknown"
+  pass "unreadable task and primary fields stay explicitly unknown"
+}
+
+test_slow_snapshot_is_bounded() {
+  local home slow started elapsed
+  home=$(make_home slow-snap)
+  slow="$TMP_ROOT/slow-snapshot.sh"
+  cat > "$slow" <<'SH'
+#!/usr/bin/env bash
+sleep 120
+exit 0
+SH
+  chmod +x "$slow"
+  started=$(date +%s)
+  publish "$home" FM_HEARTBEAT_SNAPSHOT_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow"
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -lt 8 ] || fail "heartbeat waited ${elapsed}s for a slow snapshot"
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("timed out"))' \
+    "slow snapshot did not record failure"
+  pass "a slow snapshot read is bounded and recorded as failure"
+}
+
+test_hung_primary_reads_are_bounded() {
+  local home script started elapsed
+  home=$(make_home hung-primary)
+  script=$(canned_snapshot "$home")
+  jq '.tasks = []' "$home/canned-snapshot.json" > "$home/empty.json"
+  mv "$home/empty.json" "$home/canned-snapshot.json"
+  started=$(date +%s)
+  publish "$home" FAKE_TMUX_MODE=hang FM_HEARTBEAT_READ_TIMEOUT=1 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -lt 15 ] || fail "hung primary reads took ${elapsed}s"
+  assert_ledger "$home" '.primary.terminal.present.unknown == true
+    and .primary.composer_state == "unknown"
+    and (.failure.reason | test("primary terminal timed out"))' \
+    "hung primary read was not reported"
+  pass "each hung primary read has its own bound and sets failure"
+}
+
+test_deadline_publishes_unread_tasks_as_unknown() {
+  local home script
+  home=$(make_home deadline)
+  script=$(canned_snapshot "$home")
+  publish "$home" FAKE_NM_MODE=hang FM_HEARTBEAT_NM_TIMEOUT=2 FM_HEARTBEAT_DEADLINE=1 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script"
+  assert_ledger "$home" '(.tasks | map(.id)) == ["task-a","task-b"]
+    and (.tasks[1].last_commit.reason | test("stopped before"))
+    and (.failure.reason | test("deadline"))' \
+    "deadline did not publish unknown rows"
+  assert_no_work_left "$home"
+  pass "a run past its deadline publishes unread tasks as unknown"
+}
+
+test_term_during_snapshot_still_publishes() {
+  local home slow marker pid
+  home=$(make_home term-snap)
+  marker="$TMP_ROOT/term-snap.started"
+  slow="$TMP_ROOT/term-slow-snapshot.sh"
+  cat > "$slow" <<SH
+#!/usr/bin/env bash
+: > "$marker"
+sleep 120
+SH
+  chmod +x "$slow"
+  FM_HOME="$home" FM_HEARTBEAT_SNAPSHOT_TIMEOUT=5 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" "$HEARTBEAT" --write &
+  pid=$!
+  wait_for_file "$marker" 10 || fail "slow snapshot never started"
+  kill -TERM "$pid"
+  wait "$pid" 2>/dev/null
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("signal"))
+    and .primary.terminal.unknown == true' "a stopped run did not publish its state"
+  assert_no_work_left "$home"
+  pass "TERM during the snapshot read publishes unknown markers and leaks no temp files"
+}
+
+test_term_during_task_read_still_publishes() {
+  local home script marker pid
+  home=$(make_home term-task)
+  script=$(canned_snapshot "$home")
+  marker="$TMP_ROOT/term-task.started"
+  FM_HOME="$home" FAKE_NM_MODE=hang FAKE_NM_MARKER="$marker" FM_HEARTBEAT_NM_TIMEOUT=2 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" "$HEARTBEAT" --write &
+  pid=$!
+  wait_for_file "$marker" 20 || fail "task read never started"
+  kill -TERM "$pid"
+  wait "$pid" 2>/dev/null
+  assert_ledger "$home" '(.tasks | map(.id)) == ["task-a","task-b"]
+    and (.tasks[1].last_commit.reason | test("stopped before"))
+    and (.failure.reason | test("signal"))' "a stopped run lost its task list"
+  assert_no_work_left "$home"
+  pass "TERM during a task read publishes the whole task list with unknown markers"
+}
+
+test_stale_work_dir_is_swept() {
+  local home stale
+  home=$(make_home sweep)
+  stale="$home/state/.heartbeat-work.killed"
+  mkdir "$stale"
+  fm_touch_epoch "$(( $(date +%s) - 3600 ))" "$stale"
+  publish "$home"
+  assert_no_work_left "$home"
+  pass "the next run removes what a SIGKILLed run left"
+}
+
+test_watcher_poll_does_not_wait_for_heartbeat() {
+  local home slow rc
+  home=$(make_home watch-slow)
+  slow="$TMP_ROOT/watch-slow-snapshot.sh"
+  cat > "$slow" <<'SH'
+#!/usr/bin/env bash
+sleep 120
+exit 0
+SH
+  chmod +x "$slow"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=60 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
+    FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-slow.out" 2> "$TMP_ROOT/watch-slow.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-slow.err")"
+  [ ! -e "$(ledger "$home")" ] || fail "the poll waited for the heartbeat to publish"
+  [ -e "$home/state/.last-watcher-beat" ] || fail "watcher never advanced its liveness beacon"
+  pass "a watcher poll does not wait for a slow heartbeat"
+}
+
+test_watcher_runs_one_heartbeat_at_a_time() {
+  local home slow runs count
+  home=$(make_home watch-single)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  runs="$TMP_ROOT/watch-single.runs"
+  : > "$runs"
+  slow="$TMP_ROOT/watch-single-snapshot.sh"
+  cat > "$slow" <<SH
+#!/usr/bin/env bash
+echo started >> "$runs"
+sleep 120
+SH
+  chmod +x "$slow"
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_SNAPSHOT_TIMEOUT=45 FM_HEARTBEAT_SNAPSHOT_SCRIPT="$slow" \
+    "$WATCH" > "$TMP_ROOT/watch-single.out" 2> "$TMP_ROOT/watch-single.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  rm -f "$home/state/.last-watcher-beat"
+  wait_for_file "$home/state/.last-watcher-beat" 4 || fail "polls stopped while a heartbeat ran"
+  rm -f "$home/state/.last-watcher-beat"
+  wait_for_file "$home/state/.last-watcher-beat" 4 || fail "polls stopped while a heartbeat ran"
+  count=$(wc -l < "$runs" | tr -d ' ')
+  [ "$count" = 1 ] || fail "expected one heartbeat in flight, saw $count"
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  wait_for_file "$home/state/heartbeat.json" 60 || fail "the bounded heartbeat never published"
+  assert_ledger "$home" '.snapshot.ok == false and (.failure.reason | test("timed out"))' \
+    "timed-out detached heartbeat published no failure"
+  pass "the watcher keeps polling with one detached heartbeat in flight, which still publishes"
+}
+
+# The whole-run cap under the default read bounds (bin/fm-heartbeat.sh header):
+# max(DEADLINE 240, SNAPSHOT 120) + discovery 60 + quota 10 + 17 * (3 + 1)
+# + 5 * (5 + 1) + 3.
+DEFAULT_RUN_CAP=411
+
+# AC-14 (HB-3 replacement a): the bound covers one whole run, and the age runs
+# from the publication stamp. A busy run that hits every cap must publish a
+# bound that the worst healthy age (one watcher cycle plus that run) stays
+# within, and generated must stay the observation time.
+test_worst_age_of_a_busy_healthy_home_stays_within_the_bound() {
+  local home script started elapsed cycle=1 bound published generated
+  home=$(make_home worst-age)
+  script=$(canned_snapshot "$home")
+  jq --arg wt "$home/projects/ship" '.tasks = [range(0; 8) as $i
+    | {id:"task-\($i)",branch:"fm/hb-task",harness:"claude",backend:"tmux",paths:{worktree:{path:$wt}}}]' \
+    "$home/canned-snapshot.json" > "$home/many.json"
+  mv "$home/many.json" "$home/canned-snapshot.json"
+  printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
+  # An opt-in no-mistakes home resolver that hangs costs its own 5 s bound
+  # before every no-mistakes host read of the row in flight.
+  printf '#!/usr/bin/env bash\nsleep 30\n' > "$home/hang-resolver.sh"
+  chmod +x "$home/hang-resolver.sh"
+  printf '%s\n' "$home/hang-resolver.sh" > "$home/config/nm-home-resolver"
+  started=$(date +%s)
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=$cycle FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" \
+    FAKE_NM_MODE=hang FAKE_QUOTA_DELAY=30 FM_HEARTBEAT_DEADLINE=3 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=2 \
+    FM_HEARTBEAT_READ_TIMEOUT=1 FM_HEARTBEAT_NM_TIMEOUT=1 FM_HEARTBEAT_QUOTA_TIMEOUT=1 \
+    FM_HEARTBEAT_DISCOVERY_TIMEOUT=6
+  # cycle 1 + grace 0 + max(3, 2) + discovery 6 + quota 1 + 17 * (1 + 1) + 5 * (5 + 1) + 3
+  assert_ledger "$home" '.stale_after_secs == 78' "the bound does not add one whole-run cap"
+  assert_ledger "$home" '(.failure.reason | test("deadline"))' "the busy run never reached its deadline"
+  published=$(jq -r '.published_epoch' "$(ledger "$home")")
+  generated=$(jq -r '.generated_epoch' "$(ledger "$home")")
+  bound=$(jq -r '.stale_after_secs' "$(ledger "$home")")
+  case "$published" in ''|*[!0-9]*) fail "no publication stamp: $(cat "$(ledger "$home")")" ;; esac
+  [ "$generated" -le $((started + 1)) ] || fail "generated $generated is not the observation time (start $started)"
+  [ "$published" -ge "$generated" ] || fail "published $published is before generated $generated"
+  elapsed=$((published - started))
+  [ "$elapsed" -ge 3 ] || fail "the busy run took only ${elapsed}s, so it never ran near its caps"
+  [ $((cycle + elapsed + 1)) -le "$bound" ] \
+    || fail "worst healthy age $((cycle + elapsed + 1))s exceeds the published bound ${bound}s"
+  pass "AC-14: a busy healthy home near the caps stays within its bound, measured from the publication stamp"
+}
+
+# AC-14: the stale bound is the cycle period the watcher passes plus the
+# config/heartbeat grace; the wake heartbeat cadence never enters it.
+# AC-14: the whole-run cap counts each bounded read as its timeout plus one
+# second, so a read whose child ignores TERM must still end there.
+test_a_term_ignoring_bounded_read_is_still_killed() {
+  local marker started elapsed out rc=0
+  marker="$TMP_ROOT/term-ignoring-child"
+  started=$(date +%s)
+  (
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    # shellcheck disable=SC2016 # the child shell expands its own variables.
+    fm_nm_bounded "$TMP_ROOT" 1 bash -c 'trap "" TERM; echo $$ > "$1"; sleep 9; sleep 9' _ "$marker"
+  ) || rc=$?
+  elapsed=$(( $(date +%s) - started ))
+  [ "$rc" -eq 124 ] || fail "a TERM-ignoring bounded read killed at its bound exited $rc, not the timeout status 124"
+  [ "$elapsed" -le 3 ] || fail "a TERM-ignoring bounded read ran ${elapsed}s past its 1s bound plus the one-second kill"
+  [ -s "$marker" ] || fail "the TERM-ignoring child never started"
+  ! kill -0 "$(cat "$marker")" 2>/dev/null || fail "the TERM-ignoring child outlived its bound"
+  # A wrapper that exits on TERM while its TERM-ignoring child keeps the output
+  # pipe open: timeout sees the wrapper exit and sends no KILL, so the read
+  # itself must reap the leftover group, or the capture below never returns.
+  rm -f "$marker"
+  started=$(date +%s)
+  out=$(
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    # shellcheck disable=SC2016 # the child shell expands its own variables.
+    fm_nm_bounded "$TMP_ROOT" 1 bash -c '( trap "" TERM; echo $BASHPID > "$1"; sleep 9; sleep 9 ) & wait' _ "$marker"
+  ) || true
+  elapsed=$(( $(date +%s) - started ))
+  [ "$elapsed" -le 3 ] || fail "a TERM-ignoring grandchild held a bounded read open for ${elapsed}s"
+  [ -s "$marker" ] || fail "the TERM-ignoring grandchild never started"
+  ! kill -0 "$(cat "$marker")" 2>/dev/null || fail "the TERM-ignoring grandchild outlived its bound"
+  out=$(printf 'piped\n' | (
+    # shellcheck source=bin/fm-nm-run-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-nm-run-lib.sh"
+    fm_nm_bounded "$TMP_ROOT" 5 cat
+  ))
+  [ "$out" = piped ] || fail "a bounded read lost its standard input: '$out'"
+  pass "AC-14: a bounded read whose child or grandchild ignores TERM is killed one second after its bound"
+}
+
+# AC-14: the watcher launches publications from an independent single-flight
+# ticker, so slow loop work (here a check that runs about six seconds each
+# cycle) never stretches the launch interval past the idle interval.
+test_watcher_publishes_every_cycle_whatever_its_loop_work() {
+  local home stub runs count settled fakebin
+  home=$(make_home watch-ticker)
+  # A live task with no status line, so no status wake ends this watcher early.
+  rm -f "$home/state/hb-task.status"
+  runs="$TMP_ROOT/watch-ticker.runs"
+  : > "$runs"
+  stub="$TMP_ROOT/watch-ticker-heartbeat.sh"
+  cat > "$stub" <<SH
+#!/usr/bin/env bash
+date +%s >> "$runs"
+SH
+  chmod +x "$stub"
+  # Slow loop work: every poll reads the live task's pane, and this fake tmux
+  # takes 4s per read, so one loop cycle lasts several POLL periods.
+  fakebin="$TMP_ROOT/watch-ticker-bin"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  list-windows) printf 'hb\n'; exit 0 ;;
+  capture-pane) sleep 4; printf 'working\n'; exit 0 ;;
+  display-message) printf 'claude\n'; exit 0 ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  fm_test_track_watcher_state "$home/state"
+  PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=1 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-ticker.out" 2> "$TMP_ROOT/watch-ticker.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  sleep 9
+  count=$(wc -l < "$runs" | tr -d ' ')
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the watcher exited before the launch count: $(cat "$TMP_ROOT/watch-ticker.out")"
+  [ "$count" -ge 5 ] || fail "slow loop work stretched the launch interval: $count launches in 9s at a 1s cycle"
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  sleep 2
+  settled=$(wc -l < "$runs" | tr -d ' ')
+  sleep 3
+  [ "$(wc -l < "$runs" | tr -d ' ')" = "$settled" ] || fail "publications kept launching after the watcher stopped"
+  pass "AC-14: the watcher launches a publication every idle interval whatever its loop work, and stops with the watcher"
+}
+
+# A heartbeat stub that logs one epoch line per launch.
+launch_log_stub() {  # <name> -> stub path; launches go to $TMP_ROOT/<name>.runs
+  local runs="$TMP_ROOT/$1.runs" stub="$TMP_ROOT/$1-heartbeat.sh"
+  : > "$runs"
+  printf '#!/usr/bin/env bash\ndate +%%s >> %q\n' "$runs" > "$stub"
+  chmod +x "$stub"
+  printf '%s\n' "$stub"
+}
+
+launch_count() {  # <name>
+  wc -l < "$TMP_ROOT/$1.runs" | tr -d ' '
+}
+
+# Expensive idle collection: an unchanged home collects once per idle interval,
+# not once per poll, while the cheap watcher beat keeps the poll period.
+test_unchanged_home_collects_once_per_idle_interval() {
+  local home stub count beats=0 i gaps started elapsed max_count
+  home=$(make_home watch-idle)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-idle)
+  fm_test_track_watcher_state "$home/state"
+  started=$(date +%s)
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=4 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-idle.out" 2> "$TMP_ROOT/watch-idle.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  i=0
+  while [ "$i" -lt 10 ]; do
+    rm -f "$home/state/.last-watcher-beat"
+    wait_for_file "$home/state/.last-watcher-beat" 3 && beats=$((beats + 1))
+    i=$((i + 1))
+  done
+  count=$(launch_count watch-idle)
+  elapsed=$(( $(date +%s) - started ))
+  # Ten observed beats can take longer than ten seconds on a loaded host.
+  # Bound collection by the actual observation window, allowing the initial
+  # launch and one second-boundary sample, and check the launch gaps below.
+  max_count=$((elapsed / 4 + 2))
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the idle watcher exited: $(cat "$TMP_ROOT/watch-idle.out")"
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$beats" -ge 8 ] || fail "the watcher beat advanced only $beats time(s) across ten polls"
+  [ "$count" -ge 2 ] && [ "$count" -le "$max_count" ] \
+    || fail "an unchanged home collected $count time(s) in ${elapsed}s at a four-second idle interval (maximum $max_count)"
+  gaps=$(awk 'NR>1 && $1-p < 3 {print $1-p} {p=$1}' "$TMP_ROOT/watch-idle.runs")
+  [ -z "$gaps" ] || fail "an unchanged home collected again after only ${gaps}s"
+  pass "an unchanged home collects once per idle interval while the watcher beat keeps the poll period"
+}
+
+# Each idle due is drawn below the interval by at most the jitter, so the
+# interval stays the longest launch gap. The upper check allows two seconds of
+# launch slip on a loaded host. A seeded ticker supplies repeatable jitter draws.
+test_jittered_idle_gaps_stay_within_the_interval() {
+  local home stub gaps bad short
+  home=$(make_home watch-jitter)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-jitter)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_TEST_SEAM=1 FM_WATCH_RANDOM_SEED=42 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=6 FM_HEARTBEAT_LEDGER_JITTER=4 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-jitter.out" 2> "$TMP_ROOT/watch-jitter.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 48
+  kill -TERM "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-jitter)" -ge 4 ] || fail "only $(launch_count watch-jitter) collection(s) in 48s at a 6s idle interval"
+  gaps=$(awk 'NR>1 {printf "%s ", $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  bad=$(awk 'NR>1 && ($1-p < 1 || $1-p > 8) {print $1-p} {p=$1}' "$TMP_ROOT/watch-jitter.runs")
+  [ -z "$bad" ] || fail "a jittered idle gap left [1, 8]: $gaps"
+  short=$(awk 'NR>1 && $1-p <= 4 {c++} {p=$1} END {print c+0}' "$TMP_ROOT/watch-jitter.runs")
+  [ "$short" -ge 1 ] || fail "every gap stayed at the full interval, so jitter did not shorten a launch: $gaps"
+  pass "jittered idle gaps stay between the interval less the jitter and the interval"
+}
+
+# A relevant change - a wake any producer appends, or a status line the watcher
+# reads - collects at once, without waiting out the idle interval.
+test_a_relevant_change_collects_without_waiting_for_idle() {
+  local home stub before i poll=${1:-1}
+  home=$(make_home "watch-change-$poll")
+  # A quiet home: no task row, so only the injected changes below wake it.
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-change)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-change.out" 2> "$TMP_ROOT/watch-change.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 3
+  before=$(launch_count watch-change)
+  [ "$before" -ge 1 ] || fail "the watcher never made its first collection"
+  (
+    # shellcheck disable=SC2030,SC2031
+    STATE=$home/state FM_HOME=$home
+    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_append check hb-test-producer "an appended wake"
+  ) || fail "could not append a wake"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 50 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "an appended wake did not collect within 5s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.err")"
+  command -p sleep 2
+  before=$(launch_count watch-change)
+  kill -0 "$WATCH_PID" 2>/dev/null || fail "the holding watcher exited: $(cat "$TMP_ROOT/watch-change.out")"
+  printf 'needs-decision: pick one\n' >> "$home/state/hb-task.status"
+  i=0
+  while [ "$(launch_count watch-change)" -le "$before" ] && [ "$i" -lt 60 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-change)" -gt "$before" ] \
+    || fail "a status line did not collect within 6s at a 999s idle interval: $(cat "$TMP_ROOT/watch-change.out")"
+  # A holding watcher keeps its lock through TERM, so stop it outright.
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  pass "an appended wake or a status line collects at once, without waiting for the idle interval"
+}
+
+# Under host-load throttling a relevant change waits for the throttled idle
+# due, so no change-driven launch inside the heartbeat's too-soon window can
+# reset that due past the previous publication's stale bound.
+test_a_change_under_load_waits_for_the_throttled_idle_due() {
+  local home stub first next clockbin epoch offset i observed real_date real_sleep
+  home=$(make_home watch-loaded-change)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  printf '300 0.00 0.00\n' > "$TMP_ROOT/watch-loaded-change.load"
+  stub=$(launch_log_stub watch-loaded-change)
+  clockbin=$home/clock-bin
+  mkdir -p "$clockbin"
+  real_date=$(command -v date)
+  real_sleep=$(command -v sleep)
+  epoch=$(date +%s)
+  printf '%s\n' "$epoch" > "$home/clock"
+  # Control both portable date reads and Bash 4.2+'s builtin epoch clock.
+  # Every other date/printf operation keeps its normal behavior.
+  cat > "$clockbin/date" <<'SH'
+#!/usr/bin/env bash
+if [ "$#" = 1 ] && [ "$1" = +%s ]; then
+  cat "$FM_HOME/clock"
+else
+  exec "$FM_TEST_REAL_DATE" "$@"
+fi
+SH
+  cat > "$home/clock.env" <<'SH'
+printf() {
+  if [ "$#" = 4 ] && [ "$1" = -v ] && [ "$3" = '%(%s)T' ] && [ "$4" = -1 ]; then
+    read -r "$2" < "$FM_HOME/clock"
+  else
+    builtin printf "$@"
+  fi
+}
+SH
+  # A sleep request from the watcher's child acknowledges a completed ticker
+  # poll. Hold it until the test advances time, independent of host scheduling.
+  cat > "$clockbin/sleep" <<'SH'
+#!/usr/bin/env bash
+owner=$(cat "$FM_HOME/watcher.pid")
+parent=$(ps -o ppid= -p "$PPID" | tr -d ' ')
+args=$(ps -o args= -p "$PPID")
+if [ "$parent" = "$owner" ]; then
+  case "$args" in
+    *"$FM_TEST_WATCH_PATH"*)
+      read -r now < "$FM_HOME/clock"
+      printf '%s\n' "$now" > "$FM_HOME/polled.tmp"
+      mv "$FM_HOME/polled.tmp" "$FM_HOME/polled"
+      while [ "$SECONDS" -lt "$FM_TEST_STUB_MAX_BLOCK_SECONDS" ] && kill -0 "$owner" 2>/dev/null; do
+        read -r next < "$FM_HOME/clock" || exit 1
+        [ "$next" = "$now" ] || exit 0
+        "$FM_TEST_REAL_SLEEP" 0.05
+      done
+      exit 1
+      ;;
+  esac
+fi
+exec "$FM_TEST_REAL_SLEEP" "$@"
+SH
+  chmod +x "$clockbin/date" "$clockbin/sleep"
+  fm_test_track_watcher_state "$home/state"
+  PATH="$clockbin:$PATH" BASH_ENV="$home/clock.env" \
+    FM_TEST_REAL_DATE="$real_date" FM_TEST_REAL_SLEEP="$real_sleep" FM_TEST_WATCH_PATH="$WATCH" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_LOAD_FILE="$TMP_ROOT/watch-loaded-change.load" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    bash -c 'printf "%s\n" "$$" > "$FM_HOME/watcher.pid"; exec "$1"' _ "$WATCH" \
+    > "$TMP_ROOT/watch-loaded-change.out" 2> "$TMP_ROOT/watch-loaded-change.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/polled" 60 || fail "ticker never polled"
+  i=0
+  while [ "$(launch_count watch-loaded-change)" = 0 ] && [ "$i" -lt 600 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-loaded-change)" = 1 ] || fail "expected one first collection, saw $(launch_count watch-loaded-change)"
+  first=$(head -n 1 "$TMP_ROOT/watch-loaded-change.runs")
+  (
+    # shellcheck disable=SC2030,SC2031
+    export STATE=$home/state FM_HOME=$home
+    # shellcheck source=bin/fm-wake-lib.sh
+    # shellcheck disable=SC1091
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_wake_append check hb-test-producer "an appended wake under load"
+  ) || fail "could not append a wake"
+  # The policy stretches three seconds to twelve. Check before that deadline
+  # and at it; a change that resets the deadline to eighteen must fail.
+  for offset in 6 11 12; do
+    printf '%s\n' "$((epoch + offset))" > "$home/clock.next"
+    mv "$home/clock.next" "$home/clock"
+    i=0 observed=
+    while [ "$i" -lt 600 ]; do
+      read -r observed < "$home/polled"
+      [ "$observed" != "$((epoch + offset))" ] || break
+      kill -0 "$WATCH_PID" 2>/dev/null || fail "the loaded watcher exited"
+      command -p sleep 0.1
+      i=$((i + 1))
+    done
+    [ "$observed" = "$((epoch + offset))" ] || fail "ticker did not finish the ${offset}s poll"
+    [ "$offset" = 12 ] || [ "$(launch_count watch-loaded-change)" = 1 ] \
+      || fail "a change under load collected before the throttled idle due"
+  done
+  i=0
+  while [ "$(launch_count watch-loaded-change)" -lt 2 ] && [ "$i" -lt 600 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-loaded-change)" -ge 2 ] || fail "no collection at the throttled idle due"
+  next=$(sed -n 2p "$TMP_ROOT/watch-loaded-change.runs")
+  [ $((next - first)) -eq 12 ] \
+    || fail "the next collection came $((next - first))s after the first, expected the 12s throttled idle due"
+  pass "a change under load waits for the throttled idle due instead of resetting it"
+}
+
+# A re-armed ticker anchors its first idle due to the last actual
+# publication, so an immediate launch the heartbeat skips cannot push the
+# next publication a full throttled interval past that publication.
+test_rearmed_ticker_anchors_due_to_last_publication() {
+  local home stub generated
+  home=$(make_home watch-rearm-anchor)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  # A 40-second loaded cycle with a 20-second-old launch leaves enough
+  # startup margin on a busy host. A reset to the full cycle still cannot
+  # make a second launch inside the 25-second observation window below.
+  generated=$(( $(date +%s) - 20 ))
+  jq -n --argjson g "$generated" \
+    '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true,stale_after_secs:1671}' \
+    > "$home/state/heartbeat.json"
+  printf '300 0.00 0.00\n' > "$TMP_ROOT/watch-rearm-anchor.load"
+  stub=$(launch_log_stub watch-rearm-anchor)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_LOAD_FILE="$TMP_ROOT/watch-rearm-anchor.load" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=10 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$TMP_ROOT/watch-rearm-anchor.out" 2> "$TMP_ROOT/watch-rearm-anchor.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "watcher never polled"
+  command -p sleep 25
+  kill -KILL "$WATCH_PID" 2>/dev/null
+  wait "$WATCH_PID" 2>/dev/null
+  WATCH_PID=
+  [ "$(launch_count watch-rearm-anchor)" -ge 2 ] \
+    || fail "a re-armed ticker reset its first due to a full throttled interval after a skipped launch"
+  pass "a re-armed ticker anchors its first due to the last publication"
+}
+
+test_failed_heartbeat_publications_keep_retry_interval() {
+  local home stub generated mode i bad
+  for mode in expired recent; do
+    home=$(make_home "watch-failed-$mode")
+    rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+    generated=$(date +%s)
+    [ "$mode" != expired ] || generated=$((generated - 60))
+    jq -n --argjson g "$generated" \
+      '{schema:"fm-heartbeat.v1",generated_epoch:$g,published_epoch:$g,throttled:true}' \
+      > "$home/state/heartbeat.json"
+    printf '300 0.00 0.00\n' > "$home/load"
+    stub=$(launch_log_stub "watch-failed-$mode")
+    printf 'exit 1\n' >> "$stub"
+    fm_test_track_watcher_state "$home/state"
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_LOAD_FILE="$home/load" \
+      FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+      FM_HEARTBEAT_LEDGER_IDLE_SECS=3 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+      "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+    WATCH_PID=$!
+    wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the failed-publication watcher never polled"
+    i=0
+    while [ "$(launch_count "watch-failed-$mode")" -lt 3 ] && [ "$i" -lt 900 ]; do
+      kill -0 "$WATCH_PID" 2>/dev/null || fail "the failed-publication watcher exited"
+      command -p sleep 0.1
+      i=$((i + 1))
+    done
+    kill -TERM "$WATCH_PID" 2>/dev/null
+    wait "$WATCH_PID" 2>/dev/null
+    WATCH_PID=
+    [ "$(launch_count "watch-failed-$mode")" -ge 3 ] || fail "failed publications never retried"
+    assert_equals "$generated" "$(jq -r .generated_epoch "$home/state/heartbeat.json")" \
+      "the failing publisher unexpectedly advanced the ledger"
+    bad=$(awk -v mode="$mode" 'NR>(mode == "recent" ? 2 : 1) && $1-p < 11 {print $1-p} {p=$1}' \
+      "$TMP_ROOT/watch-failed-$mode.runs")
+    [ -z "$bad" ] || fail "$mode publication failures retried before the 12-second throttled interval: $bad"
+  done
+  pass "failed publications retain the throttled retry interval for expired and recent ledgers"
+}
+
+test_status_change_collects_before_grace_without_a_wake() {
+  local home stub before seq i=0 child comm
+  home=$(make_home watch-status-before-grace)
+  rm -f "$home/state/hb-task.meta" "$home/state/hb-task.status"
+  stub=$(launch_log_stub watch-status-before-grace)
+  fm_test_track_watcher_state "$home/state"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=60 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the status-grace watcher never polled"
+  command -p sleep 2
+  before=$(launch_count watch-status-before-grace)
+  [ "$before" -gt 0 ] || fail "the status-grace watcher never collected its initial heartbeat"
+  seq=$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')
+  printf 'working: progress\n' >> "$home/state/hb-task.status"
+  while [ "$(launch_count watch-status-before-grace)" -le "$before" ] && [ "$i" -lt 100 ]; do
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(launch_count watch-status-before-grace)" -gt "$before" ] \
+    || fail "a status change did not refresh the heartbeat during signal grace"
+  assert_equals "$seq" "$(cat "$home/state/.wake-queue.seq" 2>/dev/null || printf '0')" \
+    "a new queued wake hid the status-only heartbeat trigger"
+  # End this watcher's own grace sleep before stopping its holding process.
+  for child in $(ps -o pid= -P "$WATCH_PID" 2>/dev/null); do
+    comm=$(ps -o comm= -p "$child" 2>/dev/null)
+    case "$comm" in sleep|*/sleep) kill -TERM "$child" 2>/dev/null || true ;; esac
+  done
+  kill -KILL "$WATCH_PID" 2>/dev/null || true
+  wait "$WATCH_PID" 2>/dev/null || true
+  WATCH_PID=
+  pass "a status-only change refreshes the heartbeat before grace without creating a wake"
+}
+
+assert_fractional_watcher_wait() {  # <poll|checkpoint>
+  local mode=$1 home stub waits waitbin watcher i=0 checkpoint=0
+  home=$(make_home "fractional-wait-$mode")
+  stub=$(launch_log_stub "fractional-wait-$mode")
+  waits=$home/waits.log
+  waitbin=$home/wait-bin
+  mkdir -p "$waitbin" "$home/inbox"
+  : > "$waits"
+  # Observe the actual wait service requested by the main watcher process,
+  # independently of its detached heartbeat ticker and other child processes.
+  cat > "$waitbin/sleep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\t%s\n' "$PPID" "$*" >> "$FM_TEST_WAIT_LOG"
+exec /bin/sleep "$@"
+SH
+  chmod +x "$waitbin/sleep"
+  [ "$mode" != checkpoint ] || checkpoint=1
+  fm_test_track_watcher_state "$home/state"
+  PATH="$waitbin:$PATH" FM_TEST_WAIT_LOG="$waits" \
+    FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_WATCH_MANAGED_HOLD=1 \
+    FM_POLL=0.2 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    FM_WATCH_FOREGROUND_CHECKPOINT="$checkpoint" FM_WATCH_CHECKPOINT_INBOX="$home/inbox" \
+    FM_HEARTBEAT_LEDGER_IDLE_SECS=999 FM_HEARTBEAT_LEDGER_JITTER=0 FM_HEARTBEAT_BIN="$stub" \
+    "$WATCH" > "$home/watch.out" 2> "$home/watch.err" &
+  WATCH_PID=$!
+  watcher=$WATCH_PID
+  wait_for_file "$home/state/.last-watcher-beat" 30 || fail "the fractional $mode watcher never polled"
+  while ! awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits"; do
+    kill -0 "$watcher" 2>/dev/null || break
+    [ "$i" -lt 200 ] || break
+    command -p sleep 0.1
+    i=$((i + 1))
+  done
+  kill -KILL "$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  WATCH_PID=
+  awk -F'\t' -v pid="$watcher" '$1 == pid && $2 == "0.2" { found=1 } END { exit !found }' "$waits" \
+    || fail "the main $mode watcher never requested its configured fractional wait: $(cat "$home/watch.err")"
+  assert_no_grep 'integer expression expected' "$home/watch.err" "the fractional $mode watcher used an integer wait comparison"
+}
+
+test_fractional_open_work_poll_wait() {
+  assert_fractional_watcher_wait poll
+  pass "an attended open-work watcher retains fractional poll waits without comparison errors"
+}
+
+test_fractional_checkpoint_poll_wait() {
+  assert_fractional_watcher_wait checkpoint
+  pass "a foreground checkpoint waits its fractional budget instead of busy-spinning"
+}
+
+test_zero_padded_timeouts_read_as_decimal_in_the_run_cap() {
+  local home
+  home=$(make_home padded-timeouts)
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_DEADLINE=0240 FM_HEARTBEAT_SNAPSHOT_TIMEOUT=0120 \
+    FM_HEARTBEAT_READ_TIMEOUT=03 FM_HEARTBEAT_NM_TIMEOUT=02 FM_HEARTBEAT_QUOTA_TIMEOUT=010 FM_HEARTBEAT_DISCOVERY_TIMEOUT=060
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "zero-padded defaults did not read as decimal"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_READ_TIMEOUT=09 FM_HEARTBEAT_QUOTA_TIMEOUT=08
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP + 17 * (9 - 3) + 8 - 10))" "08 and 09 timeouts did not read as decimal"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=00 FM_HEARTBEAT_DISCOVERY_TIMEOUT=00
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "all-zero timeouts did not fall back to the defaults"
+  rm -f "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT_QUOTA_TIMEOUT=08
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP - 2))" "a padded timeout did not use the default grace"
+  pass "AC-14: zero-padded timeouts read as decimal in the run cap, and all-zero ones fall back to the defaults"
+}
+
+test_stale_bound_is_the_watcher_cycle_plus_the_grace() {
+  local home bad
+  home=$(make_home stale-bound)
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15 FM_HEARTBEAT=600
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "the stale bound is not the cycle period plus the grace plus the run cap"
+  printf 'stale-grace-secs=0\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" ".stale_after_secs == $((15 + DEFAULT_RUN_CAP))" "a zero grace did not give the cycle period plus the run cap"
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT=600
+  assert_ledger "$home" '.stale_after_secs == null' "a run with no watcher cycle period published a bound"
+  for bad in abc 0 015; do
+    publish "$home" "FM_HEARTBEAT_CYCLE_SECS=$bad"
+    assert_ledger "$home" '.stale_after_secs == null' "an unusable cycle period $bad published a bound"
+  done
+  rm -f "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "a home with no grace did not publish a cadence-safe bound"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=900
+  assert_ledger "$home" '.stale_after_secs == 1371' "a 900-second cadence without grace did not publish a cadence-safe bound"
+  for bad in '# stale-grace-secs=30' 'stale-grace-secs=' 'stale-grace-secs=abc' 'stale-grace-secs=030' 'stale-grace-secs=-5'; do
+    printf '%s\n' "$bad" > "$home/config/heartbeat"
+    publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+    assert_ledger "$home" ".stale_after_secs == $((75 + DEFAULT_RUN_CAP))" "the unusable grace line '$bad' did not use the default grace"
+  done
+  printf 'stale-grace-secs=30\nstale-grace-secs=abc\n' > "$home/config/heartbeat"
+  publish "$home" FM_HEARTBEAT_CYCLE_SECS=15
+  assert_ledger "$home" ".stale_after_secs == $((45 + DEFAULT_RUN_CAP))" "an unusable later line hid the usable grace"
+  pass "AC-14: the stale bound covers the watcher cycle, configured or default grace, and run cap"
+}
+
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence() {
+  local home script rc poll=${1:-2} cycle_bound=${2:-32}
+  home=$(make_home "watch-cycle-$poll")
+  script=$(canned_snapshot "$home")
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
+  wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
+  assert_ledger "$home" ".stale_after_secs == $((330 + DEFAULT_RUN_CAP))" \
+    "the watcher's heartbeat bound is not its default idle interval plus the grace plus the run cap"
+  home=$(make_home "watch-cycle-short-idle-$poll")
+  script=$(canned_snapshot "$home")
+  printf 'stale-grace-secs=30\n' > "$home/config/heartbeat"
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" FM_HEARTBEAT_LEDGER_IDLE_SECS=1 \
+    FM_POLL="$poll" FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=600 \
+    FM_HEARTBEAT_SNAPSHOT_SCRIPT="$script" FM_WATCH_ONCE=1 \
+    "$WATCH" > "$TMP_ROOT/watch-cycle.out" 2> "$TMP_ROOT/watch-cycle.err" &
+  WATCH_PID=$!
+  wait "$WATCH_PID"; rc=$?
+  WATCH_PID=
+  [ "$rc" -eq 0 ] || fail "watcher poll exited $rc: $(cat "$TMP_ROOT/watch-cycle.err")"
+  wait_for_file "$(ledger "$home")" 60 || fail "the watcher's heartbeat never published"
+  assert_ledger "$home" ".stale_after_secs == $((cycle_bound + DEFAULT_RUN_CAP))" \
+    "the heartbeat bound did not cover the idle interval and rounded-up poll plus the grace and run cap"
+  pass "AC-14: the watcher's heartbeat bound uses its longest launch interval, never the wake heartbeat cadence"
+}
+
+# AC-14: context_left carries the footer and the derived token percentage side
+# by side; derived is the shared reading (bin/fm-context-reading-lib.sh).
+test_derived_context_sits_beside_the_footer() {
+  local home project line
+  home=$(make_home derived)
+  line='{"type":"assistant","timestamp":"2026-10-30T11:59:00.123Z","message":{"usage":{"input_tokens":90000}}}'
+  printf 'sess-derived\n' > "$home/state/.lock-session"
+  project="$CLAUDE_CONFIG_DIR/projects/derived-primary"
+  mkdir -p "$project"
+  printf '%s\n' "$line" > "$project/sess-derived.jsonl"
+  printf '%s\n' "$line" > "$(task_transcript "$home")"
+  # The window record names the primary session only; the task takes the pin.
+  printf 'session=sess-derived compact_at=200000 at=1\n' > "$home/state/compact-point"
+  printf 'compact-at-tokens=100000\n' > "$home/config/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FAKE_PANE_TEXT='  12% until auto-compact' \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '
+    .primary.context_left.remaining == {percent:12,source:"terminal"}
+    and .primary.context_left.derived == {percent:55,source:"transcript"}
+    and .primary.context_left.used_tokens == 90000
+    and .tasks[0].session.id == "sess-task"
+    and .tasks[0].context_left.derived == {percent:10,source:"transcript"}
+  ' "the derived reading does not sit beside the footer"
+  rm -f "$home/config/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FAKE_PANE_TEXT='  12% until auto-compact' \
+    FM_SUPERVISOR_BACKEND=tmux FM_SUPERVISOR_TARGET=%1
+  assert_ledger "$home" '
+    .primary.context_left.derived == {percent:55,source:"transcript"}
+    and .tasks[0].context_left.derived == {unknown:true,reason:"no context window for this session"}
+    and .tasks[0].context_left.used_tokens == 90000
+  ' "a session with no window was given a derived reading"
+  rm -f "$home/state/compact-point"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '
+    .primary.context_left.derived == {unknown:true,reason:"no context window for this session"}
+    and .primary.context_left.remaining.unknown == true
+  ' "with no window and no footer the readings were not both unknown"
+  pass "AC-14: context_left carries the footer and the derived percentage side by side"
+}
+
+test_derived_context_is_unknown_without_token_usage() {
+  local home
+  home=$(make_home derived-none)
+  printf 'compact-at-tokens=100000\n' > "$home/config/handoff-trigger"
+  publish "$home"
+  assert_ledger "$home" '.tasks[0].context_left.derived == {unknown:true,reason:"no readable transcript"}' \
+    "a task with no transcript was given a derived reading"
+  printf '{"type":"assistant","timestamp":"2026-10-30T11:59:00Z","message":{}}\n' > "$(task_transcript "$home")"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '.tasks[0].context_left.derived == {unknown:true,reason:"transcript had no token usage"}' \
+    "a transcript with no token usage was given a derived reading"
+  pass "AC-14: the derived reading is unknown, with its reason, when there is no token usage to read"
+}
+
+# The shared context reading reads its window records under FM_HOME, so a run
+# with a state or config directory override must not publish a number taken from
+# the home's own records instead of the overridden ones.
+test_derived_context_is_unknown_under_directory_overrides() {
+  local home alt why
+  why='state or config directory override in use'
+  home=$(make_home derived-override)
+  printf '{"type":"assistant","timestamp":"2026-10-30T11:59:00Z","message":{"usage":{"input_tokens":90000}}}\n' \
+    > "$(task_transcript "$home")"
+  printf 'compact-at-tokens=200000\n' > "$home/config/handoff-trigger"
+  alt="$TMP_ROOT/derived-override-config"
+  mkdir -p "$alt"
+  printf 'compact-at-tokens=100000\n' > "$alt/handoff-trigger"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z
+  assert_ledger "$home" '.tasks[0].context_left.derived == {percent:55,source:"transcript"}' \
+    "the home's own pin did not give the derived reading"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_CONFIG_OVERRIDE="$alt"
+  assert_ledger "$home" "
+    .tasks[0].context_left.derived == {unknown:true,reason:\"$why\"}
+    and .tasks[0].context_left.used_tokens == 90000
+  " "a config override published a derived reading from the home's pin"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_CONFIG_OVERRIDE="$home/config"
+  assert_ledger "$home" '.tasks[0].context_left.derived == {percent:55,source:"transcript"}' \
+    "an override naming the home's own config directory lost the derived reading"
+  alt="$TMP_ROOT/derived-override-state"
+  cp -R "$home/state" "$alt"
+  rm -f "$alt/heartbeat.json"
+  publish "$home" FM_HEARTBEAT_NOW=2026-10-30T12:00:00Z FM_STATE_OVERRIDE="$alt"
+  jq -e ".tasks[0].context_left.derived == {unknown:true,reason:\"$why\"}" "$alt/heartbeat.json" >/dev/null \
+    || fail "a state override published a derived reading from the home's records: $(cat "$alt/heartbeat.json" 2>/dev/null)"
+  pass "AC-14: the derived reading is unknown, with its reason, under a state or config directory override"
+}
+
+test_weekly_allowance_reports_model_allowance_left() {
+  local home quota
+  home=$(make_home weekly)
+  quota='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10},{"id":"seven_day","percentUsed":92}]},{"id":"openai","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40}]}]}'
+  publish "$home" "FAKE_QUOTA_JSON=$quota"
+  assert_ledger "$home" '
+    .failure == null
+    and .weekly_allowance.status == "ok"
+    and (.weekly_allowance.windows | length) == 2
+    and .weekly_allowance.windows[0] == {provider:"anthropic",id:"seven_day",percent_remaining:8}
+    and .weekly_allowance.windows[1] == {provider:"openai",id:"weekly",percent_remaining:40}
+    and ([.weekly_allowance.windows[].id] | index("five_hour")) == null
+  ' "weekly model allowance was not published"
+  # quota-axi --json takes up to ~4s on a real host; the default bound must wait for it.
+  publish "$home" "FAKE_QUOTA_JSON=$quota" FAKE_QUOTA_DELAY=3
+  assert_ledger "$home" '.failure == null and .weekly_allowance.status == "ok"' \
+    "a 3-second quota-axi read was cut off by the default timeout"
+  publish "$home" FAKE_QUOTA_JSON='{"providers":[{"id":"anthropic","windows":[{"id":"five_hour","percentUsed":10}]}]}'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "no weekly model allowance window"' \
+    "a snapshot with no weekly window was treated as readable allowance"
+  publish "$home" FAKE_QUOTA_JSON='not-json'
+  assert_ledger "$home" '.failure == null and .weekly_allowance.unknown == true and .weekly_allowance.reason == "quota-axi output was not readable"' \
+    "unreadable quota output became a heartbeat failure or a guessed allowance"
+  pass "heartbeat publishes weekly model allowance left and leaves a miss unknown"
+}
+
+
+if [ "$#" -gt 0 ]; then
+  fm_test_run "$@"
+  exit
+fi
+
+test_ledger_schema_and_clean_run
+test_no_mistakes_run_is_parsed_from_real_status
+test_selection_owner_decides_the_run
+test_run_head_check_is_bounded
+test_worktree_off_recorded_branch_is_unknown
+test_settled_run_binds_only_on_worktree_head
+test_daemon_answer_qualifies_executing_run
+test_failed_status_is_unknown_not_no_run
+test_primary_unread_inbox_age_is_published
+test_transcript_fields_with_fractional_timestamps
+test_leftover_transcript_in_a_reused_slot_is_ignored
+test_ambiguous_transcript_when_two_qualify
+test_remote_task_never_reads_a_local_worktree
+test_remaining_context_comes_from_pane_text
+test_ungated_repo_is_unknown_not_failure
+test_last_output_needs_real_activity
+test_leftover_terminal_marker_is_ignored
+test_secondmate_frozen_marker_is_ignored
+test_missing_primary_endpoint_skips_pane_read
+test_last_push_names_the_local_ref
+test_snapshot_failure_is_recorded
+test_unreadable_fields_report_unknown
+test_slow_snapshot_is_bounded
+test_hung_primary_reads_are_bounded
+test_deadline_publishes_unread_tasks_as_unknown
+test_term_during_snapshot_still_publishes
+test_term_during_task_read_still_publishes
+test_stale_work_dir_is_swept
+test_watcher_poll_does_not_wait_for_heartbeat
+test_watcher_runs_one_heartbeat_at_a_time
+test_a_term_ignoring_bounded_read_is_still_killed
+test_watcher_publishes_every_cycle_whatever_its_loop_work
+test_zero_padded_timeouts_read_as_decimal_in_the_run_cap
+test_stale_bound_is_the_watcher_cycle_plus_the_grace
+test_worst_age_of_a_busy_healthy_home_stays_within_the_bound
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 0.2 31
+test_watcher_publishes_its_cycle_period_not_the_wake_cadence 2.2 33
+test_unchanged_home_collects_once_per_idle_interval
+test_jittered_idle_gaps_stay_within_the_interval
+test_a_relevant_change_collects_without_waiting_for_idle
+test_a_relevant_change_collects_without_waiting_for_idle 0.2
+test_a_change_under_load_waits_for_the_throttled_idle_due
+test_rearmed_ticker_anchors_due_to_last_publication
+test_failed_heartbeat_publications_keep_retry_interval
+test_status_change_collects_before_grace_without_a_wake
+test_fractional_open_work_poll_wait
+test_fractional_checkpoint_poll_wait
+test_derived_context_sits_beside_the_footer
+test_derived_context_is_unknown_without_token_usage
+test_derived_context_is_unknown_under_directory_overrides
+
+
+test_weekly_allowance_reports_model_allowance_left
+
+printf 'ok - heartbeat tests passed\n'

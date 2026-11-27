@@ -1,0 +1,6 @@
+$ bash tests/fm-heartbeat.test.sh test_watcher_publishes_every_cycle_whatever_its_loop_work
+1..1
+ok - AC-14: the watcher launches a publication every idle interval whatever its loop work, and stops with the watcher
+FM_TEST_COMPLETE
+
+EXIT 0 elapsed 27.4s

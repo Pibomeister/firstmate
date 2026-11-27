@@ -1,0 +1,3 @@
+10:45:58 START Real watcher defers heartbeat and summary collections under load while polling and resumes calm changes
+10:46:43 watch-cadence-first-heartbeat: {"schema": "fm-heartbeat.v1", "generated_epoch": 1795711573, "published_epoch": 1795711602, "throttled": true, "stale_after_secs": 591, "failure": {"reason": "primary writer anchor timed out after 3s", "count": 1}}
+10:46:43 watch-cadence-first-summary: {"schema": "fm-secondmate-home-summary.v1", "generated_epoch": 1795711579, "published_epoch": null, "throttled": null, "stale_after_secs": null, "failure": null}

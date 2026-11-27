@@ -1,0 +1,79 @@
+{
+  "schema": "fm-heartbeat.v1",
+  "generated": "2026-11-26T17:24:07Z",
+  "generated_epoch": 1795713847,
+  "published_epoch": 1795713855,
+  "fm_home": "{run-worktree}/.test-validation/live/heartbeat",
+  "stale_after_secs": 571,
+  "throttled": false,
+  "snapshot": {
+    "ok": true,
+    "schema": "fm-fleet-snapshot.v1",
+    "generated": "2026-11-26T17:24:07Z",
+    "failure": null
+  },
+  "primary": {
+    "terminal": {
+      "backend": {
+        "unknown": true,
+        "reason": "no supervisor backend discovered"
+      },
+      "target": {
+        "unknown": true,
+        "reason": "no supervisor target discovered"
+      },
+      "present": {
+        "unknown": true,
+        "reason": "no supervisor endpoint discovered"
+      }
+    },
+    "session": {
+      "trusted_id": {
+        "unknown": true,
+        "reason": "no session recorded"
+      },
+      "anchor_pid": {
+        "unknown": true,
+        "reason": "no lock anchor read"
+      },
+      "recorded": false
+    },
+    "writer": {
+      "anchor_pid": 38379,
+      "session_id": "01a218de-d479-7582-8098-6883517e707b"
+    },
+    "last_turn": {
+      "unknown": true,
+      "reason": "no transcript found"
+    },
+    "unread_inbox_age_seconds": null,
+    "composer_state": "unknown",
+    "context_left": {
+      "used_tokens": {
+        "unknown": true,
+        "reason": "transcript had no token usage"
+      },
+      "remaining": {
+        "unknown": true,
+        "reason": "harness showed no context text in its pane"
+      },
+      "derived": {
+        "unknown": true,
+        "reason": "no readable transcript"
+      }
+    }
+  },
+  "tasks": [],
+  "weekly_allowance": {
+    "unknown": true,
+    "reason": "quota-axi could not be read"
+  },
+  "ready_pr_discovery": {
+    "schema": "fm-ready-pr-discovery.v1",
+    "generated_epoch": 1795713847,
+    "runs": [],
+    "unreadable": [],
+    "warnings": []
+  },
+  "failure": null
+}

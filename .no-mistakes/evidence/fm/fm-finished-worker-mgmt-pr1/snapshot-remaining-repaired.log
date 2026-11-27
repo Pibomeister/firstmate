@@ -1,0 +1,8 @@
+1..6
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+FM_TEST_COMPLETE

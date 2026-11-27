@@ -1,0 +1,11 @@
+{
+  "command": [
+    "env",
+    "FM_HEARTBEAT_READ_TIMEOUT=15",
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_worktree_off_recorded_branch_is_unknown"
+  ],
+  "exit": 0,
+  "seconds": 157.6
+}

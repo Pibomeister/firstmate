@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Local watcher retries filesystem-rejected heartbeat publications at loaded spacing without a storm",
+    "result": "pass",
+    "live": true,
+    "evidence": "~/.no-mistakes/evidence/01M853B1KZA5CJ3ZYAB8T66ECY/target-4658cfc/live-retry.txt",
+    "reason": "Real local commands in a marked disposable home; synthetic load and task state."
+  }
+]

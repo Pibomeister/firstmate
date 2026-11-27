@@ -1,0 +1,9 @@
+{
+  "command": [
+    "bash",
+    "tests/fm-heartbeat.test.sh",
+    "test_watcher_runs_one_heartbeat_at_a_time"
+  ],
+  "exit": 0,
+  "seconds": 80.8
+}

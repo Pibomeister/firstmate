@@ -1,0 +1,46 @@
+[
+  {
+    "label": "loaded-clock",
+    "exit": 0
+  },
+  {
+    "label": "rearm-anchor",
+    "exit": 0
+  },
+  {
+    "label": "failed-retry",
+    "exit": 0
+  },
+  {
+    "label": "watcher-single-flight",
+    "exit": 0
+  },
+  {
+    "label": "slow-watcher-loop",
+    "exit": 0
+  },
+  {
+    "label": "watcher-poll-progress",
+    "exit": 0
+  },
+  {
+    "label": "idle-cadence",
+    "exit": 1
+  },
+  {
+    "label": "idle-jitter",
+    "exit": 0
+  },
+  {
+    "label": "calm-change",
+    "exit": 0
+  },
+  {
+    "label": "summary-loaded",
+    "exit": 0
+  },
+  {
+    "label": "contribution",
+    "exit": 0
+  }
+]

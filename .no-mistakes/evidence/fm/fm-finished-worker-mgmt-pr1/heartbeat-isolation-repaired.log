@@ -1,0 +1,4 @@
+1..2
+ok - the watcher keeps polling with one detached heartbeat in flight, which still publishes
+ok - a watcher poll does not wait for a slow heartbeat
+FM_TEST_COMPLETE
