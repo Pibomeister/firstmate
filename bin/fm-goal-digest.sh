@@ -90,8 +90,8 @@
 #
 # Each latest document is published through atomic replacement after
 # both history copies succeed. History archive names are never reused:
-# a same-second run archives under a suffixed name instead of
-# overwriting. Notification state advances only after
+# a same-second run archives both copies under one free suffix instead
+# of overwriting. Notification state advances only after
 # publication succeeds. History is retained without automatic pruning.
 #
 # State under the output directory: .state/seen.tsv holds merged pull
@@ -454,7 +454,6 @@ except BlockingIOError:
   : > "$work/new_merges.tsv"
   : > "$work/seen-new.tsv"
   : > "$work/since-new.tsv"
-  : > "$work/since-pending.tsv"
   : > "$work/waiting.tsv"
   : > "$work/open.tsv"
   : > "$work/waiting-unknown.tsv"
@@ -485,7 +484,6 @@ except BlockingIOError:
       printf '%s\t%s\n' "$repo" "$stop_before" >> "$pending_since_file"
       printf '%s\t%s\n' "$repo" "$stop_before" >> "$work/since-new.tsv"
     fi
-    printf '%s\t%s\n' "$repo" "$stop_before" >> "$work/since-pending.tsv"
     if ! FM_GD_STOP_BEFORE="$stop_before" fetch_pulls "$repo" "state=closed&sort=updated&direction=desc" "$json_file"; then
       printf '%s\t%s\t%s\n' "repo" "$repo" "gh api failed or incomplete; results not used" >> "$work/unreachable.tsv"
     else
@@ -676,7 +674,7 @@ EOF
   FM_GD_WORK="$work" FM_GD_NOW_ISO="$now_iso" FM_GD_NOW_CST="$now_cst" FM_GD_CHANGED="$changed" \
   FM_GD_OUTPUT="$output_dir" \
   python3 - <<'PY'
-import datetime, json, os
+import datetime, json, os, secrets
 work = os.environ["FM_GD_WORK"]
 def rows(name):
     path = os.path.join(work, name)
@@ -745,15 +743,35 @@ lines.append("")
 with open(md_tmp, "w") as fh:
     fh.write("\n".join(lines))
 stamp = datetime.datetime.strptime(os.environ["FM_GD_NOW_ISO"], "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%dT%H%M%SZ")
-for suffix, source in (("md", md_tmp), ("json", json_tmp)):
-    archive = os.path.join(output, "history", stamp + "." + suffix)
-    n = 1
-    while os.path.exists(archive):
-        archive = os.path.join(output, "history", f"{stamp}-{n}.{suffix}")
-        n += 1
-    with open(source, "rb") as inp, open(archive + ".tmp", "xb") as out:
-        out.write(inp.read())
-    os.replace(archive + ".tmp", archive)
+history_dir = os.path.join(output, "history")
+n = 0
+while True:
+    stem = stamp if n == 0 else f"{stamp}-{n}"
+    md_archive = os.path.join(history_dir, stem + ".md")
+    json_archive = os.path.join(history_dir, stem + ".json")
+    if not os.path.lexists(md_archive) and not os.path.lexists(json_archive):
+        break
+    n += 1
+
+def stage(source):
+    tmp = os.path.join(history_dir, ".history-" + secrets.token_hex(16) + ".tmp")
+    fd = os.open(tmp, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+    try:
+        with os.fdopen(fd, "wb") as out, open(source, "rb") as inp:
+            out.write(inp.read())
+    except Exception:
+        os.unlink(tmp)
+        raise
+    return tmp
+
+md_staged = stage(md_tmp)
+try:
+    json_staged = stage(json_tmp)
+except Exception:
+    os.unlink(md_staged)
+    raise
+os.replace(md_staged, md_archive)
+os.replace(json_staged, json_archive)
 os.replace(json_tmp, os.path.join(output, "latest.json"))
 os.replace(md_tmp, os.path.join(output, "latest.md"))
 PY

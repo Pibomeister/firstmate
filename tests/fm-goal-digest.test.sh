@@ -664,7 +664,7 @@ PYCHECK
 
 test_archive_failure_preserves_notification_state() {
   write_fixtures 0
-  local home rc=0
+  local home rc=0 hist
   home=$(make_home archive-failure)
   run_digest "$home" "$RUN1_EPOCH" >/dev/null || fail "initial archive run failed"
   cp "$home/data/goal-digest/.state/seen.tsv" "$home/seen-before"
@@ -672,16 +672,42 @@ test_archive_failure_preserves_notification_state() {
   cp "$home/data/goal-digest/.state/content.hash" "$home/hash-before"
   cp "$home/data/goal-digest/latest.json" "$home/latest-before"
   write_fixtures 1
-  mkdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  hist=$home/data/goal-digest/history
+  chmod u-w "$hist"
   run_digest "$home" "$RUN3_EPOCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" != 0 ] || fail "archive failure reported success"
   cmp "$home/seen-before" "$home/data/goal-digest/.state/seen.tsv" || fail "archive failure consumed merges"
   cmp "$home/since-before" "$home/data/goal-digest/.state/since.tsv" || fail "archive failure advanced watermark"
   cmp "$home/hash-before" "$home/data/goal-digest/.state/content.hash" || fail "archive failure consumed change"
   cmp "$home/latest-before" "$home/data/goal-digest/latest.json" || fail "archive failure replaced latest JSON"
-  rmdir "$home/data/goal-digest/history/20260101T140000Z.json.tmp"
+  chmod u+w "$hist"
   run_digest "$home" "$RUN3_EPOCH" >/dev/null || fail "archive recovery failed"
   assert_equals "[2]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home/data/goal-digest/latest.json")" "unarchived merge remains reportable"
+  # 2026-01-01T17:00:00Z. A leftover predictable temp occupies no final name.
+  mkdir "$hist/20260101T170000Z.json.tmp"
+  printf 'T9: temp only\n' > "$home/review.status"
+  run_digest "$home" $((RUN1_EPOCH + 18000)) >/dev/null || fail "leftover history temp blocked a free stamp"
+  [ -f "$hist/20260101T170000Z.md" ] || fail "free stamp skipped markdown because a temp name was occupied"
+  [ -f "$hist/20260101T170000Z.json" ] || fail "free stamp skipped JSON because a temp name was occupied"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T170000Z.md" || fail "temp-occupied stamp did not archive this markdown"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T170000Z.json" || fail "temp-occupied stamp did not archive this JSON"
+  # 2026-01-01T13:00:00Z. Partial markdown must not pair with a later JSON.
+  printf 'orphan attempt\n' > "$hist/20260101T130000Z.md"
+  mkdir "$hist/20260101T130000Z.json.tmp"
+  printf 'T9: shifted\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "partial-archive retry failed"
+  assert_equals "orphan attempt" "$(cat "$hist/20260101T130000Z.md")" "partial markdown stays the failed attempt"
+  [ ! -e "$hist/20260101T130000Z.json" ] || fail "retry JSON reused the partial attempt name"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T130000Z-1.md" || fail "shared-suffix markdown is not this attempt"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T130000Z-1.json" || fail "shared-suffix JSON is not this attempt"
+  cp "$hist/20260101T130000Z-1.md" "$home/pair-md"
+  cp "$hist/20260101T130000Z-1.json" "$home/pair-json"
+  printf 'T9: shifted again\n' > "$home/review.status"
+  run_digest "$home" "$RUN2_EPOCH" >/dev/null || fail "second partial-archive retry failed"
+  cmp "$home/pair-md" "$hist/20260101T130000Z-1.md" || fail "later attempt rewrote the previous markdown"
+  cmp "$home/pair-json" "$hist/20260101T130000Z-1.json" || fail "later attempt paired its JSON with the previous markdown"
+  cmp "$home/data/goal-digest/latest.md" "$hist/20260101T130000Z-2.md" || fail "second retry markdown missed its shared suffix"
+  cmp "$home/data/goal-digest/latest.json" "$hist/20260101T130000Z-2.json" || fail "second retry JSON missed its shared suffix"
   pass "archive failure does not consume notifications or report success"
 }
 
@@ -926,11 +952,11 @@ SH
   local home2
   home2=$(make_home first-publication)
   mkdir -p "$home2/data/goal-digest/history"
-  mkdir "$home2/data/goal-digest/history/20260101T120000Z.json.tmp"
+  chmod u-w "$home2/data/goal-digest/history"
   local rc=0
   run_digest "$home2" "$RUN1_EPOCH" >/dev/null 2>&1 || rc=$?
   [ "$rc" != 0 ] || fail "blocked first publication reported success"
-  rmdir "$home2/data/goal-digest/history/20260101T120000Z.json.tmp"
+  chmod u+w "$home2/data/goal-digest/history"
   run_digest "$home2" $((RUN1_EPOCH + 172800)) >/dev/null || fail "first-publication retry failed"
   assert_equals "[1]" "$(python3 -c 'import json,sys; print([m["number"] for m in json.load(open(sys.argv[1]))["new_merges"]])' "$home2/data/goal-digest/latest.json")" "failed first publication retains its initial merge window"
   pass "review fixes: parse, ETA, history, summary and first-publication window"
