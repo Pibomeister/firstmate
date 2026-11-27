@@ -7,6 +7,9 @@
 #                          [--base <commit-ish>] [--intent-file <file>]
 #   fm-merge-review.sh check <pr-url> --head <full-sha> [--base <merge-base-sha>]
 #   fm-merge-review.sh covers <pr-url>
+#   fm-merge-review.sh verify-finding --repo <dir> --head <full-sha>
+#                          --repro <file> --path tests/<name>.test.sh
+#                          --out <dir> [--base <commit-ish>] [--timeout <s>]
 #
 # run     A task worker runs this, never a supervisor session: it refuses
 #         unless FM_TASK_ID marks the caller as a spawned ship or scout worker.
@@ -31,6 +34,51 @@
 #         line. bin/fm-pr-merge.sh calls it before a covered merge.
 # covers  Exit 0 when config/merge-review requires reviews for the pull
 #         request's repository, 1 when it does not.
+# verify-finding
+#         Runs one reviewer's reproduction, so "is this a regression?" is a
+#         fact rather than a label. A task worker runs it, never a supervisor
+#         session, because it executes text a reviewer wrote. The reviewer
+#         writes the reproduction; the worker passes it as <file>. The command
+#         copies it to one new test file directly under tests/ (created when
+#         absent), named *.test.sh and absent from both the head and the
+#         merge base in any letter case, and runs it as that project
+#         test: bash <path>, from the snapshot root, with stdin from /dev/null and
+#         without Firstmate home, task or lifecycle variables
+#         (bin/fm-env-scrub.sh), under --timeout (1 to 3600 seconds, default
+#         600). It runs in a snapshot of <full-sha> outside every repository,
+#         then, only when the head result is red, in a snapshot of the merge base with
+#         <commit-ish> (default origin/HEAD); a head already contained in
+#         that base is refused. Snapshot preparation leaves the source
+#         repository unchanged and fetches nothing; the reproduction itself is
+#         not sandboxed and can write outside the snapshot, which is why only
+#         a worker runs it. An interrupt or
+#         termination stops the reproduction's whole process tree and removes
+#         the scratch before this command exits. One line on
+#         stdout and in
+#         <out>/result, with head.log beside it and base.log only if the base ran:
+#           verify-finding: <introduced|red-at-both|no-evidence>
+#             head=<full-sha> head_result=<r> base=<full-sha> base_result=<r>
+#             path=<path> repro_sha256=<sha256>
+#         <r> is red (any nonzero exit other than 124, 126 or 127), green
+#         (exit 0), timeout, error (exit 126 or 127: it could not run),
+#         wrote-outside (it changed the snapshot outside tests/, permission
+#         bits included, or left it unreadable), or skipped
+#         (base only, when the head was not red).
+#         introduced  red at the head and green at the merge base: an
+#                     evidence-backed finding.
+#         red-at-both red at the head and at the merge base. This command
+#                     never marks a finding pre-existing; only the council
+#                     or the captain may, and until then the finding keeps
+#                     its normal blocking standing.
+#         no-evidence anything else; the finding keeps its normal standing
+#                     and rests on reading alone.
+#         The snapshot holds committed files only, so a reproduction that
+#         needs ignored dependencies or Git history fails there like any
+#         other failure. <out> must not hold a result or a log, or a link in
+#         their place; existing evidence is never replaced. Logs are copied
+#         before result; a publication error can leave partial evidence.
+#         Recording the result against a finding belongs to the
+#         finding ledger, not to this command.
 #
 # Verdict rule (check, and the last line run prints):
 #   approved    at least two valid receipts at this exact head approve, they
@@ -95,8 +143,9 @@
 # keys. The ship-landing skill owns when a supervisor dispatches the worker.
 #
 # Exit status: run and check exit 0 on approved and 1 on blocked or
-# incomplete; covers exits 0 or 1 as above; 2 is a usage, configuration, or
-# refusal error, with nothing called.
+# incomplete; covers exits 0 or 1 as above; verify-finding exits 0 with any of
+# its three results; 2 is a usage, configuration, refusal, or operational
+# error and may occur after the reproduction has run.
 set -u
 set -o pipefail
 
@@ -112,6 +161,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-path-lib.sh
+. "$SCRIPT_DIR/fm-path-lib.sh"
 
 MR_FORMAT=fm-merge-review-receipt-v1
 MR_MIN_REVIEW_BYTES=300
@@ -855,9 +906,279 @@ mr_run_cleanup() {
   [ -z "$MR_RECLAIM" ] || fm_lock_release "$MR_RECLAIM"
 }
 
+# Refuse a scratch directory that sits inside a repository, so nothing run
+# there can find and act on an enclosing repository.
+mr_scratch_outside_repositories() {  # <dir>
+  local parent=$1
+  while :; do
+    if [ -e "$parent/.git" ] || [ -L "$parent/.git" ] ||
+      { { [ -f "$parent/HEAD" ] || [ -L "$parent/HEAD" ]; } &&
+        [ -d "$parent/objects" ] && [ -d "$parent/refs" ]; }; then
+      return 1
+    fi
+    [ "$parent" != / ] || return 0
+    fm_dirname_to parent "$parent" || return 1
+  done
+}
+
+# Extract <commit>'s committed tree from <repo> into <scratch>/snapshot. The
+# object view in <scratch>/archive.git ignores replacement refs and the
+# repository's export-ignore and export-subst attributes, and paths that
+# collide on this filesystem refuse.
+mr_snapshot() {  # <repo> <commit> <scratch>
+  local repo=$1 commit=$2 scratch=$3 object_dir object_format=sha1 entry_path duplicate_ids
+  mkdir "$scratch/snapshot" || mr_die 'cannot create the snapshot directory'
+  object_dir=$(git --no-replace-objects -C "$repo" rev-parse --git-path objects) || mr_die 'cannot locate the source objects'
+  case "$object_dir" in /*) ;; *) object_dir="$repo/$object_dir" ;; esac
+  object_dir=$(cd "$object_dir" && pwd -P) || mr_die 'cannot resolve the source objects directory'
+  [ "${#commit}" -ne 64 ] || object_format=sha256
+  # Override archive attributes without changing the source repository.
+  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_DEFAULT_HASH="$object_format" \
+    git -c init.defaultBranch=main init --bare --quiet --template= "$scratch/archive.git" || mr_die 'cannot initialize the snapshot object view'
+  mkdir -p "$scratch/archive.git/info" || mr_die 'cannot prepare snapshot attributes'
+  printf '* -export-ignore -export-subst\n' > "$scratch/archive.git/info/attributes" || mr_die 'cannot write snapshot attributes'
+  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_OBJECT_DIRECTORY="$object_dir" \
+    git --no-replace-objects -c core.attributesFile=/dev/null --git-dir="$scratch/archive.git" \
+      archive --format=tar "$commit" | TAR_OPTIONS='' tar -x -C "$scratch/snapshot" \
+    || mr_die "cannot snapshot $commit from $repo"
+  git --no-replace-objects -C "$repo" ls-tree --full-tree -r -t -z --name-only "$commit" |
+    while IFS= read -r -d '' entry_path; do printf '%s/%s\0' "$scratch/snapshot" "$entry_path"; done > "$scratch/snapshot.paths" \
+    || mr_die 'cannot enumerate committed snapshot paths'
+  if [ -s "$scratch/snapshot.paths" ]; then
+    if stat -c '%d:%i' "$scratch/snapshot" >/dev/null 2>&1; then
+      xargs -0 stat -c '%d:%i' < "$scratch/snapshot.paths" > "$scratch/snapshot.ids" || mr_die 'cannot verify snapshot paths'
+    else
+      xargs -0 stat -f '%d:%i' < "$scratch/snapshot.paths" > "$scratch/snapshot.ids" || mr_die 'cannot verify snapshot paths'
+    fi
+    duplicate_ids=$(LC_ALL=C sort "$scratch/snapshot.ids" | uniq -d) || mr_die 'cannot verify snapshot path identities'
+    [ -z "$duplicate_ids" ] || mr_die 'snapshot has colliding Git paths on this filesystem'
+  fi
+}
+
+# Print a manifest of <dir> outside its tests/ directory: one line per path,
+# with each path's permission bits, each regular file's digest and each link's
+# target.
+mr_tree_manifest() {  # <dir>
+  local -a sum=(sha256sum) mode=(stat -c 'mode %a %n')
+  ! command -v shasum >/dev/null 2>&1 || sum=(shasum -a 256)
+  stat -c '%a' "$1" >/dev/null 2>&1 || mode=(stat -f 'mode %Lp %N')
+  # Any part that cannot be read fails the manifest, so a comparison never
+  # rests on a manifest missing its links, permission bits or digests.
+  (
+    set -o pipefail
+    cd "$1" || exit 1
+    find . -path ./tests -prune -o ! -type f -print | LC_ALL=C sort |
+      while IFS= read -r entry; do
+        if [ -L "$entry" ]; then printf 'link %s -> %s\n' "$entry" "$(readlink "$entry")"; else printf 'node %s\n' "$entry"; fi
+      done &&
+      find . -path ./tests -prune -o -print0 | xargs -0 "${mode[@]}" | LC_ALL=C sort &&
+      find . -path ./tests -prune -o -type f -print0 | xargs -0 "${sum[@]}" | LC_ALL=C sort
+  ) || return 1
+}
+
+# Refuse a reproduction path the snapshot could resolve to something other than
+# a new file in a real tests/ directory: a root entry named tests in any letter
+# case that is not exactly one tests/ directory, or a committed test whose name
+# matches the path's name apart from letter case.
+mr_verify_path_free() {  # <repo> <commit> <path>
+  local repo=$1 commit=$2 path=$3 want entry found=0 lower
+  want=$(printf '%s' "${path#tests/}" | tr '[:upper:]' '[:lower:]')
+  while IFS= read -r -d '' entry; do
+    [ "$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')" = tests ] || continue
+    [ "$entry" = tests ] && [ "$(git --no-replace-objects -C "$repo" cat-file -t "$commit:tests" 2>/dev/null)" = tree ] \
+      || mr_die "$commit holds a tests entry ($entry) that is not the tests/ directory; refusing to place a reproduction there"
+    found=1
+  done < <(git --no-replace-objects -C "$repo" ls-tree -z --name-only "$commit" 2>/dev/null)
+  [ "$found" = 1 ] || return 0
+  while IFS= read -r -d '' entry; do
+    lower=$(printf '%s' "$entry" | tr '[:upper:]' '[:lower:]')
+    [ "$lower" != "$want" ] \
+      || mr_die "--path $path names the committed tests/$entry at $commit apart from letter case; a reproduction may only add a new test file"
+  done < <(git --no-replace-objects -C "$repo" ls-tree -z --name-only "$commit:tests" 2>/dev/null)
+}
+
+mr_verify_stop_group() {
+  local scratch=$1 group pid identity pids
+  [ -s "$scratch/group" ] || return 0
+  group=$(tr -d '[:space:]' < "$scratch/group") || return 1
+  case "$group" in '' | 0 | *[!0-9]*) return 1 ;; esac
+  pids=$(ps -A -o pid= -o pgid= | awk -v group="$group" '$2 == group { print $1 }') || return 1
+  : > "$scratch/children" || return 1
+  for pid in $pids; do
+    identity=$(fm_pid_identity_line "$pid") || continue
+    printf '%s\t%s\n' "$pid" "$identity" >> "$scratch/children" || return 1
+    fm_snapshot_descendants "$pid" "$scratch/children"
+  done
+  fm_reap_ledger "$scratch/children" 1 || return 1
+  while IFS="$(printf '\t')" read -r pid identity; do
+    fm_pid_alive "$pid" || continue
+    [ "$(fm_pid_identity_line "$pid")" != "$identity" ] || return 1
+  done < "$scratch/children"
+  rm -f "$scratch/group"
+}
+
+# Run the reproduction in one snapshot and print its result word.
+mr_verify_side() {  # <scratch> <path> <log>
+  local scratch=$1 path=$2 log=$3 before after rc=0
+  if [ -L "$scratch/snapshot/tests" ] || { [ -e "$scratch/snapshot/tests" ] && [ ! -d "$scratch/snapshot/tests" ]; } ||
+    [ -e "$scratch/snapshot/$path" ] || [ -L "$scratch/snapshot/$path" ]; then
+    printf 'error: the snapshot resolves --path %s to an existing or linked entry\n' "$path" >&2
+    return 1
+  fi
+  mkdir -p "$scratch/snapshot/tests" "$scratch/tmp" || return 1
+  # Temporary files, the timeout helper's included, stay inside the scratch.
+  export TMPDIR="$scratch/tmp"
+  cp "$MR_VERIFY_REPRO" "$scratch/snapshot/$path" || return 1
+  before=$(mr_tree_manifest "$scratch/snapshot") || return 1
+  (
+    # shellcheck disable=SC2016 # The child shell expands $$, $1, and $2.
+    cd "$scratch/snapshot" &&
+      fm_run_timed "$MR_VERIFY_TIMEOUT" "$SCRIPT_DIR/fm-env-scrub.sh" exec env -u FM_TEST_REVIEW_STUB bash -c '
+        ps -o pgid= -p "$$" > "$1" || exit 127
+        exec bash "$2"
+      ' _ "$scratch/group" "$path"
+  ) < /dev/null > "$log" 2>&1 || rc=$?
+  mr_verify_stop_group "$scratch" || return 1
+  # A reproduction that leaves the tree unreadable changed it outside tests/.
+  after=$(mr_tree_manifest "$scratch/snapshot") || after="unreadable after the reproduction"
+  if [ "$before" != "$after" ]; then
+    printf 'wrote-outside\n'
+    return 0
+  fi
+  case "$rc" in
+    0) printf 'green\n' ;;
+    124) printf 'timeout\n' ;;
+    126 | 127) printf 'error\n' ;;
+    *) printf 'red\n' ;;
+  esac
+}
+
+# Run one side in the background and wait for it, so a signal to this
+# command interrupts the wait at once instead of waiting for the reproduction.
+# The side runs as its own process group, so a signal sent to this command's
+# whole group reaches only this command, whose cleanup then stops the side's
+# intact process tree. The side's result word lands in <scratch>/result.
+mr_verify_run_side() {  # <scratch> <path> <log>
+  local rc=0 monitor_was_on=0
+  case $- in *m*) monitor_was_on=1 ;; esac
+  set -m
+  mr_verify_side "$@" < /dev/null > "$1/result" &
+  MR_VERIFY_SIDE_PID=$!
+  [ "$monitor_was_on" -eq 1 ] || set +m
+  wait "$MR_VERIFY_SIDE_PID" || rc=$?
+  MR_VERIFY_SIDE_PID=
+  [ "$rc" -eq 0 ] && [ -s "$1/result" ]
+}
+
+# Stop a side still running, with its whole process tree, then remove the
+# scratch even when the reproduction left a directory without write or search
+# permission.
+mr_verify_cleanup() {
+  local ledger side
+  [ -n "${MR_VERIFY_WORK:-}" ] || return 0
+  if [ -n "${MR_VERIFY_SIDE_PID:-}" ] && fm_pid_alive "$MR_VERIFY_SIDE_PID"; then
+    ledger="$MR_VERIFY_WORK/stop.ledger"
+    if printf '%s\t%s\n' "$MR_VERIFY_SIDE_PID" "$(fm_pid_identity_line "$MR_VERIFY_SIDE_PID")" > "$ledger"; then
+      fm_snapshot_descendants "$MR_VERIFY_SIDE_PID" "$ledger"
+      fm_reap_ledger "$ledger" 1 || true
+    fi
+    wait "$MR_VERIFY_SIDE_PID" 2>/dev/null || true
+  fi
+  for side in head base; do
+    mr_verify_stop_group "$MR_VERIFY_WORK/$side" || true
+  done
+  if [ -d "$MR_VERIFY_WORK" ] && [ ! -L "$MR_VERIFY_WORK" ]; then
+    chmod -R u+rwx "$MR_VERIFY_WORK" 2>/dev/null || true
+  fi
+  rm -rf "$MR_VERIFY_WORK"
+}
+
+mr_verify_finding() {  # <repo> <base-ref> <repro> <path> <out>
+  local repo=$1 base_ref=$2 repro=$3 path=$4 out=$5 repo_root name commit head_result base_result result line repro_sha evidence
+  if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
+    mr_die 'verify-finding belongs in a background worker: it runs a reviewer-written reproduction, and FM_TASK_ID is not set'
+  fi
+  mr_sha256 "$0" >/dev/null || mr_die 'shasum or sha256sum is required'
+  { [ -f "$repro" ] && [ -r "$repro" ]; } || mr_die "--repro $repro is not a readable file"
+  [ "$(mr_file_bytes "$repro")" -le 262144 ] || mr_die '--repro is larger than 262144 bytes'
+  name=${path#tests/}
+  case "$path" in
+    tests/*) ;;
+    *) mr_die "--path $path is outside tests/; a reproduction may only add a test file there" ;;
+  esac
+  case "$name" in
+    '' | */* | .* | *[!A-Za-z0-9._-]* | *..*) mr_die "--path $path must name one file directly under tests/" ;;
+    *.test.sh) ;;
+    *) mr_die "--path $path must be a tests/<name>.test.sh file the project test command runs" ;;
+  esac
+  unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES \
+    || mr_die 'cannot isolate Git repository location variables'
+  git --no-replace-objects -C "$repo" rev-parse --git-dir >/dev/null 2>&1 || mr_die "--repo $repo is not a git repository"
+  repo_root=$(git --no-replace-objects -C "$repo" rev-parse --show-toplevel 2>/dev/null) || repo_root=$repo
+  repo=$(cd "$repo_root" && pwd -P) || mr_die 'cannot resolve the repository root'
+  [ "$(git --no-replace-objects -C "$repo" rev-parse --verify --quiet "$MR_HEAD^{commit}" 2>/dev/null)" = "$MR_HEAD" ] \
+    || mr_die "the head commit $MR_HEAD is not in $repo; fetch it there first"
+  if [ -z "$base_ref" ]; then
+    base_ref=$(git --no-replace-objects -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) \
+      || mr_die 'no --base given and the repository has no origin/HEAD; pass --base <commit-ish>'
+  fi
+  MR_BASE=$(git --no-replace-objects -C "$repo" merge-base "$base_ref" "$MR_HEAD" 2>/dev/null) \
+    || mr_die "cannot find a merge base between $base_ref and $MR_HEAD"
+  [ "$MR_BASE" != "$MR_HEAD" ] \
+    || mr_die "the head $MR_HEAD is already contained in $base_ref; pass --base <commit-ish> from before the change"
+  for commit in "$MR_HEAD" "$MR_BASE"; do
+    ! git --no-replace-objects -C "$repo" cat-file -e "$commit:$path" 2>/dev/null \
+      || mr_die "--path $path already exists at $commit; a reproduction may only add a new test file"
+    mr_verify_path_free "$repo" "$commit" "$path"
+  done
+  [ ! -L "$out" ] || mr_die "--out $out is a link; evidence goes to a real directory"
+  for evidence in result head.log base.log; do
+    if [ -e "$out/$evidence" ] || [ -L "$out/$evidence" ]; then
+      mr_die "--out $out already holds a reproduction result; evidence is never replaced"
+    fi
+  done
+  mkdir -p "$out" || mr_die "cannot create --out $out"
+  repro_sha=$(mr_sha256 "$repro") || mr_die 'cannot hash the reproduction'
+  MR_VERIFY_REPRO=$repro
+
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$SCRIPT_DIR/fm-wake-lib.sh"
+  MR_VERIFY_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-verify-finding.XXXXXX") || mr_die 'cannot create a temporary directory'
+  trap mr_verify_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'exit 129' HUP
+  MR_VERIFY_WORK=$(cd "$MR_VERIFY_WORK" && pwd -P) || mr_die 'cannot resolve the temporary directory'
+  mr_scratch_outside_repositories "$MR_VERIFY_WORK" \
+    || mr_die 'temporary directory is inside a repository; use a TMPDIR outside repositories'
+  mkdir "$MR_VERIFY_WORK/head" "$MR_VERIFY_WORK/base" || mr_die 'cannot prepare the snapshots'
+
+  mr_snapshot "$repo" "$MR_HEAD" "$MR_VERIFY_WORK/head"
+  mr_verify_run_side "$MR_VERIFY_WORK/head" "$path" "$MR_VERIFY_WORK/head.log" || mr_die 'cannot run the reproduction at the head'
+  head_result=$(cat "$MR_VERIFY_WORK/head/result")
+  base_result=skipped
+  if [ "$head_result" = red ]; then
+    mr_snapshot "$repo" "$MR_BASE" "$MR_VERIFY_WORK/base"
+    mr_verify_run_side "$MR_VERIFY_WORK/base" "$path" "$MR_VERIFY_WORK/base.log" || mr_die 'cannot run the reproduction at the merge base'
+    base_result=$(cat "$MR_VERIFY_WORK/base/result")
+  fi
+  case "$head_result:$base_result" in
+    red:green) result=introduced ;;
+    red:red) result=red-at-both ;;
+    *) result=no-evidence ;;
+  esac
+  line="verify-finding: $result head=$MR_HEAD head_result=$head_result base=$MR_BASE base_result=$base_result path=$path repro_sha256=$repro_sha"
+  # Publish logs before the result that marks completed evidence.
+  cp "$MR_VERIFY_WORK/head.log" "$out/head.log" || mr_die "cannot record the head log in $out"
+  [ "$base_result" = skipped ] || cp "$MR_VERIFY_WORK/base.log" "$out/base.log" \
+    || mr_die "cannot record the merge-base log in $out"
+  printf '%s\n' "$line" > "$out/result" || mr_die "cannot record the result in $out"
+  printf '%s\n' "$line"
+}
+
 mr_run() {  # <repo> <base-ref> <intent-file>
-  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha object_dir object_format=sha1 repo_root
-  local review_parent entry_path duplicate_ids workdir
+  local repo=$1 base_ref=$2 intent=$3 i pids='' pid holder families identity reviewer_parent complete_sha repo_root
+  local workdir
   MR_RUN_OWNER=$$
   if [ -z "${FM_TASK_ID:-}" ] || ! fm_pr_task_id_valid "$FM_TASK_ID"; then
     mr_die 'run belongs in a background worker: FM_TASK_ID is not set, so this is not a spawned ship or scout worker. A supervisor dispatches the worker and reads check.'
@@ -936,46 +1257,13 @@ mr_run() {  # <repo> <base-ref> <intent-file>
   MR_RECLAIM=
 
   MR_WORK=$(mktemp -d "${TMPDIR:-/tmp}/fm-merge-review.XXXXXX") || mr_die 'cannot create a temporary directory'
-  review_parent=$(cd "$MR_WORK" && pwd -P) || mr_die 'cannot resolve the temporary review directory'
-  MR_WORK=$review_parent
-  while :; do
-    if [ -e "$review_parent/.git" ] || [ -L "$review_parent/.git" ] ||
-      { { [ -f "$review_parent/HEAD" ] || [ -L "$review_parent/HEAD" ]; } &&
-        [ -d "$review_parent/objects" ] && [ -d "$review_parent/refs" ]; }; then
-      mr_die 'temporary review directory is inside a repository; use a TMPDIR outside repositories'
-    fi
-    [ "$review_parent" != / ] || break
-    fm_dirname_to review_parent "$review_parent"
-  done
+  MR_WORK=$(cd "$MR_WORK" && pwd -P) || mr_die 'cannot resolve the temporary review directory'
+  mr_scratch_outside_repositories "$MR_WORK" \
+    || mr_die 'temporary review directory is inside a repository; use a TMPDIR outside repositories'
   : > "$MR_WORK/children"
   ln -s "$MR_WORK/children" "$MR_LOCK/children" || mr_die 'cannot publish the reviewer ledger'
   printf '%s\n' "$MR_WORK" > "$MR_LOCK/workdir"
-  mkdir "$MR_WORK/snapshot"
-  object_dir=$(git --no-replace-objects -C "$repo" rev-parse --git-path objects) || mr_die 'cannot locate the source objects'
-  case "$object_dir" in /*) ;; *) object_dir="$repo/$object_dir" ;; esac
-  object_dir=$(cd "$object_dir" && pwd -P) || mr_die 'cannot resolve the source objects directory'
-  [ "${#MR_HEAD}" -ne 64 ] || object_format=sha256
-  # Override archive attributes without changing the source repository.
-  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_DEFAULT_HASH="$object_format" \
-    git -c init.defaultBranch=main init --bare --quiet --template= "$MR_WORK/archive.git" || mr_die 'cannot initialize the snapshot object view'
-  mkdir -p "$MR_WORK/archive.git/info" || mr_die 'cannot prepare snapshot attributes'
-  printf '* -export-ignore -export-subst\n' > "$MR_WORK/archive.git/info/attributes" || mr_die 'cannot write snapshot attributes'
-  GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_PARAMETERS='' GIT_CONFIG_COUNT=0 GIT_OBJECT_DIRECTORY="$object_dir" \
-    git --no-replace-objects -c core.attributesFile=/dev/null --git-dir="$MR_WORK/archive.git" \
-      archive --format=tar "$MR_HEAD" | TAR_OPTIONS='' tar -x -C "$MR_WORK/snapshot" \
-    || mr_die "cannot snapshot $MR_HEAD from $repo"
-  git --no-replace-objects -C "$repo" ls-tree --full-tree -r -t -z --name-only "$MR_HEAD" |
-    while IFS= read -r -d '' entry_path; do printf '%s/%s\0' "$MR_WORK/snapshot" "$entry_path"; done > "$MR_WORK/snapshot.paths" \
-    || mr_die 'cannot enumerate committed snapshot paths'
-  if [ -s "$MR_WORK/snapshot.paths" ]; then
-    if stat -c '%d:%i' "$MR_WORK/snapshot" >/dev/null 2>&1; then
-      xargs -0 stat -c '%d:%i' < "$MR_WORK/snapshot.paths" > "$MR_WORK/snapshot.ids" || mr_die 'cannot verify snapshot paths'
-    else
-      xargs -0 stat -f '%d:%i' < "$MR_WORK/snapshot.paths" > "$MR_WORK/snapshot.ids" || mr_die 'cannot verify snapshot paths'
-    fi
-    duplicate_ids=$(LC_ALL=C sort "$MR_WORK/snapshot.ids" | uniq -d) || mr_die 'cannot verify snapshot path identities'
-    [ -z "$duplicate_ids" ] || mr_die 'snapshot has colliding Git paths on this filesystem'
-  fi
+  mr_snapshot "$repo" "$MR_HEAD" "$MR_WORK"
   git --no-replace-objects -C "$repo" -c core.attributesFile="$MR_WORK/archive.git/info/attributes" \
     diff --no-relative --no-ext-diff --no-textconv --ignore-submodules=none \
     --submodule=short --full-index --binary "$MR_BASE" "$MR_HEAD" > "$MR_WORK/diff.patch" \
@@ -1054,7 +1342,7 @@ case "${1:-}" in
     usage
     exit 0
     ;;
-  run | check | covers) ;;
+  run | check | covers | verify-finding) ;;
   *)
     usage >&2
     exit 2
@@ -1062,6 +1350,49 @@ case "${1:-}" in
 esac
 MR_COMMAND=$1
 shift
+
+if [ "$MR_COMMAND" = verify-finding ]; then
+  MR_HEAD=''
+  MR_BASE=''
+  MR_ARG_REPO=''
+  MR_ARG_BASE=''
+  MR_ARG_REPRO=''
+  MR_ARG_PATH=''
+  MR_ARG_OUT=''
+  MR_VERIFY_TIMEOUT=600
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --head | --repo | --base | --repro | --path | --out | --timeout)
+        case "${2:-}" in
+          '' | --*) mr_die "$1 requires a value" ;;
+        esac
+        case "$1" in
+          --head) MR_HEAD=$2 ;;
+          --repo) MR_ARG_REPO=$2 ;;
+          --base) MR_ARG_BASE=$2 ;;
+          --repro) MR_ARG_REPRO=$2 ;;
+          --path) MR_ARG_PATH=$2 ;;
+          --out) MR_ARG_OUT=$2 ;;
+          --timeout) MR_VERIFY_TIMEOUT=$2 ;;
+        esac
+        shift 2
+        ;;
+      *) mr_die "unknown argument: $1" ;;
+    esac
+  done
+  fm_pr_head_valid "$MR_HEAD" || mr_die '--head requires a full lowercase commit sha'
+  [ -n "$MR_ARG_REPO" ] || mr_die 'verify-finding requires --repo <dir>, a git repository that contains the head commit'
+  [ -n "$MR_ARG_REPRO" ] || mr_die 'verify-finding requires --repro <file>'
+  [ -n "$MR_ARG_PATH" ] || mr_die 'verify-finding requires --path tests/<name>.test.sh'
+  [ -n "$MR_ARG_OUT" ] || mr_die 'verify-finding requires --out <dir> for the evidence'
+  case "$MR_VERIFY_TIMEOUT" in
+    '' | *[!0-9]*) mr_die '--timeout must be 1 to 3600 seconds' ;;
+  esac
+  MR_VERIFY_TIMEOUT=$((10#$MR_VERIFY_TIMEOUT))
+  { [ "$MR_VERIFY_TIMEOUT" -ge 1 ] && [ "$MR_VERIFY_TIMEOUT" -le 3600 ]; } || mr_die '--timeout must be 1 to 3600 seconds'
+  mr_verify_finding "$MR_ARG_REPO" "$MR_ARG_BASE" "$MR_ARG_REPRO" "$MR_ARG_PATH" "$MR_ARG_OUT"
+  exit $?
+fi
 
 [ "$#" -ge 1 ] || mr_die "$MR_COMMAND needs a pull request URL"
 fm_pr_url_parse "$1" || mr_die 'the pull request URL must be the canonical full URL of a pull or merge request'
