@@ -1,0 +1,13 @@
+heredoc into python3.13t                     rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into pythonw                         rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into python3.12                      rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into nodejs                          rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into node                            rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into perl5.34                        rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into perl                            rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into ruby3.2                         rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into /usr/local/bin/ruby3.3          rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into php8.2                          rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+heredoc into php                             rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'python3.13t -e 1' after class heredoc rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+later 'nodejs -e 1' after class heredoc      rc=0  REFUSE: deny                                         ledger=refuse:class  status=none

@@ -20,5 +20,5 @@ ok - the held set follows the latest requests, tells requests apart by their inp
 ok - an unreadable payload is held for the owner and no finished tool call closes it
 ok - a bad task id or a missing state directory writes nothing and answers nothing
 FM_TEST_COMPLETE
-bash tests/fm-permission-route.test.sh  37.22s user 72.76s system 18% cpu 10:02.03 total
+bash tests/fm-permission-route.test.sh  40.62s user 79.33s system 24% cpu 8:01.84 total
 exit=0

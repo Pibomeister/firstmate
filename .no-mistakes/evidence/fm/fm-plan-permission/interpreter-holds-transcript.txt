@@ -1,0 +1,24 @@
+heredoc into python3.13t                     rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into pythonw                         rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into python3.12                      rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into nodejs                          rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into node                            rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into perl5.34                        rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into perl                            rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into ruby3.2                         rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into /usr/local/bin/ruby3.3          rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into php8.2                          rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+heredoc into php                             rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'python3.13t -e 1' after class heredoc rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'nodejs -e 1' after class heredoc      rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'perl5.34 -e 1' after class heredoc    rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'ruby3.2 -e 1' after class heredoc     rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+later 'php8.2 -e 1' after class heredoc      rc=0  HOLD (no answer printed; prompt stays for a person)  ledger=hold:wrapper  status=key=permission-prompt-held 
+--- adversarial lookalikes (must NOT be treated as interpreters) ---
+lookalike perlx after class heredoc          rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+lookalike nodex after class heredoc          rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+lookalike rubyist after class heredoc        rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+lookalike phpx after class heredoc           rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+lookalike python3x after class heredoc       rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
+--- baseline established class ---
+plain class heredoc then echo                rc=0  REFUSE: deny                                         ledger=refuse:class  status=none
