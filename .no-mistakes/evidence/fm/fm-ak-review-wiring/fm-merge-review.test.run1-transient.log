@@ -1,0 +1,7 @@
+1..84
+ok - a converging full round records the ledger and approves through ak review decide
+not ok - converge fix: the closure round ( ak review: git rev-list --no-merges a632173b29a61c404d1566eab06d7939af6c26fc..fe089d7f0fce8dfbd769f096267a2a2075400521 --not 82c1f9282a422fa4854de52d315473d777aca2d2 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head): expected exit 0, got 2
+exit=1

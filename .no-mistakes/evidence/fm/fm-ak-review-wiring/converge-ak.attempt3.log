@@ -1,0 +1,6 @@
+1..10
+ok - a converging full round records the ledger and approves through ak review decide
+ok - a fix-only round reviews the delta and closes the finding its seat raised
+ok - after round 1 a new finding without a reproduction is filed as a follow-up, and no single seat vetoes
+ok - a new finding whose reproduction fails at the head and passes at the merge base blocks
+not ok - converge repro-off: a closure round with a reproduction and no opt-in: expected exit 1, got 2

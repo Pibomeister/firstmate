@@ -1,0 +1,12 @@
+1..10
+ok - a converging full round records the ledger and approves through ak review decide
+ok - a fix-only round reviews the delta and closes the finding its seat raised
+ok - after round 1 a new finding without a reproduction is filed as a follow-up, and no single seat vetoes
+ok - a new finding whose reproduction fails at the head and passes at the merge base blocks
+ok - without repro=on a reviewer's reproduction never runs and its finding is filed, not blocking
+ok - a head whose merge base moved after its round calls no seat and stays incomplete, never approved
+ok - a head with the same patch carries the earlier verdict and calls no seat
+not ok - converge tamper: round 1 (ak review: git merge-base 081a3e494767404b220742ae9bfefe62e5e56978 705fa70e7fd92a4eb393b178a2c5e0f7ef2c4ed9 failed: unknown option --no-replace-objects
+usage: /Applications/Xcode.app/Contents/Developer/usr/bin/python3 [option] ... [-c cmd | -m mod | file | -] [arg] ...
+Try `python -h' for more information.
+error: ak review scope failed for this head): expected exit 0, got 2

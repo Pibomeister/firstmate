@@ -1,0 +1,87 @@
+1..84
+ok - SKIP: converge: full round (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: fix-only round (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: unproven new finding (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: reproduced new finding (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: reproduction without the opt-in (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: moved merge base (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: carry (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: changed ledger (no ak with the review command; set FM_TEST_AK)
+ok - SKIP: converge: round cap (no ak with the review command; set FM_TEST_AK)
+ok - an ak setting refuses a relative path and seats that share one agent-kit seat id
+ok - receipts record the review round across heads, the full scope, and the tokens the tool reported
+ok - a new head counts every earlier reviewed head even when their start times tie
+ok - receipts read token counts a tool reports only in top-level usage
+ok - metrics count rounds, seat calls, blocks, and tokens per pull request and in one summary
+ok - verify-finding: red at the head and green at the merge base is introduced evidence
+ok - verify-finding: a background child that ignores SIGTERM is killed and the result is still reported
+ok - verify-finding: both sides run one frozen copy, the one repro_sha256 names
+ok - verify-finding: publication refuses to replace evidence that appeared while the reproduction ran
+ok - verify-finding: red at both the head and the merge base is red-at-both, never pre-existing
+ok - verify-finding: a failing script the head adds is red-at-both, so the finding still blocks
+ok - verify-finding: a silent failure in a function the head adds to an existing file is red-at-both
+ok - verify-finding: a helper sourced from a wrong path at the head is introduced, not a run error
+ok - verify-finding: a reproduction that passes at the head gives no evidence
+ok - verify-finding: a timeout or a write outside the test directory leaves no evidence
+ok - verify-finding stops background children and orphaned grandchildren on both snapshots
+ok - verify-finding records writes made while stopping children in its final manifest
+ok - verify-finding refuses paths outside a new tests/*.test.sh file, supervisor sessions, and replaced evidence
+ok - two approving reviews from two model families approve, and check prints one line
+ok - run refuses outside a spawned worker and calls no reviewer
+ok - each reviewer gets the diff and head snapshot in a temporary directory with read-only flags
+ok - one BLOCK blocks despite an approval, the spare stays out, and a rerun cannot replace it
+ok - a changed head is incomplete, and receipts copied from the old head do not count
+ok - two reviews from one model family count as one
+ok - a tool that reports another model leaves no receipt, and the spare supplies the second family
+ok - a bare verdict, another commit's verdict, a missing verdict, and a failed call leave no receipt
+ok - an approval with non-blocking findings approves and stays visible in the verdict line
+ok - a flipped verdict, an edited review, and a missing diff each void the receipt
+ok - a receipt stops counting when config/merge-review no longer declares its seat
+ok - reviews are posted only with post=on, and then count only with the comment URL
+ok - an unposted block defeats two posted approval families and survives publication retry
+ok - corrupt, missing, and unreadable dissent never approves or gets rerolled
+ok - check cannot approve while a third seat in the active batch has not answered
+ok - lock cleanup alone cannot approve an unfinished batch, and recovery retains valid reviews
+ok - GitHub URL case aliases share the same dissent and cannot reroll it
+ok - a dangling merge-review configuration symlink refuses instead of disabling the gate
+ok - an invalid configuration parent refuses instead of hiding the gate
+ok - config lookup works without directory-listing permission
+ok - interrupted runs stop reviewer writers before releasing their lock, and recovery can finish
+ok - a model call cannot overwrite a valid dissent recorded while it was running
+ok - a replaced generation cannot complete the batch or remove its successor's lock
+ok - stale-lock reclamation is serialized, and recovery proceeds once its owner releases
+ok - check cannot approve when publication changes the completed batch after receipt enumeration
+ok - stale-lock reclamation is serialized, and recovery proceeds once its owner releases
+ok - review diff includes submodule changes despite diff.ignoreSubmodules=all
+ok - review diff bypasses external diff and text conversion without hiding file content
+ok - review snapshot ignores export-ignore and export-subst while preserving committed bytes
+ok - local replacement refs cannot substitute the review diff or snapshot for the named head
+ok - canonical snapshot reads SHA-256 source repositories without changing object format
+ok - repository subdirectories and diff.relative cannot filter changes out of a review
+ok - normalizing review input paths keeps bare source repositories supported
+ok - GitLab URL case aliases retain the same recorded dissent
+ok - Forgejo URL case aliases retain the same recorded dissent
+ok - snapshot refuses file or directory aliases only when the filesystem cannot represent distinct Git paths
+ok - TMPDIR cannot place reviewers under a checkout, a symlinked checkout path, or a bare repository
+ok - inherited Git location variables neither alter the declared source nor enter reviewer context
+ok - snapshot accepts distinct regular files and symlinks even when their bytes or targets match
+ok - covers answers from the require lines and a malformed config is an error, not a pass
+ok - run refuses a missing or abbreviated head, an empty change, and a non-PR URL before any call
+ok - interrupted cleanup skips children whose live identity no longer matches the ledger
+ok - a seat that exits before identity is recorded does not abort the run
+ok - timeout values with leading zeros still launch each seat
+ok - stale approval receipts are replaced when the live merge base changes
+ok - a stale spare approval is dropped before seats run so a rerun can finish
+ok - a BLOCK at another merge base is kept on disk and cannot be rolled forward
+ok - the stated intent is part of the stored prompt each receipt is bound to
+ok - verify-finding refuses a committed tests link and a path that differs from a committed test only by case
+ok - verify-finding: a permission change outside the test directory is an outside write, never evidence
+ok - verify-finding removes a reproduction's locked fixture directory with its scratch
+ok - verify-finding refuses an evidence directory holding a dangling link
+ok - verify-finding stops the reproduction and removes its scratch on a signal
+ok - verify-finding runs the reproduction without the caller's Firstmate home, task or lifecycle scope
+ok - verify-finding stops the reproduction and removes its scratch when its process group is signalled
+ok - verify-finding refuses a head that is already contained in the base
+ok - verify-finding refuses rather than compare a manifest missing its permission bits
+FM_TEST_COMPLETE
+exit=0

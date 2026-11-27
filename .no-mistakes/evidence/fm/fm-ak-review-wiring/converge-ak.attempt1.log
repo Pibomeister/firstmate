@@ -1,0 +1,4 @@
+1..10
+ok - a converging full round records the ledger and approves through ak review decide
+ok - a fix-only round reviews the delta and closes the finding its seat raised
+not ok - converge followup: a closure round with a new unproven finding: expected exit 1, got 2
