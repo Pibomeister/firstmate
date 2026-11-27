@@ -22,9 +22,17 @@
 # persistence revalidates the task's current pr= metadata under its metadata
 # and lifecycle locks and refuses a mismatch. The file is atomically published,
 # mode 0600, single-link, and on the state filesystem. A poll consumes it only
-# when all identity fields match its own validated snapshot. Without matching
-# stored authority or a matching sent self-landing pending record, the authority
-# is external; it is never resolved again from a later away-posture record.
+# when all identity fields match its own validated snapshot.
+#
+# The label of a landed merge is the authority recorded at the most recent send
+# of a merge for that pull request. fm_merge_authority_read is the one function
+# that names it, for every reporter of a landing that did not send the merge in
+# the same process: the stored record first, then the self-landing pending
+# record while it names a merge that this home sent (state sent or queued).
+# A self-landing send retires the stored record of its pull request
+# (fm_self_land_send_record), so a stored record is never older than the pending
+# record next to it. Without either record the authority is external; it is
+# never resolved again from a later away-posture record.
 #
 # Resolution authorizes nothing by itself. bin/fm-pr-merge.sh owns the merge
 # gate and persists only after a forge command succeeds, before releasing the
@@ -187,7 +195,7 @@ fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <numbe
     pending_dir=$(fm_self_land_repo_dir "$state" "$provider" "$host" "$path") || exit 1
     fm_pr_private_file_valid "$pending_dir/pending" 600 "$state_device" || exit 1
     fm_self_land_pending_read "$pending_dir" || exit 1
-    [ "$FM_SELF_LAND_PENDING_STATE" = sent ] || exit 1
+    [ "$FM_SELF_LAND_PENDING_STATE" = sent ] || [ "$FM_SELF_LAND_PENDING_STATE" = queued ] || exit 1
     [ -z "$head" ] || [ "$FM_SELF_LAND_PENDING_HEAD" = "$head" ] || exit 1
     fm_pr_url_parse "$FM_SELF_LAND_PENDING_URL" || exit 1
     [ "$FM_PR_PROVIDER" = "$provider" ] && [ "$FM_PR_HOST" = "$host" ] \
@@ -199,6 +207,26 @@ fm_merge_authority_read() {  # <state> <task-id> <provider> <host> <path> <numbe
     FM_MERGE_AUTHORITY='external'
     status=1
   fi
+  fm_lock_release "$lock" || status=1
+  return "$status"
+}
+
+# Remove the stored record of <task-id> when it names this pull request: a new
+# send of a merge for that pull request supersedes it. A record that names
+# another pull request stays. FM_MERGE_AUTHORITY is left as it was.
+fm_merge_authority_retire() {  # <state> <task-id> <provider> <host> <path> <number>
+  local state=${1-} id=${2-} record state_device lock status=0 kept=$FM_MERGE_AUTHORITY
+  fm_pr_task_id_valid "$id" || return 1
+  [ -d "$state" ] && [ ! -L "$state" ] || return 1
+  state_device=$(fm_pr_file_device "$state") || return 1
+  record="$state/$id.merge-authority"
+  lock="$record.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if fm_merge_authority_record_matches "$record" "$state_device" \
+      "${3-}" "${4-}" "${5-}" "${6-}"; then
+    rm -f -- "$record" || status=1
+  fi
+  FM_MERGE_AUTHORITY=$kept
   fm_lock_release "$lock" || status=1
   return "$status"
 }
@@ -338,6 +366,9 @@ fm_self_land_repo_dir() {  # <state> <provider> <host> <path>
 #   sent    the merge command is about to reach the forge, or reached it.
 #   queued  the forge holds the merge: the pull request waits in its merge
 #           queue, or auto-merge is armed for it.
+# A sent or queued record names a merge that this home sent, and its authority
+# is the authority at that send. The authority of an armed record is the answer
+# at the start of the run, and it labels nothing.
 # The record also names its sender: the process id and the start time of the
 # process that sends the merge command, so a later run can tell that the
 # command is still running. The sender is `-` while no merge command runs:
@@ -475,12 +506,13 @@ fm_self_land_pending_read() {  # <repo-dir>
 # Change the record of run <run> from state <from> to state <to> and restart
 # its clock. <to> can equal <from>, which only restarts the clock. With <to>
 # given as `none`, remove the record instead. With [sender] given, the record
-# names that sender from now on; otherwise it keeps the one it has.
+# names that sender from now on; otherwise it keeps the one it has. The record
+# keeps its authority: only fm_self_land_send_record sets it.
 # Returns 0 when the change was made, 1 when the record is absent, belongs to
 # another run, or is in another state, and 2 when it could not be locked, read,
 # or written.
-fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender] [authority]
-  local dir=${1-} run=${2-} from=${3-} to=${4-} sender=${5-} authority=${6-} lock rc=0 epoch
+fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender]
+  local dir=${1-} run=${2-} from=${3-} to=${4-} sender=${5-} lock rc=0 epoch
   [ -n "$dir" ] && [ -n "$run" ] && [ -n "$from" ] && [ -n "$to" ] || return 2
   lock="$dir/pending.lock"
   fm_lock_acquire_wait_max "$lock" 30 || return 2
@@ -492,8 +524,39 @@ fm_self_land_pending_change() {  # <repo-dir> <run> <from> <to> [sender] [author
       rm -f -- "$dir/pending" || rc=2
     elif epoch=$(date +%s) && _fm_self_land_pending_store "$dir" \
         "$FM_SELF_LAND_PENDING_ID" "$FM_SELF_LAND_PENDING_URL" "$FM_SELF_LAND_PENDING_HEAD" \
-        "${authority:-$FM_SELF_LAND_PENDING_AUTHORITY}" "$epoch" "$to" "$run" \
+        "$FM_SELF_LAND_PENDING_AUTHORITY" "$epoch" "$to" "$run" \
         "${sender:-$FM_SELF_LAND_PENDING_SENDER}" \
+        "$FM_SELF_LAND_PENDING_BASE" "$FM_SELF_LAND_PENDING_BASE_SHA"; then
+      :
+    else
+      rc=2
+    fi
+  fi
+  fm_lock_release "$lock" || true
+  return "$rc"
+}
+
+# Record that run <run> sends its merge command now, under <authority>: the
+# armed record of that run becomes sent, names <sender>, and carries that
+# authority. The stored record of the same pull request is retired first, so
+# the authority of an earlier request cannot label the merge of this send. The
+# retirement happens only for a run whose own armed record is still there.
+# Returns 0 when the send was recorded, 1 when the record is absent, belongs to
+# another run, or is not armed, and 2 when a record could not be locked, read,
+# retired, or written. On 1 or 2 the caller sends no merge.
+fm_self_land_send_record() {  # <state> <repo-dir> <run> <sender> <authority> <task-id> <provider> <host> <path> <number>
+  local state=${1-} dir=${2-} run=${3-} sender=${4-} authority=${5-} lock rc=0 epoch
+  [ -n "$state" ] && [ -n "$dir" ] && [ -n "$run" ] && [ -n "$sender" ] && [ -n "$authority" ] || return 2
+  lock="$dir/pending.lock"
+  fm_lock_acquire_wait_max "$lock" 30 || return 2
+  fm_self_land_pending_read "$dir" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    if [ "$FM_SELF_LAND_PENDING_RUN" != "$run" ] || [ "$FM_SELF_LAND_PENDING_STATE" != armed ]; then
+      rc=1
+    elif fm_merge_authority_retire "$state" "${6-}" "${7-}" "${8-}" "${9-}" "${10-}" \
+      && epoch=$(date +%s) && _fm_self_land_pending_store "$dir" \
+        "$FM_SELF_LAND_PENDING_ID" "$FM_SELF_LAND_PENDING_URL" "$FM_SELF_LAND_PENDING_HEAD" \
+        "$authority" "$epoch" sent "$run" "$sender" \
         "$FM_SELF_LAND_PENDING_BASE" "$FM_SELF_LAND_PENDING_BASE_SHA"; then
       :
     else

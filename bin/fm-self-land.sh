@@ -765,9 +765,16 @@ require_green_branches() {
 # that script could not write it and still exited 0. Returns 1 when the record
 # is not complete, so the caller keeps the pending record and a later run
 # completes it.
-record_landed() {  # <task-id> <pr-url> <authority>
+record_landed() {  # <task-id> <pr-url> <provider> <host> <path> <number> <head>
   local outcome_rc=0
-  fm_merge_outcome_report "$FM_HOME" "$STATE" "$1" "$2" self "$3" || outcome_rc=$?
+  # The watcher reads the label of a landed merge from the same function, so
+  # the label does not depend on which of the two reports first.
+  if ! fm_merge_authority_read "$STATE" "$1" "$3" "$4" "$5" "$6" "$7"; then
+    printf 'actionable: merged %s but no record that this home can trust names the authority of its merge; confirm %s and %s\n' \
+      "$2" "$SL_REPO_DIR/pending" "$STATE/$1.merge-authority" >&2
+    return 1
+  fi
+  fm_merge_outcome_report "$FM_HOME" "$STATE" "$1" "$2" self "$FM_MERGE_AUTHORITY" || outcome_rc=$?
   case "$outcome_rc" in
     0) ;;
     3)
@@ -831,7 +838,7 @@ require_held_at_sent_head() {  # <pr-url> <head the merge was sent for>
 # Settle a pending record left by an earlier run before anything new starts.
 # Returns only when no pending record remains and this run may continue.
 settle_pending() {
-  local rc=0 p_id p_url p_head p_authority p_epoch p_state p_run p_sender p_base p_base_sha p_number now age held
+  local rc=0 p_id p_url p_head p_epoch p_state p_run p_sender p_base p_base_sha p_host p_path p_number now age held
   fm_self_land_pending_read "$SL_REPO_DIR" || rc=$?
   case "$rc" in
     0) ;;
@@ -841,7 +848,6 @@ settle_pending() {
   p_id=$FM_SELF_LAND_PENDING_ID
   p_url=$FM_SELF_LAND_PENDING_URL
   p_head=$FM_SELF_LAND_PENDING_HEAD
-  p_authority=$FM_SELF_LAND_PENDING_AUTHORITY
   p_epoch=$FM_SELF_LAND_PENDING_EPOCH
   p_state=$FM_SELF_LAND_PENDING_STATE
   p_run=$FM_SELF_LAND_PENDING_RUN
@@ -868,6 +874,8 @@ settle_pending() {
     refuse pending "$SL_REPO_DIR/pending names another repository; confirm it, then remove it by hand"
   fi
   p_url=$FM_PR_URL
+  p_host=$FM_PR_HOST
+  p_path=$FM_PR_PATH
   p_number=$FM_PR_NUMBER
   read_pull "$p_number" \
     || refuse forge-read "could not read $p_url to settle its pending merge; the pending record is kept and no merge was sent"
@@ -875,7 +883,7 @@ settle_pending() {
     if [ "$SL_PR_HEAD" = "$p_head" ]; then
       # Before the record, so a record that cannot be completed does not skip it.
       require_merged_on_checked_base "$p_url" "$p_base" "$p_base_sha"
-      record_landed "$p_id" "$p_url" "$p_authority" \
+      record_landed "$p_id" "$p_url" "$PROVIDER" "$p_host" "$p_path" "$p_number" "$p_head" \
         || stop_unrecorded "$p_url" "$p_head" "$SL_PR_MERGE_COMMIT"
       fm_self_land_pending_clear "$SL_REPO_DIR"
       note "reconciled $p_url as landed at head $p_head; no second merge was sent"
@@ -997,8 +1005,9 @@ if [ "$SL_MODE" = gate ]; then
     || refuse pending "the process that sends the merge command could not be named, so its merge is not sent"
   fm_merge_authority_resolve "$FM_HOME" "$STATE" "$META" "$ID" \
     || refuse task "the away-posture record could not be read before the merge command"
-  fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent "$sender" "$FM_MERGE_AUTHORITY" \
-    || refuse pending "the pending record of this run is gone or changed, so its merge is not sent"
+  fm_self_land_send_record "$STATE" "$SL_REPO_DIR" "$SL_RUN" "$sender" "$FM_MERGE_AUTHORITY" \
+    "$ID" "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" \
+    || refuse pending "the send of this run could not be recorded: its pending record is gone or changed, or a record could not be written, so its merge is not sent"
   exit 0
 fi
 
@@ -1073,12 +1082,13 @@ remove_gate
 sent_state=
 if fm_self_land_pending_read "$SL_REPO_DIR" && [ "$FM_SELF_LAND_PENDING_RUN" = "$SL_RUN" ]; then
   sent_state=$FM_SELF_LAND_PENDING_STATE
-  AUTHORITY=$FM_SELF_LAND_PENDING_AUTHORITY
 fi
 if [ "$sent_state" = armed ] && [ "$merge_rc" -eq 0 ]; then
   # The merge gate reports an accepted merge that did not pass the forge gate.
   # That must not happen. The record is kept as a sent merge, so the outcome
-  # below is still settled, and the breaker stops every later landing.
+  # below is still settled, and the breaker stops every later landing. No send
+  # was recorded, so the record keeps the authority read at the start of this
+  # run; a record that the merge gate stored for this merge outranks it.
   fm_self_land_pending_change "$SL_REPO_DIR" "$SL_RUN" armed sent || true
   sent_state=sent
   trip_breaker "$SL_SCAN_BASE" "$HEAD" "a merge of $URL was accepted without the check in front of the merge command" \
@@ -1126,7 +1136,7 @@ if [ "$SL_PR_MERGED" = true ] && [ "$SL_PR_HEAD" = "$HEAD" ]; then
   fi
   # Before the record, so a record that cannot be completed does not skip it.
   require_merged_on_checked_base "$URL" "$SL_SCAN_BASE" "$SL_SCAN_BASE_SHA"
-  record_landed "$ID" "$URL" "$AUTHORITY" \
+  record_landed "$ID" "$URL" "$PROVIDER" "$PR_HOST" "$PR_PATH" "$PR_NUMBER" "$HEAD" \
     || stop_unrecorded "$URL" "$HEAD" "$SL_PR_MERGE_COMMIT"
   fm_self_land_pending_clear "$SL_REPO_DIR"
   [ "$merge_rc" -eq 0 ] \

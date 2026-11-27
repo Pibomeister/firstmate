@@ -499,6 +499,34 @@ pending_field() {  # <case_dir> <line number> -> that line of the pending record
   sed -n "${2}p" "$(repo_dir "$1")/pending"
 }
 
+# Put the home of a case in the away posture or back in the attended one.
+set_posture() {  # <case_dir> <away | attended>
+  if [ "$2" = away ]; then
+    FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" \
+      "$ROOT/bin/fm-afk-contract.sh" enter --words 'merge approved green pull requests' \
+      > "$1/posture.out" 2> "$1/posture.err" || fail "could not enter away posture: $(cat "$1/posture.err")"
+  elif [ -e "$1/state/.afk-contract" ]; then
+    FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" \
+      "$ROOT/bin/fm-afk-contract.sh" archive > "$1/posture.out" 2> "$1/posture.err" \
+      || fail "could not restore attended posture: $(cat "$1/posture.err")"
+  fi
+}
+
+# The outcome supervision received for a merge of <url>, as its wake names it.
+poll_outcome() {  # <case_dir> <url>
+  awk -F '\t' -v prefix="check: merge landed: task-x1 $2" 'index($5, prefix) == 1 {print $5}' "$1/state/.wake-queue"
+}
+
+# Record the send of run <run> the way the forge gate does, and echo the status.
+record_send() {  # <case_dir> <run> <authority> <number>
+  FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" bash -c '
+    . "$1/bin/fm-merge-authority-lib.sh" && . "$1/bin/fm-wake-lib.sh" || exit 1
+    rc=0
+    fm_self_land_send_record "$2" "$3" "$4" "$(fm_self_land_sender_of "$$")" "$5" \
+      task-x1 github github.com example/repo "$6" 2>/dev/null || rc=$?
+    printf "%s\n" "$rc"' _ "$ROOT" "$1/state" "$(repo_dir "$1")" "$2" "$3" "$4"
+}
+
 # Add task <task-id> to the backlog of a case and hold it for the captain.
 hold_task() {  # <case_dir> <task-id>
   FM_HOME="$1/home" FM_STATE_OVERRIDE="$1/state" \
@@ -1132,9 +1160,176 @@ test_watcher_recovers_send_authority_before_the_wrapper() {
   pass "watcher-first reporting preserves send authority without a duplicate merge"
 }
 
+# The response to the merge command was lost, the forge held the merge in its
+# queue, and it merged there. The watcher reports before the wrapper does.
+test_watcher_recovers_send_authority_for_a_merge_the_forge_held() {
+  local case_dir head url=$REPO_URL/pull/380 outcome
+  read -r case_dir head <<< "$(ready_case watcher-held 380)"
+  set_posture "$case_dir" away
+  touch "$case_dir/state/.last-watcher-beat"
+  printf '1\n' > "$case_dir/merge-rc"
+  printf 'queued\n' > "$case_dir/merge-effect"
+  : > "$case_dir/pull-read-fail-after-merge"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "watcher-held: a lost response must not report success"
+  assert_equals sent "$(pending_state "$case_dir")" "watcher-held: the record must say the merge was sent"
+  rm -f "$case_dir/pull-read-fail" "$case_dir/pull-read-fail-after-merge" "$case_dir/merge-rc" "$case_dir/merge-effect"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 1 "$(cat "$case_dir/rc")" "watcher-held: the run that finds the merge in the queue must refuse"
+  assert_equals queued "$(pending_state "$case_dir")" "watcher-held: the record must say the forge holds the merge"
+  assert_equals away "$(pending_field "$case_dir" 5)" "watcher-held: the held record must keep the authority at send"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "watcher-held: an unmerged request was reported as landed"
+
+  set_posture "$case_dir" attended
+  edit_pull "$case_dir" 380 \
+    ".state = \"MERGED\" | .merged = true | .isInMergeQueue = false | .mergeCommit = {oid: \"$MERGE_SHA\"}"
+  printf '%s\n' 'state=MERGED' 'merged=true' 'queued=false' 'base=main' > "$case_dir/github-outcome"
+  run_sent_merge_poll "$case_dir"
+  outcome=$(poll_outcome "$case_dir" "$url")
+  assert_equals "check: merge landed: task-x1 $url away" "$outcome" \
+    "watcher-held: the watcher lost the authority of a merge the forge held"
+  assert_present "$(repo_dir "$case_dir")/pending" "watcher-held: the watcher consumed the wrapper's pending record"
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "watcher-held: the wrapper must reconcile: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 1 ] || fail "watcher-held: the wrapper sent a second merge command"
+  [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] || fail "watcher-held: the wrapper duplicated the published outcome"
+  assert_absent "$(repo_dir "$case_dir")/pending" "watcher-held: the reconciled pending record remains"
+  pass "the watcher reports a merge the forge held under the authority at its send"
+}
+
+# The forge accepted a merge and held it, then dropped it unmerged. A later
+# landing sends a new merge under another posture and loses the response. The
+# authority that the first request stored must not label the second merge.
+test_a_new_send_supersedes_the_authority_of_a_dropped_request() {
+  local case_dir head url=$REPO_URL/pull/381 outcome first second expected label observed
+  for first in attended away; do
+    second=away
+    [ "$first" != away ] || second=attended
+    label="superseded-$first-then-$second"
+    read -r case_dir head <<< "$(ready_case "$label" 381)"
+    touch "$case_dir/state/.last-watcher-beat"
+    set_posture "$case_dir" "$first"
+    printf 'queued\n' > "$case_dir/merge-effect"
+    land "$case_dir" task-x1 "$url" --head "$head"
+    expect_code 1 "$(cat "$case_dir/rc")" "$label: a held merge must refuse: $(cat "$case_dir/stderr")"
+    assert_equals queued "$(pending_state "$case_dir")" "$label: the record must say the forge holds the merge"
+    observed=$(read_poll_authority "$case_dir" github github.com example/repo 381 "$head")
+    case "$observed" in
+      "0|$first|"?*) ;;
+      *) fail "$label: the accepted request did not store its authority: $observed" ;;
+    esac
+
+    # The forge drops the request, and the grace of the unmerged merge ends.
+    rm -f "$case_dir/merge-effect"
+    edit_pull "$case_dir" 381 '.isInMergeQueue = false'
+    printf '%s\n' 'state=OPEN' 'merged=false' 'queued=false' 'base=main' > "$case_dir/github-outcome"
+    land "$case_dir" task-x1 "$url" --head "$head"
+    expect_code 1 "$(cat "$case_dir/rc")" "$label: the run that sees the request dropped must refuse"
+    assert_equals sent "$(pending_state "$case_dir")" "$label: the record must fall back to a sent merge"
+    age_pending "$case_dir" 200
+
+    set_posture "$case_dir" "$second"
+    printf '1\n' > "$case_dir/merge-rc"
+    printf 'merged\n' > "$case_dir/merge-effect"
+    : > "$case_dir/pull-read-fail-after-merge"
+    land "$case_dir" task-x1 "$url" --head "$head"
+    [ "$(cat "$case_dir/rc")" -ne 0 ] || fail "$label: a lost response must not report success"
+    [ "$(merge_calls "$case_dir")" -eq 2 ] || fail "$label: expected the dropped merge command and one new one"
+    assert_equals "$second" "$(pending_field "$case_dir" 5)" "$label: the record must name the authority at the new send"
+    [ "$(outcome_count "$case_dir" "$url")" -eq 0 ] || fail "$label: the unknown outcome was reported as landed"
+
+    set_posture "$case_dir" "$first"
+    run_sent_merge_poll "$case_dir"
+    expected="check: merge landed: task-x1 $url"
+    [ "$second" != away ] || expected="$expected away"
+    outcome=$(poll_outcome "$case_dir" "$url")
+    assert_equals "$expected" "$outcome" "$label: the dropped request labeled the merge of the new send"
+    rm -f "$case_dir/pull-read-fail" "$case_dir/pull-read-fail-after-merge" "$case_dir/merge-rc"
+    land "$case_dir" task-x1 "$url" --head "$head"
+    expect_code 0 "$(cat "$case_dir/rc")" "$label: the wrapper must reconcile: $(cat "$case_dir/stderr")"
+    [ "$(merge_calls "$case_dir")" -eq 2 ] || fail "$label: the reconciliation sent another merge command"
+    [ "$(outcome_count "$case_dir" "$url")" -eq 1 ] || fail "$label: supervision did not receive exactly one outcome"
+    assert_absent "$(repo_dir "$case_dir")/pending" "$label: the reconciled pending record remains"
+  done
+  pass "a new send supersedes the stored authority of a request the forge dropped"
+}
+
+# The forge gate records a send through one function. It retires the stored
+# authority of the pull request that the send is for, and nothing else.
+test_a_recorded_send_retires_only_the_stored_authority_of_its_pull_request() {
+  local case_dir variant run number rc stored observed url=$REPO_URL/pull/383
+  for variant in same-pr other-pr other-run; do
+    case_dir=$(make_case "send-record-$variant")
+    seed_pending "$case_dir" "$url" "$OTHER_SHA" armed '' attended \
+      || fail "$variant: could not seed the armed record"
+    run=earlier-run
+    number=383
+    case "$variant" in
+      other-pr) number=384 ;;
+      other-run) run=another-run ;;
+    esac
+    stored="$case_dir/state/task-x1.merge-authority"
+    printf '%s\n' fm-merge-authority-v1 github github.com example/repo "$number" attended > "$stored"
+    chmod 0600 "$stored"
+    rc=$(record_send "$case_dir" "$run" away 383)
+    case "$variant" in
+      same-pr)
+        assert_equals 0 "$rc" "$variant: the send was not recorded"
+        assert_equals '0|away|' "$(read_poll_authority "$case_dir" github github.com example/repo 383 "$OTHER_SHA")" \
+          "$variant: the label must be the authority at the send, not the older stored one"
+        ;;
+      other-pr)
+        assert_equals 0 "$rc" "$variant: the send was not recorded"
+        assert_equals sent "$(pending_state "$case_dir")" "$variant: the record must say the merge was sent"
+        observed=$(read_poll_authority "$case_dir" github github.com example/repo 384)
+        case "$observed" in
+          '0|attended|'?*) ;;
+          *) fail "$variant: the send took the stored authority of another pull request: $observed" ;;
+        esac
+        ;;
+      other-run)
+        assert_equals 1 "$rc" "$variant: a run without its own armed record must not record a send"
+        assert_equals armed "$(pending_state "$case_dir")" "$variant: the record of another run changed"
+        observed=$(read_poll_authority "$case_dir" github github.com example/repo 383)
+        case "$observed" in
+          '0|attended|'?*) ;;
+          *) fail "$variant: a run that recorded no send took the stored authority: $observed" ;;
+        esac
+        ;;
+    esac
+  done
+  pass "a recorded send retires only the stored authority of its own pull request"
+}
+
+# The wrapper and the watcher both report a landed merge, and the first report
+# is the one that counts. Both must name the same authority for the same records.
+test_wrapper_and_watcher_name_the_same_authority() {
+  local case_dir head url=$REPO_URL/pull/382 polled outcome stored
+  read -r case_dir head <<< "$(ready_case same-label 382)"
+  seed_pending "$case_dir" "$url" "$head" sent '' away || fail "same-label: could not seed the sent record"
+  # A stored record next to a sent record is the answer of the merge gate that
+  # sent that merge.
+  stored="$case_dir/state/task-x1.merge-authority"
+  printf '%s\n' fm-merge-authority-v1 github github.com example/repo 382 attended > "$stored"
+  chmod 0600 "$stored"
+  edit_pull "$case_dir" 382 ".state = \"MERGED\" | .merged = true | .mergeCommit = {oid: \"$MERGE_SHA\"}"
+  polled=$(read_poll_authority "$case_dir" github github.com example/repo 382 "$head")
+  case "$polled" in
+    '0|attended|'?*) ;;
+    *) fail "same-label: the watcher's read did not name the stored authority: $polled" ;;
+  esac
+  land "$case_dir" task-x1 "$url" --head "$head"
+  expect_code 0 "$(cat "$case_dir/rc")" "same-label: the wrapper must reconcile: $(cat "$case_dir/stderr")"
+  [ "$(merge_calls "$case_dir")" -eq 0 ] || fail "same-label: the reconciliation sent a merge command"
+  outcome=$(poll_outcome "$case_dir" "$url")
+  assert_equals "check: merge landed: task-x1 $url" "$outcome" \
+    "same-label: the wrapper named another authority than the watcher reads"
+  pass "the wrapper and the watcher name the same authority for a landed merge"
+}
+
 test_poll_authority_rejects_unrelated_or_untrusted_pending_records() {
   local case_dir variant record expected observed url=$REPO_URL/pull/378 head=$OTHER_SHA input_head replacement
-  for variant in matching supplied-head other-pr other-provider other-host other-path other-head armed queued absent malformed mode symlink hardlink directory persisted; do
+  for variant in matching supplied-head other-pr other-provider other-host other-path other-head armed queued queued-head queued-other-head absent malformed mode symlink hardlink directory persisted; do
     case_dir=$(make_case "pending-authority-$variant")
     seed_pending "$case_dir" "$url" "$head" sent '' away || fail "$variant: could not seed pending authority"
     record="$(repo_dir "$case_dir")/pending"
@@ -1149,10 +1344,17 @@ test_poll_authority_rejects_unrelated_or_untrusted_pending_records() {
       other-host) replacement=https://other.ghe.com/example/repo/pull/378 ;;
       other-path) replacement=https://github.com/example/other/pull/378 ;;
       other-head) input_head=$BASE_SHA ;;
-      armed | queued)
-        awk -v state="$variant" 'NR == 7 {$0=state} {print}' "$record" > "$record.new"
+      armed | queued | queued-head | queued-other-head)
+        # An armed record names no send. A queued record names a merge that
+        # this home sent and that the forge holds.
+        awk -v state="${variant%%-*}" 'NR == 7 {$0=state} {print}' "$record" > "$record.new"
         chmod 0600 "$record.new"
         mv "$record.new" "$record"
+        case "$variant" in
+          queued) expected='0|away|' ;;
+          queued-head) expected='0|away|'; input_head=$head ;;
+          queued-other-head) input_head=$BASE_SHA ;;
+        esac
         ;;
       absent) rm -f "$record" ;;
       malformed)
@@ -1165,6 +1367,8 @@ test_poll_authority_rejects_unrelated_or_untrusted_pending_records() {
       hardlink) ln "$record" "$record.alias" ;;
       directory) rm -f "$record"; mkdir "$record" ;;
       persisted)
+        # A stored record next to a sent record is the answer of the merge
+        # gate for that send, so it names the label.
         printf '%s\n' fm-merge-authority-v1 github github.com example/repo 378 attended > "$case_dir/state/task-x1.merge-authority"
         chmod 0600 "$case_dir/state/task-x1.merge-authority"
         ;;
@@ -1178,7 +1382,7 @@ test_poll_authority_rejects_unrelated_or_untrusted_pending_records() {
     if [ "$variant" = persisted ]; then
       case "$observed" in '0|attended|'?*) ;; *) fail "persisted task authority lost priority: $observed" ;; esac
     else
-      assert_equals "$expected" "$observed" "$variant: pending authority must be private, sent, and identity-bound"
+      assert_equals "$expected" "$observed" "$variant: pending authority must be private, name a sent merge, and be identity-bound"
     fi
   done
   pass "poll authority rejects other PRs and untrusted pending evidence"
@@ -2088,6 +2292,10 @@ fm_test_run \
   test_lost_forge_response_reconciles_without_a_second_merge \
   test_recovery_reports_the_authority_at_send_after_posture_changes \
   test_watcher_recovers_send_authority_before_the_wrapper \
+  test_watcher_recovers_send_authority_for_a_merge_the_forge_held \
+  test_a_new_send_supersedes_the_authority_of_a_dropped_request \
+  test_a_recorded_send_retires_only_the_stored_authority_of_its_pull_request \
+  test_wrapper_and_watcher_name_the_same_authority \
   test_poll_authority_rejects_unrelated_or_untrusted_pending_records \
   test_failed_merge_command_holds_the_repository_until_its_outcome_is_known \
   test_refuses_known_deferred_merges_before_the_forge_write \
