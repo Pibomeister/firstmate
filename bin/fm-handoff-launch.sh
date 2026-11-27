@@ -30,10 +30,13 @@
 # not guessed: that flag is omitted, as before, and the record says why. A named
 # option, `default` included, wins over the predecessor's value, so a quota
 # reroute that picks another model or effort names it with --reason. A harness
-# change carries nothing. stderr states each value and where it came from, and
+# change carries nothing. A claude --account switch with no --model does not
+# carry the model: the successor runs that account's default, the lane the
+# account was measured on, because the predecessor's model row may be the
+# exhausted one. stderr states each value and where it came from, and
 # the successor record adds effort=, setting_sources=, <field>_from=
-# (explicit, predecessor, unrecorded, unreadable, harness_change, or
-# unsupported), and predecessor_<field>= (the value read, none, or unknown).
+# (explicit, predecessor, unrecorded, unreadable, harness_change,
+# account_switch, or unsupported), and predecessor_<field>= (the value read, none, or unknown).
 # First, `bin/fm-order.sh covers --doc <handoff-file>` must find every open
 # captain order named in the document. A handoff that omits one, or coverage
 # that cannot be read, is refused with exit 4 and a diagnostic before any
@@ -322,6 +325,8 @@ resolve_field() {
     [ -z "${!var}" ] || set=1
   elif [ "$SUCC_HARNESS" != "$HARNESS" ]; then
     from=harness_change
+  elif [ "$field" = model ] && [ -n "$SUCC_ACCOUNT" ]; then
+    from=account_switch
   elif [ "$PV_STATE" != found ]; then
     from=$([ "$PV_STATE" = absent ] && echo unrecorded || echo unreadable)
   elif ! successor_supports "$field"; then
@@ -363,6 +368,7 @@ runtime_line() { # <field> <value> <from> <predecessor value>
     unrecorded) printf "%s default: the predecessor's launch recorded none, so the runtime's own applies" "$1" ;;
     unreadable) printf "%s default: the predecessor's launch value could not be read, so the runtime's own applies" "$1" ;;
     harness_change) printf '%s %s: the successor runtime differs from %s, so nothing is carried' "$1" "$shown" "${HARNESS:-unknown}" ;;
+    account_switch) printf "%s default: an account switch runs the account's own default, not the predecessor's %s" "$1" "$4" ;;
     unsupported) printf '%s default: a %s successor on %s cannot carry the predecessor'"'"'s %s' "$1" "$SUCC_HARNESS" "$BACKEND" "$4" ;;
   esac
 }

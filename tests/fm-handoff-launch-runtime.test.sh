@@ -283,6 +283,28 @@ argv_is 'account switch' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctB" claude
 assert_contains "$(cat "$QUOTA/reads")" "claude profile=1 root=$TMP_ROOT/acctB" 'the preflight measured only the chosen account'
 pass 'claude account switch: the successor runs on the chosen declared account'
 
+# An account switch with no --model runs the account's default model, the
+# lane the switch measured, never the predecessor's model: that model's own
+# row may be the exhausted one. A named --model still wins.
+mkdir -p "$TMP_ROOT/acctD"
+touch "$TMP_ROOT/acctD/signed-in"
+jq -n '{schemaVersion:5,providers:[{provider:"claude",quotaSemantics:{status:"known",effectiveAvailability:[
+  {scope:"all_models",status:"known",effectivePercentRemaining:40,runway:{status:"through_reset"}},
+  {scope:"model:opus",status:"known",effectivePercentRemaining:0,runway:{status:"exhausted_now"}}]}}]}' > "$TMP_ROOT/acctD/quota.json"
+printf '%s\n' "$TMP_ROOT/acctA" "$TMP_ROOT/acctB" "$TMP_ROOT/acctC" "$TMP_ROOT/acctD" > "$LAB/config/claude-accounts"
+PRED_ARGS=(--model opus)
+run_case tmux --harness claude --account "$TMP_ROOT/acctD" --reason claude_pool_exhausted
+assert_transferred_to claude 'account switch from an opus predecessor'
+argv_is 'account switch from an opus predecessor' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctD" claude --dangerously-skip-permissions PROMPT
+assert_contains "$(sed -n 's/^successor=//p' "$LAB/state/.handoff-successor")" 'model=default' 'the switch records the account default model'
+assert_contains "$(sed -n 's/^successor=//p' "$LAB/state/.handoff-successor")" 'model_from=account_switch' 'the record says why the model was not carried'
+run_case tmux --harness claude --account "$TMP_ROOT/acctB" --model sonnet --reason claude_pool_exhausted
+assert_transferred_to claude 'account switch with a named model'
+argv_is 'account switch with a named model' "${SHED[@]}" "CLAUDE_CONFIG_DIR=$TMP_ROOT/acctB" claude --dangerously-skip-permissions --model sonnet PROMPT
+PRED_ARGS=()
+printf '%s\n' "$TMP_ROOT/acctA" "$TMP_ROOT/acctB" "$TMP_ROOT/acctC" > "$LAB/config/claude-accounts"
+pass "claude account switch with no --model runs the account's default model, not the predecessor's"
+
 # A tmux pane does not inherit this session's store, so the launch names it.
 mkdir -p "$TMP_ROOT/session-claude" "$TMP_ROOT/session-codex"
 quota_fixture claude 40 through_reset > "$QUOTA/claude.json"
