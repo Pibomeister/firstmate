@@ -7,6 +7,7 @@
 #                          [--base <commit-ish>] [--intent-file <file>]
 #   fm-merge-review.sh check <pr-url> --head <full-sha> [--base <merge-base-sha>]
 #   fm-merge-review.sh covers <pr-url>
+#   fm-merge-review.sh metrics [--since <epoch>]
 #
 # run     A task worker runs this, never a supervisor session: it refuses
 #         unless FM_TASK_ID marks the caller as a spawned ship or scout worker.
@@ -31,6 +32,20 @@
 #         line. bin/fm-pr-merge.sh calls it before a covered merge.
 # covers  Exit 0 when config/merge-review requires reviews for the pull
 #         request's repository, 1 when it does not.
+# metrics Read-only and safe for a supervisor: it reads every receipt and
+#         failed-call record in this home and prints one line per pull request
+#         and one summary line. It never validates receipts and never decides
+#         a merge; check alone does that. --since keeps only pull requests with
+#         review activity at or after <epoch>.
+#           merge-review-metrics: pr url=<pr-url> rounds=<n> seat_calls=<n>
+#             failed_calls=<n> blocks=<n> tokens_in=<n> tokens_out=<n>
+#             tokens_unreported=<n> first=<epoch> last=<epoch>
+#           merge-review-metrics: summary prs=<n> rounds_median=<n>
+#             rounds_max=<n> seat_calls=<n> tokens_in=<n> tokens_out=<n>
+#             tokens_unreported=<n>
+#         rounds counts reviewed heads; seat_calls counts receipts plus failed
+#         calls; tokens sum what the tools reported, and tokens_unreported
+#         counts receipts with no token report.
 #
 # Verdict rule (check, and the last line run prints):
 #   approved    at least two valid receipts at this exact head approve, they
@@ -71,7 +86,8 @@
 #                          harness_version, requested_model, reported_model,
 #                          identity, effort, started, ended, exit, verdict,
 #                          review_sha256, prompt_sha256, diff_sha256,
-#                          reviewer_task, posted
+#                          reviewer_task, posted, round, scope,
+#                          scope_sha256, tokens_in, tokens_out
 #     <seat>.review.md     the review text the verdict is read from
 #     <seat>.raw.json      the tool's own output
 #     <seat>.comment.md    the comment body posted for the seat, with post=on
@@ -79,6 +95,14 @@
 #     diff.<sha256>.patch  the diff the seat reviewed
 # A seat id is <family>.<harness>.<model>. check counts a receipt only while
 # config/merge-review still declares that seat.
+# round, scope, scope_sha256, tokens_in and tokens_out are measurements that
+# check never reads. round is 1 plus the number of other heads of the pull
+# request that hold a receipt; at a head that already holds one, it counts
+# only heads whose first receipt is older, so a rerun keeps its round. scope
+# is full: the seat reviewed the whole diff, and scope_sha256 is that diff's
+# digest. tokens_in sums the
+# input and cache tokens the tool reported, tokens_out its output tokens;
+# both are empty when the tool reports no usage (agy).
 #
 # Limits. Receipts are local files: check proves they are whole and bound to
 # the head, not who wrote them. Reviewers cannot run tests; test evidence comes
@@ -129,6 +153,7 @@ MR_SEAT_FAMILY=()
 MR_SEAT_HARNESS=()
 MR_SEAT_MODEL=()
 MR_SEAT_EFFORT=()
+MR_ROUND=
 
 mr_die() {  # <message>
   printf 'error: %s\n' "$1" >&2
@@ -560,7 +585,7 @@ mr_seat_fail() {  # <seat-id> <epoch> <exit> <reason>
 # temporary directory outside every repository, with tools that only read.
 mr_seat_call() {  # <seat-index>
   local i=$1 id family harness model effort raw err review started ended rc=0 text_filter models_filter
-  local reported='' identity verdict version
+  local reported='' identity verdict version tokens_in tokens_out
   local -a cmd
   id=${MR_SEAT_ID[$i]}
   family=${MR_SEAT_FAMILY[$i]}
@@ -623,6 +648,8 @@ mr_seat_call() {  # <seat-index>
     || { mr_seat_fail "$id" "$started" "$rc" "the $harness output is not the expected JSON"; return 1; }
   [ -s "$review" ] || { mr_seat_fail "$id" "$started" "$rc" "the $harness call returned no answer"; return 1; }
   reported=$(jq -r "$models_filter" "$raw" 2>/dev/null) || reported=
+  tokens_in=$(mr_tokens "$raw" in) || tokens_in=
+  tokens_out=$(mr_tokens "$raw" out) || tokens_out=
 
   case "$harness" in
     agy) identity='requested-accepted' ;;
@@ -672,12 +699,138 @@ mr_seat_call() {  # <seat-index>
     printf 'diff_sha256=%s\n' "$MR_DIFF_SHA"
     printf 'reviewer_task=%s\n' "$FM_TASK_ID"
     printf 'posted=\n'
+    printf 'round=%s\n' "$MR_ROUND"
+    printf 'scope=full\n'
+    printf 'scope_sha256=%s\n' "$MR_DIFF_SHA"
+    printf 'tokens_in=%s\n' "$tokens_in"
+    printf 'tokens_out=%s\n' "$tokens_out"
   } > "$MR_RECORDS/$id.receipt.new"
   ln "$MR_RECORDS/$id.receipt.new" "$MR_STORE/$id.receipt" || {
     mr_seat_fail "$id" "$started" 1 'a receipt already exists; refusing to replace it'
     return 1
   }
   printf 'seat %s: %s\n' "$id" "$verdict"
+}
+
+# Print the tokens a tool reported in its JSON output: <in> sums input and
+# cache tokens, <out> is output tokens. Prints nothing when none are reported.
+mr_tokens() {  # <raw.json> <in|out>
+  local filter
+  # shellcheck disable=SC2016 # $o is a jq variable, bound so each fallback reads the tool's object
+  case "$2" in
+    in)
+      filter='. as $o | ([($o.modelUsage // {})[]? | objects | [.inputTokens, .cacheReadInputTokens, .cacheCreationInputTokens] | map(numbers) | add // empty] | add)
+        // (($o.usage // {}) | [.input_tokens, .cache_read_input_tokens, .cache_creation_input_tokens] | map(numbers) | add)
+        // empty'
+      ;;
+    *)
+      filter='. as $o | ([($o.modelUsage // {})[]? | objects | [.outputTokens] | map(numbers) | add // empty] | add)
+        // (($o.usage // {}) | [.output_tokens] | map(numbers) | add)
+        // empty'
+      ;;
+  esac
+  jq -r "if type == \"object\" then ($filter) else empty end | floor" "$1" 2>/dev/null
+}
+
+# Print the earliest started= of the receipts in one head directory, or
+# return 1 when it holds none.
+mr_head_first_started() {  # <head-dir>
+  local receipt started first=''
+  for receipt in "$1"/*.receipt; do
+    [ -f "$receipt" ] || continue
+    started=$(mr_receipt_get "$receipt" started)
+    case "$started" in '' | *[!0-9]*) continue ;; esac
+    if [ -z "$first" ] || [ "$started" -lt "$first" ]; then first=$started; fi
+  done
+  [ -n "$first" ] || return 1
+  printf '%s\n' "$first"
+}
+
+# Set MR_ROUND for this head: 1 plus the other heads of this pull request that
+# were first reviewed before it.
+mr_round_compute() {
+  local pr_dir head_dir own other count=0
+  pr_dir=$(dirname "$MR_STORE")
+  own=$(mr_head_first_started "$MR_STORE") || own=''
+  for head_dir in "$pr_dir"/*; do
+    [ -d "$head_dir" ] && [ "$head_dir" != "$MR_STORE" ] || continue
+    fm_pr_head_valid "$(basename "$head_dir")" || continue
+    other=$(mr_head_first_started "$head_dir") || continue
+    [ -n "$own" ] && [ "$other" -ge "$own" ] || count=$((count + 1))
+  done
+  MR_ROUND=$((count + 1))
+}
+
+# Print one metrics line per pull request with review records in this home,
+# then one summary line. Reads only; validates nothing.
+mr_metrics() {  # <since-epoch-or-empty>
+  local since=$1 root="$FM_HOME/data/merge-review" pr_dir head_dir receipt failed url
+  local rounds calls failed_calls blocks t_in t_out unreported first last value stamp
+  local prs=0 all_calls=0 all_in=0 all_out=0 all_unreported=0 rounds_list=''
+  local median max
+  if [ -d "$root" ]; then
+    while IFS= read -r pr_dir; do
+      rounds=0 calls=0 failed_calls=0 blocks=0 t_in=0 t_out=0 unreported=0 first='' last='' url=''
+      for head_dir in "$pr_dir"/*; do
+        [ -d "$head_dir" ] || continue
+        fm_pr_head_valid "$(basename "$head_dir")" || continue
+        mr_head_first_started "$head_dir" >/dev/null && rounds=$((rounds + 1))
+        for receipt in "$head_dir"/*.receipt "$head_dir"/*.failed.*; do
+          [ -f "$receipt" ] || continue
+          case "$receipt" in *.raw.json | *.stderr) continue ;; esac
+          calls=$((calls + 1))
+          case "$receipt" in
+            *.receipt)
+              [ -n "$url" ] || url=$(mr_receipt_get "$receipt" url)
+              [ "$(mr_receipt_get "$receipt" verdict)" != BLOCK ] || blocks=$((blocks + 1))
+              stamp=$(mr_receipt_get "$receipt" started)
+              value=$(mr_receipt_get "$receipt" tokens_in)
+              case "$value" in
+                '' | *[!0-9]*) unreported=$((unreported + 1)) ;;
+                *)
+                  t_in=$((t_in + 10#$value))
+                  value=$(mr_receipt_get "$receipt" tokens_out)
+                  case "$value" in '' | *[!0-9]*) ;; *) t_out=$((t_out + 10#$value)) ;; esac
+                  ;;
+              esac
+              ;;
+            *)
+              failed_calls=$((failed_calls + 1))
+              stamp=$(mr_receipt_get "$receipt" at)
+              ;;
+          esac
+          case "$stamp" in
+            '' | *[!0-9]*) ;;
+            *)
+              if [ -z "$first" ] || [ "$stamp" -lt "$first" ]; then first=$stamp; fi
+              if [ -z "$last" ] || [ "$stamp" -gt "$last" ]; then last=$stamp; fi
+              ;;
+          esac
+        done
+      done
+      [ "$calls" -gt 0 ] && [ -n "$last" ] || continue
+      [ -z "$since" ] || [ "$last" -ge "$since" ] || continue
+      [ -n "$url" ] || url="unknown:${pr_dir#"$root"/}"
+      printf 'merge-review-metrics: pr url=%s rounds=%s seat_calls=%s failed_calls=%s blocks=%s tokens_in=%s tokens_out=%s tokens_unreported=%s first=%s last=%s\n' \
+        "$url" "$rounds" "$calls" "$failed_calls" "$blocks" "$t_in" "$t_out" "$unreported" "$first" "$last"
+      prs=$((prs + 1))
+      all_calls=$((all_calls + calls))
+      all_in=$((all_in + t_in))
+      all_out=$((all_out + t_out))
+      all_unreported=$((all_unreported + unreported))
+      rounds_list="$rounds_list$rounds
+"
+    done < <(find "$root" -mindepth 2 -type d 2>/dev/null | while IFS= read -r head_dir; do
+      ! fm_pr_head_valid "${head_dir##*/}" || printf '%s\n' "${head_dir%/*}"
+    done | LC_ALL=C sort -u)
+  fi
+  median=0 max=0
+  if [ "$prs" -gt 0 ]; then
+    median=$(printf '%s' "$rounds_list" | LC_ALL=C sort -n | awk '{ v[NR] = $1 } END { print v[int((NR + 1) / 2)] }')
+    max=$(printf '%s' "$rounds_list" | LC_ALL=C sort -n | tail -1)
+  fi
+  printf 'merge-review-metrics: summary prs=%s rounds_median=%s rounds_max=%s seat_calls=%s tokens_in=%s tokens_out=%s tokens_unreported=%s\n' \
+    "$prs" "$median" "$max" "$all_calls" "$all_in" "$all_out" "$all_unreported"
 }
 
 # Post one stored review as a pull request comment and record the comment URL
@@ -992,6 +1145,7 @@ mr_run() {  # <repo> <base-ref> <intent-file>
     mr_seat_drop_stale_approval "${MR_SEAT_ID[$i]}" || true
     i=$((i + 1))
   done
+  mr_round_compute
 
   i=0
   while [ "$i" -lt "$MR_SEAT_N" ]; do
@@ -1054,7 +1208,7 @@ case "${1:-}" in
     usage
     exit 0
     ;;
-  run | check | covers) ;;
+  run | check | covers | metrics) ;;
   *)
     usage >&2
     exit 2
@@ -1062,6 +1216,24 @@ case "${1:-}" in
 esac
 MR_COMMAND=$1
 shift
+
+if [ "$MR_COMMAND" = metrics ]; then
+  MR_SINCE=
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --since)
+        case "${2:-}" in
+          '' | *[!0-9]*) mr_die '--since requires a whole-second epoch' ;;
+        esac
+        MR_SINCE=$((10#$2))
+        shift 2
+        ;;
+      *) mr_die "unknown argument: $1" ;;
+    esac
+  done
+  mr_metrics "$MR_SINCE"
+  exit $?
+fi
 
 [ "$#" -ge 1 ] || mr_die "$MR_COMMAND needs a pull request URL"
 fm_pr_url_parse "$1" || mr_die 'the pull request URL must be the canonical full URL of a pull or merge request'
