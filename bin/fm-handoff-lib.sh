@@ -13,7 +13,8 @@
 # and .fm-lease-command.lock and replaces the predecessor. An ack alone never
 # clears the Stop gate. Expired/nonmatching claims cannot transfer a live lock.
 # The completed state/.handoff-successor carries pid, nonce, handoff, sha256,
-# and the same informational successor line.
+# and the same successor line, which no lock check reads; the next
+# fm-handoff-launch.sh reads its runtime fields as the predecessor's launch.
 #
 # Watchdog wire format (stdout and append-only state/handoff-events.log):
 # HANDOFF v1 ts=<epoch> event=<handoff_started|handoff_retry|handoff_ack|handoff_failed|handoff_reject|

@@ -5,13 +5,38 @@
 # Options, each optional, choose the successor runtime without touching any
 # account pin:
 #   --harness claude|codex|agy  successor runtime (default: this session's)
-#   --model <id>                successor model (default: the runtime's own)
+#   --model <id>|default        successor model (default: the predecessor's)
+#   --effort <level>|default    successor reasoning effort (default: the
+#                               predecessor's): low, medium, high, xhigh, max,
+#                               or ultra for claude; minimal, low, medium,
+#                               high, or xhigh for codex. claude and codex
+#                               only, and on Orca only together with a model
+#   --setting-sources <list>|default
+#                               claude settings sources, such as project,local
+#                               (default: the predecessor's); tmux only
 #   --account <entry>           a config/claude-accounts entry for a claude
 #                               successor; tmux only, because Orca agent launch
 #                               cannot select a Claude account. The entry must
 #                               already be signed in (claude auth status); no
 #                               sign-in is opened.
 #   --reason <token>            why this runtime was chosen (default: handoff)
+# By default the successor keeps the predecessor's runtime: on the same
+# harness, the model, effort, and claude setting sources come from the lock
+# holder's recorded launch: the verified state/.handoff-successor record when
+# its pid= is the lock holder and its harness= is this harness, else the
+# holder's exact /proc/<pid>/cmdline. ps output is never read, because it
+# joins argv words with blanks, so a prompt holding `--model x` would read as
+# a flag. A value the predecessor did not record, or with no exact source, is
+# not guessed: that flag is omitted, as before, and the record says why. A named
+# option, `default` included, wins over the predecessor's value, so a quota
+# reroute that picks another model or effort names it with --reason. A harness
+# change carries nothing. A claude --account switch with no --model does not
+# carry the model: the successor runs that account's default, the lane the
+# account was measured on, because the predecessor's model row may be the
+# exhausted one. stderr states each value and where it came from, and
+# the successor record adds effort=, setting_sources=, <field>_from=
+# (explicit, predecessor, unrecorded, unreadable, harness_change,
+# account_switch, or unsupported), and predecessor_<field>= (the value read, none, or unknown).
 # First, `bin/fm-order.sh covers --doc <handoff-file>` must find every open
 # captain order named in the document. A handoff that omits one, or coverage
 # that cannot be read, is refused with exit 4 and a diagnostic before any
@@ -65,8 +90,11 @@
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
 # FM_HANDOFF_SUCCESSOR_TIMEOUT_SECS (total budget, minimum 4 seconds).
-# Usage: fm-handoff-launch.sh [--harness <h>] [--model <id>] [--account <entry>]
-#        [--reason <token>] <handoff-file> | --help
+# Test-only: FM_TEST_SEAM=1 also enables FM_HANDOFF_TEST_PROC_ROOT, a stand-in
+# for /proc when reading the predecessor's argv.
+# Usage: fm-handoff-launch.sh [--harness <h>] [--model <id>] [--effort <level>]
+#        [--setting-sources <list>] [--account <entry>] [--reason <token>]
+#        <handoff-file> | --help
 set -eu
 umask 077
 case "${1:-}" in
@@ -78,13 +106,17 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 SUCC_HARNESS='' SUCC_MODEL='' SUCC_ACCOUNT='' SUCC_REASON=handoff
+SUCC_EFFORT='' SUCC_SETTING_SOURCES=''
+GIVEN_MODEL=0 GIVEN_EFFORT=0 GIVEN_SETTING_SOURCES=0
 while [ $# -gt 1 ]; do
   case "$1" in
-    --harness|--model|--account|--reason)
+    --harness|--model|--effort|--setting-sources|--account|--reason)
       [ -n "${2:-}" ] || die "$1 requires a value"
       case "$1" in
         --harness) SUCC_HARNESS=$2 ;;
-        --model) SUCC_MODEL=$2 ;;
+        --model) SUCC_MODEL=$2 GIVEN_MODEL=1 ;;
+        --effort) SUCC_EFFORT=$2 GIVEN_EFFORT=1 ;;
+        --setting-sources) SUCC_SETTING_SOURCES=$2 GIVEN_SETTING_SOURCES=1 ;;
         --account) SUCC_ACCOUNT=$2 ;;
         --reason) SUCC_REASON=$2 ;;
       esac
@@ -97,9 +129,29 @@ done
 HANDOFF=$1
 case "$HANDOFF" in /*) ;; *) HANDOFF="$(pwd -P)/$HANDOFF" ;; esac
 case "$HANDOFF" in *$'\n'*|*$'\r'*) die 'handoff path must be one line' ;; esac
+# Runtime value shapes, shared by the options and the predecessor's argv.
+valid_model() { case "$1" in ''|-*|*[!][A-Za-z0-9._/:-]*) return 1 ;; esac; }
+effort_levels() { # <harness>
+  case "$1" in
+    claude) printf 'low medium high xhigh max ultra' ;;
+    codex) printf 'minimal low medium high xhigh' ;;
+  esac
+}
+valid_effort() { # <harness> <level>
+  case "$2" in ''|*[!a-z]*) return 1 ;; esac
+  case " $(effort_levels "$1") " in *" $2 "*) return 0 ;; esac
+  return 1
+}
+valid_setting_sources() { case "$1" in *[!a-z,]*) return 1 ;; esac; }
 case "$SUCC_MODEL" in
   default) SUCC_MODEL= ;;
-  -*|*[!A-Za-z0-9._/:-]*) die '--model must be one model id' ;;
+  *) [ "$GIVEN_MODEL" = 0 ] || valid_model "$SUCC_MODEL" || die '--model must be one model id' ;;
+esac
+[ "$SUCC_EFFORT" != default ] || SUCC_EFFORT=
+case "$SUCC_SETTING_SOURCES" in
+  default) SUCC_SETTING_SOURCES= ;;
+  *) [ "$GIVEN_SETTING_SOURCES" = 0 ] || valid_setting_sources "$SUCC_SETTING_SOURCES" \
+    || die '--setting-sources must be default or a comma list of lowercase sources, such as project,local' ;;
 esac
 case "$SUCC_REASON" in *[!A-Za-z0-9_.:-]*) die '--reason must be one token of letters, digits, _ . : -' ;; esac
 case "$SUCC_ACCOUNT" in *[[:cntrl:]]*) die '--account must name one config/claude-accounts entry exactly' ;; esac
@@ -153,8 +205,177 @@ case "$BACKEND" in orca|tmux) command -v "$BACKEND" >/dev/null || die "missing b
 if [ "$BACKEND" = tmux ]; then
   command -v "$SUCC_HARNESS" >/dev/null || die "missing successor runtime $SUCC_HARNESS"
 fi
+# Predecessor runtime, from its recorded launch only (see the header):
+# PRED_SOURCE is record, argv (exact NUL-separated cmdline), or none.
+# Scanning argv stops at a `--` word.
+PRED_ARGV=() PRED_SOURCE=none PRED_RECORD=()
+read_predecessor_runtime() {
+  local proc_root=/proc rec="$STATE/.handoff-successor" succ w
+  [ "${FM_TEST_SEAM:-}" != 1 ] || proc_root=${FM_HANDOFF_TEST_PROC_ROOT:-/proc}
+  if [ -f "$rec" ] && [ "$(sed -n 's/^pid=//p' "$rec" | tail -n 1)" = "$PRED_PID" ]; then
+    succ=$(sed -n 's/^successor=//p' "$rec" | tail -n 1)
+    read -r -a PRED_RECORD <<< "$succ"
+    for w in ${PRED_RECORD[@]+"${PRED_RECORD[@]}"}; do
+      [ "$w" != "harness=$HARNESS" ] || { PRED_SOURCE=record; return 0; }
+    done
+    PRED_RECORD=()
+  fi
+  if [ -r "$proc_root/$PRED_PID/cmdline" ]; then
+    while IFS= read -r -d '' w || [ -n "$w" ]; do PRED_ARGV+=("$w"); done < "$proc_root/$PRED_PID/cmdline"
+    [ "${#PRED_ARGV[@]}" -eq 0 ] || PRED_SOURCE=argv
+  fi
+}
+# pred_recorded <field>: the recorded launch's value. `default` is no value;
+# setting sources record an empty value as `empty`.
+pred_recorded() {
+  local w v
+  for w in ${PRED_RECORD[@]+"${PRED_RECORD[@]}"}; do
+    case "$w" in "$1="*) v=${w#"$1"=} ;; *) continue ;; esac
+    case "$1:$v" in
+      *:default) PV='' PV_STATE=absent ;;
+      setting_sources:empty) PV='' PV_STATE=found ;;
+      *) PV=$v PV_STATE=found ;;
+    esac
+  done
+}
+# pred_scan <value-prefix> <flag>...: the last value given to a named flag,
+# `--flag value` or `--flag=value`, whose value starts with the prefix (which
+# is removed). Sets PV and PV_STATE to found, absent, or unreadable.
+pred_scan() {
+  local prefix=$1 i=1 n=${#PRED_ARGV[@]} w f v ok
+  shift
+  PV='' PV_STATE=absent
+  while [ "$i" -lt "$n" ]; do
+    w=${PRED_ARGV[$i]}
+    [ "$w" != -- ] || break
+    for f; do
+      ok=1
+      case "$w" in
+        "$f")
+          if [ $((i + 1)) -lt "$n" ]; then
+            v=${PRED_ARGV[$((i + 1))]}
+            i=$((i + 1))
+          else
+            v='' ok=0
+          fi
+          ;;
+        "$f"=*) v=${w#"$f"=} ;;
+        *) continue ;;
+      esac
+      if [ "$ok" = 0 ]; then
+        # A trailing flag with no value is this field's only when every value is.
+        [ -z "$prefix" ] || continue
+        PV='' PV_STATE=unreadable
+      else
+        case "$v" in "$prefix"*) PV=${v#"$prefix"} PV_STATE=found ;; esac
+      fi
+    done
+    i=$((i + 1))
+  done
+}
+# pred_lookup <field>: the predecessor's value for one field, by its harness.
+pred_lookup() {
+  PV='' PV_STATE=absent
+  case "$PRED_SOURCE:$HARNESS:$1" in
+    record:*) pred_recorded "$1" ;;
+    argv:claude:model|argv:agy:model) pred_scan '' --model ;;
+    argv:codex:model) pred_scan '' --model -m ;;
+    argv:claude:effort) pred_scan '' --effort ;;
+    argv:codex:effort) pred_scan model_reasoning_effort= -c --config ;;
+    argv:claude:setting_sources) pred_scan '' --setting-sources ;;
+    argv:*) ;;
+    *) PV_STATE=unreadable; return 0 ;;
+  esac
+  [ "$PV_STATE" = found ] || return 0
+  case "$1" in
+    model) valid_model "$PV" || PV_STATE=unreadable ;;
+    effort)
+      PV=${PV#\"} PV=${PV%\"}
+      valid_effort "$HARNESS" "$PV" || PV_STATE=unreadable
+      ;;
+    setting_sources) valid_setting_sources "$PV" || PV_STATE=unreadable ;;
+  esac
+  [ "$PV_STATE" = found ] || PV=
+}
+# What the successor launch can carry: <field> -> 0 or 1.
+successor_supports() {
+  case "$1:$SUCC_HARNESS:$BACKEND" in
+    model:*) return 0 ;;
+    effort:claude:*|effort:codex:*) return 0 ;;
+    setting_sources:claude:tmux) return 0 ;;
+  esac
+  return 1
+}
+# resolve_field <field> <var> <given>: sets <var>, <FIELD>_SET, <FIELD>_FROM,
+# and PRED_<FIELD> (the predecessor's value, none, or unknown).
+resolve_field() {
+  local field=$1 var=$2 given=$3 upper from set=0 shown
+  upper=$(printf '%s' "$field" | tr '[:lower:]' '[:upper:]')
+  pred_lookup "$field"
+  case "$PV_STATE" in
+    found) shown=${PV:-empty} ;;
+    absent) shown=none ;;
+    *) shown=unknown ;;
+  esac
+  if [ "$given" = 1 ]; then
+    successor_supports "$field" || die "--$(printf '%s' "$field" | tr _ -) cannot be carried by a $SUCC_HARNESS successor on $BACKEND"
+    [ "$field" != effort ] || [ -z "${!var}" ] || valid_effort "$SUCC_HARNESS" "${!var}" \
+      || die "--effort for a $SUCC_HARNESS successor must be default or one of: $(effort_levels "$SUCC_HARNESS")"
+    from=explicit
+    [ -z "${!var}" ] || set=1
+  elif [ "$SUCC_HARNESS" != "$HARNESS" ]; then
+    from=harness_change
+  elif [ "$field" = model ] && [ -n "$SUCC_ACCOUNT" ]; then
+    from=account_switch
+  elif [ "$PV_STATE" != found ]; then
+    from=$([ "$PV_STATE" = absent ] && echo unrecorded || echo unreadable)
+  elif ! successor_supports "$field"; then
+    from=unsupported
+  else
+    from=predecessor set=1
+    printf -v "$var" '%s' "$PV"
+  fi
+  printf -v "${upper}_SET" '%s' "$set"
+  printf -v "${upper}_FROM" '%s' "$from"
+  printf -v "PRED_${upper}" '%s' "$shown"
+}
+case "$HARNESS" in claude|codex|agy) read_predecessor_runtime ;; esac
+resolve_field model SUCC_MODEL "$GIVEN_MODEL"
+resolve_field effort SUCC_EFFORT "$GIVEN_EFFORT"
+resolve_field setting_sources SUCC_SETTING_SOURCES "$GIVEN_SETTING_SOURCES"
+if [ "$BACKEND" = orca ] && [ "$EFFORT_SET" = 1 ] && [ "$MODEL_SET" = 0 ]; then
+  # orca agent launch takes --effort only together with --model.
+  [ "$EFFORT_FROM" != explicit ] || die '--effort on Orca needs --model too'
+  EFFORT_SET=0 EFFORT_FROM=unsupported SUCC_EFFORT=
+fi
+[ "$EFFORT_SET" = 1 ] || SUCC_EFFORT=
+[ "$SETTING_SOURCES_SET" = 1 ] || SUCC_SETTING_SOURCES=
 MODEL_ARGS=()
 [ -z "$SUCC_MODEL" ] || MODEL_ARGS=(--model "$SUCC_MODEL")
+if [ "$EFFORT_SET" = 1 ]; then
+  if [ "$SUCC_HARNESS" = codex ] && [ "$BACKEND" = tmux ]; then
+    MODEL_ARGS+=(-c "model_reasoning_effort=\"$SUCC_EFFORT\"")
+  else
+    MODEL_ARGS+=(--effort "$SUCC_EFFORT")
+  fi
+fi
+[ "$SETTING_SOURCES_SET" = 0 ] || MODEL_ARGS+=(--setting-sources "$SUCC_SETTING_SOURCES")
+runtime_line() { # <field> <value> <from> <predecessor value>
+  local shown=${2:-default}
+  case "$3" in
+    predecessor) printf '%s %s, from the predecessor' "$1" "$shown" ;;
+    explicit) printf '%s %s, named explicitly (reason=%s); the predecessor had %s' "$1" "$shown" "$SUCC_REASON" "$4" ;;
+    unrecorded) printf "%s default: the predecessor's launch recorded none, so the runtime's own applies" "$1" ;;
+    unreadable) printf "%s default: the predecessor's launch value could not be read, so the runtime's own applies" "$1" ;;
+    harness_change) printf '%s %s: the successor runtime differs from %s, so nothing is carried' "$1" "$shown" "${HARNESS:-unknown}" ;;
+    account_switch) printf "%s default: an account switch runs the account's own default, not the predecessor's %s" "$1" "$4" ;;
+    unsupported) printf '%s default: a %s successor on %s cannot carry the predecessor'"'"'s %s' "$1" "$SUCC_HARNESS" "$BACKEND" "$4" ;;
+  esac
+}
+printf 'successor runtime: %s; %s; %s\n' \
+  "$(runtime_line model "$SUCC_MODEL" "$MODEL_FROM" "$PRED_MODEL")" \
+  "$(runtime_line effort "$SUCC_EFFORT" "$EFFORT_FROM" "$PRED_EFFORT")" \
+  "$(runtime_line setting-sources "$([ "$SETTING_SOURCES_SET" = 1 ] && echo "${SUCC_SETTING_SOURCES:-empty}")" "$SETTING_SOURCES_FROM" "$PRED_SETTING_SOURCES")" >&2
 # Foreign primary markers would let bin/fm-harness.sh read a non-Claude
 # successor as Claude; fm-spawn clears the same set for agy workers.
 MARKER_ENV=(env -u CLAUDECODE -u PI_CODING_AGENT -u GROK_AGENT -u FM_PI_HARNESS)
@@ -231,7 +452,11 @@ else
 fi
 quota_rc=0
 QUOTA_LINE=$(fm_failover_quota_check "$SUCC_HARNESS" "${SUCC_MODEL:-default}" "$ACCOUNT_ROOT") || quota_rc=$?
-SUCC_RECORD="harness=$SUCC_HARNESS model=$(fm_failover_token "${SUCC_MODEL:-default}") account=$(fm_failover_token "${SUCC_ACCOUNT:-ambient}") reason=$SUCC_REASON $QUOTA_LINE"
+SUCC_SOURCES_SHOWN=default
+[ "$SETTING_SOURCES_SET" = 0 ] || SUCC_SOURCES_SHOWN=${SUCC_SETTING_SOURCES:-empty}
+SUCC_RECORD="harness=$SUCC_HARNESS model=${SUCC_MODEL:-default} account=$(fm_failover_token "${SUCC_ACCOUNT:-ambient}") reason=$SUCC_REASON $QUOTA_LINE"
+SUCC_RECORD="$SUCC_RECORD effort=${SUCC_EFFORT:-default} setting_sources=$SUCC_SOURCES_SHOWN model_from=$MODEL_FROM effort_from=$EFFORT_FROM setting_sources_from=$SETTING_SOURCES_FROM"
+SUCC_RECORD="$SUCC_RECORD predecessor_model=$PRED_MODEL predecessor_effort=$PRED_EFFORT predecessor_setting_sources=$PRED_SETTING_SOURCES"
 if [ "$quota_rc" -eq 1 ]; then
   fm_failover_log "event=successor_vetoed $SUCC_RECORD"
   printf 'error: successor quota is exhausted (%s); choose another account or runtime, for example with bin/fm-supervisor-failover.sh\n' "$SUCC_RECORD" >&2
