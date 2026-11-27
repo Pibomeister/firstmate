@@ -85,6 +85,9 @@ set -eu
 nonce=$(jq -r .nonce "$FM_HOME/state/.handoff-pending")
 sha=$(jq -r .sha256 "$FM_HOME/state/.handoff-pending")
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$sha" > "$FM_HOME/ack.out" 2>&1 || true
+# The ack runs the predecessor close after the lock moves; mark when both
+# are finished so a case never leaks events into the next one.
+touch "$FM_HOME/ack.done"
 while kill -0 "$FM_TEST_SUITE_PID" 2>/dev/null && [ "$SECONDS" -lt 600 ]; do sleep 1; done
 EOF2
 cat > "$LAB/predecessor.sh" <<'EOF2'
@@ -147,7 +150,7 @@ run_case() {
   shift
   kill_lab
   rm -f "$LAB/state/".lock* "$LAB/state/.handoff"* "$LAB/state/argv" "$LAB/state/attempts" "$LAB/state/handoff-events.log" \
-    "$LAB/state/supervisor-failover.log" "$LAB/rc" "$LAB/ack.out" "$LAB/pred.pid" "$QUOTA/reads"
+    "$LAB/state/supervisor-failover.log" "$LAB/rc" "$LAB/ack.out" "$LAB/ack.done" "$LAB/pred.pid" "$QUOTA/reads"
   printf '%s\n' "$backend" > "$LAB/config/backend"
   if [ $# -gt 0 ]; then printf '%s\n' "$@" > "$LAB/launch.args"; else rm -f "$LAB/launch.args"; fi
   ("$PRED_HARNESS" "$LAB/predecessor.sh" ${PRED_ARGS[@]+"${PRED_ARGS[@]}"} & echo "$!" >> "$FM_TEST_PIDS")
@@ -157,7 +160,9 @@ run_case() {
 }
 assert_transferred_to() { # <harness> <label>
   [ "$(cat "$LAB/rc")" = 0 ] || fail "$2: handoff must complete: $(cat "$LAB/launch.err") $(cat "$LAB/ack.out" 2>/dev/null)"
-  local pid
+  local pid limit=$((SECONDS + 120))
+  while [ ! -f "$LAB/ack.done" ] && [ "$SECONDS" -lt "$limit" ]; do sleep 0.1; done
+  [ -f "$LAB/ack.done" ] || fail "$2: the successor ack did not finish: $(cat "$LAB/ack.out" 2>/dev/null)"
   pid=$(cat "$LAB/state/.lock")
   [ "$pid" != "$(cat "$LAB/pred.pid")" ] || fail "$2: the lock did not move"
   case "$(ps -o comm= -p "$pid")" in */"$1"|"$1") ;; *) fail "$2: the lock holder is not a $1 process: $(ps -o comm=,args= -p "$pid")" ;; esac
