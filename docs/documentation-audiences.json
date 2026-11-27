@@ -630,6 +630,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/rsi/loop-1-readings-2026-11-27.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/rsi/loop-1.md",
       "audience": "maintainer-verification"
     },
