@@ -93,7 +93,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   pipeline-spend.jsonl  optional per-task no-mistakes pipeline spend, written only when config/pipeline-spend is present; bin/fm-pipeline-spend.sh owns the schema
   orders/            durable captain orders and holds, their event log, and the sweep lock; bin/fm-order.sh owns the lifecycle
   handoff-ack-<nonce>.json  a handoff successor's acknowledgement written by bin/fm-handoff-ack.sh; bin/fm-handoff-lib.sh owns the schema
-  handoff-late/<nonce>.txt  the saved last screen lines of a late handoff successor, read before bin/fm-handoff-reconcile.sh ended its terminal; owner-only proof that the terminal belonged to that refused attempt
+  handoff-late/<nonce>.txt  the saved last screen lines of a late handoff successor, read before bin/fm-handoff-reconcile.sh ended its terminal; owner-only evidence, beside the successor's recorded pid, that the terminal belonged to that refused attempt
   ledger-intake.tsv  append-only record of where each mission-ledger item came from, never task state; bin/fm-ledger.sh owns the row format
   failure-classes/<key>.jsonl  append-only failure-class records from refuted claims, one file per class, shared by every task; docs/claim-ledger.md owns the schema
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
