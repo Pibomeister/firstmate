@@ -7950,8 +7950,8 @@ BUSY_GEN=
       j_route_request=$(json_escape "$route_cmd claude-request $route_args 2>/dev/null || true")
       j_route_post=$(json_escape "[ ! -e $(shell_quote "$STATE_REAL/$ID.permission-held") ] || $route_cmd claude-settled $route_args tool-finished 2>/dev/null || true")
       j_route_end=$(json_escape "$route_cmd claude-settled $route_args session-end 2>/dev/null || true")
-      route_entries="\"PermissionRequest\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_request\",\"timeout\":10}]}],\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_post\",\"timeout\":10}]}],\"PostToolUseFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_post\",\"timeout\":10}]}],"
-      route_sessionend=",{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_end\",\"timeout\":10}]}"
+      route_entries="\"PermissionRequest\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_request\"}]}],\"PostToolUse\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_post\"}]}],\"PostToolUseFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_post\"}]}],"
+      route_sessionend=",{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_route_end\"}]}"
     fi
     hooks_json="\"hooks\":{\"UserPromptSubmit\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_submit\"}]}],${stop_entry}${route_entries}\"StopFailure\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_stopfail\"}$stopfail_extra]}],\"SessionEnd\":[{\"hooks\":[{\"type\":\"command\",\"command\":\"$j_sessionend\"}]}${route_sessionend}]}"
     if [ "$KIND" = secondmate ]; then

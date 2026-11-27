@@ -77,7 +77,7 @@ start_case() {
     allow="sleep 2; printf '%s' '{\"hookSpecificOutput\":{\"hookEventName\":\"PermissionRequest\",\"decision\":{\"behavior\":\"allow\"}}}'"
   fi
   jq -n --arg request "$request" --arg settle "$settle" --arg ending "$ending" --arg allow "$allow" '
-    def hook($c): {hooks: [{type: "command", command: $c, timeout: 10}]};
+    def hook($c): {hooks: [{type: "command", command: $c}]};
     {hooks: {
       PermissionRequest: ([hook($request)] + (if $allow == "" then [] else [hook($allow)] end)),
       PostToolUse: [hook($settle)],
