@@ -12,6 +12,11 @@ set -u
 
 RUNNER="$ROOT/bin/fm-test-run.sh"
 
+# This file often runs inside a served machine-wide queue ticket. Fixture runs
+# model a direct run unless a case passes its own FM_TEST_QUEUE_HELD, so the
+# outer ticket must not apply the per-slot job cap to their concurrency checks.
+unset FM_TEST_QUEUE_HELD
+
 assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 [ -x "$RUNNER" ] || fail "bin/fm-test-run.sh must be executable"
 
