@@ -298,6 +298,35 @@ SH
   pass "relay failure remains a failed publication and a fresh pass can recover"
 }
 
+test_snapshot_signal_stopped_holder_is_not_shared() {
+  local fixture_home="$TMP_ROOT/signalled" mirror="$TMP_ROOT/signalled-code" first second first_rc=0
+  make_flight_home "$fixture_home"
+  mirror_bin "$mirror"
+  rm "$mirror/bin/fm-crew-state.sh"
+  cat > "$mirror/bin/fm-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'entry\n' >> "$FM_HOME/entries"
+if mkdir "$FM_HOME/first" 2>/dev/null; then sleep 5; fi
+printf 'state: paused · source: status-log · fixture pause\n'
+SH
+  chmod +x "$mirror/bin/fm-crew-state.sh"
+  printf 'kind=scout\nproject=fixture\n' > "$fixture_home/state/task.meta"
+  printf 'paused: fixture pause\n' > "$fixture_home/state/task.status"
+  FM_HOME="$fixture_home" "$mirror/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/first.json" 2>/dev/null &
+  first=$!
+  wait_for_entry "$fixture_home/entries"
+  FM_HOME="$fixture_home" "$mirror/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/second.json" &
+  second=$!
+  sleep 0.5
+  kill -TERM "$first"
+  wait "$first" || first_rc=$?
+  [ "$first_rc" = 143 ] || fail "the stopped holder did not report its signal: $first_rc"
+  wait "$second" || fail "a waiter replayed another caller's signal-stopped pass"
+  [ "$(wc -l < "$fixture_home/entries" | tr -d ' ')" -ge 2 ] || fail "the waiter did not run its own collection"
+  jq -e '.schema == "fm-fleet-snapshot.v1" and (.tasks | length) == 1' "$fixture_home/second.json" >/dev/null || fail "the waiter did not receive a complete observation"
+  pass "a signal-stopped holder is not shared, so a queued waiter collects for itself"
+}
+
 if [ "$#" -gt 0 ]; then
   for test in "$@"; do "$test"; done
 else
@@ -310,4 +339,5 @@ else
   test_contribution_inventory_does_not_wait_for_worker_probes
   test_snapshot_detached_probe_cannot_hold_output_capture_open
   test_snapshot_relay_failure_is_not_success
+  test_snapshot_signal_stopped_holder_is_not_shared
 fi

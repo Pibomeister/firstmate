@@ -99,8 +99,6 @@ EOF
 MTIME=$(fm_path_mtime "$INBOX/$TARGET") || exit 1
 NOW=$(date +%s)
 [ $((NOW - MTIME)) -ge "$GRACE" ] || exit 1
-LAST=$(printf '%s\n' "$DENIES" | awk -F '\t' '$3 > m { m = $3 } END { print m + 0 }')
-[ $((NOW - LAST)) -ge "$WINDOW" ] || exit 1
 fm_session_lock_owned_by_self "$ROOT/state" || exit 1
 {
   printf '%s\n' "$DENIES" | awk -F '\t' -v n="$TARGET" 'NF == 3 && $1 != n'

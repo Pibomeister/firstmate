@@ -335,8 +335,10 @@ snapshot_flight_finish() {  # <original-exit-status>
   # Only the relay owns the original stdout. A probe that detaches after
   # closing its standard streams cannot keep an extra capture descriptor alive.
   exec 1>/dev/null
-  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || rc=1
-  if {
+  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || [ "$rc" -ge 128 ] || rc=1
+  if [ "$rc" -ge 128 ]; then
+    :
+  elif {
     printf '%s %s %s\n' "${SNAPSHOT_FLIGHT_TMP##*/}" "$SNAPSHOT_FLIGHT_VIEW" "$rc"
     cat "$SNAPSHOT_FLIGHT_TMP.body"
   } > "$SNAPSHOT_FLIGHT_TMP" && chmod 600 "$SNAPSHOT_FLIGHT_TMP"; then
@@ -365,7 +367,7 @@ if [ -d "$STATE" ]; then
   SNAPSHOT_FLIGHT_VIEW=$({
     printf '%s\n' "$SCRIPT_DIR" "$FM_ROOT" "$DATA" "$CONFIG" "$PROJECTS"
     for snapshot_var in ${!FM_SNAPSHOT_@} ${!FM_CLASSIFY_@}; do
-      case "$snapshot_var" in FM_SNAPSHOT_STAGE_FD|FM_SNAPSHOT_STAGE_BASE) continue ;; esac
+      case "$snapshot_var" in (FM_SNAPSHOT_STAGE_FD|FM_SNAPSHOT_STAGE_BASE) continue ;; esac
       printf '%s=%s\n' "$snapshot_var" "${!snapshot_var}"
     done
     # One metadata process, not a process per historical task. A caller whose
