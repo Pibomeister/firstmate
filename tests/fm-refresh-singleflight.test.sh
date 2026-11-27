@@ -280,22 +280,77 @@ SH
 }
 
 test_snapshot_relay_failure_is_not_success() {
-  local fixture_home="$TMP_ROOT/relay-failure" badbin="$TMP_ROOT/relay-failure-bin" real_tee rc=0
+  local fixture_home="$TMP_ROOT/relay-failure" rc=0
   make_flight_home "$fixture_home"
-  mkdir -p "$badbin"
-  real_tee=$(command -v tee)
-  cat > "$badbin/tee" <<'SH'
-#!/usr/bin/env bash
-"$FM_TEST_REAL_TEE" "$@"
-exit 9
-SH
-  chmod +x "$badbin/tee"
-  PATH="$badbin:$PATH" FM_TEST_REAL_TEE="$real_tee" FM_HOME="$fixture_home" \
-    "$ROOT/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/failed.json" || rc=$?
+  : > "$fixture_home/readonly-stdout"
+  FM_HOME="$fixture_home" "$ROOT/bin/fm-fleet-snapshot.sh" --json 1< "$fixture_home/readonly-stdout" 2>/dev/null || rc=$?
   [ "$rc" != 0 ] || fail "the publisher reported success after its output relay failed"
   FM_HOME="$fixture_home" "$ROOT/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/recovered.json" || fail "relay failure stranded the publication lock"
   jq -e '.schema == "fm-fleet-snapshot.v1"' "$fixture_home/recovered.json" >/dev/null || fail "relay failure prevented a fresh complete result"
   pass "relay failure remains a failed publication and a fresh pass can recover"
+}
+
+test_snapshot_publication_failure_keeps_the_observation() {
+  local fixture_home="$TMP_ROOT/publication-failure" mirror="$TMP_ROOT/publication-failure-code" rc=0
+  if [ "$(id -u)" = 0 ]; then
+    pass "publication failure is not testable as root, which can write a mode 555 directory"
+    return 0
+  fi
+  make_flight_home "$fixture_home"
+  mirror_bin "$mirror"
+  rm "$mirror/bin/fm-crew-state.sh"
+  cat > "$mirror/bin/fm-crew-state.sh" <<'SH'
+#!/usr/bin/env bash
+chmod 555 "$FM_HOME/state"
+printf 'state: paused · source: status-log · fixture pause\n'
+SH
+  chmod +x "$mirror/bin/fm-crew-state.sh"
+  printf 'kind=scout\nproject=fixture\n' > "$fixture_home/state/task.meta"
+  printf 'paused: fixture pause\n' > "$fixture_home/state/task.status"
+  FM_HOME="$fixture_home" "$mirror/bin/fm-fleet-snapshot.sh" --json > "$fixture_home/out.json" 2>/dev/null || rc=$?
+  chmod 755 "$fixture_home/state"
+  [ ! -e "$fixture_home/state/.fleet-observation-json" ] || fail "an unwritable state directory still received a shared result"
+  [ "$rc" = 0 ] || fail "a failed shared publication failed the observation: $rc"
+  jq -e '.schema == "fm-fleet-snapshot.v1" and (.tasks | length) == 1' "$fixture_home/out.json" >/dev/null || fail "a failed shared publication lost the complete observation"
+  pass "a shared publication that cannot be written keeps the complete observation and its exit status"
+}
+
+test_snapshot_dead_lock_in_unwritable_state_collects_without_the_lock() {
+  local fixture_home="$TMP_ROOT/dead-lock-readonly" mode lock pid i rc
+  if [ "$(id -u)" = 0 ]; then
+    pass "unwritable state is not testable as root, which can write a mode 555 directory"
+    return 0
+  fi
+  for mode in json contribution-input; do
+    rm -rf "$fixture_home"
+    make_flight_home "$fixture_home"
+    lock=.fleet-observation.lock
+    [ "$mode" = json ] || lock=.fleet-contribution-input.lock
+    FM_HOME="$fixture_home" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$STATE/$2"' _ "$ROOT" "$lock" \
+      || fail "could not leave a dead fixture lock owner"
+    [ -L "$fixture_home/state/$lock" ] || fail "the dead fixture lock was not left behind"
+    chmod 555 "$fixture_home/state"
+    FM_HOME="$fixture_home" "$ROOT/bin/fm-fleet-snapshot.sh" "--$mode" > "$fixture_home/out.json" 2>/dev/null &
+    pid=$!
+    i=0
+    while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 900 ]; do sleep 0.1; i=$((i + 1)); done
+    if kill -0 "$pid" 2>/dev/null; then
+      kill -KILL "$pid" 2>/dev/null
+      wait "$pid" 2>/dev/null
+      chmod 755 "$fixture_home/state"
+      fail "a $mode snapshot behind a dead lock in unwritable state never finished"
+    fi
+    rc=0
+    wait "$pid" || rc=$?
+    chmod 755 "$fixture_home/state"
+    [ "$rc" = 0 ] || fail "a $mode snapshot behind a dead lock in unwritable state failed: $rc"
+    if [ "$mode" = json ]; then
+      jq -e '.schema == "fm-fleet-snapshot.v1"' "$fixture_home/out.json" >/dev/null || fail "a json snapshot behind a dead lock gave no complete result"
+    else
+      jq -e 'has("backlog") and has("tasks")' "$fixture_home/out.json" >/dev/null || fail "a contribution snapshot behind a dead lock gave no complete result"
+    fi
+  done
+  pass "a dead holder's lock in unwritable state still yields complete unshared snapshots"
 }
 
 test_snapshot_signal_stopped_holder_is_not_shared() {
@@ -363,6 +418,8 @@ else
   test_contribution_inventory_does_not_wait_for_worker_probes
   test_snapshot_detached_probe_cannot_hold_output_capture_open
   test_snapshot_relay_failure_is_not_success
+  test_snapshot_publication_failure_keeps_the_observation
   test_snapshot_signal_stopped_holder_is_not_shared
   test_snapshot_unwritable_state_collects_without_the_lock
+  test_snapshot_dead_lock_in_unwritable_state_collects_without_the_lock
 fi

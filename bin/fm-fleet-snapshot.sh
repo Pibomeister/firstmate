@@ -329,26 +329,74 @@ command -v jq >/dev/null 2>&1 || { echo "fm-fleet-snapshot: jq not found" >&2; e
 SNAPSHOT_FLIGHT_HELD=0
 SNAPSHOT_FLIGHT_TMP=
 snapshot_flight_finish() {  # <original-exit-status>
-  local rc=$1
+  local rc=$1 relay_rc=0
   [ "$SNAPSHOT_FLIGHT_HELD" -eq 1 ] || return "$rc"
   trap - EXIT
   # Only the relay owns the original stdout. A probe that detaches after
   # closing its standard streams cannot keep an extra capture descriptor alive.
   exec 1>/dev/null
-  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || [ "$rc" -ge 128 ] || rc=1
-  if [ "$rc" -ge 128 ]; then
-    :
-  elif {
-    printf '%s %s %s\n' "${SNAPSHOT_FLIGHT_TMP##*/}" "$SNAPSHOT_FLIGHT_VIEW" "$rc"
-    cat "$SNAPSHOT_FLIGHT_TMP.body"
-  } > "$SNAPSHOT_FLIGHT_TMP" && chmod 600 "$SNAPSHOT_FLIGHT_TMP"; then
-    mv -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_RESULT" || rc=1
-  else
+  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || relay_rc=$?
+  # Relay status 3 means only the shared copy failed; the caller's output is
+  # complete, so that pass is simply not shared.
+  if [ "$relay_rc" -ne 0 ] && [ "$relay_rc" -ne 3 ] && [ "$rc" -lt 128 ]; then
     rc=1
   fi
-  rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body" "$SNAPSHOT_FLIGHT_TMP.pipe"
-  fm_lock_release "$SNAPSHOT_FLIGHT_LOCK" || rc=1
+  if [ "$rc" -lt 128 ] && [ "$relay_rc" -eq 0 ] && {
+    printf '%s %s %s\n' "${SNAPSHOT_FLIGHT_TMP##*/}" "$SNAPSHOT_FLIGHT_VIEW" "$rc"
+    cat "$SNAPSHOT_FLIGHT_TMP.body"
+  } > "$SNAPSHOT_FLIGHT_TMP" 2>/dev/null && chmod 600 "$SNAPSHOT_FLIGHT_TMP" 2>/dev/null; then
+    mv -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_RESULT" 2>/dev/null || true
+  fi
+  rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body" "$SNAPSHOT_FLIGHT_TMP.pipe" 2>/dev/null || true
+  fm_lock_release "$SNAPSHOT_FLIGHT_LOCK" 2>/dev/null || true
   exit "$rc"
+}
+# Copy stdin to the caller's stdout and to the shared body. A stdout failure
+# exits 1; a failed body copy keeps relaying and exits 3.
+snapshot_flight_relay() {  # <body-file>
+  perl -e '
+    my $keep = open(my $fh, ">", $ARGV[0]);
+    my $buf;
+    while (1) {
+      my $n = sysread(STDIN, $buf, 65536);
+      exit 1 unless defined $n;
+      last unless $n;
+      for (my $o = 0; $o < $n;) {
+        my $w = syswrite(STDOUT, $buf, $n - $o, $o);
+        exit 1 unless defined $w;
+        $o += $w;
+      }
+      $keep = 0 if $keep && !print {$fh} $buf;
+    }
+    exit(($keep && close($fh)) ? 0 : 3);
+  ' "$1"
+}
+# Set up the scratch body, pipe and relay. On failure nothing is redirected
+# and no relay is left running.
+snapshot_flight_start() {
+  local redirected=1
+  SNAPSHOT_FLIGHT_TMP=$(umask 077; mktemp "$STATE/.fleet-observation.XXXXXX" 2>/dev/null) || return 1
+  (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") 2>/dev/null || return 1
+  mkfifo -m 600 "$SNAPSHOT_FLIGHT_TMP.pipe" 2>/dev/null || return 1
+  # The temporary read/write opener makes startup nonblocking even if the
+  # relay exits early. It is closed in both processes before any probes start.
+  # A normal background relay can be waited for on stock macOS Bash 3.2 too.
+  if [ "$snapshot_stage_fd" = 6 ]; then
+    exec 7<> "$SNAPSHOT_FLIGHT_TMP.pipe" || return 1
+    snapshot_flight_relay "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 7>&- &
+    SNAPSHOT_FLIGHT_RELAY_PID=$!
+    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || redirected=0
+    exec 7>&-
+  else
+    exec 6<> "$SNAPSHOT_FLIGHT_TMP.pipe" || return 1
+    snapshot_flight_relay "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 6>&- &
+    SNAPSHOT_FLIGHT_RELAY_PID=$!
+    exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || redirected=0
+    exec 6>&-
+  fi
+  [ "$redirected" -eq 1 ] && return 0
+  wait "$SNAPSHOT_FLIGHT_RELAY_PID" || true
+  return 1
 }
 if [ -d "$STATE" ]; then
   # shellcheck source=bin/fm-wake-lib.sh
@@ -409,12 +457,15 @@ if [ -d "$STATE" ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # A failed acquire that leaves no lock path means the lock cannot be created
-  # here (an unwritable or full state directory). After a few spaced tries,
-  # collect without single-flight, as an ordinary observational pass would.
+  # A failed acquire that leaves no lock path, or leaves a lock whose holder is
+  # dead, means the lock cannot be created or reclaimed here (an unwritable or
+  # full state directory). After a few spaced tries, collect without
+  # single-flight, as an ordinary observational pass would.
   snapshot_flight_unlockable=0
   while ! fm_lock_try_acquire "$SNAPSHOT_FLIGHT_LOCK"; do
-    if [ ! -e "$SNAPSHOT_FLIGHT_LOCK" ] && [ ! -L "$SNAPSHOT_FLIGHT_LOCK" ]; then
+    if { [ ! -e "$SNAPSHOT_FLIGHT_LOCK" ] && [ ! -L "$SNAPSHOT_FLIGHT_LOCK" ]; } \
+      || [ -z "$FM_LOCK_HELD_PID" ] \
+      || ! fm_lock_holder_alive "$SNAPSHOT_FLIGHT_LOCK" "$FM_LOCK_HELD_PID"; then
       snapshot_flight_unlockable=$((snapshot_flight_unlockable + 1))
       [ "$snapshot_flight_unlockable" -lt 5 ] || break
       sleep 0.2
@@ -437,28 +488,15 @@ if [ -d "$STATE" ]; then
     # Release this newly acquired lock if that read exits successfully or fails.
     trap 'rc=$?; fm_lock_release "$SNAPSHOT_FLIGHT_LOCK"; exit "$rc"' EXIT
     snapshot_flight_read || true
-    SNAPSHOT_FLIGHT_TMP=$(umask 077; mktemp "$STATE/.fleet-observation.XXXXXX") || exit 1
-    (umask 077; set -o noclobber; : > "$SNAPSHOT_FLIGHT_TMP.body") || exit 1
     snapshot_stage_fd=${FM_SNAPSHOT_STAGE_FD:-}
     snapshot_stage_fd=${snapshot_stage_fd#"${snapshot_stage_fd%%[!0]*}"}
-    mkfifo -m 600 "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-    # The temporary read/write opener makes startup nonblocking even if the
-    # relay exits early. It is closed in both processes before any probes start.
-    # A normal background relay can be waited for on stock macOS Bash 3.2 too.
-    if [ "$snapshot_stage_fd" = 6 ]; then
-      exec 7<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-      tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 7>&- &
-      SNAPSHOT_FLIGHT_RELAY_PID=$!
-      exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-      exec 7>&-
+    if snapshot_flight_start; then
+      SNAPSHOT_FLIGHT_HELD=1
     else
-      exec 6<> "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-      tee "$SNAPSHOT_FLIGHT_TMP.body" < "$SNAPSHOT_FLIGHT_TMP.pipe" 6>&- &
-      SNAPSHOT_FLIGHT_RELAY_PID=$!
-      exec > "$SNAPSHOT_FLIGHT_TMP.pipe" || exit 1
-      exec 6>&-
+      [ -z "$SNAPSHOT_FLIGHT_TMP" ] \
+        || rm -f -- "$SNAPSHOT_FLIGHT_TMP" "$SNAPSHOT_FLIGHT_TMP.body" "$SNAPSHOT_FLIGHT_TMP.pipe" 2>/dev/null || true
+      fm_lock_release "$SNAPSHOT_FLIGHT_LOCK" 2>/dev/null || true
     fi
-    SNAPSHOT_FLIGHT_HELD=1
     trap 'snapshot_flight_finish "$?"' EXIT
   fi
 fi
