@@ -1944,7 +1944,10 @@ test_converge_a_red_at_both_reproduction_does_not_block() {
   printf '%s\n' "$FINDING_P1" 'REPRO-BEGIN' 'exit 1' 'REPRO-END' > "$STUB/agy.extra"
   rc=0
   run_review run "$PR_URL" --head "$HEAD_SHA" --repo "$REPO" || rc=$?
+  expect_code 1 "$rc" "converge red-at-both: a closure round with a reproduction red at both ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
   assert_no_grep 'merge-review: blocked' "$CASE/stdout" "converge red-at-both: a reproduction red at both blocked ($(cat "$CASE/stdout") $(cat "$CASE/stderr"))"
+  assert_grep ' action=file-follow-ups ' "$CASE/stdout" "converge red-at-both: the finding was not filed as a follow-up ($(cat "$CASE/stdout"))"
+  assert_grep '"kind":"round-close"' <(tail -n 1 "$(ledger_file)") "converge red-at-both: the round was left open"
   pass "a correctness finding whose reproduction is red at the head and at the merge base does not block"
 }
 
