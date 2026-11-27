@@ -5302,7 +5302,9 @@ fi
 # A status signal launches the helper at once. Without one, it launches only
 # when both the ledger and this watcher's last launch are older than the idle
 # gap drawn at that launch, so a stale ledger cannot cause launches on every
-# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
+# poll. A launch due while one is still running is held as a single pending
+# follow-up that starts once the running one exits, so signals coalesce rather
+# than stacking. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
 HOME_SUMMARY_PENDING=0
 HOME_SUMMARY_LAST=0
