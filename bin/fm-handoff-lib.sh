@@ -71,12 +71,27 @@ fm_handoff_endpoint_handle() {
   printf '%s' "$target"
 }
 
-fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason>
-  local line handle=$5 nonce=$2 pid=$4
+# fm_handoff_pid_ident <pid>: a 64-hex digest of the process's identity, its
+# start time plus its full command line (fm_pid_identity in fm-wake-lib.sh,
+# which the caller has sourced). A reused pid gives another digest, so the pid
+# alone never stands for the process that once held it.
+fm_handoff_pid_ident() {
+  local identity
+  identity=$(fm_pid_identity "$1" 2>/dev/null) && [ -n "$identity" ] || return 1
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s\n' "$identity" | sha256sum | awk '{print $1}'
+  else
+    printf '%s\n' "$identity" | shasum -a 256 | awk '{print $1}'
+  fi
+}
+
+fm_handoff_event() { # <event> <nonce> <attempt> <pid> <handle> <reason> [<ident>]
+  local line handle=$5 nonce=$2 pid=$4 ident=${7:-}
   case "$handle" in ''|*[!A-Za-z0-9_.:%-]*) handle=none ;; esac
   case "$nonce" in ''|*[!a-f0-9]*) nonce=none ;; esac
   case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
   line="HANDOFF v1 ts=$(date +%s) event=$1 nonce=$nonce attempt=$3 pid=$pid handle=$handle reason=$6"
+  case "$ident" in '' | *[!a-f0-9]*) ;; *) line="$line ident=$ident" ;; esac
   printf '%s\n' "$line" >> "$STATE/handoff-events.log"
   printf '%s\n' "$line"
 }

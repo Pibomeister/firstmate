@@ -1114,6 +1114,11 @@ cmd_handoff() {
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" \
     "$SCRIPT_DIR/fm-order.sh" handoff --doc "$doc" \
     || die "wrote $doc, but bin/fm-order.sh handoff --doc failed, so the open orders are not recorded in it"
+  # The handoff is written, so this is the state the next session must still
+  # account for: stage it for the reset audit (bin/fm-reset-audit.sh). It
+  # never fails the handoff.
+  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" FM_STATE_OVERRIDE="$STATE" FM_CONFIG_OVERRIDE="$CONFIG" \
+    "$SCRIPT_DIR/fm-reset-audit.sh" stage >/dev/null 2>&1 || true
   printf 'handoff: wrote %s from the ledger\n' "$doc"
 }
 

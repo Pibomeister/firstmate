@@ -1335,6 +1335,44 @@ test_pr_health_monitor_arms_only_with_its_flag() {
   pass "bootstrap arms the PR health monitor only when config/pr-health-monitor exists"
 }
 
+# A session that takes the helm records the handoff its predecessor staged,
+# and the reset audit check is armed only while such a reset waits.
+test_reset_audit_is_armed_and_records_a_staged_handoff() {
+  local case_dir home fakebin out
+  case_dir="$TMP_ROOT/reset-audit"
+  home="$case_dir/home"
+  mkdir -p "$home/config" "$home/data" "$home/state"
+  fakebin=$(make_fake_toolchain "$case_dir")
+  add_real_jq "$fakebin"
+  handoffs() { find "$home/state/reset-audit-pending" -maxdepth 1 -name '*-handoff-*.json' 2>/dev/null | wc -l | tr -d ' '; }
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "reset audit" "bootstrap reported the reset audit in a home with no reset"
+  assert_absent "$home/state/reset-audit.check.sh" "bootstrap armed the reset audit in a home where nothing waits"
+  [ "$(handoffs)" = 0 ] || fail "bootstrap recorded a handoff nobody staged"
+
+  printf '{}\n' > "$home/state/reset-audit-staged.json"
+  PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_BOOTSTRAP_DETECT_ONLY=1 \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh" >/dev/null
+  assert_absent "$home/state/reset-audit.check.sh" "a detect-only bootstrap armed the reset audit"
+  assert_present "$home/state/reset-audit-staged.json" "a detect-only bootstrap recorded a handoff"
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "reset audit" "bootstrap reported the reset audit as unarmed"
+  [ -x "$home/state/reset-audit.check.sh" ] && [ -f "$home/state/reset-audit.check-trust" ] \
+    || fail "bootstrap did not register the reset audit check: $(ls -A "$home/state")"
+  assert_absent "$home/state/reset-audit-staged.json" "bootstrap left the staged handoff snapshot unclaimed"
+  [ "$(handoffs)" = 1 ] || fail "bootstrap recorded $(handoffs) handoff reset(s), expected 1"
+
+  PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh" >/dev/null
+  [ "$(handoffs)" = 1 ] || fail "a later bootstrap recorded a handoff nobody staged"
+  [ -x "$home/state/reset-audit.check.sh" ] || fail "a later bootstrap retired the check while the handoff still waits"
+  pass "bootstrap records a staged handoff exactly once and arms the reset audit only while one waits"
+}
+
 test_preferred_provider_validation() {
   local case_dir fakebin out value key
   case_dir="$TMP_ROOT/preferred-provider"
@@ -1605,5 +1643,6 @@ test_network_phases_record_per_step_elapsed_times
 test_tasks_axi_verdict_handoff_is_consumed_once
 test_crew_dispatch_active_rules_are_verbose_bootstrap_info
 test_pr_health_monitor_arms_only_with_its_flag
+test_reset_audit_is_armed_and_records_a_staged_handoff
 test_preferred_provider_validation
 test_crew_dispatch_validation

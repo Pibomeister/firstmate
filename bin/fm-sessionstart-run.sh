@@ -147,6 +147,13 @@ case "$SOURCE" in
     exec "$SCRIPT_DIR/fm-sessionstart-nudge.sh"
     ;;
   clear|compact)
+    # A compaction of the session that holds the helm is a reset: record it
+    # for the reset audit before this session acts (bin/fm-reset-audit.sh).
+    # It never fails the session open, and its snapshot is time-bounded.
+    if [ "$SOURCE" = compact ] && fm_session_lock_owned_by_self "$STATE"; then
+      FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-reset-audit.sh" \
+        begin --kind compaction >/dev/null 2>&1 || true
+    fi
     if session_start_completed; then
       "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SOURCE" || true
     else

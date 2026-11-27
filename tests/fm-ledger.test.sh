@@ -358,6 +358,7 @@ test_handoff_writes_from_ledger_and_refuses_chains() {
   out=$(ledger handoff --doc "$doc" --note "   " 2>&1); rc=$?
   expect_code 1 "$rc" "handoff with an empty note"
   [ ! -e "$doc" ] || fail "a refused handoff wrote the document"
+  [ ! -e "$HOME_DIR/state/reset-audit-staged.json" ] || fail "a refused handoff staged a reset audit snapshot"
 
   out=$(ledger handoff --doc "$doc" --note "a-fly is building; its PR is not open yet") || fail "handoff failed: $out"
   out=$(cat "$doc")
@@ -367,6 +368,12 @@ test_handoff_writes_from_ledger_and_refuses_chains() {
   assert_contains "$out" "OPEN alpha-202611111700 event=received" "the document lists open captain goals"
   assert_contains "$out" "$oid" "the document lists the open captain order"
   FM_HOME="$HOME_DIR" bash "$ORDER" gate >/dev/null || fail "the order gate does not accept the ledger handoff"
+  # The written handoff is the state the next session must still account for.
+  out=$(FM_HOME="$HOME_DIR" bash "$ROOT/bin/fm-reset-audit.sh" compare \
+    --before "$HOME_DIR/state/reset-audit-staged.json" --kind handoff 2>&1) \
+    || fail "the handoff did not stage a comparable reset audit snapshot: $out"
+  assert_contains "$(cat "$HOME_DIR/state/reset-audit-staged.json")" "alpha-202611111700" \
+    "the staged snapshot does not carry the open captain goal"
   out=$(ledger handoff --doc "$doc" --note x 2>&1); rc=$?
   expect_code 1 "$rc" "handoff over an existing document"
   pass "handoff writes a self-contained document from the ledger and refuses unfiled orders and delta chains"

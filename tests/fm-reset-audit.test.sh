@@ -324,3 +324,302 @@ audit compare --before "$TEST_HOME/before.json" >/dev/null 2>&1; rc=$?
 expect_code 2 "$rc" 'concurrent writer refused'
 expect_code 100 "$(wc -l < "$TEST_HOME/state/reset-audit.tsv" | tr -d ' ')" 'refusal leaves log intact'
 pass 'audit log retention is bounded and concurrent writers cannot overwrite it'
+
+# --- The reset lifecycle: one row per handoff and per compaction ------------
+at() { local now=$1; shift; FM_TEST_SEAM=1 FM_NOW="$now" audit "$@"; }
+waiting() { find "$TEST_HOME/state/reset-audit-pending" -maxdepth 1 -name "*-$1-*.json" 2>/dev/null | wc -l | tr -d ' '; }
+rows() { if [ -f "$TEST_HOME/state/reset-audit.tsv" ]; then wc -l < "$TEST_HOME/state/reset-audit.tsv" | tr -d ' '; else echo 0; fi; }
+T=1700000000
+
+new_home orders
+ORDER="$ROOT/bin/fm-order.sh"
+order() { FM_HOME="$TEST_HOME" bash "$ORDER" "$@"; }
+order_id() { order send --from test -- "$1" 2>/dev/null | awk 'NR == 1 { print $2 }'; }
+kept=$(order_id 'keep this order open')
+lost=$(order_id 'this order will vanish')
+shut=$(order_id 'closed without an outcome')
+fin=$(order_id 'finished with an outcome')
+park=$(order_id 'parked with a reason')
+for id in "$kept" "$lost" "$shut" "$fin" "$park"; do
+  [ -n "$id" ] && [ -f "$TEST_HOME/data/orders/pending/$id.order" ] || fail "order send did not record an order: $id"
+done
+order ack "$shut" >/dev/null || fail 'ack'
+order ack "$fin" >/dev/null || fail 'ack'
+order ack "$park" >/dev/null || fail 'ack'
+snapshot before
+assert_contains "$(cat "$TEST_HOME/before.json")" "$kept" 'snapshot lists an open order'
+order finish "$fin" 'done' -- 'finished it' >/dev/null || fail 'finish done'
+order finish "$park" parked -- 'set aside' >/dev/null || fail 'finish parked'
+snapshot finished
+out=$(audit compare --before "$TEST_HOME/before.json" --after "$TEST_HOME/finished.json" --kind handoff) \
+  || fail "orders still open or finished with their record failed: $out"
+[ "$out" = 'PASS kind=handoff' ] || fail "unexpected verdict for orders still open or finished with their record: $out"
+rm -f "$TEST_HOME/data/orders/pending/$lost.order"
+mv "$TEST_HOME/data/orders/acked/$shut.order" "$TEST_HOME/data/orders/done/$shut.order"
+out=$(audit compare --before "$TEST_HOME/before.json" --kind handoff 2>&1); rc=$?
+expect_code 1 "$rc" 'a lost order fails the strict comparison'
+assert_contains "$out" "order:$lost" 'an open order missing after the reset is DRIFT'
+assert_contains "$out" "order:$shut" 'an order closed without its outcome record is DRIFT'
+assert_not_contains "$out" "order:$kept" 'an order still open is reported as drift'
+assert_not_contains "$out" "order:$fin" 'an order finished done with its outcome is reported as drift'
+assert_not_contains "$out" "order:$park" 'an order parked with its outcome is reported as drift'
+assert_contains "$(tail -1 "$TEST_HOME/state/reset-audit.tsv")" "order:$lost" 'the audit row names the lost order'
+pass 'durable captain orders must stay open or finish with their done or parked record across a reset'
+
+new_home order-race
+mkdir -p "$TEST_HOME/data/orders/pending" "$TEST_HOME/data/orders/acked"
+printf 'id=1700000000-0123abcd\nkind=order\n--\nraced\n' > "$TEST_HOME/data/orders/pending/1700000000-0123abcd.order"
+cp "$TEST_HOME/data/orders/pending/1700000000-0123abcd.order" "$TEST_HOME/data/orders/acked/"
+snapshot raced
+out=$(node -e 'const m = require(process.argv[1]); console.log(JSON.stringify(m.orders))' "$TEST_HOME/raced.json")
+[ "$out" = '[{"id":"1700000000-0123abcd","state":"acked"}]' ] || fail "an order seen in two states was not kept once in its later state: $out"
+pass 'an order renamed between two directory reads is kept once, in its later state'
+
+new_home at-epoch
+snapshot before
+audit compare --before "$TEST_HOME/before.json" --kind handoff --at 12345 >/dev/null || fail 'compare --at'
+[ "$(cat "$TEST_HOME/state/reset-audit.tsv")" = "12345"$'\t'"handoff"$'\t'"PASS"$'\t'"-" ] || fail 'compare --at did not record the given epoch'
+audit compare --before "$TEST_HOME/before.json" --at soon >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'a non-numeric --at is refused'
+expect_code 1 "$(rows)" 'a refused --at records no row'
+pass 'compare --at records the reset time rather than the compare time'
+
+new_home handoff-life
+seed
+audit stage || fail 'stage'
+assert_present "$TEST_HOME/state/reset-audit-staged.json" 'stage did not save the snapshot'
+tasks add late-item 'filed before the handoff' --queue >/dev/null || fail 'late item'
+audit stage --if-absent || fail 'stage --if-absent'
+assert_not_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" late-item '--if-absent replaced a staged snapshot'
+audit stage || fail 'restage'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" late-item 'a later stage did not replace the snapshot'
+at "$T" begin --kind handoff --if-staged || fail 'begin handoff'
+assert_absent "$TEST_HOME/state/reset-audit-staged.json" 'begin left the staged snapshot behind'
+expect_code 1 "$(waiting handoff)" 'the handoff waits for its settle time'
+at $((T + 5)) begin --kind handoff --if-staged || fail 'second begin'
+expect_code 1 "$(waiting handoff)" 'a second caller recorded the same handoff again'
+out=$(at $((T + 599)) settle 2>&1) || fail 'settle before the window'
+[ -z "$out" ] || fail "an early settle printed: $out"
+expect_code 0 "$(rows)" 'a reset was compared before its settle time'
+tasks start queued-one >/dev/null || fail 'the new session dispatches queued work'
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle at the window'
+[ -z "$out" ] || fail "a passing settle printed: $out"
+[ "$(cat "$TEST_HOME/state/reset-audit.tsv")" = "$T"$'\t'"handoff"$'\t'"PASS"$'\t'"-" ] || fail "unexpected row: $(cat "$TEST_HOME/state/reset-audit.tsv")"
+expect_code 0 "$(waiting handoff)" 'a settled reset still waits'
+at $((T + 1200)) settle >/dev/null 2>&1 || fail 'idle settle'
+expect_code 1 "$(rows)" 'one handoff produced more than one row'
+out=$(at "$T" begin --kind handoff --if-staged 2>&1) || fail 'begin with nothing staged'
+expect_code 0 "$(waiting handoff)" '--if-staged recorded a handoff that nobody staged'
+pass 'a staged handoff becomes exactly one PASS row stamped with the time of the reset'
+
+new_home stale-stage
+seed
+audit stage || fail 'stage'
+touch -t 202001010000 "$TEST_HOME/state/reset-audit-staged.json"
+tasks add later-item 'filed long after that handoff was written' --queue >/dev/null || fail 'later item'
+audit stage --if-absent || fail 'stage --if-absent over an old snapshot'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" later-item '--if-absent kept a snapshot too old to be this handoff'
+touch -t 202001010000 "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'begin over an old staged snapshot'
+expect_code 0 "$(waiting handoff)" 'a handoff that never happened was recorded from its old snapshot'
+at "$T" begin --kind handoff --if-staged || fail 'a second begin over an old staged snapshot'
+expect_code 0 "$(waiting handoff)" 'a later caller recorded a handoff that never happened'
+assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'the check was armed with nothing waiting'
+pass 'a staged snapshot older than 30 minutes is replaced by the launcher and never recorded as a handoff'
+
+new_home launch-budget
+seed
+now=$(date +%s)
+audit stage || fail 'stage'
+fm_touch_epoch $((now - 25 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+tasks add launch-item 'filed after the handoff was written' --queue >/dev/null || fail 'launch item'
+audit stage --if-absent --for 600 || fail 'stage --if-absent --for over a snapshot that would age out during the launch'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" launch-item '--for kept a snapshot that ages out before the launch budget ends'
+fm_touch_epoch $((now - 25 * 60 + 600)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'begin at the end of the launch budget'
+expect_code 1 "$(waiting handoff)" 'a handoff verified at the end of its launch budget was not recorded'
+audit stage || fail 'restage'
+tasks add kept-item 'filed after the second stage' --queue >/dev/null || fail 'kept item'
+fm_touch_epoch $((now - 18 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+audit stage --if-absent --for 600 || fail 'stage --if-absent --for over a snapshot that outlives the launch'
+assert_not_contains "$(cat "$TEST_HOME/state/reset-audit-staged.json")" kept-item '--for replaced a snapshot that outlives the launch budget'
+audit stage --if-absent --for soon >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'a non-numeric --for is refused'
+audit stage --for 600 >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" '--for without --if-absent is refused'
+pass 'the launcher keeps a staged snapshot only when it stays fresh through the whole launch budget'
+
+new_home long-launch
+seed
+now=$(date +%s)
+audit stage || fail 'stage'
+fm_touch_epoch $((now - 10 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+audit stage --if-absent --for 2400 || fail 'stage for a launch budget above 30 minutes'
+tasks add long-item 'filed while the launch waited' --queue >/dev/null || fail 'long item'
+fm_touch_epoch $((now - 35 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged || fail 'the successor session start during a long launch'
+expect_code 0 "$(waiting handoff)" 'a session start recorded a snapshot older than 30 minutes'
+assert_present "$TEST_HOME/state/reset-audit-staged.json" 'a session start removed the snapshot the launch still needs'
+at "$T" begin --kind handoff --if-staged --for 2400 || fail 'the verified transfer of a long launch'
+expect_code 1 "$(waiting handoff)" 'a handoff verified 35 minutes into a 40-minute launch was not recorded'
+at $((T + 600)) settle >/dev/null 2>&1 || fail 'settle the long launch'
+expect_code 1 "$(rows)" 'a long launch did not produce exactly one row'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit.tsv")" "$T"$'\t'"handoff" 'the long launch row is a handoff'
+audit stage || fail 'restage'
+fm_touch_epoch $((now - 45 * 60)) "$TEST_HOME/state/reset-audit-staged.json"
+at "$T" begin --kind handoff --if-staged --for 2400 || fail 'begin over a snapshot older than the budget'
+expect_code 0 "$(waiting handoff)" 'a snapshot older than the launch budget was recorded'
+audit begin --kind handoff --for 2400 >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" '--for without --if-staged is refused'
+pass 'a launch longer than 30 minutes still records its verified handoff exactly once'
+
+new_home compaction-loss
+seed
+at "$T" begin --kind compaction || fail 'begin compaction'
+at $((T + 300)) begin --kind compaction || fail 'second compaction'
+expect_code 2 "$(waiting compaction)" 'back-to-back compactions wait separately'
+tasks rm queued-one >/dev/null || fail 'lose the queued item'
+out=$(at $((T + 600)) settle 2>&1); rc=$?
+expect_code 0 "$rc" 'a FAIL verdict is reported, not an error'
+[ "$out" = "reset audit: open work went missing across the compaction at $T: backlog:queued-one (state/reset-audit.tsv)" ] \
+  || fail "unexpected FAIL line: $out"
+expect_code 1 "$(rows)" 'the later compaction settled before its own time'
+assert_contains "$(cat "$TEST_HOME/state/reset-audit.tsv")" "$T"$'\t'"compaction"$'\t'"FAIL"$'\t'"backlog:queued-one" 'FAIL row'
+out=$(at $((T + 900)) settle 2>&1)
+assert_contains "$out" "across the compaction at $((T + 300)): backlog:queued-one" 'the second compaction reports its own loss'
+expect_code 2 "$(rows)" 'two compactions did not produce two rows'
+expect_code 0 "$(waiting compaction)" 'settled compactions still wait'
+pass 'each compaction settles at its own time and a loss is one FAIL row plus one line'
+
+new_home verdict-now
+seed
+at "$T" begin --kind compaction || fail 'begin'
+at "$T" begin --kind handoff || fail 'a handoff with nothing staged snapshots now'
+out=$(at $((T + 1)) settle --now 2>&1); rc=$?
+expect_code 0 "$rc" 'settle --now'
+assert_contains "$out" "PASS kind=compaction at=$T" '--now prints the compaction verdict'
+assert_contains "$out" "PASS kind=handoff at=$T" '--now prints the handoff verdict'
+expect_code 2 "$(rows)" '--now did not settle every waiting reset'
+printf 'not a manifest\n' > "$TEST_HOME/state/reset-audit-pending/$T-compaction-1.json"
+out=$(at $((T + 1)) settle --now 2>&1); rc=$?
+expect_code 1 "$rc" '--now reports a reset it could not compare'
+assert_contains "$out" "the compaction at $T could not be audited" 'the unreadable reset is named'
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle with an unreadable reset'
+[ -z "$out" ] || fail "an unreadable reset inside its grace printed: $out"
+assert_present "$TEST_HOME/state/reset-audit-pending/$T-compaction-1.json" 'an unreadable reset was dropped inside its grace'
+out=$(at $((T + 4200)) settle 2>&1) || fail 'settle past the grace'
+assert_contains "$out" "reset audit: the compaction at $T could not be audited" 'giving up is reported once'
+assert_present "$TEST_HOME/state/reset-audit-pending/unreadable/$T-compaction-1.json" 'the unreadable snapshot was not kept'
+expect_code 0 "$(waiting compaction)" 'the unreadable reset still waits'
+out=$(at $((T + 4800)) settle 2>&1) || fail 'settle after giving up'
+[ -z "$out" ] || fail "a given-up reset was reported again: $out"
+expect_code 2 "$(rows)" 'an unreadable reset recorded a row'
+pass 'settle --now prints every verdict, and an unreadable reset is kept, reported once, and never recorded'
+
+new_home many
+seed
+snapshot before
+mkdir -p "$TEST_HOME/state/reset-audit-pending"
+for ((i=1; i<=20; i++)); do cp "$TEST_HOME/before.json" "$TEST_HOME/state/reset-audit-pending/$((T + i))-compaction-$i.json"; done
+at $((T + 30)) begin --kind compaction >/dev/null 2>&1; rc=$?
+expect_code 1 "$rc" 'a snapshot beyond the cap'
+expect_code 20 "$(waiting compaction)" 'a reset beyond the cap was recorded'
+expect_code 0 "$(rows)" 'begin settled waiting resets itself'
+[ -x "$TEST_HOME/state/reset-audit.check.sh" ] || fail 'a refused reset did not arm the check that settles the others'
+audit stage || fail 'stage at the cap'
+at $((T + 31)) begin --kind handoff --if-staged || fail 'a staged handoff at the cap'
+expect_code 1 "$(waiting handoff)" 'a staged handoff was dropped at the cap'
+at $((T + 700)) settle >/dev/null 2>&1 || fail 'settle the waiting resets'
+expect_code 21 "$(rows)" 'the waiting resets did not each settle as one row'
+at $((T + 701)) begin --kind compaction || fail 'begin after the resets settled'
+expect_code 1 "$(waiting compaction)" 'a reset after the cap cleared was not recorded'
+pass 'at most 20 resets wait: a further snapshot is refused until one settles, and a staged handoff is still taken'
+
+new_home closing
+seed
+at "$T" begin --kind compaction || fail 'begin'
+: > "$TEST_HOME/state/t-1.backlog-close"
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle during a task close'
+[ -z "$out" ] || fail "settle during a task close printed: $out"
+expect_code 0 "$(rows)" 'a reset was judged while a task close was in progress'
+expect_code 1 "$(waiting compaction)" 'the reset no longer waits'
+mv "$TEST_HOME/state/t-1.backlog-close" "$TEST_HOME/closed-marker"
+at $((T + 660)) settle >/dev/null 2>&1 || fail 'settle after the close'
+expect_code 1 "$(rows)" 'the reset did not settle once the close finished'
+at "$T" begin --kind compaction || fail 'begin'
+printf 'held\n' > "$TEST_HOME/state/.reset-audit.lock"
+out=$(at $((T + 600)) settle 2>&1) || fail 'settle beside a held row lock'
+[ -z "$out" ] || fail "settle beside a held row lock printed: $out"
+expect_code 1 "$(rows)" 'a row was written under a lock another writer holds'
+expect_code 1 "$(waiting compaction)" 'a reset that could not be recorded was dropped'
+touch -t 202001010000 "$TEST_HOME/state/.reset-audit.lock"
+at $((T + 660)) settle >/dev/null 2>&1 || fail 'settle past an orphaned row lock'
+expect_code 2 "$(rows)" 'an orphaned row lock still blocked the audit'
+pass 'settle waits out a task close in progress, respects a held row lock, and removes an orphaned one'
+
+new_home check
+seed
+check="$TEST_HOME/state/reset-audit.check.sh"
+audit arm --if-needed >/dev/null || fail 'arm --if-needed'
+assert_absent "$check" 'the check was armed in a home where nothing waits'
+at "$T" begin --kind handoff || fail 'begin'
+[ -x "$check" ] || fail 'recording a reset did not install an executable check'
+assert_present "$TEST_HOME/state/reset-audit.check-trust" 'recording a reset did not register the check'
+audit arm >/dev/null || fail 'arm is not repeatable'
+out=$(FM_STATE_OVERRIDE="$TMP_ROOT/elsewhere" FM_TEST_SEAM=1 FM_NOW=$((T + 599)) "$check" 2>&1); rc=$?
+expect_code 0 "$rc" 'the check before the settle time'
+assert_present "$check" 'the check was retired while a reset still waits'
+out=$(FM_STATE_OVERRIDE="$TMP_ROOT/elsewhere" FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$check" 2>&1); rc=$?
+expect_code 0 "$rc" 'the check on a healthy home'
+[ -z "$out" ] || fail "the check printed on a healthy home: $out"
+[ "$(cat "$TEST_HOME/state/reset-audit.tsv")" = "$T"$'\t'"handoff"$'\t'"PASS"$'\t'"-" ] || fail 'the check did not settle the due reset'
+assert_absent "$check" 'the check stayed armed with nothing left to settle'
+assert_absent "$TEST_HOME/state/reset-audit.check-trust" 'the retired check stayed registered'
+at "$T" begin --kind compaction || fail 'begin'
+tasks rm queued-one >/dev/null || fail 'lose the queued item'
+out=$(FM_TEST_SEAM=1 FM_NOW=$((T + 600)) "$check" 2>&1)
+assert_contains "$out" 'reset audit: open work went missing across the compaction' 'the check reports a loss'
+assert_absent "$check" 'the check stayed armed after its last reset settled'
+printf 'HANDOFF v1 ts=%s event=handoff_started nonce=0123456789abcdef0123456789abcdef attempt=1 pid=0 handle=%%1 reason=awaiting_ack\n' \
+  "$(date +%s)" > "$TEST_HOME/state/handoff-events.log"
+printf 'HANDOFF v1 ts=%s event=handoff_reject nonce=0123456789abcdef0123456789abcdef attempt=0 pid=0 handle=%%9 reason=expired_claim\n' \
+  "$(date +%s)" >> "$TEST_HOME/state/handoff-events.log"
+audit arm --if-needed >/dev/null || fail 'arm --if-needed for a late successor'
+[ -x "$check" ] || fail 'a refused late successor did not arm the check'
+out=$("$check" 2>&1); rc=$?
+expect_code 0 "$rc" 'the check with a late successor'
+assert_contains "$out" 'a late successor terminal %9 of a failed handoff attempt was left open (backend_not_orca)' 'the check reports the late successor'
+assert_absent "$check" 'the check stayed armed after the late successor was decided'
+printf '#!/usr/bin/env bash\necho task-owned\n' > "$check"
+audit arm >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'arm over a check it did not write'
+at "$T" begin --kind compaction || fail 'begin beside a foreign check'
+expect_code 1 "$(waiting compaction)" 'a foreign check stopped the reset from being recorded'
+audit sweep >/dev/null 2>&1 || fail 'sweep beside a foreign check'
+audit disarm >/dev/null 2>&1 || fail 'disarm beside a foreign check'
+assert_contains "$(cat "$check")" task-owned 'a check this script did not write was changed'
+pass 'the check is armed only while a reset or a late successor waits, stays silent on PASS, and never touches a foreign check'
+
+new_home foreign-dirs
+seed
+mkdir -p "$TMP_ROOT/elsewhere"
+for name in FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_CONFIG_OVERRIDE; do
+  for command in stage 'begin --kind compaction' 'settle --now' sweep arm; do
+    # shellcheck disable=SC2086 # The command words split on purpose.
+    out=$(env "$name=$TMP_ROOT/elsewhere" FM_HOME="$TEST_HOME" bash "$AUDIT" $command 2>&1); rc=$?
+    expect_code 0 "$rc" "$command under a foreign $name"
+    [ -z "$out" ] || fail "$command under a foreign $name printed: $out"
+  done
+done
+assert_absent "$TEST_HOME/state/reset-audit-staged.json" 'a foreign directory override staged a snapshot'
+assert_absent "$TEST_HOME/state/reset-audit-pending" 'a foreign directory override recorded a reset'
+assert_absent "$TEST_HOME/state/reset-audit.check.sh" 'a foreign directory override armed the check'
+FM_STATE_OVERRIDE="$TEST_HOME/state" FM_DATA_OVERRIDE="$TEST_HOME/data" FM_CONFIG_OVERRIDE="$TEST_HOME/config" audit stage || fail 'stage with this home named'
+assert_present "$TEST_HOME/state/reset-audit-staged.json" "naming this home's own directories must not disable the audit"
+audit begin >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'begin without a kind'
+audit begin --kind clear >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" 'begin with an unknown kind'
+audit begin --kind compaction --if-staged >/dev/null 2>&1; rc=$?
+expect_code 2 "$rc" '--if-staged on a compaction'
+pass 'the lifecycle commands do nothing for directories outside this home and refuse malformed calls'

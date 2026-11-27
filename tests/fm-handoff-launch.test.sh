@@ -17,6 +17,9 @@ FAKEBIN="$TMP_ROOT/fakebin"
 mkdir -p "$LAB/state" "$LAB/config" "$LAB/data" "$LAB/bin" "$FAKEBIN"
 git init -q "$LAB"
 : > "$LAB/AGENTS.md"
+# A readable backlog, so each launch can stage the reset audit's snapshot.
+fm_test_tasks_toml "$LAB/.tasks.toml"
+printf '## In flight\n\n## Queued\n\n## Done\n' > "$LAB/data/backlog.md"
 ln -s /bin/bash "$FAKEBIN/claude"
 # The successor quota preflight reads an unmeasured pool, which never blocks,
 # rather than this host's real accounts.
@@ -769,6 +772,11 @@ locate=$(bash "$ROOT/bin/fm-captain-locate.sh")
 assert_contains "$locate" 'handle=term_lab_1' 'discovery follows lock holder'
 assert_contains "$locate" "pid=$(cat "$LAB/state/.lock")" 'discovery names lock pid'
 bash "$ROOT/bin/fm-handoff-ack.sh" "$nonce" "$(jq -r .sha256 "$ack")" >/dev/null 2>&1 && fail 'replay from another process must refuse'
+# Every launch above failed or was interrupted, so this transfer is the only
+# reset the audit may have recorded.
+[ "$(find "$LAB/state/reset-audit-pending" -maxdepth 1 -name '*-handoff-*.json' 2>/dev/null | wc -l | tr -d ' ')" = 1 ] \
+  || fail "only a verified transfer is a handoff the reset audit records: $(ls -A "$LAB/state/reset-audit-pending" 2>&1)"
+[ ! -e "$LAB/state/reset-audit-staged.json" ] || fail 'a verified transfer must claim the staged reset audit snapshot'
 pass 'verified successor ack transfers the lock; an unprovable predecessor endpoint stays open; discovery follows it'
 # Discovery refuses a sidecar that changes while it is read.
 RACE_BIN="$TMP_ROOT/race-bin"

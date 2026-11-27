@@ -2,7 +2,8 @@
 # fm-handoff-ack.sh <nonce> <sha256-read-from-document>
 # Run by the successor after reading the handoff, BEFORE session-start.
 # Writes the ack owned by fm-handoff-lib.sh, then requests the serialized
-# one-time transfer in fm-lock.sh. Every rejection emits handoff_reject.
+# one-time transfer in fm-lock.sh. Every rejection emits handoff_reject and
+# arms the check that ends a late successor (bin/fm-reset-audit.sh arm).
 # A predecessor proven dead yields the ordinary stale takeover, recorded as
 # handoff_ack reason=stale_takeover rather than lock_transferred.
 # The ack also keeps the claim's handoff path and predecessor pid, start, and
@@ -22,8 +23,17 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-handoff-lib.sh
 . "$SCRIPT_DIR/fm-handoff-lib.sh"
 nonce=${1:-}
+# A reject records this successor's harness pid (0 when it cannot be read)
+# and that process's identity digest (ident=, omitted when it cannot be read):
+# bin/fm-handoff-reconcile.sh closes a late successor's terminal only when
+# that pid is still live inside the terminal's own session and is still the
+# same process.
 reject() {
-  fm_handoff_event handoff_reject "$nonce" 0 0 "$(fm_handoff_endpoint_handle || true)" "$1"
+  local rpid rident
+  rpid=$(fm_session_lock_anchor_pid 2>/dev/null | head -n 1) || rpid=0
+  rident=$(fm_handoff_pid_ident "$rpid") || rident=''
+  fm_handoff_event handoff_reject "$nonce" 0 "$rpid" "$(fm_handoff_endpoint_handle || true)" "$1" "$rident"
+  FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-reset-audit.sh" arm --if-needed >/dev/null 2>&1 || true
   exit 1
 }
 case "$nonce" in ''|*[!a-f0-9]*) reject invalid_nonce ;; esac

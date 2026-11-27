@@ -61,6 +61,15 @@
 # unfinished exit once clearing an earlier record has begun, and a launch
 # removes it once it holds the launch lock; bin/fm-handoff-lib.sh owns the record and
 # how it releases a planned fresh start's Stop gate for the surviving session.
+# At the start of its budget, a launch runs bin/fm-handoff-reconcile.sh --apply,
+# which ends a late successor of an earlier failed attempt, and tries for a
+# few seconds to stage the reset audit's snapshot when bin/fm-ledger.sh handoff
+# did not or its snapshot would go stale before this launch's budget ends; a
+# verified transfer records the handoff with bin/fm-reset-audit.sh begin: it
+# claims a fresh staged snapshot under the claim lock, or else takes its own
+# snapshot after the launch releases its locks. Those scripts
+# own the rules; the calls never fail a launch, and their time counts against
+# its budget, so they never extend the launch past its total deadline.
 # Outputs only the versioned events owned by fm-handoff-lib.sh. Other errors
 # go to stderr. state/.handoff-successor is written only after lock verification.
 # Test-only: FM_TEST_SEAM=1 enables FM_HANDOFF_TEST_HARNESS and
@@ -254,6 +263,7 @@ CLAIM_HELD=0
 HANDOFF_STARTED=0
 FAILED_RECORD_CLEARED=0
 HANDOFF_COMPLETE=0
+AUDIT_SNAPSHOT_NEEDED=0
 HANDOFF_FAIL_REQUESTED=0
 HANDOFF_FAILURE_REASON=error
 attempt=0
@@ -298,6 +308,9 @@ cleanup() {
   fi
   if [ "$CLAIM_HELD" = 1 ]; then fm_lock_release "$STATE/.lock.acquire"; fi
   fm_lock_release "$STATE/.handoff-launch.lock"
+  if [ "$HANDOFF_COMPLETE" -eq 1 ] && [ "$AUDIT_SNAPSHOT_NEEDED" -eq 1 ]; then
+    FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff >/dev/null 2>&1
+  fi
   exec 9>&-
   exit "$rc"
 }
@@ -309,6 +322,12 @@ FAILED_RECORD_CLEARED=1
 rm -f "$STATE/.handoff-successor" "$STATE/.handoff-launch-failed"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 MONO_DEADLINE=$((SECONDS + TIMEOUT))
+# Inside the budget: end a late successor of an earlier failed attempt
+# (bin/fm-handoff-reconcile.sh), and try briefly to stage this handoff's
+# "before" snapshot (bin/fm-reset-audit.sh). Neither fails the launch; when
+# nothing fresh is staged, the verified transfer takes its own snapshot.
+fm_run_timed 8 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-handoff-reconcile.sh" --apply >/dev/null 2>&1 || true
+fm_run_timed 4 env FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" stage --if-absent --for "$TIMEOUT" >/dev/null 2>&1 || true
 
 fail_handoff() {
   HANDOFF_FAILURE_REASON=$1
@@ -341,6 +360,15 @@ record_completion() {
   mv "$record_tmp" "$STATE/.handoff-successor" || return 1
   HANDOFF_COMPLETE=1
   fm_failover_log "event=successor_ready pid=$(cat "$STATE/.lock") $SUCC_RECORD" || true
+  # The transfer is verified: this handoff is a reset the audit must settle.
+  # Under the claim lock, only claim a fresh staged snapshot; when none was
+  # claimed, cleanup snapshots after releasing the lock. The successor's own
+  # begin --if-staged then finds nothing fresh, so the reset is recorded once.
+  AUDIT_SNAPSHOT_NEEDED=1
+  if [ -e "$FM_HOME/state/reset-audit-staged.json" ]; then
+    FM_HOME="$FM_HOME" bash "$SCRIPT_DIR/fm-reset-audit.sh" begin --kind handoff --if-staged --for "$TIMEOUT" >/dev/null 2>&1 || true
+    [ -e "$FM_HOME/state/reset-audit-staged.json" ] || AUDIT_SNAPSHOT_NEEDED=0
+  fi
 }
 
 # The predecessor's own endpoint, for bin/fm-handoff-close.sh after a committed
