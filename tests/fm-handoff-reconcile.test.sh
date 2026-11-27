@@ -125,9 +125,21 @@ apply() { ARGS=(--apply --report); reconcile "$@"; }
 dry() { ARGS=(); reconcile; }
 waiting() { ARGS=(--waiting); reconcile; }
 
-event() {  # <seconds ago> <event> <nonce> <handle> <reason> [pid]
-  printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=%s handle=%s reason=%s\n' \
-    "$((NOW - $1))" "$2" "$3" "${6:-0}" "$4" "$5" >> "$HOME_DIR/state/handoff-events.log"
+# ident_of <pid>: the identity digest a reject records for <pid>.
+ident_of() {
+  bash -c '. "$1/bin/fm-wake-lib.sh" && . "$1/bin/fm-handoff-lib.sh" && fm_handoff_pid_ident "$2"' _ "$ROOT" "$1"
+}
+
+# event <seconds ago> <event> <nonce> <handle> <reason> [pid [ident]]: a reject
+# with a live pid records that process's identity unless <ident> is given
+# (- records none).
+event() {
+  local ident=${7:-} line
+  if [ -z "$ident" ] && [ "${6:-0}" != 0 ]; then ident=$(ident_of "$6") || ident=-; fi
+  line=$(printf 'HANDOFF v1 ts=%s event=%s nonce=%s attempt=1 pid=%s handle=%s reason=%s' \
+    "$((NOW - $1))" "$2" "$3" "${6:-0}" "$4" "$5")
+  [ -z "$ident" ] || [ "$ident" = - ] || line="$line ident=$ident"
+  printf '%s\n' "$line" >> "$HOME_DIR/state/handoff-events.log"
 }
 
 # A real process stands in for a harness: Orca's sweep roots the terminal's
@@ -366,8 +378,31 @@ test_a_reused_terminal_that_still_shows_the_nonce_is_left_open() {
   pass "a terminal whose screen still shows the nonce is closed only while it runs the refused successor"
 }
 
+test_a_reused_pid_in_the_terminal_is_left_alive() {
+  local out pid other
+  new_home reusedpid
+  event 300 handoff_started "$N1" term_owner awaiting_ack
+  # The refused successor exited and another job in its terminal now holds
+  # its pid: the pid is live in the session, the identity is another one's.
+  pid=$(live term_reused)
+  other=$(printf 'Thu Jan  1 00:00:00 2026     /bin/editor notes.txt\n' | { sha256sum 2>/dev/null || shasum -a 256; } | awk '{print $1}')
+  event 60 handoff_reject "$N1" term_reused missing_claim "$pid" "$other"
+  # A reject from before identities were recorded names a live pid alone.
+  event 55 handoff_reject "$N1" term_noident missing_claim "$(live term_noident)" -
+  for h in term_reused term_noident; do screen "$h" "$N1"; done
+  out=$(dry) || fail "dry run failed"
+  assert_contains "$out" "leave term_reused (successor_not_proven)" "the dry run names the reused pid's terminal as unproven"
+  out=$(apply) || fail "apply failed"
+  assert_equals "left successor_not_proven" "$(outcome_of term_reused)" "a pid now held by another process proves nothing"
+  assert_equals "left successor_not_proven" "$(outcome_of term_noident)" "a reject that recorded no identity proves nothing"
+  assert_equals "" "$(closed)" "no close is sent to either terminal"
+  assert_present "$FAKE_ORCA/term_reused.screen" "the terminal holding the reused pid stays open"
+  kill -0 "$pid" 2>/dev/null || fail "the process holding the reused pid was ended"
+  pass "a pid reused by another process in the terminal is left alive with its terminal open"
+}
+
 test_a_refused_successor_records_its_harness_pid() {
-  local rc pid harness
+  local rc pid harness ident
   new_home refusedpid
   event 300 handoff_started "$N1" term_owner awaiting_ack
   # shellcheck disable=SC2016 # expanded by the inner shell, not here
@@ -382,7 +417,10 @@ test_a_refused_successor_records_its_harness_pid() {
   harness=$(cat "$HOME_DIR/harness.pid")
   pid=$(awk '$4 == "event=handoff_reject" { for (i = 5; i <= NF; i++) if ($i ~ /^pid=/) print substr($i, 5) }' "$HOME_DIR/state/handoff-events.log")
   assert_equals "$harness" "$pid" "the reject records the pid of the harness the successor runs under"
-  pass "a refused successor records its own harness pid with the reject"
+  ident=$(awk '$4 == "event=handoff_reject" { for (i = 5; i <= NF; i++) if ($i ~ /^ident=/) print substr($i, 7) }' "$HOME_DIR/state/handoff-events.log")
+  case "$ident" in *[!0-9a-f]* | '') fail "the reject recorded no identity digest for the harness (got '$ident')" ;; esac
+  assert_equals 64 "${#ident}" "the identity digest is a full sha256"
+  pass "a refused successor records its own harness pid and identity with the reject"
 }
 
 # refuse <nonce>: a successor in term_late acknowledges with no claim on disk.
@@ -457,5 +495,6 @@ fm_test_run \
   test_a_refused_successor_arms_the_check_that_ends_it \
   test_ignores_rejects_that_are_not_late_successors \
   test_a_reused_terminal_that_still_shows_the_nonce_is_left_open \
+  test_a_reused_pid_in_the_terminal_is_left_alive \
   test_a_refused_successor_records_its_harness_pid \
   test_bad_arguments_are_refused

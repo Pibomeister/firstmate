@@ -23,13 +23,16 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-handoff-lib.sh
 . "$SCRIPT_DIR/fm-handoff-lib.sh"
 nonce=${1:-}
-# A reject records this successor's harness pid (0 when it cannot be read):
+# A reject records this successor's harness pid (0 when it cannot be read)
+# and that process's identity digest (ident=, omitted when it cannot be read):
 # bin/fm-handoff-reconcile.sh closes a late successor's terminal only when
-# that pid is still live inside the terminal's own session.
+# that pid is still live inside the terminal's own session and is still the
+# same process.
 reject() {
-  local rpid
+  local rpid rident
   rpid=$(fm_session_lock_anchor_pid 2>/dev/null | head -n 1) || rpid=0
-  fm_handoff_event handoff_reject "$nonce" 0 "$rpid" "$(fm_handoff_endpoint_handle || true)" "$1"
+  rident=$(fm_handoff_pid_ident "$rpid") || rident=''
+  fm_handoff_event handoff_reject "$nonce" 0 "$rpid" "$(fm_handoff_endpoint_handle || true)" "$1" "$rident"
   FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-reset-audit.sh" arm --if-needed >/dev/null 2>&1 || true
   exit 1
 }
