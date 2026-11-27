@@ -1136,7 +1136,8 @@ PY
 }
 
 # A string, null, or list omitted count, a list or string secondmate counts
-# value, and a boolean mate id leave owner-action coverage unknown.
+# value, a null omitted list, and a boolean mate id leave owner-action
+# coverage unknown, while an empty or absent omitted list stays known.
 # A closed pull with a bad timestamp does not hide a later valid copy.
 test_malformed_counts_bool_mate_and_duplicate_pull() {
   local home="$TMP_ROOT/round2-repros"
@@ -1205,6 +1206,13 @@ coverage("list-omitted-count", json.dumps(snapshot([list_count])))
 coverage("string-counts", json.dumps(snapshot([mate(counts="2")])))
 coverage("list-counts", json.dumps(snapshot([mate(counts=[1])])))
 coverage("bool-mate-id", json.dumps(snapshot([mate(id=True)])))
+coverage("null-omitted-list", json.dumps(snapshot([mate(omitted=None)])))
+empty = run("status = Fleet | %s/status.json\n" % home, "status.json", json.dumps(snapshot([mate(omitted=[])])))
+expect("empty-omitted-list", empty["waiting_on_captain_status"] == "known", "status=%s" % empty["waiting_on_captain_status"])
+missing = mate()
+del missing["omitted"]
+absent = run("status = Fleet | %s/status.json\n" % home, "status.json", json.dumps(snapshot([missing])))
+expect("missing-omitted-key", absent["waiting_on_captain_status"] == "known", "status=%s" % absent["waiting_on_captain_status"])
 
 def pulls(rows):
     (fixture / "merged-example-org_example-repo.json").write_text(json.dumps(rows))

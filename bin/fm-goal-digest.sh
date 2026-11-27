@@ -437,7 +437,7 @@ else:
         else:
             counts = raw_counts if isinstance(raw_counts, dict) else {}
         omitted = mate.get("omitted") if isinstance(mate.get("omitted"), list) else []
-        if mate.get("omitted") is not None and not isinstance(mate.get("omitted"), list):
+        if "omitted" in mate and not isinstance(mate.get("omitted"), list):
             unknown(source, "secondmate decision coverage incomplete")
         if (provenance.get("trust") != "complete"
                 or current.get("state") == "unknown"
