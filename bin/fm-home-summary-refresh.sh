@@ -57,8 +57,9 @@
 # It is one waiting slot: a worker holds it only until it takes the publication
 # lock, so a trigger arriving during a collection still queues for a pass of its
 # own, and any further trigger exits zero because that queued pass has not
-# collected yet. Explicit synchronous callers keep the publication-lock wait and
-# failure contract above.
+# collected yet. An FM_HOME_SUMMARY_IF_IDLE try never waits, so it skips the
+# slot and cannot stand in for a queued pass. Explicit synchronous callers keep
+# the publication-lock wait and failure contract above.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -541,7 +542,7 @@ trap home_summary_cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-if [ "$BEST_EFFORT" -eq 1 ]; then
+if [ "$BEST_EFFORT" -eq 1 ] && [ "$HOME_SUMMARY_IF_IDLE" -eq 0 ]; then
   fm_lock_try_acquire "$STATE/.home-summary-flight.lock" || exit 0
   HOME_SUMMARY_FLIGHT_HELD=1
 fi

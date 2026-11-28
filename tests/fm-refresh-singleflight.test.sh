@@ -104,6 +104,73 @@ SH
   pass "overlapping summary triggers collect once more after the running pass, never per trigger"
 }
 
+test_summary_if_idle_try_does_not_take_the_queue_slot() {
+  local fixture_home="$TMP_ROOT/summary-idle" mirror="$TMP_ROOT/summary-idle-code"
+  local release="$TMP_ROOT/summary-idle-release" gate="$TMP_ROOT/summary-idle-gate"
+  local idlebin="$TMP_ROOT/summary-idle-bin" stage first idle queued deadline
+  make_flight_home "$fixture_home"
+  stage="$fixture_home/state/.home-summary-stage.queued"
+  mirror_bin "$mirror"
+  rm "$mirror/bin/fm-fleet-snapshot.sh"
+  cat > "$mirror/bin/fm-fleet-snapshot.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'entry\n' >> "$FM_HOME/entries"
+if [ "$(wc -l < "$FM_HOME/entries" | tr -d ' ')" -eq 1 ]; then
+  read -r _ < "$FM_TEST_RELEASE"
+fi
+exec "$FM_TEST_REAL_SNAPSHOT" "$@"
+SH
+  chmod +x "$mirror/bin/fm-fleet-snapshot.sh"
+  # The idle try's liveness probe of the running pass holds until released, so
+  # the idle try stays between its admission and publication-lock attempts.
+  mkdir -p "$idlebin"
+  cat > "$idlebin/ps" <<'SH'
+#!/usr/bin/env bash
+prev=
+for arg in "$@"; do
+  if [ "$prev" = -p ] && [ "$arg" = "$(cat "$FM_TEST_HOLDER_PID_FILE" 2>/dev/null)" ]; then
+    read -r _ < "$FM_TEST_IDLE_GATE"
+  fi
+  prev=$arg
+done
+exec /bin/ps "$@"
+SH
+  chmod +x "$idlebin/ps"
+  mkfifo "$release" "$gate"
+  export FM_TEST_REAL_SNAPSHOT="$ROOT/bin/fm-fleet-snapshot.sh" FM_TEST_RELEASE="$release"
+  FM_HOME="$fixture_home" "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
+  first=$!
+  wait_for_entry "$fixture_home/entries"
+  PATH="$idlebin:$PATH" FM_PROC_ROOT_OVERRIDE="$TMP_ROOT/no-proc" \
+    FM_TEST_HOLDER_PID_FILE="$fixture_home/state/.home-summary-refresh.lock/pid" \
+    FM_TEST_IDLE_GATE="$gate" FM_HOME_SUMMARY_IF_IDLE=1 FM_HOME="$fixture_home" \
+    "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
+  idle=$!
+  sleep 1
+  # A trigger arriving while the idle try is still deciding must still queue.
+  FM_HOME="$fixture_home" FM_HOME_SUMMARY_STAGE_PATH="$stage" \
+    "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
+  queued=$!
+  deadline=$((SECONDS + 60))
+  until grep -q '^lock-wait' "$stage" 2>/dev/null; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      printf 'release\n' > "$gate" &
+      printf 'release\n' > "$release" &
+      wait "$idle" "$first" "$queued" 2>/dev/null
+      fail "an idle try took the waiting slot and absorbed a trigger that needed its own pass"
+    fi
+    sleep 0.05
+  done
+  printf 'release\n' > "$gate"
+  wait "$idle" || fail "idle summary try failed"
+  printf 'release\n' > "$release"
+  wait "$queued" || fail "queued summary failed"
+  wait "$first" || fail "first summary failed"
+  [ "$(wc -l < "$fixture_home/entries" | tr -d ' ')" = 2 ] \
+    || fail "summaries collected $(wc -l < "$fixture_home/entries" | tr -d ' ') times, not one running and one queued pass"
+  pass "an idle summary try never stands in for a queued pass"
+}
+
 test_snapshot_entrypoint_shares_only_overlapping_results() {
   local fixture_home="$TMP_ROOT/observer" mirror="$TMP_ROOT/observer-code" first second i id
   make_flight_home "$fixture_home"
@@ -435,6 +502,7 @@ if [ "$#" -gt 0 ]; then
 else
   test_heartbeat_entrypoint_coalesces
   test_summary_entrypoint_coalesces
+  test_summary_if_idle_try_does_not_take_the_queue_slot
   test_snapshot_entrypoint_shares_only_overlapping_results
   test_snapshot_modes_and_failures_remain_independent
   test_snapshot_change_during_collection_requires_a_fresh_pass
