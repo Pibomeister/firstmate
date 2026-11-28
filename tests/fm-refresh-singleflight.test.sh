@@ -56,28 +56,52 @@ SH
 }
 
 test_summary_entrypoint_coalesces() {
-  local fixture_home="$TMP_ROOT/summary" mirror="$TMP_ROOT/summary-code" first second
+  local fixture_home="$TMP_ROOT/summary" mirror="$TMP_ROOT/summary-code" release="$TMP_ROOT/summary-release"
+  local stage first second i=0
   make_flight_home "$fixture_home"
+  stage="$fixture_home/state/.home-summary-stage.queued"
   mirror_bin "$mirror"
   rm "$mirror/bin/fm-fleet-snapshot.sh"
+  # The first collection holds until released; later ones run straight through.
   cat > "$mirror/bin/fm-fleet-snapshot.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'entry\n' >> "$FM_HOME/entries"
-sleep 2
+if [ "$(wc -l < "$FM_HOME/entries" | tr -d ' ')" -eq 1 ]; then
+  read -r _ < "$FM_TEST_RELEASE"
+fi
 exec "$FM_TEST_REAL_SNAPSHOT" "$@"
 SH
   chmod +x "$mirror/bin/fm-fleet-snapshot.sh"
-  export FM_TEST_REAL_SNAPSHOT="$ROOT/bin/fm-fleet-snapshot.sh"
+  mkfifo "$release"
+  export FM_TEST_REAL_SNAPSHOT="$ROOT/bin/fm-fleet-snapshot.sh" FM_TEST_RELEASE="$release"
   FM_HOME="$fixture_home" "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
   first=$!
   wait_for_entry "$fixture_home/entries"
-  FM_HOME="$fixture_home" "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
+  # A trigger arriving after collection began may carry a newer status, so it
+  # must queue for its own pass rather than be absorbed by the stale one.
+  FM_HOME="$fixture_home" FM_HOME_SUMMARY_STAGE_PATH="$stage" \
+    "$mirror/bin/fm-home-summary-refresh.sh" --best-effort &
   second=$!
-  wait "$second" || fail "overlapping summary failed"
+  until grep -q '^lock-wait' "$stage" 2>/dev/null; do
+    if [ "$i" -ge 600 ]; then
+      printf 'release\n' > "$release" &
+      fail "a trigger arriving during collection did not queue behind it"
+    fi
+    sleep 0.05
+    i=$((i + 1))
+  done
+  # Further triggers join the queued pass, which has not collected yet.
+  FM_HOME="$fixture_home" "$mirror/bin/fm-home-summary-refresh.sh" --best-effort \
+    || fail "a trigger joining the queued pass failed"
+  FM_HOME="$fixture_home" "$mirror/bin/fm-home-summary-refresh.sh" --best-effort \
+    || fail "a second trigger joining the queued pass failed"
+  printf 'release\n' > "$release"
+  wait "$second" || fail "queued summary failed"
   wait "$first" || fail "first summary failed"
-  [ "$(wc -l < "$fixture_home/entries" | tr -d ' ')" = 1 ] || fail "overlapping summaries stacked sequential passes"
+  [ "$(wc -l < "$fixture_home/entries" | tr -d ' ')" = 2 ] \
+    || fail "overlapping summaries collected $(wc -l < "$fixture_home/entries" | tr -d ' ') times, not one running and one queued pass"
   jq -e '.schema == "fm-secondmate-home-summary.v1"' "$fixture_home/state/home-summary.json" >/dev/null || fail "summary was not published"
-  pass "independent overlapping summary triggers collect once"
+  pass "overlapping summary triggers collect once more after the running pass, never per trigger"
 }
 
 test_snapshot_entrypoint_shares_only_overlapping_results() {

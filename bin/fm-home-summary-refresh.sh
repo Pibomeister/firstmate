@@ -53,8 +53,12 @@
 # so tests and diagnostics are never deferred. This is the interim relief
 # until the producer itself is fast enough that failures stop recurring.
 # Concurrent best-effort workers coalesce at a nonblocking per-home admission
-# lock before collecting, inside the same whole-refresh deadline. Explicit
-# synchronous callers keep the publication-lock wait and failure contract above.
+# lock, state/.home-summary-flight.lock, inside the same whole-refresh deadline.
+# It is one waiting slot: a worker holds it only until it takes the publication
+# lock, so a trigger arriving during a collection still queues for a pass of its
+# own, and any further trigger exits zero because that queued pass has not
+# collected yet. Explicit synchronous callers keep the publication-lock wait and
+# failure contract above.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -550,6 +554,12 @@ else
   fm_lock_acquire_wait_bounded "$REFRESH_LOCK" "$remaining" || exit "$?"
 fi
 HOME_SUMMARY_LOCK_HELD=1
+# The admission lock is the one waiting slot, not the running pass: free it now
+# so a trigger arriving during this collection queues for a pass of its own.
+if [ "$HOME_SUMMARY_FLIGHT_HELD" -eq 1 ]; then
+  fm_lock_release "$STATE/.home-summary-flight.lock" || true
+  HOME_SUMMARY_FLIGHT_HELD=0
+fi
 backoff_active && exit 0
 if home_summary_refresh_once; then
   rm -f -- "$BACKOFF_FILE" 2>/dev/null || true
