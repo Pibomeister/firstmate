@@ -1,0 +1,11 @@
+1..7
+ok - secondmate selection reports actionable refusals without granting binding readiness
+ok - capture records numeric timestamps when BSD stat emits text before failing
+fatal: not a git repository (or any of the parent directories): .git
+counterfactual-stuck revision= grace=8 beacon_age=8 health_rc=1
+ok - a capture that stays blocked past grace is not ready
+fatal: not a git repository (or any of the parent directories): .git
+counterfactual-progress revision= records=20 sleep=0.4 captures=20 ends=20 preamble_ms=353 max_start_age_ms=1284 earliest_stale_seq=0 earliest_stale_age_ms=0 min_capture_ms=506 max_capture_ms=674 sum_capture_ms=12431 max_record_gap_ms=1611 grace_ms=8000
+ok - completed records stay inside grace while their sum crosses it
+not ok - returning stages reached beacon age 14s against grace 8s (step 4s, elapsed 18s)
+rc=1

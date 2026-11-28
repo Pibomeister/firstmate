@@ -1,0 +1,8 @@
+Stage-entry beacon refresh: real fm-watch.sh poll, scaled grace 8s (tests/fm-watcher-readiness.test.sh)
+HEAD 42fedfce:
+stage-beat mode=returning grace=8 step=4 max_beacon_age=4 elapsed=18
+stage-beat mode=hung grace=8 step=12 max_beacon_age=12 elapsed=19
+ok - returning stages stay inside grace while their sum crosses it
+ok - a stage that outlasts grace still ages the beacon
+Base bin deb597df (same test):
+not ok - returning stages reached beacon age 14s against grace 8s (step 4s, elapsed 18s)
