@@ -1,0 +1,8 @@
+1..6
+ok - clean, content and modify/delete heads report paths, tally and summary
+ok - tally lines order by blocked count before path
+ok - paths are root-relative and --repo wins over an inherited GIT_DIR
+ok - an all-clean run prints no path or tally line
+ok - a report leaves refs, index, worktree and object store unchanged
+ok - bad usage and unresolvable input exit 2 with empty stdout
+FM_TEST_COMPLETE

@@ -1,0 +1,10 @@
+args: --base main 11=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: usage: fm-rsi-conflicts.sh --repo <dir> --base <commit> <number>=<sha>...
+args: --repo . --base nope 11=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: base does not resolve to a commit: nope
+args: --repo . --base main 11=nope -> exit=2 stdout=[] stderr=fm-rsi-conflicts: head of 11 does not resolve to a commit: nope
+args: --repo . --base main 011=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: not a positive pull-request number: 011
+args: --repo . --base main 0=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: not a positive pull-request number: 0
+args: --repo . --base main 11=p11 11=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: duplicate pull-request number: 11
+args: --repo . --base main x -> exit=2 stdout=[] stderr=fm-rsi-conflicts: not a <number>=<sha> pair: x
+args: --repo . --base -> exit=2 stdout=[] stderr=fm-rsi-conflicts: missing value for --base
+args: --repo /tmp --base main 1=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: not a git repository: /tmp
+args: --repo . --base main --bogus 1=p11 -> exit=2 stdout=[] stderr=fm-rsi-conflicts: unknown argument: --bogus

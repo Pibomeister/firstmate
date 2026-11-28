@@ -1,0 +1,6 @@
+$ fm-rsi-conflicts.sh --repo . --base deb597df 357=HEAD 349=7a1de464  (real firstmate repo, no fetch)
+pr number=357 state=clean paths=0
+pr number=349 state=clean paths=0
+summary conflicted=0 heads=2
+exit=0
+refs and worktree unchanged: yes

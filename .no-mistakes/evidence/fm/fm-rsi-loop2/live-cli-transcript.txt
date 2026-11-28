@@ -1,0 +1,19 @@
+$ build disposable repo: main edits docs/scripts.md and a.txt; PR 11 conflicts on both, PR 12 conflicts on docs/scripts.md, PR 13 clean
+$ fm-rsi-conflicts.sh --repo . --base main 11=p11 12=p12 13=p13
+pr number=11 state=conflict paths=2
+path number=11 path=a.txt
+path number=11 path=docs/scripts.md
+pr number=12 state=conflict paths=1
+path number=12 path=docs/scripts.md
+pr number=13 state=clean paths=0
+tally path=docs/scripts.md blocked=2
+tally path=a.txt blocked=1
+summary conflicted=2 heads=3
+exit=0
+repo refs/status/object-count unchanged: yes
+$ run from subdir docs with GIT_DIR=/nonexistent inherited
+pr number=12 state=conflict paths=1
+path number=12 path=docs/scripts.md
+tally path=docs/scripts.md blocked=1
+summary conflicted=1 heads=1
+exit=0
