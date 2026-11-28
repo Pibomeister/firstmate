@@ -72,7 +72,15 @@ while [ $# -gt 0 ]; do
   case "$1" in --agent) agent=$2; shift 2 ;; --json) shift ;; *) shift 2 ;; esac
 done
 echo 1 > "$FM_HOME/state/attempts"
-ORCA_TERMINAL_HANDLE=term_lab_1 "$agent" "$FM_HOME/successor.sh" >/dev/null 2>&1 &
+if [ "$agent" = codex ]; then
+  # Orca's own Codex launch forwards its ORCA_* markers into tool shells
+  # through shell_environment_policy.set, while inherit="core" strips
+  # TERM_PROGRAM, so the successor's ack runs with no TERM_PROGRAM at all.
+  env -u TERM_PROGRAM ORCA_TERMINAL_HANDLE=term_lab_1 ORCA_PANE_KEY=lab_tab:lab_leaf \
+    "$agent" "$FM_HOME/successor.sh" >/dev/null 2>&1 &
+else
+  ORCA_TERMINAL_HANDLE=term_lab_1 "$agent" "$FM_HOME/successor.sh" >/dev/null 2>&1 &
+fi
 echo "$!" >> "$FM_TEST_PIDS"
 printf '{"outcome":{"kind":"terminal","terminal":{"handle":"term_lab_1"}}}\n'
 EOF2
@@ -192,6 +200,8 @@ pass 'codex successor follows config/codex-permission-mode on tmux'
 rm -f "$QUOTA/codex.json"
 run_case orca --harness codex --model gpt-5.5
 assert_transferred_to codex 'orca codex successor'
+assert_contains "$(cat "$LAB/state/handoff-events.log")" 'handle=term_lab_1 reason=lock_transferred' \
+  'the Codex tool shell without TERM_PROGRAM acknowledges from its own Orca terminal'
 argv_is 'orca codex successor' --agent codex --worktree "path:$LAB" --surface terminal --model gpt-5.5 --prompt PROMPT --json
 assert_contains "$(cat "$LAB/state/.handoff-successor")" 'verdict=unknown why=no_valid_codex_snapshot' 'unmeasured quota is disclosed in the record'
 pass 'codex on orca: argv agent launch, unmeasured quota disclosed and not blocking'

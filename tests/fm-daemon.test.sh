@@ -3544,8 +3544,9 @@ test_discover_supervisor_target_herdr() {
 }
 
 # --- orca supervisor discovery ----------------------------------------------
-# The captain's Orca terminal resolves from TERM_PROGRAM=Orca plus
-# ORCA_TERMINAL_HANDLE after every earlier rule; an Orca home that resolves no
+# The captain's Orca terminal resolves from ORCA_TERMINAL_HANDLE with
+# TERM_PROGRAM=Orca, or with no TERM_PROGRAM and ORCA_PANE_KEY, after every
+# earlier rule; an Orca home that resolves no
 # endpoint returns 3 with nothing printed instead of the tmux default.
 orca_discovery_cases() {  # <case-dir>; run with the neutral discovery env prefixed
   local dir=$1 out rc
@@ -3566,6 +3567,29 @@ orca_discovery_cases() {  # <case-dir>; run with the neutral discovery env prefi
   [ "$out" = explicit:target ] || fail "an explicit FM_SUPERVISOR_TARGET must win over an Orca terminal: $out"
   out=$(TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_captain FM_SUPERVISOR_BACKEND=herdr discover_supervisor_backend)
   [ "$out" = herdr ] || fail "an explicit FM_SUPERVISOR_BACKEND must win over an Orca terminal: $out"
+
+  # A Codex tool shell under inherit="core" has no TERM_PROGRAM, while Orca's
+  # own Codex launch forwards ORCA_TERMINAL_HANDLE and ORCA_PANE_KEY into it.
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf discover_supervisor_target) \
+    || fail "an Orca Codex tool shell without TERM_PROGRAM must resolve the target cleanly"
+  [ "$out" = term_captain ] || fail "the Codex tool shell target should be its Orca terminal handle, got '$out'"
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf discover_supervisor_backend) \
+    || fail "an Orca Codex tool shell without TERM_PROGRAM must resolve the backend cleanly"
+  [ "$out" = orca ] || fail "the Codex tool shell backend should be orca, got '$out'"
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf TMUX_PANE='%3' discover_supervisor_target)
+  [ "$out" = '%3' ] || fail "TMUX_PANE must still win over Orca tool-shell markers: $out"
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf HERDR_ENV=1 HERDR_PANE_ID=w1:p9 HERDR_SESSION='' discover_supervisor_target)
+  [ "$out" = default:w1:p9 ] || fail "herdr markers must still win over Orca tool-shell markers: $out"
+  # A lone terminal handle with no TERM_PROGRAM is not enough.
+  rc=0
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY='' discover_supervisor_target) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "a lone Orca terminal handle without TERM_PROGRAM must refuse with status 3, got $rc '$out'"
+  rc=0
+  out=$(TERM_PROGRAM='' ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf ZELLIJ=0 discover_supervisor_target) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "Zellij must still refuse Orca tool-shell markers with status 3, got $rc '$out'"
+  rc=0
+  out=$(TERM_PROGRAM=tern ORCA_TERMINAL_HANDLE=term_captain ORCA_PANE_KEY=tab:leaf discover_supervisor_backend) || rc=$?
+  [ "$rc" = 3 ] && [ -z "$out" ] || fail "Orca markers under another terminal program must still refuse, got $rc '$out'"
 
   # An inherited marker without the Orca terminal owning the screen refuses.
   rc=0
@@ -3613,7 +3637,7 @@ test_discover_supervisor_orca_terminal() {
   FM_HOME="$dir" FM_BACKEND_CONFIG_DIR="$dir/config" FM_BACKEND='' ZELLIJ='' \
     FM_SUPERVISOR_TARGET='' FM_SUPERVISOR_BACKEND='' TMUX_PANE='' HERDR_ENV='' HERDR_PANE_ID='' \
     orca_discovery_cases "$dir"
-  pass "discover_supervisor_*: an Orca terminal resolves after env, tmux, herdr, rex, and T3; an Orca home without one refuses instead of falling back to firstmate:0"
+  pass "discover_supervisor_*: an Orca terminal, including a Codex tool shell without TERM_PROGRAM, resolves after env, tmux, herdr, rex, and T3; an Orca home without one refuses instead of falling back to firstmate:0"
 }
 
 # --- orca supervisor injection through the real adapter ---------------------

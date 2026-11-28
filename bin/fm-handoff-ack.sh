@@ -22,8 +22,9 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 # shellcheck source=bin/fm-handoff-lib.sh
 . "$SCRIPT_DIR/fm-handoff-lib.sh"
 nonce=${1:-}
+pid=
 reject() {
-  fm_handoff_event handoff_reject "$nonce" 0 0 "$(fm_handoff_endpoint_handle || true)" "$1"
+  fm_handoff_event handoff_reject "$nonce" 0 "${pid:-0}" "$(fm_handoff_endpoint_handle || true)" "$1"
   exit 1
 }
 case "$nonce" in ''|*[!a-f0-9]*) reject invalid_nonce ;; esac
