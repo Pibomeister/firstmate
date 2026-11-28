@@ -299,6 +299,67 @@ delegate_is 'missing pin falls through' fm-control.sh mate-b relaunch --harness 
   --note 'Supervisor failover: codex pool ran out (codex_pool_exhausted); relaunched on agy gemini-3-pro (verdict=ok scope=model:gemini remaining=40 runway=through_reset).'
 pass 'secondmate claude: a missing required pin is skipped and the next runtime takes over'
 
+# A secondmate on Claude whose own account is at its limit moves to another
+# declared, signed-in account for that relaunch only; its pin file is the
+# account it leaves and is never edited.
+mkdir -p "$LAB/config/secondmate-accounts/mate-c"
+printf '%s\n' "$TMP_ROOT/acctA" > "$LAB/config/secondmate-accounts/mate-c/claude-account"
+mate_pin_before=$(cksum < "$LAB/config/secondmate-accounts/mate-c/claude-account")
+printf 'kind=secondmate\nharness=claude\nmodel=opus\nbackend=tmux\nworktree=%s\n' "$TMP_ROOT/mate" > "$LAB/state/mate-c.meta"
+quota_fixture claude 35 through_reset > "$TMP_ROOT/acctB/quota.json"
+failover tmux secondmate mate-c --candidate codex:gpt-5.5
+[ "$RC" = 0 ] || fail "a secondmate account switch must succeed: $OUT"
+assert_contains "$OUT" "candidate harness=claude model=default account=$TMP_ROOT/acctA skip=current_account" 'the pinned account the mate leaves is not a candidate'
+assert_contains "$OUT" "replaced scope=secondmate:mate-c from=claude:opus:pin harness=claude model=default account=$TMP_ROOT/acctB via=account_switch" \
+  'the mate moves to the other signed-in account first'
+assert_contains "$(cat "$LAB/delegate.argv")" "$(printf 'mate-c\nrelaunch\n--harness\nclaude\n--account\n%s\n--provider-failover' "$TMP_ROOT/acctB")" \
+  'the account is passed for this relaunch only, through the provider-failover path'
+[ "$(cksum < "$LAB/config/secondmate-accounts/mate-c/claude-account")" = "$mate_pin_before" ] || fail 'the mate pin must not change'
+
+# With every Claude account out and no declared candidates, the mate takes the
+# provider failover order's comparable models, skipping runtimes a secondmate
+# cannot run on.
+quota_fixture claude 0 exhausted_now > "$TMP_ROOT/acctB/quota.json"
+cp "$QUOTA/agy.json" "$TMP_ROOT/agy.saved"
+quota_fixture agy 50 through_reset model:gemini-4-neon-high > "$QUOTA/agy.json"
+mv "$LAB/config/supervisor-failover-candidates" "$TMP_ROOT/candidates.saved"
+printf 'codex:gpt-5.5\ndroid\n' > "$LAB/config/failover-order"
+failover tmux secondmate mate-c
+rm -f "$LAB/config/failover-order"
+mv "$TMP_ROOT/candidates.saved" "$LAB/config/supervisor-failover-candidates"
+cp "$TMP_ROOT/agy.saved" "$QUOTA/agy.json"
+[ "$RC" = 0 ] || fail "the default comparable models must serve a mate: $OUT"
+assert_contains "$OUT" 'replaced scope=secondmate:mate-c' 'the mate is replaced'
+assert_contains "$OUT" 'harness=agy model=gemini-4-neon-high' 'gemini neon is the first comparable model after the Claude accounts'
+assert_not_contains "$OUT" 'model=gpt-5.5' 'a custom worker failover order never supplies supervisor candidates'
+assert_not_contains "$OUT" 'harness=droid' 'a custom worker failover order never supplies supervisor candidates'
+assert_contains "$(cat "$LAB/delegate.argv")" "$(printf 'relaunch\n--harness\nagy\n--model\ngemini-4-neon-high')" 'the mate is relaunched on gemini neon'
+rm -rf "$LAB/config/secondmate-accounts" "$LAB/state/mate-c.meta"
+pass 'secondmate account step: another signed-in Claude account first, then the default comparable models, pin untouched'
+
+# An empty or comment-only candidates file declares no comparable models, so
+# only the Claude account step runs; the shipped models fill in only when the
+# file is absent. Every Claude account is out here, so nothing takes over.
+mv "$LAB/config/supervisor-failover-candidates" "$TMP_ROOT/candidates.saved"
+printf '# no comparable models: Claude accounts only\n' > "$LAB/config/supervisor-failover-candidates"
+failover tmux primary "$LAB/data/handoff.md"
+mv "$TMP_ROOT/candidates.saved" "$LAB/config/supervisor-failover-candidates"
+assert_contains "$OUT" "account=$TMP_ROOT/acctB verdict=exhausted" 'the account step still runs'
+assert_not_contains "$OUT" 'gemini-4-neon-high' 'an empty candidates file does not load the shipped models'
+assert_not_contains "$OUT" 'replaced scope=' 'no comparable model takes over'
+no_delegate 'empty candidates file'
+pass 'empty candidates file: only the Claude account step runs'
+
+# `ordinary` and $HOME/.claude are one account, so the current account is
+# skipped whichever spelling the list and the session use.
+cp "$LAB/config/claude-accounts" "$TMP_ROOT/claude-accounts.saved"
+printf 'ordinary\n%s\n' "$TMP_ROOT/acctB" > "$LAB/config/claude-accounts"
+CLAUDE_CONFIG_DIR="$HOME/.claude" failover tmux primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5
+cp "$TMP_ROOT/claude-accounts.saved" "$LAB/config/claude-accounts"
+assert_contains "$OUT" 'candidate harness=claude model=default account=ordinary skip=current_account' \
+  'the ordinary entry is the current HOME/.claude account'
+pass 'account identity: ordinary and HOME/.claude are the same current account'
+
 failover tmux primary "$LAB/data/handoff.md" --candidate codex:-x
 [ "$RC" = 2 ] || fail "a dash-led model id must be refused: $OUT"
 failover herdr primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5

@@ -147,7 +147,7 @@ These checks run on every pass as well:
   A check that a second mate's or worker's warning runs keeps the primary harness and account the last check recorded, while the same session-lock holder is live.
   The primary is a supervisor only while its session-lock owner is live, even when a caller names its harness; a Codex owner whose lock pid exited stays live while the shared lock contract still proves its recorded session live.
   A check that names a move writes a ledger row, and a live primary gets one nudge with the report path for each such check, whether a pass or a limit warning ran it.
-  The nudge asks the primary to move each steered worker with `bin/fm-control.sh relaunch` on its pick, and to fail each supervisor over with `bin/fm-supervisor-failover.sh`, which makes its own choice from `config/supervisor-failover-candidates` ([supervisor failover](configuration.md#supervisor-failover)).
+  The nudge asks the primary to move each steered worker with `bin/fm-control.sh relaunch` on its pick, and to fail each supervisor over with `bin/fm-supervisor-failover.sh`, which makes its own choice ([supervisor failover](configuration.md#supervisor-failover)).
   Before that nudge the watchdog reads the lock again, so a primary whose lock holder died or changed while the check ran is not nudged.
   A nudge whose record or submit failed does not count, so a later pass sends it again once `nudge-secs` has passed.
   While the last check is not ok, its result line stays a gap.

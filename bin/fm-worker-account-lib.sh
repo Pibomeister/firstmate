@@ -347,10 +347,9 @@ fm_worker_account_select() {
     echo "error: --account names one of config/claude-accounts and applies to Claude workers only, not $harness" >&2
     return 1
   fi
-  if [ -n "$account" ] && [ -n "$mate" ]; then
-    echo "error: --account applies to ships and scouts; secondmate $mate launches on its own config/secondmate-accounts/$mate/claude-account pin" >&2
-    return 1
-  fi
+  # A secondmate names <account> only on a provider-failover relaunch, which
+  # bin/fm-spawn.sh and bin/fm-control.sh gate; it then launches on that
+  # declared entry exactly like a ship, and its own pin file stays untouched.
   listed=$(fm_worker_account_list "$harness" "$config") || return 1
   if [ -z "$listed" ] && [ -n "$account" ]; then
     echo "error: --account '$account' needs config/claude-accounts, which this home does not declare" >&2
@@ -363,10 +362,10 @@ fm_worker_account_select() {
   selected_config=$(fm_worker_account_config "$harness" "$config" "$mate") || return 1
   setting="config/$(fm_worker_account_file "$harness")"
   [ "$selected_config" = "$config" ] || setting="$selected_config/$(fm_worker_account_file "$harness")"
-  if [ -n "$listed" ] && [ -n "$mate" ] && [ "$selected_config" = "$config" ]; then
+  if [ -n "$listed" ] && [ -n "$mate" ] && [ -z "$account" ] && [ "$selected_config" = "$config" ]; then
     echo "error: config/claude-accounts chooses accounts for ships and scouts only; secondmate $mate needs its own pin in config/secondmate-accounts/$mate/claude-account" >&2
     return 1
-  elif [ -n "$listed" ] && [ -z "$mate" ]; then
+  elif [ -n "$listed" ] && { [ -z "$mate" ] || [ -n "$account" ]; }; then
     setting=config/claude-accounts
     if [ -z "$account" ]; then
       count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')

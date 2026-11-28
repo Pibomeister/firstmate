@@ -2635,7 +2635,7 @@ wd_quota_guard_nudge_text() {
   qhome=$(printf '%q' "$O_HOME")
   text="$result. The moves are in $O_HOME/state/quota-guard/report.txt."
   [ "$steer" = 0 ] || text="$text Move each steered worker with bin/fm-control.sh relaunch on its named pick."
-  [ "$fail" = 0 ] || text="$text Fail each supervisor over with bin/fm-supervisor-failover.sh, which chooses from config/supervisor-failover-candidates: for the primary, write a handoff document and run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background; for a second mate, run FM_HOME=$qhome bin/fm-supervisor-failover.sh secondmate <id> --reason quota_guard."
+  [ "$fail" = 0 ] || text="$text Fail each supervisor over with bin/fm-supervisor-failover.sh, which first tries another signed-in Claude account, then the comparable models from config/supervisor-failover-candidates, or the shipped default comparable models when that file is absent: for the primary, write a handoff document and run bin/fm-supervisor-failover.sh primary <handoff-file> --reason quota_guard in the background; for a second mate, run FM_HOME=$qhome bin/fm-supervisor-failover.sh secondmate <id> --reason quota_guard."
   printf '%s Never change an account pin, sign in, or spend.\n' "$text"
 }
 
