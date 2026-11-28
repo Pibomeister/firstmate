@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # tests/fm-watcher-readiness.test.sh - pane-staleness progress versus a stuck
-# subordinate, and the supported starter's stale-holder refusal.
+# subordinate, returning stages versus grace, and the supported starter's
+# stale-holder refusal.
 # The progress case is red against a beacon touched only at cycle start:
 # many completed captures whose sum exceeds grace still age that beacon.
+# The returning-stage case is red when completed stages between cycle start
+# and the pane scan do not refresh the beacon.
 set -u
 
 # shellcheck source=tests/wake-helpers.sh
@@ -19,6 +22,12 @@ TMP_ROOT=$(fm_test_tmproot fm-watcher-readiness-tests)
 READINESS_RECORDS=20
 READINESS_GRACE=8
 READINESS_SLEEP=0.4
+
+# Same scaled grace as the capture cases. Three returning helpers of STAGE_STEP
+# seconds sum past grace; one helper of STAGE_HUNG seconds is itself past grace.
+STAGE_GRACE=8
+STAGE_STEP=4
+STAGE_HUNG=12
 
 install_capture_tmux() {  # <dir> <sleep-seconds>
   local dir=$1
@@ -242,6 +251,115 @@ test_progressing_records_stay_ready_across_grace() {
   pass "completed records stay inside grace while their sum crosses it"
 }
 
+# Copy the watcher tree and replace the three helpers the poll runs in
+# series between cycle start and the pane scan. The copy is what the watcher
+# executes, so the beacon age is the real poll, not a source match.
+install_stage_bin() {  # <dest-bin> <step-seconds> <mode>
+  local dest=$1 step=$2 mode=$3 name
+  mkdir -p "$(dirname "$dest")"
+  cp -R "$ROOT/bin" "$dest"
+  if [ "$mode" = returning ]; then
+    for name in fm-procevent.sh fm-inactive-reconcile.sh fm-worktree-cleanup.sh; do
+      printf '#!/usr/bin/env bash\nsleep %s\nexit 0\n' "$step" > "$dest/$name"
+      chmod +x "$dest/$name"
+    done
+  else
+    printf '#!/usr/bin/env bash\nsleep %s\nexit 0\n' "$step" > "$dest/fm-procevent.sh"
+    chmod +x "$dest/fm-procevent.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$dest/fm-inactive-reconcile.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$dest/fm-worktree-cleanup.sh"
+    chmod +x "$dest/fm-inactive-reconcile.sh" "$dest/fm-worktree-cleanup.sh"
+  fi
+}
+
+# Run one quiet cycle. Samples beacon age until the watcher exits.
+# Sets STAGE_MAX and STAGE_RC. A watcher still alive after 90s is a failure.
+run_stage_fixture() {  # <name> <step-seconds> <mode>
+  local name=$1 step=$2 mode=$3 dir state pid now b age max started deadline rc stg
+  dir="$TMP_ROOT/$name"
+  rm -rf "$dir"
+  mkdir -p "$dir/home/state/procevent" "$dir/home/config" "$dir/fakebin"
+  fm_test_track_watcher_state "$dir/home/state"
+  install_stage_bin "$dir/tree/bin" "$step" "$mode"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/fakebin/tmux"
+  chmod +x "$dir/fakebin/tmux"
+  state="$dir/home/state"
+  touch "$state/home-summary.json" "$state/.last-check" "$state/.last-heartbeat"
+  touch -t 200001010000 "$state/.last-worktree-cleanup"
+  printf 'kind=ship\nbackend=tmux\nwindow=fix:rec-01\n' > "$state/rec-01.meta"
+  : > "$dir/samples.tsv"
+  started=$(date +%s)
+  PATH="$dir/fakebin:$PATH" \
+    FM_HOME="$dir/home" \
+    FM_STATE_OVERRIDE="$state" \
+    FM_CONFIG_OVERRIDE="$dir/home/config" \
+    FM_GUARD_GRACE="$STAGE_GRACE" \
+    FM_WATCHER_STALE_GRACE="$STAGE_GRACE" \
+    FM_WATCHER_STALL_BOUND=999999 \
+    FM_POLL=60 \
+    FM_SIGNAL_GRACE=0 \
+    FM_CHECK_INTERVAL=1 \
+    FM_HEARTBEAT=999999 \
+    FM_WORKTREE_CLEANUP=1 \
+    FM_WATCH_ONCE=1 \
+    "$dir/tree/bin/fm-watch.sh" > "$dir/watch.out" 2> "$dir/watch.err" &
+  pid=$!
+  max=0
+  deadline=$((started + 90))
+  while kill -0 "$pid" 2>/dev/null; do
+    now=$(date +%s)
+    if [ "$now" -ge "$deadline" ]; then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      fail "stage watcher still running after 90s ($name): $(tail -n 30 "$dir/watch.err" "$dir/watch.out")"
+    fi
+    b=$(stat -c %Y "$state/.last-watcher-beat" 2>/dev/null || stat -f %m "$state/.last-watcher-beat" 2>/dev/null || true)
+    stg=$(cut -f3 "$state/.watcher-stage" 2>/dev/null || true)
+    if [ -n "${b:-}" ]; then
+      age=$((now - b))
+      [ "$age" -gt "$max" ] && max=$age
+      printf '%s\t%s\t%s\n' "$now" "$age" "$stg" >> "$dir/samples.tsv"
+    fi
+    sleep 0.5
+  done
+  rc=0
+  wait "$pid" || rc=$?
+  STAGE_MAX=$max
+  STAGE_RC=$rc
+  STAGE_ELAPSED=$(( $(date +%s) - started ))
+  printf '%s\n' "$max" > "$dir/max-age"
+  printf '%s\n' "$rc" > "$dir/watch.rc"
+  printf '%s\n' "$STAGE_ELAPSED" > "$dir/elapsed"
+}
+
+test_returning_stages_stay_inside_grace() {
+  local need
+  run_stage_fixture returning-stages "$STAGE_STEP" returning
+  [ "$STAGE_RC" -eq 0 ] || \
+    fail "returning watcher exited ${STAGE_RC}: $(cat "$TMP_ROOT/returning-stages/watch.err" "$TMP_ROOT/returning-stages/watch.out")"
+  need=$((STAGE_STEP * 3))
+  [ "$STAGE_ELAPSED" -ge "$need" ] || \
+    fail "returning fixture finished in ${STAGE_ELAPSED}s, so three ${STAGE_STEP}s stages did not run"
+  [ "$STAGE_MAX" -lt "$STAGE_GRACE" ] || \
+    fail "returning stages reached beacon age ${STAGE_MAX}s against grace ${STAGE_GRACE}s (step ${STAGE_STEP}s, elapsed ${STAGE_ELAPSED}s)"
+  printf 'stage-beat mode=returning grace=%s step=%s max_beacon_age=%s elapsed=%s\n' \
+    "$STAGE_GRACE" "$STAGE_STEP" "$STAGE_MAX" "$STAGE_ELAPSED"
+  pass "returning stages stay inside grace while their sum crosses it"
+}
+
+test_hung_stage_still_ages_past_grace() {
+  run_stage_fixture hung-stage "$STAGE_HUNG" hung
+  [ "$STAGE_RC" -eq 0 ] || \
+    fail "hung-stage watcher exited ${STAGE_RC}: $(cat "$TMP_ROOT/hung-stage/watch.err" "$TMP_ROOT/hung-stage/watch.out")"
+  [ "$STAGE_ELAPSED" -ge "$STAGE_HUNG" ] || \
+    fail "hung fixture finished in ${STAGE_ELAPSED}s, so the ${STAGE_HUNG}s stage did not run"
+  [ "$STAGE_MAX" -ge "$STAGE_GRACE" ] || \
+    fail "hung stage beacon age ${STAGE_MAX}s stayed inside grace ${STAGE_GRACE}s (elapsed ${STAGE_ELAPSED}s)"
+  printf 'stage-beat mode=hung grace=%s step=%s max_beacon_age=%s elapsed=%s\n' \
+    "$STAGE_GRACE" "$STAGE_HUNG" "$STAGE_MAX" "$STAGE_ELAPSED"
+  pass "a stage that outlasts grace still ages the beacon"
+}
+
 test_starter_surfaces_stale_holder_refusal() {
   local dir holder shell owner i rc out log
   dir=$(make_case starter-refusal)
@@ -414,4 +532,6 @@ fm_test_run \
   test_capture_accepts_gnu_stat \
   test_stuck_subordinate_still_becomes_stale \
   test_progressing_records_stay_ready_across_grace \
+  test_returning_stages_stay_inside_grace \
+  test_hung_stage_still_ages_past_grace \
   test_starter_surfaces_stale_holder_refusal

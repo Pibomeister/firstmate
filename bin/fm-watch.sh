@@ -473,12 +473,13 @@ watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   fm_watch_now now
   echo $(( now - m ))
 }
-# The liveness beacon is touched at the start of each cycle, when a
-# pane-staleness record begins after the previous record has returned, and
-# when that scan returns. A subordinate that has not returned does not refresh
-# it, so a stuck capture still ages past grace. After the scan, the beacon can
-# still age through the rest of the cycle and the terminal wait, up to one
-# in-flight record plus POLL seconds. fm_poll_derived_grace
+# The liveness beacon is touched at the start of each cycle, when the next
+# stage begins after the previous stage has returned, when a pane-staleness
+# record begins after the previous record has returned, and when that scan
+# returns. A stage or subordinate that has not returned does not refresh
+# it, so a stuck stage or capture still ages past grace. After the scan, the
+# beacon can still age through the rest of the cycle and the terminal wait,
+# up to one in-flight record plus POLL seconds. fm_poll_derived_grace
 # (bin/fm-wake-lib.sh, already sourced transitively above) is the single owner
 # of the max(300, poll+60) derivation - see docs/turnend-guard.md
 # "Guard grace and the poll cadence".
@@ -4593,20 +4594,41 @@ procevent_surface_after_output() {
   return "$status"
 }
 
-# Refresh the beacon at a completed pane-staleness boundary. The previous
-# record has returned, or the scan itself has. A capture that has not returned
-# never reaches the next call. This is not a timer.
+# Refresh the beacon at a completed boundary. The previous stage or record
+# has returned, or the pane-staleness scan itself has. A call that has not
+# returned never reaches the next one. This is not a timer.
 # docs/turnend-guard.md "Guard grace and the poll cadence" owns the contract.
 watch_record_progress_beat() {
   touch "$STATE/.last-watcher-beat"
+}
+
+# watch_record_cycle: state/.watcher-cycle is a decimal that increases by one
+# after a poll's signal, pane, and heartbeat decisions and before the wait for
+# the next poll. Tests wait on this file. It is not the liveness beacon, so a
+# stage touch cannot end that wait. A poll that exits on a wake never reaches
+# this call.
+watch_record_cycle() {
+  local n tmp
+  n=$(cat "$STATE/.watcher-cycle" 2>/dev/null || true)
+  case "$n" in
+    ''|*[!0-9]*) n=0 ;;
+  esac
+  tmp=$(mktemp "$STATE/.watcher-cycle-XXXXXX" 2>/dev/null) || return 0
+  if ! { printf '%s\n' "$((n + 1))" > "$tmp" && mv -f -- "$tmp" "$STATE/.watcher-cycle"; } 2>/dev/null; then
+    rm -f -- "$tmp" 2>/dev/null || true
+  fi
 }
 
 # watch_stage <name>: record which part of its poll this watcher is in, as one
 # line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
 # watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
 # Publish by rename so concurrent readers always see a complete record.
+# Entering a stage also refreshes the liveness beacon, because the previous
+# stage returned. A retry loop that calls this again would refresh it too.
 watch_stage() {  # <name>
   local now tmp
+  # Entering a stage means the previous one returned: a completed boundary.
+  watch_record_progress_beat
   fm_watch_now now
   tmp=$(mktemp "$STATE/.watcher-stage-XXXXXX" 2>/dev/null) || return 0
   if ! { printf '%s\t%s\t%s\n' "$$" "$now" "$1" > "$tmp" && mv -f -- "$tmp" "$STATE/.watcher-stage"; } 2>/dev/null; then
@@ -6541,6 +6563,9 @@ EOF
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
   fi
+
+  # Poll decisions have returned. watch_record_cycle owns the test boundary.
+  watch_record_cycle
 
   # Terminal wait: a bounded native-event wait for push-capable homes (herdr, rex),
   # else the blind poll sleep. See event_wait_or_sleep.

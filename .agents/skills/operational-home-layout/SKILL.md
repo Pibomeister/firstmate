@@ -196,6 +196,7 @@ state/               runtime records and signals; gitignored
   heartbeat.json .heartbeat-work.*  this home's self-watching fleet ledger and its private temp directory; refreshed detached by the watcher's heartbeat ticker on a relevant change and otherwise once per idle interval; written only by bin/fm-heartbeat.sh --write, whose header owns the document
   .last-watcher-beat watcher liveness beacon, touched every poll (including while absorbing benign wakes); guard scripts read it
   .watcher-stage .watcher-deferral.<name>   the watcher's current cycle stage and its record of work skipped behind a held lock; bin/fm-watch.sh writes both and bin/fm-guard.sh reads them; never touch
+  .watcher-cycle      count of the watcher's finished polls, read only by tests as a poll boundary; bin/fm-watch.sh writes it; never touch
   .subsuper-* .supervise-daemon.*   sub-supervisor internals; never touch
 .no-mistakes/        local validation state and evidence; gitignored
 ```

@@ -209,9 +209,9 @@ The Stop-parked primaries therefore keep parking the host beside that record, wh
 
 ### Guard grace and the poll cadence
 
-`bin/fm-watch.sh` touches `state/.last-watcher-beat` at the start of each cycle, again when a pane-staleness record begins after the previous record has returned, and again when that scan returns.
-A subordinate call that has not returned does not refresh the beacon, so a helper that stays blocked still ages past grace.
-That extra touch is the completed-record boundary, not a timer and not a larger grace.
+`bin/fm-watch.sh` touches `state/.last-watcher-beat` at the start of each cycle, again when the next stage begins after the previous stage has returned, again when a pane-staleness record begins after the previous record has returned, and again when that scan returns.
+A stage or subordinate call that has not returned does not refresh the beacon, so a helper that stays blocked still ages past grace.
+Those extra touches are completed boundaries, not a timer and not a larger grace.
 After the scan returns, the beacon can still age through the rest of the cycle and the terminal wait (`event_wait_or_sleep`).
 A healthy watcher can therefore age for one in-flight record plus up to `FM_POLL` seconds.
 

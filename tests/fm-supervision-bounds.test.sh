@@ -220,16 +220,17 @@ test_watcher_diagnostic_records_stay_complete_during_updates() {
 }
 
 test_watcher_defers_work_behind_a_held_wake_queue_lock() {
-  local dir state fakebin out holder holder_pid watcher i d_owner d_first d_name d_holder s_pid s_epoch s_stage
+  local dir state fakebin out holder holder_pid watcher i cycle_n d_owner d_first d_name d_holder s_pid s_epoch s_stage
   dir=$(make_case wake-lock-held)
   state="$dir/state"
   fakebin="$dir/fakebin"
   out="$dir/watch.out"
-  # The holder takes the queue lock after the watcher's first beat and, while
-  # holding it, queues a process-event result the watcher will try to surface.
-  # The watcher takes the same lock on its own beats, so the holder retries
+  # The holder takes the queue lock after one finished poll and, while holding
+  # it, queues a process-event result the watcher will try to surface.
+  # The watcher takes the same lock during its own poll, so the holder retries
   # briefly instead of giving up when it lands inside one of them.
   holder="$dir/fm-fake-queue-holder.sh"
+  cycle_n=0
   # shellcheck disable=SC2016 # expanded by the holder script
   printf '%s\n' '#!/usr/bin/env bash' 'export STATE="$2" FM_WAKE_QUEUE="$2/.wake-queue" FM_WAKE_QUEUE_LOCK="$3"' \
     '. "$1"' 'n=0; until fm_lock_try_acquire "$3"; do n=$((n + 1)); [ "$n" -lt 100 ] || exit 1; sleep 0.05; done' \
@@ -237,12 +238,30 @@ test_watcher_defers_work_behind_a_held_wake_queue_lock() {
   chmod +x "$holder"
   watch_start "$state" "$fakebin" "$out" FM_WATCH_HANDLING_SUCCESSOR=1 FM_WAKE_QUEUE_LOCK_WAIT=2 FM_WATCHER_STALL_BOUND=600
   watcher=$!
-  wait_beats "$state" "$watcher" 1 300 || fail "the watcher did not complete a first cycle: $(cat "$out")"
+  FIXTURE_PIDS="$FIXTURE_PIDS $watcher"
+  # A finished poll, not a beacon touch: stage touches land before the lock wait.
+  for i in $(seq 1 600); do
+    kill -0 "$watcher" 2>/dev/null || fail "the watcher exited before a first cycle: $(cat "$out")"
+    cycle_n=$(cat "$state/.watcher-cycle" 2>/dev/null || true)
+    case "$cycle_n" in
+      ''|*[!0-9]*) cycle_n=0 ;;
+    esac
+    [ "$cycle_n" -ge 1 ] && break
+    sleep 0.1
+  done
+  [ "$cycle_n" -ge 1 ] || fail "the watcher did not complete a first cycle: $(cat "$out")"
   "$holder" "$ROOT/bin/fm-wake-lib.sh" "$state" "$state/.wake-queue.lock" &
   holder_pid=$!
-  FIXTURE_PIDS="$FIXTURE_PIDS $holder_pid $watcher"
+  FIXTURE_PIDS="$FIXTURE_PIDS $holder_pid"
   for i in $(seq 1 50); do [ "$(cat "$state/.wake-queue.lock/pid" 2>/dev/null)" = "$holder_pid" ] && break; sleep 0.1; done
-  wait_beats "$state" "$watcher" 2 600 \
+  for i in $(seq 1 600); do
+    kill -0 "$watcher" 2>/dev/null || fail "the watcher exited while a live process held its wake-queue lock: $(cat "$out")"
+    [ -f "$state/.watcher-deferral.wake-queue" ] && break
+    sleep 0.1
+  done
+  [ -f "$state/.watcher-deferral.wake-queue" ] \
+    || fail "the watcher left no deferral record while the lock was held; triage: $(tail -5 "$state/.watch-triage.log" 2>/dev/null); queue: $(cat "$state/.wake-queue" 2>/dev/null); lock pid: $(cat "$state/.wake-queue.lock/pid" 2>/dev/null) holder $holder_pid; out: $(cat "$out")"
+  wait_beats "$state" "$watcher" 1 600 \
     || fail "the watcher stopped beating while a live process held its wake-queue lock: $(cat "$out")"
   grep -q 'deferred wake-queue' "$state/.watch-triage.log" 2>/dev/null \
     || fail "the watcher did not record deferring its wake-queue work; triage: $(tail -5 "$state/.watch-triage.log" 2>/dev/null); queue: $(cat "$state/.wake-queue" 2>/dev/null); lock pid: $(cat "$state/.wake-queue.lock/pid" 2>/dev/null) holder $holder_pid; out: $(cat "$out")"
