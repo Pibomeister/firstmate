@@ -975,7 +975,7 @@ tests/fm-pr-resync.test.sh 24602
 tests/fm-pr-reviewers.test.sh 252
 tests/fm-pr-state-live-e2e.test.sh 82
 tests/fm-pr-state.test.sh 934
-tests/fm-rsi-conflicts.test.sh 4413
+tests/fm-rsi-conflicts.test.sh 4223
 tests/fm-rsi-instrument.test.sh 27571
 tests/fm-rsi-measure.test.sh 1693
 tests/fm-procevent-extension-errors.test.sh 102406

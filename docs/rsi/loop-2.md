@@ -31,10 +31,10 @@ The loop-1 window re-read reproduces the 15.99 hours, n=28 figure in `docs/rsi/l
 The loop-1 end-of-day reading had 24 of 30 aged open.
 This snapshot is 13 hours later, and two more pull requests are open and one more has aged past 24 hours.
 The trailing seven-day median is already under the 12-hour goal G1, before any loop-2 change.
-That fall comes from the window moving, not from this loop.
+No loop-2 change existed in that window, so the fall is consistent with the window moving; this loop did not isolate its cause.
 
 The 25 aged rows class as 13 conflict, 11 pending-checks and 1 draft.
-The 11 pending-checks rows are mergeable heads whose only blocker is that no check reports.
+The 11 pending-checks rows are heads that GitHub reads as mergeable and on which no check reported.
 All 13 conflicted rows are aged.
 
 ## Diagnosis
@@ -61,7 +61,7 @@ Six of the 13 conflict only on documentation or catalog paths.
 The conflicted heads are 17 to 72 commits behind the default branch.
 
 None of the 25 aged rows has a live task record or a contribution record in this home, and the home has no `config/pr-health-monitor`.
-So nothing reports a conflict when it appears, and no tool names which path to resync first.
+So no monitor in this home covers those rows, and before this loop no command named which path to resync first.
 
 ## Candidates
 
@@ -133,3 +133,4 @@ What can be measured when this pull request opens is a partial after window.
 At the `2026-11-28T12:29:50Z` snapshot it holds no merged row, so the after median is `none` with n=0.
 That partial figure is not an after result.
 This change adds a report and changes no landing path, so any median change in the after window is not attributable to it alone.
+The after window also includes this pull request and every other pull request that lands in it, whatever its cause, so a lower after median is not by itself a loop-2 result.
