@@ -123,8 +123,9 @@ if [ "${#CANDIDATES[@]}" -eq 0 ] && [ -e "$CONFIG/supervisor-failover-candidates
     CANDIDATES+=("$line")
   done < "$CONFIG/supervisor-failover-candidates"
 fi
-if [ "${#CANDIDATES[@]}" -eq 0 ]; then
-  # The shipped comparable models, in order (Claude accounts are step 1).
+if [ "${#CANDIDATES[@]}" -eq 0 ] && [ ! -e "$CONFIG/supervisor-failover-candidates" ]; then
+  # The shipped comparable models, in order (Claude accounts are step 1). An
+  # empty or comment-only candidates file declares none, so it keeps step 1 only.
   while IFS= read -r line; do
     case "$line" in claude|claude[:@]*) continue ;; esac
     CANDIDATES+=("$line")
@@ -172,6 +173,14 @@ CHOICE_HARNESS='' CHOICE_MODEL='' CHOICE_ACCOUNT='' CHOICE_REPORT_ACCOUNT='' CHO
 report() { # <harness> <model> <account> <result>
   printf 'candidate harness=%s model=%s account=%s %s\n' "$1" "$(fm_failover_token "$2")" "$(fm_failover_token "$3")" "$4"
 }
+# same_claude_root <entry> <entry>: true when both name one Claude config root,
+# so `ordinary` and $HOME/.claude are the same account.
+same_claude_root() {
+  local x=$1 y=$2
+  case "$x" in ''|ordinary) x="${HOME:-}/.claude" ;; esac
+  case "$y" in ''|ordinary) y="${HOME:-}/.claude" ;; esac
+  [ "${x%/}" = "${y%/}" ]
+}
 take() { # <harness> <model> <launch-account> <report-account> <via> <quota>
   CHOICE_HARNESS=$1 CHOICE_MODEL=$2 CHOICE_ACCOUNT=$3 CHOICE_REPORT_ACCOUNT=$4 CHOICE_VIA=$5 CHOICE_QUOTA=$6
 }
@@ -191,7 +200,7 @@ listed=''
 claude_bin=$(command -v claude 2>/dev/null) || claude_bin=''
 while IFS= read -r entry; do
   [ -n "$entry" ] && [ -z "$CHOICE_HARNESS" ] || continue
-  if { [ "$FROM_HARNESS" = claude ] || [ "$SCOPE" = secondmate ]; } && [ "$entry" = "$FROM_ACCOUNT" ]; then
+  if { [ "$FROM_HARNESS" = claude ] || [ "$SCOPE" = secondmate ]; } && same_claude_root "$entry" "$FROM_ACCOUNT"; then
     report claude default "$entry" 'skip=current_account'
     continue
   fi

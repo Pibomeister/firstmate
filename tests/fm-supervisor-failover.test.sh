@@ -337,6 +337,29 @@ assert_contains "$(cat "$LAB/delegate.argv")" "$(printf 'relaunch\n--harness\nag
 rm -rf "$LAB/config/secondmate-accounts" "$LAB/state/mate-c.meta"
 pass 'secondmate account step: another signed-in Claude account first, then the default comparable models, pin untouched'
 
+# An empty or comment-only candidates file declares no comparable models, so
+# only the Claude account step runs; the shipped models fill in only when the
+# file is absent. Every Claude account is out here, so nothing takes over.
+mv "$LAB/config/supervisor-failover-candidates" "$TMP_ROOT/candidates.saved"
+printf '# no comparable models: Claude accounts only\n' > "$LAB/config/supervisor-failover-candidates"
+failover tmux primary "$LAB/data/handoff.md"
+mv "$TMP_ROOT/candidates.saved" "$LAB/config/supervisor-failover-candidates"
+assert_contains "$OUT" "account=$TMP_ROOT/acctB verdict=exhausted" 'the account step still runs'
+assert_not_contains "$OUT" 'gemini-4-neon-high' 'an empty candidates file does not load the shipped models'
+assert_not_contains "$OUT" 'replaced scope=' 'no comparable model takes over'
+no_delegate 'empty candidates file'
+pass 'empty candidates file: only the Claude account step runs'
+
+# `ordinary` and $HOME/.claude are one account, so the current account is
+# skipped whichever spelling the list and the session use.
+cp "$LAB/config/claude-accounts" "$TMP_ROOT/claude-accounts.saved"
+printf 'ordinary\n%s\n' "$TMP_ROOT/acctB" > "$LAB/config/claude-accounts"
+CLAUDE_CONFIG_DIR="$HOME/.claude" failover tmux primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5
+cp "$TMP_ROOT/claude-accounts.saved" "$LAB/config/claude-accounts"
+assert_contains "$OUT" 'candidate harness=claude model=default account=ordinary skip=current_account' \
+  'the ordinary entry is the current HOME/.claude account'
+pass 'account identity: ordinary and HOME/.claude are the same current account'
+
 failover tmux primary "$LAB/data/handoff.md" --candidate codex:-x
 [ "$RC" = 2 ] || fail "a dash-led model id must be refused: $OUT"
 failover herdr primary "$LAB/data/handoff.md" --candidate codex:gpt-5.5

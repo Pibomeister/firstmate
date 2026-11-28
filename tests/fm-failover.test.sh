@@ -775,8 +775,8 @@ test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record() {
   local dir gen
   rm -f "$QUOTA"/*
   quota_fixture codex 80 60 > "$QUOTA/codex.json"
-  # A healthy idle mate is never read: a refusal-looking screen with no hook
-  # record does not move it.
+  # A refusal-looking row with no hook record and no usage-limit menu does
+  # not move a mate.
   dir=$(watch_case watch-mate-screen $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
   sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
   mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
@@ -795,7 +795,29 @@ test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record() {
   assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
     'a usage-limited idle mate moves on its first idle poll from its hook record'
   assert_equals 'fo relaunch --harness codex --provider-failover --note' "$(cat "$dir/control.calls")" 'one guarded relaunch'
-  pass 'watcher: an idle second mate refused by its provider moves from its hook record; a mate with no record is not read'
+  pass 'watcher: an idle second mate refused by its provider moves from its hook record; a refusal row alone does not move it'
+}
+
+test_watcher_moves_a_secondmate_on_a_bare_usage_limit_menu() {
+  local dir calls
+  rm -f "$QUOTA"/*
+  quota_fixture codex 80 60 > "$QUOTA/codex.json"
+  # Claude's usage-limit menu with no reset hint and no hook record: the
+  # classifier alone misses it, so the dialog itself is the refusal.
+  dir=$(watch_case watch-mate-menu $' You have hit your limit\n\n \xe2\x9d\xaf 1. Add funds\n   2. Wait for reset\n\n Enter to confirm \xc2\xb7 Esc to cancel')
+  sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+  mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+  [ ! -e "$dir/state/fo.provider-error" ] || fail 'the fixture must start with no hook record'
+  cp "$dir/pane.txt" "$dir/pane.menu"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  assert_contains "$(cat "$dir/watch.out")" 'check: fo moved to the next runtime after a usage_limit refusal' \
+    'an idle mate on the bare usage-limit menu moves with no hook record'
+  assert_equals 'fo relaunch --harness codex --provider-failover --note' "$(cat "$dir/control.calls")" 'one guarded relaunch, no keys typed'
+  calls=$(cat "$dir/control.calls")
+  cp "$dir/pane.menu" "$dir/pane.txt"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  assert_equals "$calls" "$(cat "$dir/control.calls")" 'the same menu screen is judged once'
+  pass 'watcher: an idle second mate on the bare usage-limit menu moves once, with no hook record'
 }
 
 test_watcher_moves_an_idle_refused_captain_in_one_poll() {
@@ -1110,6 +1132,7 @@ fm_test_run \
   test_preflight_night_plan \
   test_watcher_moves_an_idle_refused_ship_in_one_poll \
   test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record \
+  test_watcher_moves_a_secondmate_on_a_bare_usage_limit_menu \
   test_watcher_moves_an_idle_refused_captain_in_one_poll \
   test_watch_bounds_stay_inside_the_stale_grace \
   test_worker_account_identity_is_its_config_root \

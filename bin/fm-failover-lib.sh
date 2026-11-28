@@ -7,8 +7,9 @@
 # Order (config/failover-order; docs/configuration.md "Provider failover" owns
 # the operator contract): one entry per line, `#` lines and blank lines
 # ignored. An entry is `<harness>[:<model>][@<account>] [host=<ssh-host>]`:
-#   <account>  `next` (every other declared config/claude-accounts entry, in
-#              file order), `ordinary`, or one absolute declared path; Claude
+#   <account>  `next` (every other declared config/claude-accounts entry,
+#              starting after the current account and wrapping to the top of
+#              the file), `ordinary`, or one absolute declared path; Claude
 #              only, and an account path holds no whitespace.
 #   host=      the entry names a configured remote route.
 # Without the file the order is FM_FAILOVER_DEFAULT_ORDER: another declared

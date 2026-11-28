@@ -2394,8 +2394,10 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # attempt bound, the per-task lock, and the dispatch-log record. A captain-held
 # or remote task is left to the ordinary stale path. Returns 0 when it ran and
 # queued a check wake, 1 when the window is out of scope or nothing ran.
-provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
-  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason kept='its local copy, branch, and gates were kept'
+# [<dialog-class>] is the class a caller already read from a usage-limit menu
+# on <screen>; it stands in for the hook record and the screen classifier.
+provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash> [<dialog-class>]
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 dialog_class=${6-} seen judged class src out rc=0 line key now reason kept='its local copy, branch, and gates were kept'
   case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
   [ "$kind" != secondmate ] || kept='its home and records were kept'
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
@@ -2403,6 +2405,9 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
   [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
   if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
     src=record
+  elif [ -n "$dialog_class" ]; then
+    class=$dialog_class
+    src=dialog
   else
     judged="$STATE/$task.failover-judged"
     [ "$(cat "$judged" 2>/dev/null || true)" != "$h" ] || return 1
@@ -6201,12 +6206,19 @@ EOF
     # this guard: reaching it would require backlog reads for windows this gate
     # deliberately skips, putting that read on the ordinary poll hot path.
     if [ "$kind" = secondmate ] && ! status_is_paused_or_captain_held "$last"; then
-      # A Claude mate's StopFailure hook records a provider refusal, and only
-      # then is its pane read, so a healthy idle mate costs no capture here.
-      if [ -n "$task" ] && fm_failover_record_class "$STATE" "$task" >/dev/null 2>&1 \
+      # A Claude mate's StopFailure hook records a provider refusal. Without
+      # that record, an idle mate whose pane shows the usage-limit menu is the
+      # same refusal: the menu can appear with no hook record, and the mate
+      # would otherwise sit on it. provider_failover_check runs once per pane
+      # hash, closes the endpoint by relaunch, and never types into the menu.
+      if [ -n "$task" ] \
         && watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" \
         && ! window_is_busy "$w" "$WATCHER_CAPTURE"; then
-        provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" || true
+        if fm_failover_record_class "$STATE" "$task" >/dev/null 2>&1; then
+          provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" || true
+        elif [ "$(fm_wd_observe_dialog "$WATCHER_CAPTURE" 2>/dev/null)" = usage-limit ]; then
+          provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" usage_limit || true
+        fi
       fi
       continue
     fi

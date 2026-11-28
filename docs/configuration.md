@@ -593,6 +593,7 @@ It never signs in, spends, or edits an account pin, and it reports the replaceme
 Its `--help` owns the candidate order, refusals, and output, and [`tests/fm-supervisor-failover.test.sh`](../tests/fm-supervisor-failover.test.sh) covers them.
 
 The comparable models come from `--candidate`, from `config/supervisor-failover-candidates`, which is local to each home and not inherited, or else from the non-Claude entries of the shipped default [provider failover order](#provider-failover-configfailover-order); a custom `config/failover-order` never supplies supervisor candidates.
+The shipped models apply only when that file is absent: an empty or comment-only file declares no comparable models, so only the Claude account step runs.
 Each line is one `<harness>:<model>`, such as `codex:gpt-5.5`, in preference order; blank lines and lines that start with `#` are ignored.
 List only models of the supervisor's own reasoning class, because the script never invents a candidate or judges model strength.
 A provider refusal (429, rate, usage, or billing limit) instead moves the agent automatically under [provider failover](#provider-failover-configfailover-order).
@@ -605,7 +606,7 @@ When a provider refuses a worker or the captain with an HTTP 429, a rate or usag
 A ship, scout, or second mate is detected two ways.
 A Claude worker's or second mate's StopFailure hook, which `bin/fm-spawn.sh` installs, records the refusal for that turn end.
 For a ship or scout on any runtime, the watcher also reads a refusal row the idle screen shows, except after a Claude turn end its hook already recorded as something else, and judges each screen once.
-A healthy idle second mate is not read; the watcher reads its screen only after its hook records a refusal.
+For an idle second mate, the watcher acts when its hook records a refusal, or when its screen shows the usage-limit menu (`fm_wd_observe_dialog` names it `usage-limit`) with no hook record, judging each screen once and never typing into the menu.
 On the first idle poll with either verdict, the watcher relaunches the worker in its same local copy, branch, and validation gates, or a second mate in its same home, on the first eligible runtime in cyclic order after its current one, through `bin/fm-control.sh <id> relaunch`, with a note that carries the task's newest status events.
 A runtime that `bin/fm-control.sh` would refuse before it stops anything is skipped without spending an attempt: one not verified for that kind of agent, or any move off Claude that the `claude-tooling` check of `bin/fm-quota-reroute.sh` refuses.
 A second mate follows the same order and also skips any runtime that is not a verified supervisor runtime, so Muse and Kimi are skipped for it.
