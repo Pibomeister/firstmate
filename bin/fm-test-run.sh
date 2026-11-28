@@ -467,7 +467,7 @@ family_for_basename_var() {
       ;;
     fm-check-unregister.test.sh|fm-pipeline-spend.test.sh|fm-pr-check-security.test.sh|\
     fm-pr-health.test.sh|fm-pr-merge.test.sh|fm-pr-reviewers.test.sh|fm-pr-state.test.sh|\
-    fm-rsi-instrument.test.sh|fm-rsi-measure.test.sh|\
+    fm-rsi-conflicts.test.sh|fm-rsi-instrument.test.sh|fm-rsi-measure.test.sh|\
     fm-merge-review.test.sh|fm-review-diff.test.sh|fm-self-land.test.sh|fm-teardown.test.sh|\
     fm-x-mode.test.sh)
       REPLY_FAMILY=pr-forge
@@ -975,6 +975,7 @@ tests/fm-pr-resync.test.sh 24602
 tests/fm-pr-reviewers.test.sh 252
 tests/fm-pr-state-live-e2e.test.sh 82
 tests/fm-pr-state.test.sh 934
+tests/fm-rsi-conflicts.test.sh 4223
 tests/fm-rsi-instrument.test.sh 27571
 tests/fm-rsi-measure.test.sh 1693
 tests/fm-procevent-extension-errors.test.sh 102406
