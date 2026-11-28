@@ -2381,11 +2381,12 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
   return 0
 }
 # Provider failover of an idle ship, scout, or second mate whose last turn ended
-# on a provider refusal (HTTP 429, rate, usage, or billing limit). A second
-# mate's idle pane is read only once its hook has recorded a refusal. The verdict comes from the
-# task's provider-error record, which its Claude StopFailure hook writes and
-# which counts only for the agent's current turn end, or else from the refusal
-# row the idle screen shows (fm_wd_provider_error_screen). A screen is judged
+# on a provider refusal (HTTP 429, rate, usage, or billing limit). The verdict
+# comes from the task's provider-error record, which its Claude StopFailure hook
+# writes and which counts only for the agent's current turn end. Without that
+# record, a second mate moves only when its idle screen shows the usage-limit
+# menu (fm_wd_observe_dialog), and a ship or scout moves on the refusal row the
+# idle screen shows (fm_wd_provider_error_screen). A screen is judged
 # once (state/<task>.failover-judged), and a Claude task whose hook recorded an
 # ordinary turn end is not judged by its screen at all. It runs
 # bin/fm-failover.sh worker once per distinct idle screen, remembered in
@@ -2394,10 +2395,8 @@ Re-read your instructions, check \`git status\` and \`git log\`, check \`no-mist
 # attempt bound, the per-task lock, and the dispatch-log record. A captain-held
 # or remote task is left to the ordinary stale path. Returns 0 when it ran and
 # queued a check wake, 1 when the window is out of scope or nothing ran.
-# [<dialog-class>] is the class a caller already read from a usage-limit menu
-# on <screen>; it stands in for the hook record and the screen classifier.
-provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash> [<dialog-class>]
-  local w=$1 task=$2 kind=$3 screen=$4 h=$5 dialog_class=${6-} seen judged class src out rc=0 line key now reason kept='its local copy, branch, and gates were kept'
+provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash>
+  local w=$1 task=$2 kind=$3 screen=$4 h=$5 seen judged class src out rc=0 line key now reason kept='its local copy, branch, and gates were kept'
   case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
   [ "$kind" != secondmate ] || kept='its home and records were kept'
   case "$task" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
@@ -2405,8 +2404,9 @@ provider_failover_check() {  # <window> <task> <kind> <screen> <pane-hash> [<dia
   [ "$(cat "$seen" 2>/dev/null || true)" != "$h" ] || return 1
   if class=$(fm_failover_record_class "$STATE" "$task" 2>/dev/null); then
     src=record
-  elif [ -n "$dialog_class" ]; then
-    class=$dialog_class
+  elif [ "$kind" = secondmate ]; then
+    [ "$(fm_wd_observe_dialog "$screen" 2>/dev/null)" = usage-limit ] || return 1
+    class=usage_limit
     src=dialog
   else
     judged="$STATE/$task.failover-judged"
@@ -6214,11 +6214,7 @@ EOF
       if [ -n "$task" ] \
         && watcher_capture "$(window_backend "$w")" "$w" 40 "$(window_label "$w")" \
         && ! window_is_busy "$w" "$WATCHER_CAPTURE"; then
-        if fm_failover_record_class "$STATE" "$task" >/dev/null 2>&1; then
-          provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" || true
-        elif [ "$(fm_wd_observe_dialog "$WATCHER_CAPTURE" 2>/dev/null)" = usage-limit ]; then
-          provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" usage_limit || true
-        fi
+        provider_failover_check "$w" "$task" "$kind" "$WATCHER_CAPTURE" "$(printf '%s' "$WATCHER_CAPTURE" | hash_pane)" || true
       fi
       continue
     fi

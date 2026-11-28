@@ -783,6 +783,17 @@ test_watcher_moves_an_idle_refused_secondmate_from_its_hook_record() {
   watch_once "$dir" FM_WATCH_ONCE=1
   [ ! -e "$dir/control.calls" ] || fail "a mate without a hook record was relaunched: $(cat "$dir/control.calls")"
 
+  # A paused mate reaches the ordinary pane-stale path; a refusal row there
+  # still does not move it without a hook record.
+  dir=$(watch_case watch-mate-paused-screen $'⏺ API Error: Request rejected (429)\n\n❯ \n  ⏵⏵ auto mode on')
+  sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
+  mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
+  printf 'paused: waiting on the upstream release\n' >> "$dir/state/fo.status"
+  printf '%s' "$(seen_sig "$dir/state/fo.status")" > "$dir/state/.seen-fo_status"
+  watch_once "$dir" FM_WATCH_ONCE=1
+  [ ! -e "$dir/control.calls" ] || fail "a paused mate without a hook record was relaunched from a refusal row: $(cat "$dir/control.calls")"
+  assert_not_contains "$(cat "$dir/watch.out")" 'moved to the next runtime' 'a paused mate is not moved on a refusal row alone'
+
   dir=$(watch_case watch-mate-record $'All done for now.\n\n❯ \n  ⏵⏵ auto mode on')
   sed 's/^kind=ship$/kind=secondmate/' "$dir/state/fo.meta" > "$dir/state/fo.meta.next"
   mv "$dir/state/fo.meta.next" "$dir/state/fo.meta"
