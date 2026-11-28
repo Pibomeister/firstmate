@@ -104,8 +104,8 @@
 #                                   selects tmux, $HERDR_ENV=1 selects herdr,
 #                                   TERM_PROGRAM=rex selects rex, then T3
 #                                   discovery behind its explicit-selection gate,
-#                                   then TERM_PROGRAM=Orca selects orca - falling
-#                                   back to tmux).
+#                                   then an Orca terminal (fm_supervisor_in_orca)
+#                                   selects orca - falling back to tmux).
 #                                   zellij, cmux, paseo, and tern are not yet
 #                                   supported as supervisor backends; the daemon
 #                                   refuses loudly at startup rather than trying
@@ -2114,7 +2114,7 @@ fm_super_main() {
   # --- auto-discover the supervisor BACKEND (tmux, herdr, rex, t3code, or orca)
   # Priority: FM_SUPERVISOR_BACKEND override > $TMUX_PANE (tmux) > $HERDR_ENV=1
   # (herdr) > TERM_PROGRAM=rex (rex) > a live T3 thread in this home (t3code) >
-  # TERM_PROGRAM=Orca (orca) > refusal on an Orca home > tmux fallback. Resolved before the target below, since target discovery
+  # an Orca terminal per fm_supervisor_in_orca (orca) > refusal on an Orca home > tmux fallback. Resolved before the target below, since target discovery
   # composes a herdr "<session>:<pane-id>" string using the same
   # $HERDR_PANE_ID/$HERDR_SESSION markers this checks. Exporting the result
   # into FM_SUPERVISOR_BACKEND makes inject_msg/pane_is_busy/pane_input_pending

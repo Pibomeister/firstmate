@@ -228,6 +228,19 @@ ok - exhausted veto: with every pool exhausted nothing launches
 ok - secondmate: relaunched onto codex through fm-control in its own home
 ```
 
+### Codex tool shell endpoint on Orca
+
+Verified on 2026-11-28 UTC on macOS arm64 with Orca 1.4.277, codex-cli 0.172.0, and Bash 3.2.57, under a Codex config with `[shell_environment_policy] inherit = "core"`.
+A real Codex launched by `orca agent launch --agent codex --surface terminal` ran its tool shell with `ORCA_TERMINAL_HANDLE`, `ORCA_PANE_KEY`, `ORCA_WORKSPACE_ID`, `ORCA_WORKTREE_ID`, and `ORCA_USER_DATA_PATH` set and `TERM_PROGRAM` unset.
+Its `ORCA_TERMINAL_HANDLE` equaled the handle the launch returned.
+From that shell, a successor acknowledgement against a disposable home recorded `event=handoff_ack` with the Codex process pid, that handle, and `reason=lock_transferred`, and the lock moved to that pid.
+From the same kind of shell, a wrong hash refused with `hash_mismatch`, a wrong nonce with `stale_nonce`, and the handle without `ORCA_PANE_KEY` with `no_terminal`, and each predecessor kept the lock.
+No live guard repeats this check; the portable regressions below pin the same environment shape with real processes.
+
+```sh
+bash bin/fm-test-run.sh tests/fm-successor-endpoint.test.sh tests/fm-handoff-launch-runtime.test.sh
+```
+
 ### Provider failover refusal signals
 
 Verified on 2026-11-20 UTC on macOS arm64 with Claude Code 2.1.329, Bash 3.2.57, and tmux 3.6a.

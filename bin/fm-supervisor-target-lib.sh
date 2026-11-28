@@ -31,8 +31,18 @@ fm_supervisor_in_rex() {
 # handle bin/backends/orca.sh records as a task target, into every terminal's
 # process tree. A Zellij session started in that terminal keeps both markers
 # while owning its screen, so its ZELLIJ marker disqualifies the rule.
+# A Codex tool shell under shell_environment_policy inherit="core" has no
+# TERM_PROGRAM at all, while Orca's own Codex launch forwards its ORCA_*
+# markers into it, so an absent TERM_PROGRAM is accepted only with both
+# ORCA_TERMINAL_HANDLE and ORCA_PANE_KEY. A TERM_PROGRAM naming any other
+# program means a nested terminal and still disqualifies the rule.
 fm_supervisor_in_orca() {
-  [ "${TERM_PROGRAM:-}" = Orca ] && [ -n "${ORCA_TERMINAL_HANDLE:-}" ] && [ -z "${ZELLIJ:-}" ]
+  [ -n "${ORCA_TERMINAL_HANDLE:-}" ] && [ -z "${ZELLIJ:-}" ] || return 1
+  case "${TERM_PROGRAM:-}" in
+    Orca) return 0 ;;
+    '') [ -n "${ORCA_PANE_KEY:-}" ] ;;
+    *) return 1 ;;
+  esac
 }
 
 # fm_supervisor_orca_refusal: on an Orca home where no earlier rule and no Orca
@@ -82,8 +92,9 @@ fm_supervisor_orca_refusal() {
 #      - T3 puts nothing into the agent's environment, so this is a cwd match
 #      over T3's live threads, consulted only when t3code is explicitly
 #      selected and a T3 credential is configured.
-#   4d. TERM_PROGRAM=Orca + $ORCA_TERMINAL_HANDLE (fm_supervisor_in_orca) - the
-#      captain's Orca terminal handle.
+#   4d. $ORCA_TERMINAL_HANDLE with TERM_PROGRAM=Orca, or with no TERM_PROGRAM
+#      and $ORCA_PANE_KEY (fm_supervisor_in_orca) - the captain's Orca
+#      terminal handle.
 #   5. On an Orca home (fm_supervisor_orca_refusal) - print nothing and return 3;
 #      the caller refuses with that function's reason.
 #   6. FM_SUPERVISOR_TARGET_DEFAULT - legacy tmux fallback (may not resolve if the
@@ -152,7 +163,7 @@ discover_supervisor_t3code_thread() {
 #      supported-backend check instead of steering tmux's firstmate:0.
 #   4c. A live T3 thread in this home - t3code (stderr quiet here; the target
 #      resolver reports an ambiguity once).
-#   4d. TERM_PROGRAM=Orca (with $ORCA_TERMINAL_HANDLE present) - orca.
+#   4d. An Orca terminal (fm_supervisor_in_orca) - orca.
 #   5. An Orca home - print nothing and return 3, matching the target resolver.
 #   6. FM_SUPERVISOR_BACKEND_DEFAULT (tmux) - matches the target fallback. Returns 1.
 discover_supervisor_backend() {

@@ -91,7 +91,7 @@ unset REX_SESSION REX_BLOCK
 # terminal, away-mode supervisor discovery (bin/fm-supervisor-target-lib.sh)
 # would otherwise resolve the operator's live terminal. A case that verifies
 # that discovery sets it itself.
-unset ORCA_TERMINAL_HANDLE
+unset ORCA_TERMINAL_HANDLE ORCA_PANE_KEY
 
 # Write the tracked default backlog configuration into a fixture home. Never copy
 # "$ROOT/.tasks.toml": an operator's primary checkout keeps a gitignored override

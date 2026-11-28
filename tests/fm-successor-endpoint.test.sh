@@ -15,7 +15,7 @@ mkdir -p "$FAKEBIN"
 ln -s /bin/bash "$FAKEBIN/claude"
 : > "$PIDS"
 export PATH="$FAKEBIN:$PATH"
-unset ORCA_TERMINAL_HANDLE TMUX TMUX_PANE ZELLIJ HERDR_ENV HERDR_PANE_ID HERDR_SESSION
+unset ORCA_TERMINAL_HANDLE ORCA_PANE_KEY TMUX TMUX_PANE ZELLIJ HERDR_ENV HERDR_PANE_ID HERDR_SESSION
 unset FM_SUPERVISOR_TARGET FM_SUPERVISOR_BACKEND FM_SESSION_ENDPOINT_META FM_BACKEND
 unset CLAUDE_PID CLAUDE_CODE_SESSION_ID TERM_PROGRAM
 
@@ -175,8 +175,8 @@ test_illegal_live_target_fails_publication() {
   pass "a present but illegal endpoint fails publication"
 }
 
-write_claim() { # <home> <nonce>
-  local home=$1 nonce=$2 doc sha deadline
+write_claim() { # <home> <nonce> [<predecessor-start>]
+  local home=$1 nonce=$2 start=${3:-} doc sha deadline
   doc=$home/handoff.md
   printf 'handoff\n' > "$doc"
   if command -v sha256sum >/dev/null 2>&1; then
@@ -186,7 +186,7 @@ write_claim() { # <home> <nonce>
   fi
   deadline=$(( $(date +%s) + 600 ))
   jq -n --arg nonce "$nonce" --arg sha "$sha" --arg doc "$doc" \
-    --arg start "$(cat "$home/holder.start")" \
+    --arg start "${start:-$(cat "$home/holder.start")}" \
     --argjson pid "$(cat "$home/holder.pid")" --argjson deadline "$deadline" \
     '{version:1,nonce:$nonce,handoff:$doc,sha256:$sha,predecessor_pid:$pid,predecessor_start:$start,deadline:$deadline}' \
     > "$home/state/.handoff-pending"
@@ -241,6 +241,112 @@ test_ack_without_an_endpoint_refuses() {
   pass "an acknowledgement with no endpoint does not take the lock"
 }
 
+# run_ack <home> <nonce> <sha> [env assignments...]: the successor acks from a
+# fresh claude stand-in whose environment holds only the given endpoint markers.
+run_ack() {
+  local home=$1 nonce=$2 sha=$3
+  shift 3
+  rm -f "$home/ack.ready" "$home/ack.rc"
+  env -u ORCA_TERMINAL_HANDLE -u ORCA_PANE_KEY -u TMUX -u TMUX_PANE -u ZELLIJ \
+    -u HERDR_ENV -u HERDR_PANE_ID -u HERDR_SESSION \
+    -u FM_SUPERVISOR_TARGET -u FM_SUPERVISOR_BACKEND -u FM_SESSION_ENDPOINT_META \
+    -u TERM_PROGRAM \
+    FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" \
+    ROOT="$ROOT" FM_LOCK_SESSION=succ-session FM_ACK_NONCE="$nonce" FM_ACK_SHA="$sha" \
+    "$@" claude "$TMP_ROOT/ack.sh" &
+  echo $! >> "$PIDS"
+  wait_ready "$home/ack.ready" "ack in $home"
+}
+
+# The shape of a Codex tool shell that Orca launched under the operator's
+# shell_environment_policy inherit="core": Orca forwards its ORCA_* markers,
+# and TERM_PROGRAM is absent.
+CODEX_ORCA_SHELL=(ORCA_TERMINAL_HANDLE=term_succ ORCA_PANE_KEY=tab_succ:leaf_succ)
+
+test_codex_orca_tool_shell_ack_takes_over() {
+  local home nonce sha ack
+  home=$(new_home ack-codex-orca)
+  nonce=ef0123456789abcd
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "codex-orca predecessor"
+  sha=$(write_claim "$home" "$nonce")
+  run_ack "$home" "$nonce" "$sha" "${CODEX_ORCA_SHELL[@]}"
+  assert_equals 0 "$(cat "$home/ack.rc")" "a Codex tool shell in its Orca terminal must acknowledge: $(cat "$home/ack.out")"
+  assert_equals "$(cat "$home/succ.pid")" "$(cat "$home/state/.lock")" "the successor takes the lock"
+  assert_equals term_succ "$(sidecar_terminal "$home")" "the committed sidecar names the successor's own Orca terminal"
+  assert_contains "$(cat "$home/state/.lock-session")" "backend=orca" "the successor endpoint is recorded on Orca"
+  ack=$home/data/handoff-ack-$nonce.json
+  assert_equals term_succ "$(jq -r .terminal_handle "$ack")" "the ack names the successor's actual terminal"
+  assert_contains "$(cat "$home/state/handoff-events.log")" \
+    "event=handoff_ack nonce=$nonce attempt=0 pid=$(cat "$home/succ.pid") handle=term_succ reason=lock_transferred" \
+    "the takeover is recorded with the real successor pid and terminal"
+  kill -0 "$(cat "$home/holder.pid")" || fail "the ack must not stop the predecessor"
+  pass "a Codex tool shell without TERM_PROGRAM acknowledges from its Orca terminal and takes the lock"
+}
+
+# assert_ack_refused <home> <reason> <label>: the refusal names its reason and
+# the real successor pid, and the predecessor keeps the lock and endpoint.
+assert_ack_refused() {
+  local home=$1 reason=$2 label=$3 events
+  assert_equals 1 "$(cat "$home/ack.rc")" "$label must refuse: $(cat "$home/ack.out")"
+  events=$(cat "$home/state/handoff-events.log")
+  assert_contains "$events" "event=handoff_reject" "$label records a rejection"
+  assert_contains "$events" "reason=$reason" "$label names $reason: $events"
+  assert_equals "$(cat "$home/holder.pid")" "$(cat "$home/state/.lock")" "$label leaves the lock with the predecessor"
+  assert_equals term_pred "$(sidecar_terminal "$home")" "$label keeps the predecessor endpoint"
+}
+
+test_codex_orca_tool_shell_refusals() {
+  local home nonce sha events
+  nonce=fa0123456789abcd
+
+  home=$(new_home refuse-lone-handle)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "lone-handle predecessor"
+  sha=$(write_claim "$home" "$nonce")
+  run_ack "$home" "$nonce" "$sha" ORCA_TERMINAL_HANDLE=term_succ
+  assert_ack_refused "$home" no_terminal "a lone terminal handle with no TERM_PROGRAM"
+  events=$(cat "$home/state/handoff-events.log")
+  assert_contains "$events" "pid=$(cat "$home/succ.pid") handle=none reason=no_terminal" \
+    "the no_terminal refusal names the real successor pid instead of 0: $events"
+
+  home=$(new_home refuse-nested)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "nested predecessor"
+  sha=$(write_claim "$home" "$nonce")
+  run_ack "$home" "$nonce" "$sha" "${CODEX_ORCA_SHELL[@]}" TERM_PROGRAM=tmux
+  assert_ack_refused "$home" no_terminal "Orca markers under a nested terminal program"
+
+  home=$(new_home refuse-zellij)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "zellij predecessor"
+  sha=$(write_claim "$home" "$nonce")
+  run_ack "$home" "$nonce" "$sha" "${CODEX_ORCA_SHELL[@]}" ZELLIJ=0
+  assert_ack_refused "$home" no_terminal "Orca markers inside Zellij"
+
+  home=$(new_home refuse-hash)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "hash predecessor"
+  write_claim "$home" "$nonce" >/dev/null
+  run_ack "$home" "$nonce" 0000000000000000000000000000000000000000000000000000000000000000 "${CODEX_ORCA_SHELL[@]}"
+  assert_ack_refused "$home" hash_mismatch "a wrong document hash"
+
+  home=$(new_home refuse-nonce)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "nonce predecessor"
+  sha=$(write_claim "$home" "$nonce")
+  run_ack "$home" fb0123456789abcd "$sha" "${CODEX_ORCA_SHELL[@]}"
+  assert_ack_refused "$home" stale_nonce "a stale nonce"
+
+  home=$(new_home refuse-reused)
+  start_holder "$home" pred-session TERM_PROGRAM=Orca ORCA_TERMINAL_HANDLE=term_pred
+  wait_ready "$home/ready" "reused predecessor"
+  sha=$(write_claim "$home" "$nonce" "not-the-recorded-start")
+  run_ack "$home" "$nonce" "$sha" "${CODEX_ORCA_SHELL[@]}"
+  assert_ack_refused "$home" lock_refused "a predecessor pid whose process start does not match the claim"
+  pass "Orca tool-shell markers still refuse a lone handle, a nested terminal, Zellij, a wrong hash, a stale nonce, and a reused predecessor pid"
+}
+
 fm_test_run \
   test_herdr_session_records_its_pane \
   test_undiscoverable_session_records_unknown \
@@ -249,4 +355,6 @@ fm_test_run \
   test_explicit_metadata_outranks_a_live_herdr_pane \
   test_illegal_live_target_fails_publication \
   test_herdr_ack_records_the_successor_pane \
-  test_ack_without_an_endpoint_refuses
+  test_ack_without_an_endpoint_refuses \
+  test_codex_orca_tool_shell_ack_takes_over \
+  test_codex_orca_tool_shell_refusals
