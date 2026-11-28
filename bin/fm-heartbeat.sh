@@ -121,6 +121,9 @@
 #
 # FM_HEARTBEAT_SNAPSHOT_SCRIPT may name a replacement snapshot producer; tests
 # use it to simulate slow reads without touching the real fleet snapshot.
+# Independent --write triggers coalesce at a per-home nonblocking entry lock;
+# only its holder collects, sweeps scratch, and publishes. Later triggers retry
+# normally, including after a writer dies.
 #
 # bin/fm-watch.sh runs --write detached and single-flight from an independent
 # ticker on a relevant change and otherwise once per idle interval (its header
@@ -846,12 +849,27 @@ if [ ! -d "$STATE" ]; then
   echo "fm-heartbeat: no state directory at $STATE; nothing published" >&2
   exit 0
 fi
-find "$STATE" -maxdepth 1 -type d -name '.heartbeat-work.*' -mmin +10 -exec rm -rf {} + 2>/dev/null || true
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
+HEARTBEAT_LOCK="$STATE/.heartbeat-refresh.lock"
+fm_lock_try_acquire "$HEARTBEAT_LOCK" || exit 0
+trap 'fm_lock_release "$HEARTBEAT_LOCK"' EXIT
+# Only abandoned publisher directories need stat calls. Walking every historical
+# task/marker here multiplies metadata I/O on large homes for no useful evidence.
+fm_epoch_seconds_to heartbeat_cleanup_now
+for heartbeat_old_work in "$STATE"/.heartbeat-work.*; do
+  [ -d "$heartbeat_old_work" ] && [ ! -L "$heartbeat_old_work" ] || continue
+  heartbeat_old_mtime=$(fm_path_mtime "$heartbeat_old_work") || continue
+  # shellcheck disable=SC2154 # fm_epoch_seconds_to assigns its named output.
+  if [ $(((heartbeat_cleanup_now - heartbeat_old_mtime) / 60)) -gt 10 ]; then
+    rm -rf -- "$heartbeat_old_work" 2>/dev/null || true
+  fi
+done
 HEARTBEAT_WORK=$(mktemp -d "$STATE/.heartbeat-work.XXXXXX" 2>/dev/null) || {
   echo "fm-heartbeat: cannot create a work directory in $STATE; nothing published" >&2
   exit 0
 }
-trap 'rm -rf "$HEARTBEAT_WORK"' EXIT
+trap 'rm -rf "$HEARTBEAT_WORK"; fm_lock_release "$HEARTBEAT_LOCK"' EXIT
 : > "$HEARTBEAT_WORK/failures"
 : > "$HEARTBEAT_WORK/rows"
 

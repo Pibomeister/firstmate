@@ -54,7 +54,6 @@ INBOX=$(fm_secondmate_home_inbox "$ROOT") || exit 1
 [ -z "${FM_TASK_INBOX:-}" ] || [ "$FM_TASK_INBOX" = "$INBOX" ] || exit 1
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$GUARD_DIR/fm-session-lock-lib.sh"
-fm_session_lock_owned_by_self "$ROOT/state" || exit 1
 
 GRACE=${FM_SECONDMATE_INBOX_GUARD_GRACE:-60}
 WINDOW=${FM_SECONDMATE_INBOX_GUARD_REDENY:-60}
@@ -64,7 +63,6 @@ STATE_FILE="$ROOT/state/.inbox-guard"
 
 WAITING=$(fm_task_inbox_records_in "$INBOX")
 if [ -z "$WAITING" ]; then
-  rm -f "$STATE_FILE" 2>/dev/null
   exit 1
 fi
 # Deny counts of the records still waiting, and the newest deny of any.
@@ -74,11 +72,17 @@ DENIES=$(awk -F '\t' 'NR == FNR { waiting[$0] = 1; next }
 $WAITING
 EOF
 )
+# Only still-waiting records contribute to the existing re-deny window.
+# Avoid ancestry and candidate reads while the tools handling them are allowed.
+NOW=$(date +%s)
+LAST=$(printf '%s\n' "$DENIES" | awk -F '\t' '$3 > m { m = $3 } END { print m + 0 }')
+[ $((NOW - LAST)) -ge "$WINDOW" ] || exit 1
 # Escalated and deny-spent records drop out in one pass, so only the remaining
 # candidates are read one by one, up to the first that is not fire-and-forget.
-CANDIDATES=$({ printf '%s\n--\n' "$DENIES"; fm_task_inbox_unescalated_in "$INBOX"; } | awk -F '\t' '
+CANDIDATES=$({ printf '%s\n--\n%s\n' "$DENIES" "$WAITING"; } | awk -F '\t' -v escalated="$INBOX/.escalated" '
+  BEGIN { while ((getline name < escalated) > 0) esc[name] = 1 }
   !listed { if ($0 == "--") listed = 1; else denied[$1] = $2; next }
-  denied[$0] + 0 < 3 { print $0 "\t" denied[$0] + 0 }')
+  !($0 in esc) && denied[$0] + 0 < 3 { print $0 "\t" denied[$0] + 0 }')
 TARGET=
 COUNT=0
 while IFS=$(printf '\t') read -r NAME COUNT; do
@@ -95,8 +99,7 @@ EOF
 MTIME=$(fm_path_mtime "$INBOX/$TARGET") || exit 1
 NOW=$(date +%s)
 [ $((NOW - MTIME)) -ge "$GRACE" ] || exit 1
-LAST=$(printf '%s\n' "$DENIES" | awk -F '\t' '$3 > m { m = $3 } END { print m + 0 }')
-[ $((NOW - LAST)) -ge "$WINDOW" ] || exit 1
+fm_session_lock_owned_by_self "$ROOT/state" || exit 1
 {
   printf '%s\n' "$DENIES" | awk -F '\t' -v n="$TARGET" 'NF == 3 && $1 != n'
   printf '%s\t%s\t%s\n' "$TARGET" "$((COUNT + 1))" "$NOW"

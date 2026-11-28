@@ -5302,13 +5302,17 @@ fi
 # A status signal launches the helper at once. Without one, it launches only
 # when both the ledger and this watcher's last launch are older than the idle
 # gap drawn at that launch, so a stale ledger cannot cause launches on every
-# poll. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
+# poll. A launch due while one is still running is held as a single pending
+# follow-up that starts once the running one exits, so signals coalesce rather
+# than stacking. fm-home-summary-refresh.sh's header owns whether an attempt is skipped.
 HOME_SUMMARY_PID=
+HOME_SUMMARY_PENDING=0
 HOME_SUMMARY_LAST=0
 HOME_SUMMARY_GAP=$HOME_SUMMARY_INTERVAL
 home_summary_refresh_detached() {
   if [ -n "$HOME_SUMMARY_PID" ]; then
     if kill -0 "$HOME_SUMMARY_PID" 2>/dev/null; then
+      HOME_SUMMARY_PENDING=1
       return 0
     fi
     wait "$HOME_SUMMARY_PID" || true
@@ -5317,6 +5321,7 @@ home_summary_refresh_detached() {
   FM_HOME_SUMMARY_IF_IDLE=1 \
     "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort </dev/null >/dev/null 2>&1 &
   HOME_SUMMARY_PID=$!
+  HOME_SUMMARY_PENDING=0
   if [ "$HOME_SUMMARY_LAST" -eq 0 ] && [ "${FM_TEST_SEAM:-0}" = 1 ] && [ -n "${FM_WATCH_RANDOM_SEED:-}" ]; then
     RANDOM=$FM_WATCH_RANDOM_SEED
   fi
@@ -5325,6 +5330,10 @@ home_summary_refresh_detached() {
 }
 home_summary_idle_due() {
   local now
+  if [ "$HOME_SUMMARY_PENDING" -eq 1 ]; then
+    [ -z "$HOME_SUMMARY_PID" ] || ! kill -0 "$HOME_SUMMARY_PID" 2>/dev/null
+    return
+  fi
   fm_watch_now now
   [ $((now - HOME_SUMMARY_LAST)) -ge "$HOME_SUMMARY_GAP" ] \
     && [ "$(age_of "$STATE/home-summary.json")" -ge "$HOME_SUMMARY_GAP" ]
