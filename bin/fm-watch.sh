@@ -473,12 +473,13 @@ watch_lock_age() {  # <path>; retain fm_path_age's future-mtime semantics
   fm_watch_now now
   echo $(( now - m ))
 }
-# The liveness beacon is touched at the start of each cycle, when a
-# pane-staleness record begins after the previous record has returned, and
-# when that scan returns. A subordinate that has not returned does not refresh
-# it, so a stuck capture still ages past grace. After the scan, the beacon can
-# still age through the rest of the cycle and the terminal wait, up to one
-# in-flight record plus POLL seconds. fm_poll_derived_grace
+# The liveness beacon is touched at the start of each cycle, when the next
+# stage begins after the previous stage has returned, when a pane-staleness
+# record begins after the previous record has returned, and when that scan
+# returns. A stage or subordinate that has not returned does not refresh
+# it, so a stuck stage or capture still ages past grace. After the scan, the
+# beacon can still age through the rest of the cycle and the terminal wait,
+# up to one in-flight record plus POLL seconds. fm_poll_derived_grace
 # (bin/fm-wake-lib.sh, already sourced transitively above) is the single owner
 # of the max(300, poll+60) derivation - see docs/turnend-guard.md
 # "Guard grace and the poll cadence".
@@ -4593,9 +4594,9 @@ procevent_surface_after_output() {
   return "$status"
 }
 
-# Refresh the beacon at a completed pane-staleness boundary. The previous
-# record has returned, or the scan itself has. A capture that has not returned
-# never reaches the next call. This is not a timer.
+# Refresh the beacon at a completed boundary. The previous stage or record
+# has returned, or the pane-staleness scan itself has. A call that has not
+# returned never reaches the next one. This is not a timer.
 # docs/turnend-guard.md "Guard grace and the poll cadence" owns the contract.
 watch_record_progress_beat() {
   touch "$STATE/.last-watcher-beat"
@@ -4607,6 +4608,8 @@ watch_record_progress_beat() {
 # Publish by rename so concurrent readers always see a complete record.
 watch_stage() {  # <name>
   local now tmp
+  # Entering a stage means the previous one returned: a completed boundary.
+  watch_record_progress_beat
   fm_watch_now now
   tmp=$(mktemp "$STATE/.watcher-stage-XXXXXX" 2>/dev/null) || return 0
   if ! { printf '%s\t%s\t%s\n' "$$" "$now" "$1" > "$tmp" && mv -f -- "$tmp" "$STATE/.watcher-stage"; } 2>/dev/null; then
