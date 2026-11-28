@@ -1768,6 +1768,10 @@ wd_handle_dialog() {
           wd_rec "$id" dialog key failed "key delivery failed"
           return 1
           ;;
+        5)
+          wd_gap "feedback dialog needs $FM_CONTROL_FEEDBACK_DISMISS_KEY, which the $O_BACKEND backend cannot deliver to ${O_HARNESS:-this harness}; no key pressed"
+          return 0
+          ;;
         *)
           wd_rec "$id" dialog key pending "press $FM_CONTROL_FEEDBACK_DISMISS_KEY: dismiss the feedback survey"
           wd_rec "$id" dialog key failed "dialog still showing"
@@ -1951,6 +1955,12 @@ wd_pp_decline() {
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its endpoint is on do-not-touch; nothing was answered"
     return 1
   fi
+  # A terminal that cannot take Escape for this harness (Orca outside Droid)
+  # holds before anything is recorded, so the hold names the real reason.
+  if ! fm_control_backend_supports_key "$O_BACKEND" Escape "$harness"; then
+    wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its $O_BACKEND terminal cannot take Escape for $harness; nothing was answered"
+    return 1
+  fi
   wd_rate_open permission-prompt decline "$(cfgi key-secs 120)" "$O_REC_SUBJECT" || return 1
   rid=$(wd_id)
   if [ "$(wd_permission_mode)" != act ]; then
@@ -1977,7 +1987,7 @@ wd_pp_decline() {
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and its checksum could not be saved; nothing was answered"
     return 1
   fi
-  if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" >/dev/null 2>&1; then
+  if ! fm_run_timed_fn 10 fm_control_send_feedback_dismiss "$O_BACKEND" "$O_TARGET" Escape "fm-$id" "$harness" >/dev/null 2>&1; then
     wd_rec "$rid" permission-prompt decline failed "key delivery failed"
     wd_pp_stop "$id" permission-prompt-held "$hash" "worker $id shows a tool-approval prompt, and the Escape key could not be delivered; nothing was answered"
     return 1
@@ -2565,8 +2575,8 @@ wd_quota_name_pick_rated() {  # <id> <subject-label> [task-id]
 }
 
 wd_handle_quota() {
-  local task age line pick
-  wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age line; do
+  local task age pick
+  wd_quota_floors "$O_HOME/state" "$(wd_now)" | while IFS=$'\t' read -r task age _; do
     [ "$age" -ge "$(cfgi quota-secs 600)" ] || continue
     pick=$(wd_quota_pick "$task") || pick=none
     if [ -n "$pick" ] && [ "$pick" != none ]; then

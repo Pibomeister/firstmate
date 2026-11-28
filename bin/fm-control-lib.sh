@@ -1075,9 +1075,11 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
   fi
   printf '%s\n' "$screen" \
     | LC_ALL=C sed -e $'s/\033\\[[0-9;?<>=]*[ -\\/]*[@-~]//g' -e $'s/\033\\][^\a]*\a//g' -e $'s/\r//g' \
-    | awk -v fam="$family" -v mode="$mode" '
+    | LC_ALL=C awk -v fam="$family" -v mode="$mode" '
+      # Byte semantics in every locale: multibyte glyphs are alternations,
+      # never bracket members, because a C-locale bracket matches each byte.
       function is_border_row(r) {
-        return (r ~ /^[ \t]*[│┃─━╭╮╰╯┌┐└┘| \t-]+[ \t]*$/)
+        return (r ~ /^[ \t]*(│|┃|─|━|╭|╮|╰|╯|┌|┐|└|┘|[| \t-])+[ \t]*$/)
       }
       function is_prompt_row(r) {
         return (r ~ /^[ \t]*((│|┃|[|])[ \t]+)?(❯|›|⟩|→|❭|>)[ \t]*((│|┃|[|])[ \t]*)?$/)
@@ -1227,30 +1229,38 @@ fm_control_feedback_dialog_dismiss() {  # <harness> <screen> [mode]
     '
 }
 
-# fm_control_send_feedback_dismiss <backend> <target> <dismiss-key> [<expected-label>]
+# fm_control_send_feedback_dismiss <backend> <target> <dismiss-key> [<expected-label>] [<harness>]
 # Delivers the dismiss choice resolved by fm_control_feedback_dialog_dismiss to
 # <backend>:<target> without ever pressing Enter or typing feedback text.
 # Only `0` (literal single-key skip/dismiss) and `Escape` are permitted.
-fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expected-label>]
-  local backend=${1-} target=${2-} key=${3-} label=${4-} fn
+# The watchdog's tool-approval decline also sends its Escape here.
+# Escape goes only through fm_backend_send_key, and only where
+# fm_control_backend_supports_key allows it for <harness>; otherwise this
+# returns 5 and sends nothing. Callers check that gate first, because a
+# timed wrapper can report 5 as an ordinary failure.
+fm_control_send_feedback_dismiss() {  # <backend> <target> <dismiss-key> [<expected-label>] [<harness>]
+  local backend=${1-} target=${2-} key=${3-} label=${4-} harness=${5-} fn
   [ -n "$backend" ] && [ -n "$target" ] && [ -n "$key" ] || return 1
   if declare -F fm_backend_source >/dev/null 2>&1; then
     fm_backend_source "$backend" >/dev/null 2>&1 || return 1
   fi
   case "$key" in
     Escape)
-      if [ "$backend" = orca ] && declare -F fm_backend_orca_send_literal >/dev/null 2>&1; then
-        fm_backend_orca_send_literal "$target" $'\033'
-      else
-        fm_backend_send_key "$backend" "$target" Escape "$label"
-      fi
+      fm_control_backend_supports_key "$backend" Escape "$harness" || return 5
+      fm_backend_send_key "$backend" "$target" Escape "$label"
       ;;
     0)
-      fn="fm_backend_${backend}_send_literal"
-      if declare -F "$fn" >/dev/null 2>&1; then
-        "$fn" "$target" 0 "$label"
+      # Zellij's literal send is bracketed paste, which inserts `0` into the
+      # comment field instead of running the Dismiss/Skip binding.
+      if [ "$backend" = zellij ]; then
+        fm_backend_zellij_write_chars "$target" 0 "$label"
       else
-        return 1
+        fn="fm_backend_${backend}_send_literal"
+        if declare -F "$fn" >/dev/null 2>&1; then
+          "$fn" "$target" 0 "$label"
+        else
+          return 1
+        fi
       fi
       ;;
     *)
@@ -1356,9 +1366,12 @@ fm_control_acquire_feedback_claim() {  # <claim-dir>
 # Returns:
 #   0 - claimed, sent key, re-captured, and verified the dialog is gone
 #   1 - <screen> does not match a known feedback/bug-report dialog for <harness>
-#   2 - already claimed, live capture empty/failed/cleared, or unchanged sticky dialog; no key sent
+#   2 - already claimed, live capture empty/failed/cleared, unchanged sticky dialog,
+#       or a live dialog <screen> did not show; no key sent
 #   3 - claimed, but key delivery failed
 #   4 - claimed and key sent, but re-capture did not prove the dialog gone
+#   5 - the dialog needs a key <backend> cannot deliver for <harness>
+#       (fm_control_backend_supports_key); no key sent, no marker written
 fm_control_dismiss_feedback_dialog() {
   local state_dir=${1-} backend=${2-} target=${3-} harness=${4-} screen=${5-}
   local label=${6-} settle=${7-0.2} call_timeout=${8:-20}
@@ -1372,6 +1385,9 @@ fm_control_dismiss_feedback_dialog() {
   dismiss_key=${spec#*$'\t'}
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  if [ "$dismiss_key" = Escape ] && ! fm_control_backend_supports_key "$backend" Escape "$harness"; then
+    return 5
+  fi
   wkey=$(fm_control_feedback_window_key "$backend" "$target")
   [ -n "$wkey" ] || return 1
   marker="$state_dir/.feedback-dismissed-$wkey"
@@ -1396,9 +1412,11 @@ fm_control_dismiss_feedback_dialog() {
     [ -n "$dialog_id" ] || return 1
     return 2
   fi
+  # The caller's screen showed no dialog, but the live pane does: it opened
+  # between the two reads. Hold, so no caller types into it.
   if [ -z "$dialog_id" ]; then
     fm_control_release_feedback_claim "$claim"
-    return 1
+    return 2
   fi
   dialog_id=${spec%%$'\t'*}
   dismiss_key=${spec#*$'\t'}
@@ -1406,13 +1424,17 @@ fm_control_dismiss_feedback_dialog() {
   FM_CONTROL_FEEDBACK_DIALOG_ID=$dialog_id
   # shellcheck disable=SC2034
   FM_CONTROL_FEEDBACK_DISMISS_KEY=$dismiss_key
+  if [ "$dismiss_key" = Escape ] && ! fm_control_backend_supports_key "$backend" Escape "$harness"; then
+    fm_control_release_feedback_claim "$claim"
+    return 5
+  fi
   phash=$(fm_control_feedback_pane_hash "$live" "$harness")
   prev_marker=$(cat "$marker" 2>/dev/null || true)
   if [ "$prev_marker" = "$phash" ]; then
     fm_control_release_feedback_claim "$claim"
     return 2
   fi
-  if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" >/dev/null 2>&1; then
+  if ! fm_run_timed_fn "$call_timeout" fm_control_send_feedback_dismiss "$backend" "$target" "$dismiss_key" "$label" "$harness" >/dev/null 2>&1; then
     fm_control_release_feedback_claim "$claim"
     return 3
   fi

@@ -441,12 +441,6 @@ else
   stat_mtime() { stat -c %Y "$1" 2>/dev/null; }
   stat_devino() { stat -c '%d %i' "$1" 2>/dev/null; }
 fi
-# Record the held state directory's device+inode now that stat_devino exists.
-# The per-poll teardown check re-stats the path instead of comparing /dev/fd/6
-# with -ef: macOS devfs serves each descriptor entry on its own device, so -ef
-# never matches there and a missing lock pid alone read as a torn-down state
-# directory.
-[ "$WATCH_STATE_HELD" -ne 1 ] || WATCH_STATE_DEVINO=$(stat_devino "$STATE")
 # bin/fm-classify-lib.sh owns status reported-state signatures and presentation
 # markers, while bin/fm-wake-lib.sh owns their wake-facing routing, the legacy
 # turn-ended signature, annotation staleness checks, and guarded bookkeeping writes.
@@ -3008,12 +3002,12 @@ wedge_defer_t3code_running() {  # <window> <since-file> <triage-label> <idle-age
 # change semantic busy state. Before either marker exists, age the spawn record.
 # The caller checks busy state and routes a crossed bound through inspection.
 busy_turn_over_age() {  # <task>
-  local task=$1 f progress harness snapshot gen request rev ts age model_ts model_age
+  local task=$1 f progress harness snapshot gen request ts age model_ts model_age
   BUSY_STREAM_SNAPSHOT=
   if [ "$STREAM_SILENT_MAX_SECS" -gt 0 ]; then
     harness=$(grep '^harness=' "$STATE/$task.meta" 2>/dev/null | cut -d= -f2- || true)
     if snapshot=$(fm_busy_stream_read "$STATE" "$task" "$harness"); then
-      read -r gen request rev ts <<< "$snapshot"
+      read -r gen request _ ts <<< "$snapshot"
       age=$(( $(date +%s) - ts ))
       if [ "$age" -ge "$STREAM_SILENT_MAX_SECS" ]; then
         BUSY_STREAM_SNAPSHOT=$snapshot
@@ -3037,12 +3031,12 @@ busy_turn_over_age() {  # <task>
 }
 
 busy_stream_snapshot_current() {  # <task> <observed snapshot>
-  local harness current gen request rev ts
+  local harness current gen request ts
   [ "$STREAM_SILENT_MAX_SECS" -gt 0 ] || return 1
   harness=$(grep '^harness=' "$STATE/$1.meta" 2>/dev/null | cut -d= -f2- || true)
   current=$(fm_busy_stream_read "$STATE" "$1" "$harness") || return 1
   [ "$current" = "$2" ] || return 1
-  read -r gen request rev ts <<< "$current"
+  read -r gen request _ ts <<< "$current"
   [ "$(( $(date +%s) - ts ))" -ge "$STREAM_SILENT_MAX_SECS" ]
 }
 
@@ -3413,7 +3407,7 @@ PAUSE_CLASS=none
 PAUSE_CREW_LINE=
 PAUSE_AGENT_ALIVE=unknown
 pause_state_class() {  # <window> <task>
-  local win=$1 task=$2 key last recheck_file class agent_alive kind statusf rc
+  local win=$1 task=$2 key last recheck_file agent_alive kind statusf rc
   key=$(window_key "$win")
   statusf="$STATE/$task.status"
   pause_overdue_reconcile "$task" "$statusf"; rc=$?
@@ -3755,14 +3749,14 @@ away_decision_claimed() {  # <claims-file> <task> <key> <opened>
 }
 
 away_decision_retry_page() {  # <claim-file> <now-epoch>
-  local file=$1 now=$2 candidates task key opened result last open row_key verb row_opened note page_result page_state
+  local file=$1 now=$2 candidates task key opened last open row_key verb row_opened note page_result page_state
   [ -f "$file" ] || return 0
   candidates=$(awk -F '\t' '
     { k=$1 FS $2 FS $3; status[k]=$5; stamp[k]=$6; task[k]=$1; key[k]=$2; opened[k]=$3 }
     END { for (k in status) if (status[k] == "claiming" || status[k] == "page-pending" || status[k] == "page-failed")
       print task[k] FS key[k] FS opened[k] FS status[k] FS stamp[k] }
   ' "$file") || return 1
-  while IFS=$'\t' read -r task key opened result last; do
+  while IFS=$'\t' read -r task key opened _ last; do
     [ -n "$task" ] || continue
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
     [ "$now" -ge "$last" ] && [ "$((now - last))" -ge 60 ] || continue

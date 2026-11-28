@@ -1681,17 +1681,43 @@ inject_msg() {  # <message> [state] [exact] [request-id]
   if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_backend_orca_draft_present "$target"; then
     composer="pending-unproven"
   fi
-  if [ "$composer" != empty ] && [ "$backend" != t3code ]; then
-    local sup_screen
-    sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null || true)
-    if [ -n "$sup_screen" ] \
-      && fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2 "$DAEMON_PROBE_BUDGET"; then
-      log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
-      composer=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_composer_state "$backend" "$target" 2>/dev/null || true)
-      if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_orca_draft_present "$target"; then
-        composer="pending-unproven"
-      fi
+  # An empty composer is not permission to type. The session survey and the
+  # draft card sit on Claude's idle prompt, which classifies empty, and Enter
+  # there submits the digest as feedback. Consult the same helper the steer
+  # path uses, and continue only when it reports the dialog gone (0) or not
+  # shown (1). A still-visible dialog, a failed read, or a refused dismiss
+  # withholds the digest and Enter.
+  if [ "$backend" != t3code ]; then
+    local sup_screen dismiss_rc=0
+    if fm_backend_visible_capture_supported "$backend" 2>/dev/null; then
+      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_visible_capture "$backend" "$target" 2>/dev/null) || sup_screen=
+    else
+      sup_screen=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_capture "$backend" "$target" 40 2>/dev/null) || sup_screen=
     fi
+    # A failed or timed-out read is unobserved even when it printed part of
+    # the pane: a survey heading without its choices reads as no dialog.
+    if [ -z "$sup_screen" ]; then
+      INJECT_LAST_FAILURE="deferred: supervisor pane could not be observed for a feedback dialog"
+      log "inject $INJECT_LAST_FAILURE"
+      return 1
+    fi
+    fm_control_dismiss_feedback_dialog "$state" "$backend" "$target" "$(fm_daemon_primary_harness)" "$sup_screen" "" 0.2 "$DAEMON_PROBE_BUDGET" || dismiss_rc=$?
+    case "$dismiss_rc" in
+      0)
+        log "auto-dismissed feedback dialog ($FM_CONTROL_FEEDBACK_DIALOG_ID key=$FM_CONTROL_FEEDBACK_DISMISS_KEY): $target"
+        composer=$(fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_composer_state "$backend" "$target" 2>/dev/null || true)
+        if [ "$composer" = empty ] && [ "$backend" = orca ] && fm_run_timed_fn "$DAEMON_PROBE_BUDGET" fm_backend_orca_draft_present "$target"; then
+          composer="pending-unproven"
+        fi
+        ;;
+      1)
+        ;;
+      *)
+        INJECT_LAST_FAILURE="deferred: feedback dialog not proven clear (rc=$dismiss_rc)"
+        log "inject $INJECT_LAST_FAILURE"
+        return 1
+        ;;
+    esac
   fi
   if [ "$composer" != empty ]; then
     case "$composer" in

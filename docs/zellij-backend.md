@@ -77,6 +77,7 @@ There is a narrow visible race between those calls that no current Zellij flag c
 An ordinary metadata-routed `fm-send.sh` text steer becomes a durable steering-inbox record, and only its best-effort constant doorbell passes through Zellij's submit machinery.
 On the typed plane, literal send uses bracketed paste followed by a separate explicit Enter.
 Before sending Enter, the adapter proves that the selected composer's normalized content changed by exactly the pasted text; an unreadable composer, a paste that lands elsewhere, or unrelated pane output fails without submitting.
+A feedback-dialog dismiss is the one exception: its `0` skip key goes through `write-chars` as a raw keystroke, because bracketed paste would put the `0` into the dialog's comment field (`fm_backend_zellij_write_chars` refuses any other text).
 The adapter supports `Enter`, `Esc`, and the one-argument key expression `Ctrl c` through the shared key vocabulary.
 Zellij exposes no cursor-row or native agent-state signal, but `dump-screen --ansi` (verified at 0.44.0) preserves styling, so the composer is read through the same fleet-wide classifier as tmux and herdr (`bin/fm-composer-lib.sh`), with ghost and placeholder text stripped before the verdict.
 Submit acknowledgement requires a positively classified empty composer.

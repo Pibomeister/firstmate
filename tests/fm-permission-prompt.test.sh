@@ -588,6 +588,35 @@ test_trust_dialog_relaunches_without_a_key() {
   pass "trust dialog: no key, a controlled relaunch only on Orca once per window, and a refusal is reported"
 }
 
+# Orca delivers Escape only to Droid (fm_control_backend_supports_key), so a
+# Claude tool-approval prompt on Orca is held with that reason before any
+# attempt is recorded, and no byte reaches the terminal.
+test_orca_tool_approval_holds_without_escape() {
+  local sent rc
+  make_home
+  sent="$H/orca-sent.log"
+  : > "$sent"
+  rc=$(FM_TEST_SEAM=1 FM_WD_TEST_CONTROL="$H/control.sh" FM_WD_NOW=$BASE FM_HOME="$H" bash -c '
+    . "$1" || exit 9
+    O_HOME=$FM_HOME O_TAG=$(wd_tag "$FM_HOME") O_KEY=$(wd_state_key "$FM_HOME") O_BACKEND=orca O_TARGET=orca-oe O_REC_SUBJECT=worker:oe
+    screen=$(cat "$2")
+    sent=$3
+    wd_capture() { printf "%s\n" "$screen"; }
+    wd_observe_dialog() { fm_wd_pane_dialog "$screen" claude 2>/dev/null || true; }
+    fm_backend_source() { return 0; }
+    fm_backend_send_key() { printf "KEY:%s\n" "$3" >> "$sent"; }
+    fm_backend_orca_send_literal() { printf "LITERAL\n" >> "$sent"; }
+    wd_permission_prompt oe claude "$screen" "$(wd_observe_dialog)"
+    printf "%s\n" "$?"' _ "$WD" "$FIX/claude-2.1.325-bash-prompt.txt" "$sent" 2>/dev/null)
+  assert_equals 1 "$rc" "the Orca tool-approval prompt waits: $(ledger | cut -f4-8)"
+  assert_equals '' "$(cat "$sent")" "no key or byte reaches the Orca terminal"
+  assert_equals 0 "$(ledger_rows decline pending worker:oe)" "no decline attempt is recorded: $(ledger | cut -f4-8)"
+  assert_equals 1 "$(status_rows oe blocked permission-prompt-held)" "the prompt is reported as held"
+  assert_grep "cannot take Escape for claude" "$H/state/oe.status" "the held line names the missing key"
+  assert_equals '' "$(find "$H/state/watchdog/permission" -name '*-oe.declined' 2>/dev/null)" "no checksum is spent on a prompt that got no key"
+  pass "decline guard: a Claude tool-approval prompt on Orca is held without a key, naming the missing Escape"
+}
+
 test_failed_declines_count_toward_cap() {
   make_home 'permission-decline-cap=2'
   bash_prompt_with 'touch /tmp/probe/a.txt' > "$H/a.txt"
@@ -778,6 +807,7 @@ fm_test_run \
   test_structure_decides_not_words \
   test_antigravity_trust_screen_classifies \
   test_failed_declines_count_toward_cap \
+  test_orca_tool_approval_holds_without_escape \
   test_tool_approval_is_declined_and_steered \
   test_prompt_after_escape_gets_no_instruction \
   test_declining_dialogs_on_workers_get_no_key \
