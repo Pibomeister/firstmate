@@ -1,0 +1,2 @@
+## BASE deb597df burst: 6 concurrent --best-effort refreshes
+base burst secs=29

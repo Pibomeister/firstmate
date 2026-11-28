@@ -1,0 +1,5 @@
+## hold the fleet observation lock for 40s, then time --contribution-input and a --json reader
+held
+lrwxr-xr-x@ 1 eduardopicazo  staff  113 Nov 28 04:45 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.BCVf1a/state/.fleet-observation.lock -> /private/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T/fm-lab.BCVf1a/state/.fleet-observation.lock.owner.krcTBv
+contribution-input rc=0 secs=2 schema=null
+--json reader rc=0 secs=38 (waits for the holder, then collects)

@@ -1,0 +1,12 @@
+## seed a structured backlog with one queued item, refresh directly
+  - Run `tasks-axi block lab-one-a1 --by <other>` to record a dependency
+rc=0
+{"valid":true,"reason":null,"queued":1}
+## start pass R (best-effort); mid-collection add item two and fire two more triggers
+  - Run `tasks-axi block lab-two-b2 --by <other>` to record a dependency
+item two added at 1795862522
+extra trigger rc=0 returned in 2s
+R rc=0
+Q rc=0
+{"generated_epoch":1795862529,"valid":true,"queued":2,"ids":["lab-one-a1","lab-two-b2"]}
+leftover flight locks: 0

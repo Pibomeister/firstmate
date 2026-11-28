@@ -1,0 +1,11 @@
+## single --json reader
+rc=0 secs=2 bytes=    4651
+## 4 concurrent --json readers
+secs=2
+r1 rc=0 valid_json=yes sha=a7c1b6dd14
+r2 rc=0 valid_json=yes sha=a7c1b6dd14
+r3 rc=0 valid_json=yes sha=a7c1b6dd14
+r4 rc=0 valid_json=yes sha=a7c1b6dd14
+## adversarial: dead holder left the lock, then state dir made read-only
+lrwxr-xr-x@ 1 eduardopicazo  staff  17 Nov 28 04:44 /var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.BCVf1a/state/.fleet-observation.lock -> 99999999:deadbeef
+rc=0 secs=4 valid_json=yes
