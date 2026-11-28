@@ -1,0 +1,13 @@
+### W1 tool-approval prompt, Claude worker on Orca
+wd_permission_prompt rc=1
+bytes to Orca: []
+ledger decline rows: 0
+0
+status: blocked [at=1795800000] [key=permission-prompt-held]: worker oe shows a tool-approval prompt, and its orca terminal cannot take Escape for claude; nothing was answered
+declined checksums: []
+### W2 Claude bug-report modal (needs Escape) on an Orca worker
+wd_handle_dialog rc=0
+bytes to Orca: []
+gaps: - fmlabwd.cu3c: feedback dialog needs Escape, which the orca backend cannot deliver to claude; no key pressed
+dialog key ledger rows: 0
+markers: []

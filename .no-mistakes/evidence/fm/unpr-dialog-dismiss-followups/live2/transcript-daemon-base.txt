@@ -1,0 +1,14 @@
+### d1-sticky (sticky) pane before:
+inject rc=1 INJECT_LAST_FAILURE=[Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=196, text may be in composer)]
+bytes received by pane (hex): [3a 20 46 69 72 73 74 6d 61 74 65 20 6f 70 65 72 61 74 69 6f 6e 61 6c 20 69 6e 70 75 74 20 77 61 69 74 69 6e 67 3a 20 72 65 61 64 20 27 2f 70 72 69 76 61 74 65 2f 74 6d 7
+### d2-dismiss (dismiss) pane before:
+inject rc=1 INJECT_LAST_FAILURE=[Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=197, text may be in composer)]
+bytes received by pane (hex): [3a 20 46 69 72 73 74 6d 61 74 65 20 6f 70 65 72 61 74 69 6f 6e 61 6c 20 69 6e 70 75 74 20 77 61 69 74 69 6e 67 3a 20 72 65 61 64 20 27 2f 70 72 69 76 61 74 65 2f 74 6d 7
+### d3: capture fails after printing part of the pane (real capture, then a timeout exit)
+### d3-partial (sticky) pane before:
+inject rc=1 INJECT_LAST_FAILURE=[Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=197, text may be in composer)]
+bytes received by pane (hex): [3a 20 46 69 72 73 74 6d 61 74 65 20 6f 70 65 72 61 74 69 6f 6e 61 6c 20 69 6e 70 75 74 20 77 61 69 74 69 6e 67 3a 20 72 65 61 64 20 27 2f 70 72 69 76 61 74 65 2f 74 6d 7
+### d4: capture returns nothing
+### d4-empty (sticky) pane before:
+inject rc=1 INJECT_LAST_FAILURE=[Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=195, text may be in composer)]
+bytes received by pane (hex): [3a 20 46 69 72 73 74 6d 61 74 65 20 6f 70 65 72 61 74 69 6f 6e 61 6c 20 69 6e 70 75 74 20 77 61 69 74 69 6e 67 3a 20 72 65 61 64 20 27 2f 70 72 69 76 61 74 65 2f 74 6d 7

@@ -1,0 +1,12 @@
+### W1 tool-approval prompt, Claude worker on Orca
+wd_permission_prompt rc=1
+bytes to Orca: [LITERAL]
+ledger decline rows: 2
+status: blocked [at=1795800000] [key=permission-prompt-held]: worker oe still shows a tool-approval prompt after one Escape; nothing more is pressed
+declined checksums: [/tmp/fmlabwd.XlAt/state/watchdog/permission/fmlabwd.XlAt-2601399758-oe.declined]
+### W2 Claude bug-report modal (needs Escape) on an Orca worker
+wd_handle_dialog rc=1
+bytes to Orca: [LITERAL]
+gaps: 
+dialog key ledger rows: 2
+markers: [/tmp/fmlabwd.XlAt/state/.feedback-dismissed-orca_orca-oe]

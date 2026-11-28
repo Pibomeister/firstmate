@@ -1,0 +1,8 @@
+### S1 happy path: caller screen shows the survey, tmux backend
+rc=0 id=claude-session-feedback key=0
+GOT_KEY=[0]
+### S2 race: caller screen idle, live pane shows the survey (marker from earlier dismiss present)
+rc=1 (expect 2 = hold, no key)
+-- pane after (expect survey still shown, no GOT_KEY):
+### S3 Orca Escape gate
+send_feedback_dismiss orca Escape claude rc=1 (expect 5)

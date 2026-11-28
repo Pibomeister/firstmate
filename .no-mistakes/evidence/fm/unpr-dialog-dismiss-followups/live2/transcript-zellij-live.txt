@@ -1,0 +1,7 @@
+zellij 0.46.1 session=fmlabzhead pane=terminal_0
+fm_control_send_feedback_dismiss zellij fmlabzhead:0 0 -> rc=0 pane bytes(hex)=[30 ]
+fm_backend_zellij_write_chars fmlabzhead:0 1 -> rc=1 pane bytes(hex)=[]
+fm_backend_zellij_write_chars fmlabzhead:0 00 -> rc=1 pane bytes(hex)=[]
+fm_backend_zellij_write_chars fmlabzhead:0 hello -> rc=1 pane bytes(hex)=[]
+fm_backend_zellij_write_chars fmlabzhead:0 0
+ -> rc=1 pane bytes(hex)=[]

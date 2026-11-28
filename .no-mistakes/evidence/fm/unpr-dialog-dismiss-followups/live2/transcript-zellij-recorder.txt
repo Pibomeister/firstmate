@@ -1,0 +1,6 @@
+dismiss 0 rc=0
+write_chars [1] rc=1
+write_chars [00] rc=1
+write_chars [0\n] rc=1
+write_chars [hello] rc=1
+--session|s1|action|write-chars|--pane-id|terminal_3|--|0|

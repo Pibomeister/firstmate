@@ -1,0 +1,21 @@
+1..221
+ok - dialogs need their structure, and each kind is told apart
+ok - feedback claim: competing stale recovery preserves the fresh owner
+ok - feedback claim: legacy owners are recovered only after they exit
+ok - feedback claim: release preserves another live owner
+ok - watchdog: primary and worker absence observations rearm uncertain dialogs with capture and do-not-touch guards
+ok - feedback dismiss: a later clear observation rearms an uncertain dismissal
+ok - feedback and bug-report dialogs: exact per-harness signatures auto-dismiss when idle without submitting, near-misses and unknown dialogs do not
+ok - mtime: native and available GNU stat give numeric ages through scan
+ok - a dismissed dialog that only remains in scrollback is not read as showing
+ok - dialog keys stop after two failures in an hour, so a misread screen is never typed into repeatedly
+ok - harness: earlier tests' tmux sessions end at the next test's first home, so a full run does not exhaust the host's terminals
+ok - feedback dialogs: detection and the watchdog's dismissal hold with no locale set
+ok - feedback dismiss: Escape honors the backend key gate, so no Escape reaches a non-Droid Orca terminal
+ok - feedback dismiss: a statusline percentage tick does not send another key
+ok - loop verdicts: loop, rapid, near, and work-between
+ok - stall proof needs two signals and no veto; merge and deploy text is refused
+ok - frozen pane: proven by records, nudged once with a record-backed doorbell, then rate-limited
+ok - boundary: never types into a pane on the do-not-touch list
+ok - draft rows: from the prompt row to the rule, and no footer word cuts them
+Terminated: 15

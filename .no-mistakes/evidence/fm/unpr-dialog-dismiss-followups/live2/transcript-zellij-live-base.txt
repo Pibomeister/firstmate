@@ -1,0 +1,3 @@
+zellij 0.46.1 session=fmlabzbase pane=terminal_0
+fm_control_send_feedback_dismiss zellij fmlabzbase:0 0 -> rc=0 pane bytes(hex)=[1b 5b 32 30 30 7e 30 1b 5b 32 30 31 7e ]
+fm_backend_zellij_write_chars: not defined in this tree

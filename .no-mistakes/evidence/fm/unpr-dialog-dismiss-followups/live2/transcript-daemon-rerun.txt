@@ -1,0 +1,95 @@
+real composer classifier on the fixture (informational): tmux 3.6a
+### d1-sticky (sticky) pane before:
+some work
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+inject rc=1 INJECT_LAST_FAILURE=[deferred: feedback dialog not proven clear (rc=4)]
+bytes received by pane (hex): [30 ]
+### d2-dismiss (dismiss) pane before:
+some work
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+inject rc=1 INJECT_LAST_FAILURE=[Enter confirmation: submit unconfirmed after 3 retries (verdict=unknown, bytes=197, text may be in composer)]
+bytes received by pane (hex): [30 3a 20 46 69 72 73 74 6d 61 74 65 20 6f 70 65 72 61 74 69 6f 6e 61 6c 20 69 6e 70 75 74 20 77 61 69 74 69 6e 67 3a 20 72 65 61 64 20 27 2f 70 72 69 76 61 74 65 2f 74 6d 70 2f 66 6d 6c 61 62 73 74 61 74 65 2e 59 50 74 4b 2f 64 32 2d 64 69 73 6d 69 73 73 2f 73 74 61 74 65 2f 6f 70 65 72 61 74 69 6f 6e 61 6c 2d 69 6e 62 6f 78 2f 31 37 39 35 38 36 36 37 36 37 2d 33 30 66 32 30 39 34 32 33 35 63 35 34 64 39 34 2e 6d 73 67 27 20 61 6e 64 20 68 61 6e ]
+### d3: capture fails after printing part of the pane (real capture, then a timeout exit)
+### d3-partial (sticky) pane before:
+some work
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+inject rc=1 INJECT_LAST_FAILURE=[deferred: supervisor pane could not be observed for a feedback dialog]
+bytes received by pane (hex): []
+### d4: capture returns nothing
+### d4-empty (sticky) pane before:
+some work
+● How is Claude doing this session? (optional)
+  1: Bad    2: Fine   3: Good   0: Dismiss
+────────────────────────────────────────
+❯
+────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+inject rc=1 INJECT_LAST_FAILURE=[deferred: supervisor pane could not be observed for a feedback dialog]
+bytes received by pane (hex): []
