@@ -1,0 +1,2 @@
+blocked [key=stuck] [at=100]: empty kind reads as ship
+done [at=200]: shipped, so the open set clears

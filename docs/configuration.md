@@ -444,6 +444,15 @@ The host reads its presence at each hand-back, so enabling it needs no session r
 Removing it stops further retries and leaves the current watcher for the ordinary next park.
 [Supervision host](supervision-host.md#acknowledged-hand-back) owns the acknowledgement, retry transport, and limits.
 
+## Supervision sidecar mode (config/supervision)
+
+The optional home-local `config/supervision` file holds one line: `legacy`, `shadow`, or `fmd`.
+It selects whether the opt-in fmd Rust sidecar participates in supervision for this home.
+A missing file or any other value means `legacy`, so the bash watcher stays the default and the fallback.
+In `shadow`, bash stays authoritative and fmd output may be compared against it.
+In `fmd`, a bash caller may defer only when `bin/fm-fmd-seam.sh` also finds a usable fmd binary.
+`bin/fm-fmd-seam.sh` owns the reader contract for bash, and [fmd/README.md](../fmd/README.md) owns the sidecar build and its upstream-sync check.
+
 ## Warm-cache compaction (config/warm-compact)
 
 Create the home-local `config/warm-compact` file to compact an idle Claude primary and the supervision host's engine conversation before their prompt cache expires.

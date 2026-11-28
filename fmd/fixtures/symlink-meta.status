@@ -1,0 +1,2 @@
+blocked [key=stuck] [at=100]: a symlinked meta reads as unknown
+done [at=200]: unknown kind keeps the decision open

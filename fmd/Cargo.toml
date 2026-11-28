@@ -1,0 +1,13 @@
+[package]
+name = "fmd"
+version = "0.1.0"
+edition = "2021"
+description = "Opt-in Firstmate supervision sidecar. Bash remains the default and fallback."
+license = "MIT"
+
+[[bin]]
+name = "fmd"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 2

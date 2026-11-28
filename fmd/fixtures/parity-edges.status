@@ -1,0 +1,9 @@
+needs-decision [key=corr-a] [at=1]: open me
+resolved corr=x [key=corr-a]: prose with a loose corr word must not close
+needs-decision [key=corr-b] [at=2]: open me too
+resolved corr=0123456789abcdef [key=corr-b]: an exact corr token closes
+needs-decision [key=corr-c] [at=3]: a bare corr word is prose
+resolved corr [key=corr-c]: must not close
+blocked [key=unclosed
+blocked [key=colonless]
+blocked [key=crlf] [at=4]: note keeps its CR

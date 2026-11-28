@@ -1,0 +1,2 @@
+blocked [key=stuck] [at=100]: waiting on a credential
+done [at=200]: shipped https://example.invalid/pr/1 checks green

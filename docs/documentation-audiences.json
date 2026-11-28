@@ -386,6 +386,10 @@
       "audience": "public-product"
     },
     {
+      "path": "fmd/README.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/agent-control.md",
       "audience": "maintainer-architecture"
     },
