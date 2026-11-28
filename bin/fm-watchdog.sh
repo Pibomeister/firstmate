@@ -132,6 +132,10 @@ export PATH
 . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
 # shellcheck source=bin/fm-quiet-hours-lib.sh
 . "$SCRIPT_DIR/fm-quiet-hours-lib.sh"
+# shellcheck source=bin/fm-pr-lib.sh
+. "$SCRIPT_DIR/fm-pr-lib.sh"
+# shellcheck source=bin/fm-dod-lib.sh
+. "$SCRIPT_DIR/fm-dod-lib.sh"
 
 die() { printf 'fm-watchdog: %s\n' "$1" >&2; exit "${2:-1}"; }
 
@@ -2340,6 +2344,173 @@ wd_handle_human_step() {  # <kind>
   esac
 }
 
+# --- stall page ------------------------------------------------------------------
+# docs/watchdog.md owns the two triggers, the quiet cases, and the keys.
+# The page reads records only: no lock holder, heartbeat, running turn, or
+# pane verdict enters it, so a live process or a fresh beacon cannot hide a
+# stall. It types nothing, restarts nothing, and never touches the session lock.
+
+# wd_stall_task_line <status-file>: the task's latest event, read past resolved
+# and captain-held lines. Those close a decision; they say nothing about whether
+# the work finished, so a done line stays the task's report after one.
+wd_stall_task_line() {
+  local f=$1 scan=''
+  [ -f "$f" ] && [ -r "$f" ] || return 0
+  if ! scan=$(tail -n "$FM_CLASSIFY_EVENT_WINDOW_LINES" "$f" 2>/dev/null | wd_stall_drop_closers | _fm_status_event_scan); then
+    scan=$(wd_stall_drop_closers < "$f" | _fm_status_event_scan) || :
+  fi
+  printf '%s\n' "${scan##*$'\n'}"
+}
+
+wd_stall_drop_closers() {
+  local line closer_verb
+  while IFS= read -r line || [ -n "$line" ]; do
+    closer_verb=$(status_line_verb "$line" 2>/dev/null) || closer_verb=''
+    case "$closer_verb" in
+      "${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}"|"${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}") continue ;;
+    esac
+    printf '%s\n' "$line"
+  done
+}
+
+# wd_stall_delivered_pr <home> <done-line>: parses the PR the done line reports
+# after its leading "PR" (bin/fm-dod-lib.sh owns that read) into the FM_PR_*
+# fields, so another URL the note mentions is never taken for the delivered PR.
+wd_stall_delivered_pr() {
+  local FM_HOME=$1 FM_CONFIG_OVERRIDE=$1/config url
+  url=$(fm_dod_pr_url_from_done_note "$(status_line_note "$2")") || return 1
+  while :; do
+    case "$url" in
+      *[\).\],\;:\'\"\>]) url=${url%?} ;;
+      *) break ;;
+    esac
+  done
+  fm_pr_url_parse "$url"
+}
+
+# wd_stall_captain_held <id>: 0 when the captain holds the task's backlog item
+# (bin/fm-captain-hold.sh owns the hold). An absent item, no hold, or a read that
+# cannot complete returns 1, so a stall is never hidden by an unreadable record.
+wd_stall_captain_held() {
+  FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_DATA_OVERRIDE=$O_HOME/data FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed "$(cfgi call-timeout-secs 20)" "$SCRIPT_DIR/fm-captain-hold.sh" open "$1" --distinguish-absent \
+    </dev/null >/dev/null 2>&1
+}
+
+# wd_stall_scan: sets S_FLIGHT, S_WAITS, S_IN_N, S_IN_AGE, S_PR_N, S_PR_AGE, and
+# S_PRS for the subject wd_observe just read, from its own home's records.
+wd_stall_scan() {
+  local st=$O_HOME/state now id meta sf last verb kind mode url at age key tid f m in_old=''
+  now=$(wd_now)
+  S_FLIGHT=0 S_WAITS=$'\n' S_IN_N=0 S_IN_AGE=0 S_PR_N=0 S_PR_AGE=0 S_PRS=''
+  while IFS=$'\t' read -r id meta; do
+    [ -n "$id" ] || continue
+    sf=$st/$id.status
+    if [ -f "$sf" ] && [ -n "$(status_declared_wait_line "$sf" 2>/dev/null)" ]; then
+      S_WAITS="$S_WAITS$id"$'\n'
+      for key in terminal t3_thread_id window; do
+        m=$(fm_meta_get "$meta" "$key" 2>/dev/null) || m=''
+        [ -z "$m" ] || S_WAITS="$S_WAITS$m"$'\n'
+      done
+      continue
+    fi
+    last='' verb=''
+    if [ -f "$sf" ] && last=$(wd_stall_task_line "$sf" 2>/dev/null); then
+      verb=$(status_line_verb "$last" 2>/dev/null) || verb=''
+    fi
+    kind=$(fm_meta_get "$meta" kind 2>/dev/null) || kind=''
+    # In no-mistakes mode a ship's pre-validation done: is the pipeline handoff,
+    # so the work stays in flight until the CI-ready done (bin/fm-dod-lib.sh).
+    if [ "$verb" = "done" ] && [ "$kind" = ship ]; then
+      mode=$(fm_meta_get "$meta" mode 2>/dev/null) || mode=''
+      case "$mode" in
+        no-mistakes|'') fm_dod_should_gate_ship_done ship "$mode" "$last" || verb=handoff ;;
+      esac
+    fi
+    case "$verb" in done|failed) ;; *) S_FLIGHT=$((S_FLIGHT + 1)) ;; esac
+    # Only a ship PR firstmate may land on its own standing authority can stall here;
+    # one that waits on the owner's merge word, or a hold the captain placed, is the
+    # owner's wait, and firstmate never lands a Gerrit change.
+    [ "$verb" = "done" ] && [ "$kind" = ship ] \
+      && [ "$(fm_meta_get "$meta" yolo 2>/dev/null)" = on ] || continue
+    wd_stall_delivered_pr "$O_HOME" "$last" || continue
+    [ "$FM_PR_PROVIDER" != gerrit ] || continue
+    url=$FM_PR_URL
+    at=$(status_line_at_epoch "$last" 2>/dev/null) || at=$(wd_mtime "$sf")
+    fm_wd_epoch_ok "$at" && [ "$at" -le "$now" ] || continue
+    age=$((now - at))
+    [ "$age" -ge "$(cfgi stall-secs 900)" ] || continue
+    fm_pr_poll_merge_already_notified "$st" "$id" \
+      "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" && continue
+    ! wd_stall_captain_held "$id" || continue
+    S_PR_N=$((S_PR_N + 1))
+    [ "$age" -le "$S_PR_AGE" ] || S_PR_AGE=$age
+    S_PRS="$S_PRS${S_PRS:+ }$url"
+  done <<EOF
+$(wd_worker_metas "$O_HOME")
+EOF
+  # Unhandled input: wake rows not yet drained, except rows about a task in a
+  # declared wait, and captain inbox notes not yet handled.
+  if [ -s "$st/.wake-queue" ]; then
+    while IFS=$'\t' read -r at _ _ key _; do
+      fm_wd_epoch_ok "$at" || continue
+      tid=${key%.*}
+      case "$S_WAITS" in *$'\n'"$key"$'\n'*|*$'\n'"$tid"$'\n'*) continue ;; esac
+      S_IN_N=$((S_IN_N + 1))
+      if [ -z "$in_old" ] || [ "$at" -lt "$in_old" ]; then in_old=$at; fi
+    done < "$st/.wake-queue"
+  fi
+  for f in "$st"/inbox/*.note; do
+    [ -f "$f" ] || continue
+    m=$(wd_mtime "$f")
+    fm_wd_epoch_ok "$m" || continue
+    S_IN_N=$((S_IN_N + 1))
+    if [ -z "$in_old" ] || [ "$m" -lt "$in_old" ]; then in_old=$m; fi
+  done
+  if [ -n "$in_old" ] && [ "$in_old" -le "$now" ]; then S_IN_AGE=$((now - in_old)); fi
+}
+
+# wd_stall_send <symptom> <detail> <summary>: reports the stall as a gap on every
+# pass, and pages the owner at most once per stall-page-secs per home and trigger.
+wd_stall_send() {
+  local symptom=$1 detail=$2 summary=$3 id out rc
+  wd_gap "$detail"
+  fm_wd_rate_ok "$LEDGER" "$O_HOME" "$symptom" page "$(cfgi stall-page-secs 3600)" "$(wd_now)" "$O_TAG" || return 0
+  id=$(wd_id)
+  if [ "$(wd_mode)" != act ]; then wd_rec "$id" "$symptom" page dry-run "would page the owner; $detail"; return 0; fi
+  wd_rec "$id" "$symptom" page pending "$detail"
+  out=$(FM_HOME=$O_HOME FM_STATE_OVERRIDE=$O_HOME/state FM_CONFIG_OVERRIDE=$O_HOME/config \
+    fm_run_timed 60 bash "$SCRIPT_DIR/fm-supervise-daemon.sh" page "$summary" "$LEDGER" 2>/dev/null)
+  rc=$?
+  case "$rc:$out" in
+    '0:page: sent') wd_rec "$id" "$symptom" page "done" "owner paged" ;;
+    2:*)
+      wd_rec "$id" "$symptom" page refused "alerts are off or no alert channel is configured"
+      wd_gap "$symptom not paged: alerts are off or no alert channel is configured" ;;
+    *)
+      wd_rec "$id" "$symptom" page failed "no alert channel delivered the page (exit $rc)"
+      wd_gap "$symptom page failed on every alert channel" ;;
+  esac
+}
+
+wd_handle_stall() {
+  local secs mins
+  secs=$(cfgi stall-secs 900)
+  wd_stall_scan
+  if [ "$S_FLIGHT" -gt 0 ] && [ "$S_IN_N" -gt 0 ] && [ "$S_IN_AGE" -ge "$secs" ]; then
+    mins=$((S_IN_AGE / 60))
+    wd_stall_send stall-input \
+      "stalled: $S_IN_N inputs unhandled for ${mins}m while $S_FLIGHT tasks are in flight" \
+      "Firstmate watchdog: $O_TAG has $S_IN_N unhandled inputs, the oldest ${mins} minutes old, while $S_FLIGHT tasks are in flight. Its supervisor is not handling them, whatever its process or heartbeat shows. The watchdog restarted nothing. Check the supervisor terminal; the captain record is $O_HOME/state/watchdog/captain and the ledger is $LEDGER."
+  fi
+  if [ "$S_PR_N" -gt 0 ]; then
+    mins=$((S_PR_AGE / 60))
+    wd_stall_send stall-pr \
+      "stalled: $S_PR_N ready PRs unlanded for up to ${mins}m: $S_PRS" \
+      "Firstmate watchdog: $S_PR_N ready PRs on $O_TAG have waited up to ${mins} minutes without landing under standing authority: $S_PRS. The watchdog landed and restarted nothing. Check the supervisor terminal; the ledger is $LEDGER."
+  fi
+}
+
 # Aged open decisions get one rolled-up nudge per window; once that nudge has
 # had a full window, the oldest decision without a recent council gets one.
 wd_handle_decisions() {
@@ -3038,9 +3209,10 @@ wd_home_awaits_restart() {
   fm_wd_open_pending "$LEDGER" | awk -F'\t' -v h="$1" '$2 == h && $4 == "restart" { f = 1 } END { exit !f }'
 }
 
-# wd_handle_subject: one symptom per pass, by precedence, then the side checks.
+# Stall paging precedes restart exits; docs/watchdog.md owns the action ladder.
 wd_handle_subject() {
   local symptom='' quiet frozen owed dead=0 reachable=1
+  wd_handle_stall
   wd_rearm_feedback_dialog "$O_BACKEND" "$O_TARGET" "${O_HARNESS:-}" "$O_PANE"
   if wd_home_awaits_restart "$O_HOME"; then
     WD_SYMPTOM='restart-awaiting-pickup'
@@ -3242,8 +3414,6 @@ wd_once() {  # [home-filter]
     wd_score_activity
     WD_SYMPTOM=ok WD_RESTARTED=0
     wd_handle_subject
-    # A home whose restart awaits pickup gets no action, quota checks included,
-    # and the ledger is read again so that holds from the pass that starts it.
     if [ "$parent" = - ] && ! wd_home_awaits_restart "$home"; then
       wd_quota_guard_pass
     fi
