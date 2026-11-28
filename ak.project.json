@@ -1,0 +1,40 @@
+{
+  "schema": "project",
+  "schema_version": 1,
+  "id": "firstmate-project-record",
+  "project": { "id": "firstmate", "repo": "Pibomeister/firstmate" },
+  "run_id": null,
+  "created_by": { "role": "supervisor" },
+  "inputs": [],
+  "source_revision": null,
+  "created_at": "2026-11-19T00:00:00Z",
+  "status": "draft",
+  "identity": {
+    "id": "firstmate",
+    "name": "Firstmate",
+    "repos": [{ "repo": "Pibomeister/firstmate", "role": "application", "default_branch": "main" }]
+  },
+  "kb": { "ownership": "central", "root": "central", "project_path": "projects/firstmate" },
+  "standards": [],
+  "limits": { "fix_cycles": 2, "consensus_rounds": 3, "scout_turns": 4 },
+  "guidance": {
+    "pr_size": { "target_changed_lines": 100, "enforcement": "advisory" },
+    "test_pyramid": { "unit_percent": 80, "integration_percent": 15, "end_to_end_percent": 5, "enforcement": "advisory" },
+    "delegation": {
+      "weights": { "reversibility": 1, "size": 1, "complexity": 1, "spec": 1, "verification": 1 },
+      "cut_points": { "yellow_agent": 4, "yellow_owner": 7, "red": 10 },
+      "enforcement": "advisory",
+      "shared_surfaces": [
+        { "path": "ak.project.json", "class": "red", "reason": "This record sets the review tier of every change." },
+        { "path": "bin/fm-merge-review.sh", "class": "red", "reason": "The two-model merge review decides which pull requests may merge." },
+        { "path": "bin/fm-pr-merge.sh", "class": "red", "reason": "Every pull request merge goes through this guard." },
+        { "path": "bin/fm-merge-local.sh", "class": "red", "reason": "Every local-only landing goes through this guard." },
+        { "path": "bin/fm-spawn.sh", "class": "yellow-owner", "reason": "Every worker launch and its isolation check run here." },
+        { "path": "bin/fm-teardown.sh", "class": "yellow-owner", "reason": "Cleanup decides whether work is landed and safe to remove." },
+        { "path": ".github/workflows/**", "class": "yellow-owner", "reason": "Continuous integration gates every change." }
+      ]
+    },
+    "exceptions": []
+  },
+  "tracker_policy": { "system_of_record": { "system": "github" } }
+}

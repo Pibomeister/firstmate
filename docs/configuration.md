@@ -1304,6 +1304,7 @@ Any other malformed line is an error that refuses both a review run and a covere
 | `require` | `<host>/<repository path>` or `*` | A repository whose merges through `bin/fm-pr-merge.sh` need `--expected-head` and an approved review at that head. Repeatable, and matched without regard to letter case. |
 | `post` | `on` or `off` (default `off`) | With `on`, each review is also posted as a pull request comment; approvals count only with that comment's URL, while a valid BLOCK still blocks if posting fails. Posting works on GitHub only. |
 | `timeout` | 60 to 14400 seconds (default 1800) | The bound on one reviewer call. |
+| `convergence` | `off` or `shadow` (default `off`) | With `shadow`, each run also asks AgentKit's review engine for its convergence verdict and the verdict line gains `converge=` and `tier=` fields; the existing rule still decides the state word, the exit status, and every merge. `on` is refused until enforcement is approved. |
 
 `<family>` is this home's own name for a model family, such as `anthropic` or `google`.
 Two reviews from one family count as one, so a run needs seats from at least two families.
@@ -1319,6 +1320,9 @@ post=on
 ```
 
 `bin/fm-merge-review.sh` owns the verdict rule, the receipt format under `data/merge-review/`, the model identity evidence, and the limits of a local receipt.
+It also owns the shadow fields, the AgentKit interface they read, and the shadow record.
+The shadow week counts only once an AgentKit release with the review engine is installed; before that every line says `converge=unavailable` and nothing is recorded.
+The tier comes from the repository's `ak.project.json` at the merge base, never from the head under review.
 The `ship-landing` skill owns when a supervisor dispatches the review worker.
 This file holds only merges that go through `bin/fm-pr-merge.sh` for a repository a `require` line names; a merge made any other way, or in an unlisted repository, is not checked.
 The file is a home-local setting and is not inherited by secondmate homes.
