@@ -1,0 +1,14 @@
+1..7
+ok - secondmate selection reports actionable refusals without granting binding readiness
+ok - capture records numeric timestamps when BSD stat emits text before failing
+counterfactual-stuck revision=d05be7889941e5389ea34e41ac82500d3745bb0c grace=8 beacon_age=8 health_rc=1
+ok - a capture that stays blocked past grace is not ready
+counterfactual-progress revision=d05be7889941e5389ea34e41ac82500d3745bb0c records=20 sleep=0.4 captures=20 ends=20 preamble_ms=479 max_start_age_ms=3103 earliest_stale_seq=0 earliest_stale_age_ms=0 min_capture_ms=636 max_capture_ms=1277 sum_capture_ms=17454 max_record_gap_ms=5556 grace_ms=8000
+ok - completed records stay inside grace while their sum crosses it
+stage-beat mode=returning grace=8 step=4 max_beacon_age=4 elapsed=22
+ok - returning stages stay inside grace while their sum crosses it
+stage-beat mode=hung grace=8 step=12 max_beacon_age=12 elapsed=27
+ok - a stage that outlasts grace still ages the beacon
+ok - supported starter surfaces the live stale-holder refusal and exits 1
+FM_TEST_COMPLETE
+exit=0
