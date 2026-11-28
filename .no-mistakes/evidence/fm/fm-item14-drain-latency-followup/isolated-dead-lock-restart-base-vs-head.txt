@@ -1,0 +1,12 @@
+base run1 (53s, load 54.07): not ok - a dead publication lock wedged publication 
+head run1 (62s, load 95.98): not ok - a dead publication lock wedged publication 
+base run2 (12s, load 80.35): ok - publication remains single-flight across watcher restart 
+head run2 (51s, load 51.83): not ok - a dead publication lock wedged publication 
+base run3 (19s, load 45.60): ok - publication remains single-flight across watcher restart 
+head run3 (10s, load 42.95): ok - publication remains single-flight across watcher restart 
+base run4 (52s, load 65.30): not ok - a dead publication lock wedged publication 
+head run4 (53s, load 55.19): not ok - a dead publication lock wedged publication 
+base run5 (17s, load 44.51): ok - publication remains single-flight across watcher restart 
+head run5 (12s, load 57.93): ok - publication remains single-flight across watcher restart 
+base run6 (12s, load 53.61): ok - publication remains single-flight across watcher restart 
+head run6 (10s, load 49.22): ok - publication remains single-flight across watcher restart 

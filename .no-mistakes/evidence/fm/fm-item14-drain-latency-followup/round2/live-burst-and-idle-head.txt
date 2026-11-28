@@ -1,0 +1,45 @@
+# head 14d6ca4a, lab home
+round r2h1: pass A in stage: lock-wait producer backlog task-observation task-rows contributions summary 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 3
+published queued ids: item-a,item-b-rr2h1
+RESULT round r2h1: PASS late change published
+  no admission/publication lock left behind
+round r2h2: pass A in stage: lock-wait producer backlog task-observation task-rows 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 3
+published queued ids: item-a,item-b-rr2h2
+RESULT round r2h2: PASS late change published
+  no admission/publication lock left behind
+### idle try during a running pass (round r2i1)
+pass A reached: lock-wait producer backlog task-observation task-rows contributions summary validate 
+idle try exit=0; pass A still running when it returned: no
+admission slot: free after idle try
+A exit=0
+B exit=0
+  A collected
+  I collected
+  B collected
+RESULT: PASS change made during pass A is published by the queued pass
+### idle try during a running pass (round r2i2)
+pass A reached: lock-wait producer backlog task-observation task-rows contributions summary 
+idle try exit=0; pass A still running when it returned: no
+admission slot: free after idle try
+A exit=0
+B exit=0
+  A collected
+  I did not collect
+  B collected
+RESULT: PASS change made during pass A is published by the queued pass

@@ -1,1 +1,2 @@
 ok - contribution-input propagates a failing jq assembly as a non-zero exit
+rc=0 secs=15

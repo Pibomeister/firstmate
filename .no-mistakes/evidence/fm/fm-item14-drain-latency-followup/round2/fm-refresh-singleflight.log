@@ -1,0 +1,14 @@
+ok - independent overlapping heartbeat callers collect once
+ok - overlapping summary triggers collect once more after the running pass, never per trigger
+ok - an idle summary try never stands in for a queued pass
+ok - snapshot overlap shares one observation, while later callers observe changes
+ok - output modes serialize without mixing documents, and failed observations stay failed until a fresh successful pass
+ok - a status change before an overlapping request forces its own fresh serialized observation
+ok - snapshot recovers a dead lock owner and preserves the caller's stage descriptor
+ok - contribution-only inventory stays bounded independently of a slow worker observation
+ok - a detached probe cannot retain the completed snapshot's output capture
+ok - relay failure remains a failed publication and a fresh pass can recover
+ok - a shared publication that cannot be written keeps the complete observation and its exit status
+ok - a signal-stopped holder is not shared, so a queued waiter collects for itself
+ok - a state directory that cannot hold the lock still yields a complete unshared snapshot
+ok - a dead holder's lock in unwritable state still yields complete unshared snapshots

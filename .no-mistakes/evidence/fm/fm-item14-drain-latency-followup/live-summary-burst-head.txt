@@ -1,0 +1,36 @@
+round 1: pass A in stage: lock-wait producer 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-r1
+RESULT round 1: PASS late change published
+  no admission/publication lock left behind
+round 2: pass A in stage: lock-wait producer 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-r2
+RESULT round 2: PASS late change published
+  no admission/publication lock left behind
+round 3: pass A in stage: lock-wait producer 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-r3
+RESULT round 3: PASS late change published
+  no admission/publication lock left behind

@@ -1,0 +1,4 @@
+fm-head.F0s4 round1: DRAIN_SECS=21 rc=0 ok - large secondmate history drains within a bounded budget and preserves every wake and decision  load=60.33 72.49 75.16
+fm-base.oCwI round1: DRAIN_SECS=19 rc=0 ok - large secondmate history drains within a bounded budget and preserves every wake and decision  load=50.90 69.26 73.92
+fm-head.F0s4 round2: DRAIN_SECS=24 rc=0 ok - large secondmate history drains within a bounded budget and preserves every wake and decision  load=44.94 65.96 72.55
+fm-base.oCwI round2: DRAIN_SECS=27 rc=0 ok - large secondmate history drains within a bounded budget and preserves every wake and decision  load=53.85 65.82 72.25

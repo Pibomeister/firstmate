@@ -1,0 +1,62 @@
+### pre-fix d6b73774
+round p1: pass A in stage: lock-wait producer backlog task-observation task-rows contributions 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: exited at admission (joined queued pass)
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-rp1
+RESULT round p1: PASS late change published
+  no admission/publication lock left behind
+round p2: pass A in stage: lock-wait producer backlog task-observation task-rows 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: exited at admission (joined queued pass)
+  trigger C: exited at admission (joined queued pass)
+  trigger D: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-rp2
+RESULT round p2: PASS late change published
+  no admission/publication lock left behind
+### head 14d6ca4a
+round h1: pass A in stage: lock-wait producer backlog task-observation task-rows 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-rh1
+RESULT round h1: PASS late change published
+  no admission/publication lock left behind
+round h2: pass A in stage: lock-wait producer backlog task-observation task-rows contributions 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: exited at admission (joined queued pass)
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 2
+published queued ids: item-a,item-b-rh2
+RESULT round h2: PASS late change published
+  no admission/publication lock left behind
+round h3: pass A in stage: lock-wait producer backlog task-observation task-rows contributions 
+exit codes A..F: 0 0 0 0 0 0
+  trigger A: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger B: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger C: exited at admission (joined queued pass)
+  trigger D: exited at admission (joined queued pass)
+  trigger E: collected (stages seen: backlog contributions lock-wait producer publish summary task-observation task-rows validate )
+  trigger F: exited at admission (joined queued pass)
+passes that collected: 3
+published queued ids: item-a,item-b-rh3
+RESULT round h3: PASS late change published
+  no admission/publication lock left behind

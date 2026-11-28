@@ -1,0 +1,9 @@
+lab home created
+reader 1 rc=0 bytes=2444 valid_json=yes
+reader 2 rc=0 bytes=2444 valid_json=yes
+reader 3 rc=0 bytes=2444 valid_json=yes
+all three concurrent readers received the same snapshot body
+leftover lock/flight files in state:
+.fleet-observation-json
+read-only state + dead-holder lock: reader rc=0 in 2s valid_json=yes
+LAB_LEFT=/var/folders/93/6w1bxqxn2yb92mt6rmt5zbzw0000gn/T//fm-lab.yp1iJW

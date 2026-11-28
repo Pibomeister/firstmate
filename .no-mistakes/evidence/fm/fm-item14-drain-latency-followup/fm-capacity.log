@@ -6,4 +6,18 @@ ok - unavailable probes print unknown and do not constrain
 ok - a malformed target is reported, not guessed
 ok - keyed config lines parse, and unknown, repeated, or malformed lines are refused
 ok - a fresh beat replaces probes, and its warn level closes lanes with its reason
-not ok - a stale beat must fall back to probes with its age in why (expected 'probe|ok|true', got 'probe|ok|false')
+ok - late beats count, and stale, missing, malformed, or foreign beats fall back to probes
+ok - several pressure files: worst level wins, first supplies memory, every disk counts
+ok - a beat with missing fields keeps its fields aligned and limits fall back to probes
+ok - the lane footprint memory rule applies only with min-avail-gb
+ok - limits close lanes with named reasons, and --admit exits 0, 75, or 1
+ok - a lane that recorded its ready PR frees its place in the admission verdict
+ok - the spawn gate holds only on the lane cap and one load ceiling, and never counts the spawner's own record
+ok - the spawn gate uses the load-relief ceiling, holds at the resume level while a worker is paused, and refuses a malformed or zero level
+ok - replacement accounting waives neither the spawn load ceiling nor full host-admission memory reserve
+ok - publish is opt-in, private, throttled, records boots, and publishes an invalid config as invalid
+ok - captain presence and quota runway publish derived words only, unknown when unreadable
+ok - the watcher publishes lane facts only for an opted-in home
+ok - real host probes produce a well-formed report
+# all fm-capacity tests passed
+rc=0 secs=112

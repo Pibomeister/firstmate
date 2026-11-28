@@ -1,0 +1,29 @@
+### idle try during a running pass (round 1)
+pass A reached: lock-wait producer backlog task-observation task-rows contributions 
+idle try exit=0; pass A still running when it returned: yes
+admission slot: free after idle try
+A exit=0
+B exit=0
+  A collected
+  I did not collect
+  B collected
+RESULT: PASS change made during pass A is published by the queued pass
+### idle try during a running pass (round 2)
+pass A reached: lock-wait producer backlog task-observation task-rows contributions 
+idle try exit=0; pass A still running when it returned: yes
+admission slot: free after idle try
+A exit=0
+B exit=0
+  A collected
+  I did not collect
+  B collected
+RESULT: PASS change made during pass A is published by the queued pass
+
+### concurrent fleet snapshot readers (4 at once)
+reader 1 schema=fm-fleet-snapshot.v1 bytes=4520 stderr_bytes=0
+reader 2 schema=fm-fleet-snapshot.v1 bytes=4520 stderr_bytes=0
+reader 3 schema=fm-fleet-snapshot.v1 bytes=4520 stderr_bytes=0
+reader 4 schema=fm-fleet-snapshot.v1 bytes=4520 stderr_bytes=0
+distinct bodies: 123 line(s)
+state files: .fleet-observation-json .fleet-observation-secondmate-home-summary 
+   4 681d5352d13c2e6dfc1e4969f54d14d8
