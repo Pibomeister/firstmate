@@ -638,6 +638,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": "docs/rsi/loop-2.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": "docs/secondmate-parent-channel.md",
       "audience": "maintainer-architecture"
     },
