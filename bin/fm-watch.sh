@@ -4602,10 +4602,29 @@ watch_record_progress_beat() {
   touch "$STATE/.last-watcher-beat"
 }
 
+# watch_record_cycle: state/.watcher-cycle is a decimal that increases by one
+# after a poll's signal, pane, and heartbeat decisions and before the wait for
+# the next poll. Tests wait on this file. It is not the liveness beacon, so a
+# stage touch cannot end that wait. A poll that exits on a wake never reaches
+# this call.
+watch_record_cycle() {
+  local n tmp
+  n=$(cat "$STATE/.watcher-cycle" 2>/dev/null || true)
+  case "$n" in
+    ''|*[!0-9]*) n=0 ;;
+  esac
+  tmp=$(mktemp "$STATE/.watcher-cycle-XXXXXX" 2>/dev/null) || return 0
+  if ! { printf '%s\n' "$((n + 1))" > "$tmp" && mv -f -- "$tmp" "$STATE/.watcher-cycle"; } 2>/dev/null; then
+    rm -f -- "$tmp" 2>/dev/null || true
+  fi
+}
+
 # watch_stage <name>: record which part of its poll this watcher is in, as one
 # line "<pid>\t<epoch>\t<stage>" in state/.watcher-stage, so the guard's
 # watcher-down banner can name where a stalled watcher stopped (bin/fm-guard.sh).
 # Publish by rename so concurrent readers always see a complete record.
+# Entering a stage also refreshes the liveness beacon, because the previous
+# stage returned. A retry loop that calls this again would refresh it too.
 watch_stage() {  # <name>
   local now tmp
   # Entering a stage means the previous one returned: a completed boundary.
@@ -6544,6 +6563,9 @@ EOF
       triage_log "absorbed heartbeat (no captain-relevant change)"
     fi
   fi
+
+  # Poll decisions have returned. watch_record_cycle owns the test boundary.
+  watch_record_cycle
 
   # Terminal wait: a bounded native-event wait for push-capable homes (herdr, rex),
   # else the blind poll sleep. See event_wait_or_sleep.

@@ -57,28 +57,22 @@ wait_for_exit() {
   return 124
 }
 
-file_mtime() {
-  if [ "$(uname)" = Darwin ]; then stat -f %m "$1" 2>/dev/null; else stat -c %Y "$1" 2>/dev/null; fi
-}
-
+# bin/fm-watch.sh watch_record_cycle owns the poll boundary. This does not
+# touch the liveness beacon. 0 if the watcher is still alive after that poll,
+# 1 if it exited or the budget ran out.
 wait_poll_cycle() {  # <state> <pid> [limit-ticks]
-  local state=$1 pid=$2 limit=${3:-300} beat first now i=0
-  beat="$state/.last-watcher-beat"
-  rm -f "$beat"
-  first=""
+  local state=$1 pid=$2 limit=${3:-300} start now i=0
+  start=$(cat "$state/.watcher-cycle" 2>/dev/null || true)
+  case "$start" in
+    ''|*[!0-9]*) start=0 ;;
+  esac
   while [ "$i" -lt "$limit" ]; do
     kill -0 "$pid" 2>/dev/null || return 1
-    first=$(file_mtime "$beat")
-    [ -n "$first" ] && break
-    sleep 0.1
-    i=$((i + 1))
-  done
-  while [ "$i" -lt "$limit" ]; do
-    kill -0 "$pid" 2>/dev/null || return 1
-    now=$(file_mtime "$beat")
-    if [ -n "$now" ] && [ "$now" != "$first" ]; then
-      return 0
-    fi
+    now=$(cat "$state/.watcher-cycle" 2>/dev/null || true)
+    case "$now" in
+      ''|*[!0-9]*) now=0 ;;
+    esac
+    [ "$now" -gt "$start" ] && return 0
     sleep 0.1
     i=$((i + 1))
   done

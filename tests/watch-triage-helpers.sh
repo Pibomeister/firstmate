@@ -49,36 +49,23 @@ watch_bg() {  # <state> <fakebin> <out> [extra env assignments...]
     FM_SECONDMATE_LIVENESS_SECS=99999999 "$@" "$WATCH" > "$out" &
 }
 
-# Wait until <pid>'s watcher has completed a whole poll cycle, or exited first.
-# A fixed wait_live budget only proves the process is still ALIVE: fm-watch.sh
-# does bounded startup work (the recovery-marker snapshot, lock acquisition)
-# before its first stale scan, so on a loaded
-# machine a short fixed budget can reap a round before the cycle it asserts on
-# ever ran - and then every "no wake, no marker" assertion passes vacuously
-# while every "marker written" assertion fails spuriously.
-# The liveness beacon is touched at the TOP of every poll, so this drops any
-# beacon left by an earlier round, waits for THIS watcher to write a fresh one
-# (some poll's top), then waits for that one to advance (the next poll's top) -
-# and the whole cycle in between is what the caller's assertions describe.
-# 0 if the watcher is still alive after a completed cycle, 1 if it exited.
+# Wait until <pid>'s watcher finishes one more poll, or exits first.
+# bin/fm-watch.sh watch_record_cycle owns that boundary. This does not touch
+# the liveness beacon. 0 if the watcher is still alive after that poll, 1 if
+# it exited or the budget ran out.
 wait_poll_cycle() {  # <state> <pid> [limit-ticks]
-  local state=$1 pid=$2 limit=${3:-300} beat first now i=0
-  beat="$state/.last-watcher-beat"
-  rm -f "$beat"
-  first=""
+  local state=$1 pid=$2 limit=${3:-300} start now i=0
+  start=$(cat "$state/.watcher-cycle" 2>/dev/null || true)
+  case "$start" in
+    ''|*[!0-9]*) start=0 ;;
+  esac
   while [ "$i" -lt "$limit" ]; do
     kill -0 "$pid" 2>/dev/null || return 1
-    first=$(file_mtime "$beat")
-    [ -n "$first" ] && break
-    sleep 0.1
-    i=$((i + 1))
-  done
-  while [ "$i" -lt "$limit" ]; do
-    kill -0 "$pid" 2>/dev/null || return 1
-    now=$(file_mtime "$beat")
-    if [ -n "$now" ] && [ "$now" != "$first" ]; then
-      return 0
-    fi
+    now=$(cat "$state/.watcher-cycle" 2>/dev/null || true)
+    case "$now" in
+      ''|*[!0-9]*) now=0 ;;
+    esac
+    [ "$now" -gt "$start" ] && return 0
     sleep 0.1
     i=$((i + 1))
   done
