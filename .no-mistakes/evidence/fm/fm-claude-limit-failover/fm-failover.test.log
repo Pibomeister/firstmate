@@ -1,0 +1,23 @@
+1..20
+ok - detector: 429, rate-limit, usage-limit, billing, past-due, subscription, and quota rows class; prose, tool errors, digit substrings, retry rows, diff rows, and old rows do not
+ok - record: the StopFailure hook records 429, usage-limit, and billing for the current turn end only, and nothing else
+ok - worker 429: relaunched on codex in the same local copy, branch, and gates, recorded, nothing lost
+ok - worker billing: relaunched on the next runtime after its own, recorded, nothing lost
+ok - worker stall-check classes: api_error and stalled relaunch with an accurate note; unknown reasons refused
+ok - walk: a failed relaunch moves on, a pre-stop refusal, an unverified usage-limit picker, or the deadline stops
+ok - candidates and skips: quota, night plan, sign-in, accounts, finished, stopped, remote, bound, lock
+ok - captain 429 and billing: a handoff and a verified successor on the next runtime, recorded; refused without the lock, work, or every order
+ok - captain hook: a 429 or billing StopFailure in the primary checkout hands off to a successor in one step; elsewhere, without the lock, or for another error it does nothing
+ok - preflight: a real call and the 5h and weekly windows per runtime and account set the night plan
+ok - watcher: an idle ship refused by its provider moves on its first idle poll, from the screen or the hook record; prose and a hook-recorded ordinary stop do not
+ok - watcher: an idle second mate refused by its provider moves from its hook record; a refusal row alone does not move it
+ok - watcher: an idle second mate on the bare usage-limit menu moves once, with no hook record
+ok - watcher: idle captain 429, billing, and usage-limit screens with open goals hand off in one poll
+ok - watch bounds: the failover call, its deadline, and each relaunch stay inside every stale grace
+ok - account identity: ordinary, the home config root, and a trailing slash are one account
+ok - default order: ordinary Claude moves to charlie, then gemini neon, muse wonder, gpt sol, and kimi k3.1 pro
+ok - default order: the agent on either Claude account, listed first or last, moves to the other account before any other runtime
+ok - claude-tooling: a move off Claude that fm-control would refuse is skipped before any stop and spends no attempt
+ok - secondmate: the same order, charlie first on a one-launch account, its pin file untouched, mate-unverified runtimes skipped
+FM_TEST_COMPLETE
+exit=0

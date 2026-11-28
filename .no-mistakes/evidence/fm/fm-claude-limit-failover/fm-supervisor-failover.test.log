@@ -1,0 +1,21 @@
+ok - account switch: another signed-in Claude account with headroom takes over first
+ok - claude to codex: no Claude account has headroom, so a comparable Codex model takes over
+ok - claude to agy: an exhausted_now runtime is vetoed and the next configured candidate takes over
+ok - unmeasured quota: a candidate without a measured headroom reading is skipped
+ok - stale or partly unmeasured quota: the candidate is skipped and the next one takes over
+ok - agy trust: an untrusted home skips agy and the next candidate takes over
+ok - orca: account and agy steps are skipped, codex takes over
+ok - exhausted veto: with every pool exhausted nothing launches
+ok - a failed handoff is reported with its status
+ok - dry-run is refused and nothing launches
+ok - secondmate: relaunched onto codex through fm-control in its own home
+ok - secondmate backend: agy eligibility follows the secondmate record, not the parent home
+ok - secondmate claude: an unresolvable pin is skipped and does not win on the ambient account
+ok - secondmate claude: a resolved pin is reported as pin and relaunch does not pass --account
+ok - secondmate claude: a missing required pin is skipped and the next runtime takes over
+ok - secondmate account step: another signed-in Claude account first, then the default comparable models, pin untouched
+ok - empty candidates file: only the Claude account step runs
+ok - account identity: ordinary and HOME/.claude are the same current account
+ok - usage refusals: a dash-led model id and a primary backend the launcher cannot serve
+ok - pin preservation: no account pin or account list changed
+exit=0

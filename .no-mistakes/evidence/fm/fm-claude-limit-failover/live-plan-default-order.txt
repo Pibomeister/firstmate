@@ -1,0 +1,8 @@
+## lab: config/claude-accounts = ordinary, ~/.claude-charlie ; no config/failover-order (shipped default)
+plan runtime=claude@ordinary verdict=unmeasured why=no_fresh_preflight
+plan runtime=claude@.claude-charlie verdict=unmeasured why=no_fresh_preflight
+plan runtime=agy:gemini-4-neon-high verdict=unmeasured why=no_fresh_preflight
+plan runtime=muse:muse-wonder-1.0 verdict=unmeasured why=no_fresh_preflight
+plan runtime=codex:gpt-6.2-sol verdict=unmeasured why=no_fresh_preflight
+plan runtime=kimi:kimi-code/k3.1-pro verdict=unmeasured why=no_fresh_preflight
+exit=0
