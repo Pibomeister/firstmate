@@ -1,0 +1,14 @@
+== lib: BASE deb597d
+codex tool shell (no TERM_PROGRAM, HANDLE+PANE_KEY): backend=(3) target=(3)
+Orca terminal (TERM_PROGRAM=Orca, HANDLE):          backend=orca(0) target=term_abc(0)
+lone handle (no TERM_PROGRAM, no PANE_KEY):         backend=(3) target=(3)
+nested terminal (TERM_PROGRAM=iTerm.app, both):     backend=(3) target=(3)
+zellij inside (no TERM_PROGRAM, both, ZELLIJ=0):    backend=(3) target=(3)
+pane key only (no handle):                          backend=tmux(1) target=firstmate:0(1)
+== lib: HEAD
+codex tool shell (no TERM_PROGRAM, HANDLE+PANE_KEY): backend=orca(0) target=term_abc(0)
+Orca terminal (TERM_PROGRAM=Orca, HANDLE):          backend=orca(0) target=term_abc(0)
+lone handle (no TERM_PROGRAM, no PANE_KEY):         backend=(3) target=(3)
+nested terminal (TERM_PROGRAM=iTerm.app, both):     backend=(3) target=(3)
+zellij inside (no TERM_PROGRAM, both, ZELLIJ=0):    backend=(3) target=(3)
+pane key only (no handle):                          backend=tmux(1) target=firstmate:0(1)
